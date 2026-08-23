@@ -122,51 +122,303 @@
   "services": {
     "item_create": {
       "name": "Gegenstand anlegen",
-      "description": "Legt einen neuen Gegenstand im Inventar an."
+      "description": "Legt einen neuen Gegenstand im Inventar an.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "Wie der Gegenstand heißt."
+        },
+        "description": {
+          "name": "Beschreibung",
+          "description": "Freier Text zum Gegenstand."
+        },
+        "quantity": {
+          "name": "Menge",
+          "description": "Wie viele es davon gibt, als ganze Zahl ab 0. Standard ist 1."
+        },
+        "status": {
+          "name": "Status",
+          "description": "Der Zustand des Gegenstands als Status-Kürzel: ok, missing, needs_repair oder eines, das dieser Haushalt angelegt hat. Standard ist ok."
+        },
+        "checked_out": {
+          "name": "Ausgeliehen",
+          "description": "Ob jemand den Gegenstand ausgeliehen hat. Standard ist nein."
+        },
+        "due_date": {
+          "name": "Rückgabedatum",
+          "description": "Wann der Gegenstand zurück soll, als JJJJ-MM-TT. Nur zulässig, solange er ausgeliehen ist."
+        },
+        "inspection_date": {
+          "name": "Nächste Prüfung",
+          "description": "Wann der Gegenstand das nächste Mal geprüft werden soll, als JJJJ-MM-TT. Ein Datum vor heute ist überfällig."
+        },
+        "reminder_date": {
+          "name": "Erinnerungsdatum",
+          "description": "Wann die Erinnerung das nächste Mal fällig ist, als JJJJ-MM-TT. Eine wiederkehrende Erinnerung zählt ab diesem Datum."
+        },
+        "reminder_interval": {
+          "name": "Wiederholung der Erinnerung",
+          "description": "Wie oft die Erinnerung wiederkehrt, als unit und count – zum Beispiel unit months, count 3. Als unit sind days, weeks und months erlaubt, und eine Wiederholung braucht ein Erinnerungsdatum, ab dem sie zählt."
+        },
+        "location_id": {
+          "name": "Orts-ID",
+          "description": "Die ID des Orts, an den der Gegenstand kommt. Ohne Angabe wird er ohne Ort angelegt."
+        },
+        "tags": {
+          "name": "Labels",
+          "description": "Eine Liste von Labels. Beim Speichern werden Leerzeichen am Rand entfernt, alles kleingeschrieben und doppelte Einträge zusammengefasst."
+        },
+        "category": {
+          "name": "Kategorie",
+          "description": "Eine frei gewählte Kategorie für den Gegenstand."
+        },
+        "low_stock_threshold": {
+          "name": "Schwelle für niedrigen Bestand",
+          "description": "Bei welcher Menge und darunter der Gegenstand als niedriger Bestand gilt, als ganze Zahl ab 0. Ohne Angabe gibt es keine Schwelle."
+        },
+        "custom_fields": {
+          "name": "Eigene Felder",
+          "description": "Zusätzliche eigene Felder als Name und Wert. Ein Wert ist Text, eine Zahl oder wahr/falsch."
+        }
+      }
     },
     "item_update": {
       "name": "Gegenstand aktualisieren",
-      "description": "Aktualisiert einen vorhandenen Gegenstand im Inventar."
+      "description": "Aktualisiert einen vorhandenen Gegenstand im Inventar.",
+      "fields": {
+        "item_id": {
+          "name": "Gegenstands-ID",
+          "description": "Die ID des Gegenstands, der geändert werden soll."
+        },
+        "expected_version": {
+          "name": "Erwartete Version",
+          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Ein neuer Name für den Gegenstand."
+        },
+        "description": {
+          "name": "Beschreibung",
+          "description": "Freier Text zum Gegenstand. Null löscht ihn."
+        },
+        "quantity": {
+          "name": "Menge",
+          "description": "Wie viele es davon gibt, als ganze Zahl ab 0."
+        },
+        "status": {
+          "name": "Status",
+          "description": "Der Zustand des Gegenstands als Status-Kürzel: ok, missing, needs_repair oder eines, das dieser Haushalt angelegt hat. Mit ok wird ein gesetzter Status wieder aufgehoben."
+        },
+        "checked_out": {
+          "name": "Ausgeliehen",
+          "description": "Ob jemand den Gegenstand ausgeliehen hat."
+        },
+        "due_date": {
+          "name": "Rückgabedatum",
+          "description": "Wann der Gegenstand zurück soll, als JJJJ-MM-TT. Nur zulässig, solange er ausgeliehen ist; null löscht das Datum."
+        },
+        "inspection_date": {
+          "name": "Nächste Prüfung",
+          "description": "Wann der Gegenstand das nächste Mal geprüft werden soll, als JJJJ-MM-TT. Null löscht das Datum."
+        },
+        "reminder_date": {
+          "name": "Erinnerungsdatum",
+          "description": "Wann die Erinnerung das nächste Mal fällig ist, als JJJJ-MM-TT. Ein neues Datum setzt eine wiederkehrende Erinnerung auf dieses Datum zurück; null löscht die Erinnerung."
+        },
+        "reminder_interval": {
+          "name": "Wiederholung der Erinnerung",
+          "description": "Wie oft die Erinnerung wiederkehrt, als unit und count – zum Beispiel unit months, count 3. Null macht daraus einen einmaligen Termin."
+        },
+        "location_id": {
+          "name": "Orts-ID",
+          "description": "Die ID des Orts, an dem der Gegenstand liegt. Mit null hat er keinen Ort mehr."
+        },
+        "tags": {
+          "name": "Labels",
+          "description": "Die vollständige Liste der Labels; sie ersetzt die gespeicherten. Null löscht alle."
+        },
+        "category": {
+          "name": "Kategorie",
+          "description": "Eine frei gewählte Kategorie für den Gegenstand. Null löscht sie."
+        },
+        "low_stock_threshold": {
+          "name": "Schwelle für niedrigen Bestand",
+          "description": "Bei welcher Menge und darunter der Gegenstand als niedriger Bestand gilt, als ganze Zahl ab 0. Null entfernt die Schwelle."
+        },
+        "custom_fields_set": {
+          "name": "Eigene Felder setzen",
+          "description": "Eigene Felder, die hinzukommen oder überschrieben werden, als Name und Wert. Felder, die hier nicht vorkommen, bleiben unverändert."
+        },
+        "custom_fields_unset": {
+          "name": "Eigene Felder entfernen",
+          "description": "Die Namen der eigenen Felder, die vom Gegenstand entfernt werden."
+        }
+      }
     },
     "item_delete": {
       "name": "Gegenstand löschen",
-      "description": "Löscht einen Gegenstand aus dem Inventar."
+      "description": "Löscht einen Gegenstand aus dem Inventar.",
+      "fields": {
+        "item_id": {
+          "name": "Gegenstands-ID",
+          "description": "Die ID des Gegenstands, der gelöscht werden soll."
+        },
+        "expected_version": {
+          "name": "Erwartete Version",
+          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+        }
+      }
     },
     "item_move": {
       "name": "Gegenstand verschieben",
-      "description": "Verschiebt einen Gegenstand an einen anderen Ort (oder in die oberste Ebene)."
+      "description": "Verschiebt einen Gegenstand an einen anderen Ort (oder in die oberste Ebene).",
+      "fields": {
+        "item_id": {
+          "name": "Gegenstands-ID",
+          "description": "Die ID des Gegenstands, der verschoben werden soll."
+        },
+        "new_location_id": {
+          "name": "Neue Orts-ID",
+          "description": "Die ID des Orts, an den der Gegenstand kommt; in der WebSocket-API heißt dieses Feld location_id. Ohne Angabe oder mit null hat er danach keinen Ort mehr."
+        },
+        "expected_version": {
+          "name": "Erwartete Version",
+          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+        }
+      }
     },
     "item_adjust_quantity": {
       "name": "Menge anpassen",
-      "description": "Erhöht oder verringert die Menge eines Gegenstands."
+      "description": "Erhöht oder verringert die Menge eines Gegenstands.",
+      "fields": {
+        "item_id": {
+          "name": "Gegenstands-ID",
+          "description": "Die ID des Gegenstands, dessen Menge geändert werden soll."
+        },
+        "delta": {
+          "name": "Änderung",
+          "description": "Wie viel zur Menge hinzukommt. Eine negative Zahl zieht ab."
+        },
+        "expected_version": {
+          "name": "Erwartete Version",
+          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+        }
+      }
     },
     "item_set_quantity": {
       "name": "Menge setzen",
-      "description": "Setzt die Menge eines Gegenstands auf einen genauen Wert."
+      "description": "Setzt die Menge eines Gegenstands auf einen genauen Wert.",
+      "fields": {
+        "item_id": {
+          "name": "Gegenstands-ID",
+          "description": "Die ID des Gegenstands, dessen Menge gesetzt werden soll."
+        },
+        "quantity": {
+          "name": "Menge",
+          "description": "Die Menge, die gespeichert wird, als ganze Zahl ab 0."
+        },
+        "expected_version": {
+          "name": "Erwartete Version",
+          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+        }
+      }
     },
     "item_check_out": {
       "name": "Gegenstand ausleihen",
-      "description": "Markiert einen Gegenstand als ausgeliehen, mit Rückgabedatum."
+      "description": "Markiert einen Gegenstand als ausgeliehen, mit Rückgabedatum.",
+      "fields": {
+        "item_id": {
+          "name": "Gegenstands-ID",
+          "description": "Die ID des Gegenstands, der ausgeliehen werden soll."
+        },
+        "due_date": {
+          "name": "Rückgabedatum",
+          "description": "Wann der Gegenstand zurück soll, als JJJJ-MM-TT."
+        },
+        "expected_version": {
+          "name": "Erwartete Version",
+          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+        }
+      }
     },
     "item_check_in": {
       "name": "Gegenstand zurückgeben",
-      "description": "Markiert einen Gegenstand als nicht mehr ausgeliehen."
+      "description": "Markiert einen Gegenstand als nicht mehr ausgeliehen.",
+      "fields": {
+        "item_id": {
+          "name": "Gegenstands-ID",
+          "description": "Die ID des Gegenstands, der zurückgegeben werden soll."
+        },
+        "expected_version": {
+          "name": "Erwartete Version",
+          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+        }
+      }
     },
     "reminder_bump": {
       "name": "Erinnerung erledigen",
-      "description": "Markiert eine wiederkehrende Erinnerung als erledigt und setzt sie auf ihren nächsten Termin."
+      "description": "Markiert eine wiederkehrende Erinnerung als erledigt und setzt sie auf ihren nächsten Termin.",
+      "fields": {
+        "item_id": {
+          "name": "Gegenstands-ID",
+          "description": "Die ID des Gegenstands, dessen Erinnerung gerade erledigt wurde."
+        },
+        "expected_version": {
+          "name": "Erwartete Version",
+          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+        }
+      }
     },
     "location_create": {
       "name": "Ort anlegen",
-      "description": "Legt einen neuen Aufbewahrungsort an."
+      "description": "Legt einen neuen Aufbewahrungsort an.",
+      "fields": {
+        "name": {
+          "name": "Name",
+          "description": "Wie der Ort heißt."
+        },
+        "parent_id": {
+          "name": "ID des übergeordneten Orts",
+          "description": "Die ID des Orts, in dem dieser liegt. Ohne Angabe entsteht er auf oberster Ebene."
+        },
+        "area_id": {
+          "name": "Bereichs-ID",
+          "description": "Die ID eines Home-Assistant-Bereichs. Sie wird ganz oben im Ortsbaum gespeichert und gilt damit für alle Orte darunter."
+        }
+      }
     },
     "location_update": {
       "name": "Ort aktualisieren",
-      "description": "Aktualisiert einen vorhandenen Aufbewahrungsort."
+      "description": "Aktualisiert einen vorhandenen Aufbewahrungsort.",
+      "fields": {
+        "location_id": {
+          "name": "Orts-ID",
+          "description": "Die ID des Orts, der geändert werden soll."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Ein neuer Name für den Ort."
+        },
+        "new_parent_id": {
+          "name": "Neue ID des übergeordneten Orts",
+          "description": "Die ID des Orts, in den dieser verschoben wird; in der WebSocket-API heißt dieses Feld parent_id. Null verschiebt ihn auf die oberste Ebene."
+        },
+        "area_id": {
+          "name": "Bereichs-ID",
+          "description": "Die ID eines Home-Assistant-Bereichs. Sie wird ganz oben im Ortsbaum gespeichert und gilt damit für alle Orte darunter."
+        }
+      }
     },
     "location_delete": {
       "name": "Ort löschen",
-      "description": "Löscht einen Aufbewahrungsort."
+      "description": "Löscht einen Aufbewahrungsort.",
+      "fields": {
+        "location_id": {
+          "name": "Orts-ID",
+          "description": "Die ID des Orts, der gelöscht werden soll. Er muss vorher leer sein: keine Orte darin und keine Gegenstände."
+        }
+      }
     }
   },
   "issues": {
