@@ -28,6 +28,7 @@ from custom_components.haventory.const import (
     MEDIA_NAME_TOKEN_PARAM,
     MEDIA_SUBDIR,
     THUMBNAIL_MAX_EDGE,
+    THUMBNAIL_SUFFIX,
 )
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
@@ -664,6 +665,63 @@ async def test_setup_sweeps_a_file_no_metadata_references(
     await _setup(hass)
 
     assert not orphan.exists()
+
+
+async def test_setup_sweeps_a_tile_an_earlier_encoder_generation_wrote(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """An install upgraded across a change to the encode.
+
+    A tile is written once and served from there, so nothing about the new
+    encoder would reach a picture that already has one. The name carries the
+    generation instead: the tile the old encoder wrote is named by no metadata
+    and the sweep at setup takes it, leaving the picture it came from.
+    """
+
+    item_id = "5c4b3a29-1d0e-4f8a-9b7c-6d5e4f3a2b1c"
+    attachment_id = "11111111-1111-4111-8111-111111111111"
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "items": {
+                item_id: {
+                    "id": item_id,
+                    "name": "Drill",
+                    "attachments": [
+                        {
+                            "id": attachment_id,
+                            "kind": "picture",
+                            "filename": "drill.png",
+                            "mime": "image/png",
+                            "size": len(PNG_BYTES),
+                            "uploaded_at": "2026-08-01T09:00:00Z",
+                            "title": "",
+                            "order": 0,
+                        }
+                    ],
+                }
+            },
+            "locations": {},
+        },
+    }
+    root = Path(hass.config.path(MEDIA_SUBDIR))
+    original = media.attachment_path(root, item_id, attachment_id, "image/png")
+    original.parent.mkdir(parents=True, exist_ok=True)
+    original.write_bytes(PNG_BYTES)
+    # Generation 1's name, which is what an install running 0.7.0 has on disk.
+    stale = original.with_name(f"{attachment_id}.thumb.webp")
+    stale.write_bytes(b"RIFF\x24\x00\x00\x00WEBP\x00\x00\x00\x00")
+
+    await _setup(hass)
+
+    assert not stale.exists()
+    assert original.read_bytes() == PNG_BYTES
+    current = media.thumbnail_path(root, item_id, attachment_id)
+    assert current.name.endswith(THUMBNAIL_SUFFIX)
+    # Nothing pre-writes a tile: the next `?size=thumb` encodes it.
+    assert not current.exists()
 
 
 async def test_a_v5_store_boots_to_v6_with_both_backfills(

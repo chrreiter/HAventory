@@ -188,7 +188,19 @@ MEDIA_SIZE_PARAM: str = "size"
 MEDIA_SIZE_THUMB: str = "thumb"
 THUMBNAIL_MAX_EDGE: int = 256
 THUMBNAIL_QUALITY: int = 80
-THUMBNAIL_SUFFIX: str = ".thumb.webp"
+
+# The tile's name carries the generation of the encoder that wrote it, because a
+# tile is written once and served from then on: an upgrade that changes the
+# encode reaches nothing already on disk. **Bump this whenever the encode
+# changes in a way an existing tile must not survive** — the orphan sweep at the
+# next setup finds the previous generation's files unnamed by any metadata and
+# removes them, and the next request that wants a tile writes the new one. A
+# tile is a cache, so that costs one encode and no data.
+#
+# Generation 1 is `.thumb.webp`, with no number in it: it is the name the suffix
+# had before it carried a generation, so the composed form starts at 2.
+THUMBNAIL_GENERATION: int = 2
+THUMBNAIL_SUFFIX: str = f".thumb{THUMBNAIL_GENERATION}.webp"
 
 # -----------------------------
 # Status appearance
