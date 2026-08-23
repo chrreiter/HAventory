@@ -369,7 +369,9 @@ export const PANEL_MOBILE_SURFACES = [
   },
   {
     id: "08-columns",
-    open: [["click", `${PANEL} [data-testid="columns-expanded"]`], ["wait", 600]],
+    // Through the overflow menu: under 700px the context bar renders no
+    // columns button, and the menu's Columns entry is the one route there.
+    open: [["click", PANEL_OVERFLOW], ["click", panelMenu("columns")], ["wait", 600]],
     expect: `${PANEL} [data-testid="column-options"]`,
   },
 ];
