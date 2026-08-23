@@ -72,7 +72,8 @@ bash scripts/reload_addon.sh --container home-assistant --sleep 30 --tail-logs
 ```
 
 Success looks like: `{"ok": true, "version": {...}}` plus a
-`Storage health: schema_version=N items=N locations=N` debug log line.
+`Storage health op=setup_storage_health schema_version=N items_count=N locations_count=N`
+debug log line.
 Backend-only change and HA already has the current card? The same script is still the
 path — it redeploys both; there is no partial-deploy variant.
 
@@ -105,8 +106,10 @@ docker exec home-assistant sh -lc \
 (`/config/www/haventory` is only there on instances deployed before the bundle moved into
 the integration package; new deploys write nothing to `www/`.)
 
-Then redeploy as above. A clean result logs `Storage health: schema_version=N items=0
-locations=0`. (`grep -il haventory /config/.storage/*` still matches
+Then redeploy as above. A clean result logs `Storage health op=setup_storage_health
+schema_version=N items_count=0 locations_count=0` — at DEBUG like every other healthy load,
+so an empty store says nothing at HA's default level. (`grep -il haventory /config/.storage/*`
+still matches
 `core.entity_registry` if the HA instance itself is named "HAventory Dev" — that is the
 weather entity's `original_name`, not a leftover.)
 

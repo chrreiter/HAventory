@@ -33,9 +33,21 @@ from homeassistant.helpers.storage import Store as HAStore
 from runtime_helpers import repo_of, runtime_of, setup_entry
 
 
+def _health_records(caplog) -> list[logging.LogRecord]:
+    """The storage-health lines one setup wrote."""
+
+    return [record for record in caplog.records if "Storage health" in record.getMessage()]
+
+
 @pytest.mark.asyncio
-async def test_setup_entry_logs_warning_for_empty_storage(monkeypatch, caplog) -> None:
-    """Empty storage payload logs a warning but completes setup."""
+async def test_setup_entry_logs_empty_storage_at_debug(monkeypatch, caplog) -> None:
+    """A store that loaded empty is a first run, not a fault: DEBUG, never WARNING.
+
+    Every fresh install starts at 0/0, and HA shows WARNING with no logger
+    configuration, so warning here made a new user's first line about HAventory
+    a warning about nothing. A store that is unreadable has its own refusals and
+    its own Repairs card.
+    """
 
     hass = HomeAssistant()
     entry = ConfigEntry()
@@ -46,16 +58,45 @@ async def test_setup_entry_logs_warning_for_empty_storage(monkeypatch, caplog) -
 
     monkeypatch.setattr(DomainStore, "async_load", _fake_load)
 
-    caplog.set_level(logging.WARNING)
+    caplog.set_level(logging.DEBUG)
 
     await setup_entry(hass, entry)
 
     assert isinstance(repo_of(hass), Repository)
-    assert any("Storage health" in record.message for record in caplog.records)
-    assert any(
-        record.levelname == "WARNING" and "Storage health" in record.message
-        for record in caplog.records
-    )
+    health = _health_records(caplog)
+    assert health, [record.getMessage() for record in caplog.records]
+    assert [record.levelno for record in health] == [logging.DEBUG]
+    assert "items_count=0" in health[-1].getMessage()
+    assert "locations_count=0" in health[-1].getMessage()
+    assert not [record for record in caplog.records if record.levelno >= logging.WARNING]
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_logs_populated_storage_at_debug(monkeypatch, caplog) -> None:
+    """A store with data logs the same line, at the same level, with its counts."""
+
+    hass = HomeAssistant()
+    entry = ConfigEntry()
+
+    source = Repository()
+    where = source.create_location(name="Garage")
+    source.create_item(ItemCreate(name="Drill", location_id=str(where.id)))
+    payload = {"schema_version": CURRENT_SCHEMA_VERSION, **source.export_state()}
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return deepcopy(payload)
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    caplog.set_level(logging.DEBUG)
+
+    await setup_entry(hass, entry)
+
+    health = _health_records(caplog)
+    assert health, [record.getMessage() for record in caplog.records]
+    assert [record.levelno for record in health] == [logging.DEBUG]
+    assert "items_count=1" in health[-1].getMessage()
+    assert "locations_count=1" in health[-1].getMessage()
 
 
 @pytest.mark.asyncio
