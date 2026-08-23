@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
@@ -63,7 +63,7 @@ from .const import (
 )
 from .exceptions import ValidationError
 from .logs import context_logger
-from .models import AttachmentKind, AttachmentMeta
+from .models import AttachmentKind, AttachmentMeta, load_attachments
 from .runtime import find_runtime
 
 LOGGER = context_logger(__name__)
@@ -445,6 +445,29 @@ async def async_delete_attachments(
             continue
     if targets:
         await hass.async_add_executor_job(_delete_blocking, targets)
+
+
+async def async_delete_item_files(hass: HomeAssistant, items: Iterable[Mapping[str, Any]]) -> None:
+    """Delete the attachment files of every deleted item passed in.
+
+    Takes serialized item bodies — the shape ``serialization.serialize_item``
+    produces — because the surfaces that delete an item hold the body they
+    removed and not the ``Item`` itself.
+
+    Every caller runs this **after** its save has succeeded, for the same reason
+    ``attachment/remove`` deletes last: an orphaned file is swept at the next
+    setup, while a file deleted ahead of a failed save would leave stored
+    metadata naming nothing.
+    """
+
+    pairs: list[tuple[str, AttachmentMeta]] = []
+    for body in items:
+        item_id = str(body.get("id") or "")
+        if not item_id:
+            continue
+        pairs.extend((item_id, meta) for meta in load_attachments(body.get("attachments")))
+    if pairs:
+        await async_delete_attachments(hass, pairs)
 
 
 async def async_sweep_orphans(

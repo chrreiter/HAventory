@@ -617,7 +617,8 @@ shapes as the WebSocket surface — no bespoke service shape exists:
   can template `reminder_date` out of the response. The rule behind it lives in one place,
   `calendar_projection.bumped_reminder_date`, which the WebSocket command also calls.
 - `item_delete` and `location_delete` return the entity as it last stood, read before the
-  removal. Deleting an unknown id is `not_found`, not an empty envelope.
+  removal. Deleting an unknown id is `not_found`, not an empty envelope. `item_delete` also
+  frees the item's attachment files after the write, exactly as `haventory/item/delete` does.
 - The response is produced **after** the durable write, so an answer means the mutation is
   persisted — the same ordering the WebSocket contract states for events.
 - `OPTIONAL`, not `ONLY`: a caller that omits `response_variable` is unaffected.

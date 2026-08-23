@@ -530,6 +530,58 @@ async def test_deleting_the_item_deletes_its_files(
     assert not path.exists()
 
 
+async def test_a_bulk_delete_deletes_the_item_files(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+) -> None:
+    """The card's bulk bar and the organize dialog delete through `items/bulk`."""
+
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws)
+    attachment = await _attach(ws, client, item)
+    path = media.attachment_path(
+        media.media_root(hass), item["id"], attachment["id"], attachment["mime"]
+    )
+    assert path.is_file()
+
+    await ws.send_json(
+        {
+            "id": 91,
+            "type": "haventory/items/bulk",
+            "operations": [
+                {"op_id": "d", "kind": "item_delete", "payload": {"item_id": item["id"]}}
+            ],
+        }
+    )
+    deleted = await ws.receive_json()
+    assert deleted["success"] is True, deleted
+    assert deleted["result"]["results"]["d"]["success"] is True, deleted
+
+    assert not path.exists()
+
+
+async def test_the_item_delete_service_deletes_the_item_files(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+) -> None:
+    """Only this mode dispatches a service: the offline stub has no registry."""
+
+    await _setup(hass)
+    client = await hass_client()
+    ws = await hass_ws_client(hass)
+    item = await _create_item(ws)
+    attachment = await _attach(ws, client, item)
+    path = media.attachment_path(
+        media.media_root(hass), item["id"], attachment["id"], attachment["mime"]
+    )
+    assert path.is_file()
+
+    await hass.services.async_call(DOMAIN, "item_delete", {"item_id": item["id"]}, blocking=True)
+    await hass.async_block_till_done()
+
+    assert not path.exists()
+
+
 async def test_setup_sweeps_a_file_no_metadata_references(
     hass: HomeAssistant, hass_storage: dict
 ) -> None:

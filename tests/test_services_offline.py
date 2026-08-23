@@ -18,6 +18,7 @@ import pytest
 import voluptuous as vol
 import yaml
 from custom_components.haventory import events as events_mod
+from custom_components.haventory import media as media_mod
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import EVENT_ITEM_CHANGED
 from custom_components.haventory.exceptions import (
@@ -26,6 +27,7 @@ from custom_components.haventory.exceptions import (
     StorageError,
     ValidationError,
 )
+from custom_components.haventory.models import AttachmentMeta, iso_utc_now, new_uuid4
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from homeassistant.core import HomeAssistant, SupportsResponse
@@ -603,3 +605,78 @@ async def test_the_bump_service_keeps_the_series_on_its_own_day() -> None:
     assert bumped["item"]["reminder_date"] == "2026-09-30"
     assert bumped["item"]["reminder_anchor"] == "2026-08-31"
     assert repo.get_item(item_id).reminder_anchor == "2026-08-31"
+
+
+# -----------------------------
+# The files of a deleted item
+#
+# `haventory.item_delete` removes an item the same way `haventory/item/delete`
+# does, so it owes the same files: unlinked once the write has landed, and left
+# where they are when it has not.
+# -----------------------------
+
+
+def _attachment_meta() -> AttachmentMeta:
+    return AttachmentMeta(
+        id=new_uuid4(),
+        kind="picture",
+        filename="photo.png",
+        mime="image/png",
+        size=16,
+        uploaded_at=iso_utc_now(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_item_delete_service_frees_the_files_after_the_save(monkeypatch) -> None:
+    hass = HomeAssistant()
+    repo = Repository()
+    install_runtime(hass, repository=repo)
+    store = DomainStore(hass)
+    runtime_of(hass).store = store
+    item = repo.create_item({"name": "Drill"})
+    meta = _attachment_meta()
+    repo.add_attachment(item.id, meta)
+
+    order: list[str] = []
+    unlinked: list[tuple[str, str]] = []
+
+    async def _spy_save(_payload):  # type: ignore[no-untyped-def]
+        order.append("save")
+
+    async def _spy_delete(_hass, pairs):  # type: ignore[no-untyped-def]
+        order.append("unlink")
+        unlinked.extend((item_id, str(entry.id)) for item_id, entry in pairs)
+
+    monkeypatch.setattr(store, "async_save", _spy_save)
+    monkeypatch.setattr(media_mod, "async_delete_attachments", _spy_delete)
+
+    await services_mod.service_item_delete(hass, {"item_id": str(item.id)})
+
+    assert order == ["save", "unlink"]
+    assert unlinked == [(str(item.id), str(meta.id))]
+
+
+@pytest.mark.asyncio
+async def test_item_delete_service_frees_nothing_when_the_save_fails(monkeypatch) -> None:
+    hass = HomeAssistant()
+    repo = Repository()
+    install_runtime(hass, repository=repo)
+    item = repo.create_item({"name": "Drill"})
+    repo.add_attachment(item.id, _attachment_meta())
+
+    unlinked: list[tuple[str, str]] = []
+
+    async def _spy_delete(_hass, pairs):  # type: ignore[no-untyped-def]
+        unlinked.extend((item_id, str(entry.id)) for item_id, entry in pairs)
+
+    async def _persist(_hass):  # type: ignore[no-untyped-def]
+        raise StorageError("disk full")
+
+    monkeypatch.setattr(media_mod, "async_delete_attachments", _spy_delete)
+    monkeypatch.setattr(services_mod, "async_persist_repo", _persist)
+
+    with pytest.raises(StorageError):
+        await services_mod.service_item_delete(hass, {"item_id": str(item.id)})
+
+    assert unlinked == []
