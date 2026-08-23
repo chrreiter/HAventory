@@ -268,6 +268,59 @@ describe('hv-full-view: the app bar between a phone and a wide desktop', () => {
       restore();
     }
   });
+
+  // Negative space is shared by shrink × basis, so a shrinkable heading takes a
+  // slice of every pixel the bar is over — and a slice of a fraction of a pixel
+  // is enough for the ellipsis to fire. At a 900px window in German the bar read
+  // "HAvento…" while the strip still had 188 of its 335px showing.
+  it('elides the heading at its own cap rather than at the first pixel of overflow', () => {
+    const wide = mediaBlock('@media (min-width: 701px)');
+    expect(wide).toMatch(/\.appbar h2 \{[^}]*flex: none/);
+    expect(wide).toMatch(/\.appbar h2 \{[^}]*max-width:/);
+    expect(wide).toMatch(/\.appbar h2 \{[^}]*text-overflow: ellipsis/);
+    // The strip is still what gives first, and the phone branch keeps the
+    // stretching heading its own row was written for.
+    expect(wide).toMatch(/\.appbar \.pills \{[^}]*flex-shrink: 100/);
+    expect(mediaBlock('@media (max-width: 700px)')).toMatch(/\.appbar h2 \{[^}]*flex: 1/);
+  });
+
+  // Both bars carried a spacer that the blanket rule hid at every width, so it
+  // drew nothing anywhere.
+  it('carries no spacer in the app bar, in either mode', async () => {
+    const { el, sr } = await mount({ items: flagged });
+    expect((q(sr, '.appbar') as HTMLElement).querySelector('.spacer')).toBe(null);
+
+    el.startSelecting = true;
+    el.open = false;
+    await el.updateComplete;
+    el.open = true;
+    await settle(el);
+    expect((q(sr, '[data-testid="selection-bar"]') as HTMLElement).querySelector('.spacer')).toBe(null);
+
+    const css = componentCss('hv-full-view');
+    expect(css).not.toMatch(/\.appbar \.spacer/);
+    // The phone panel's commit row is where the class still earns its keep.
+    expect(css).toMatch(/\.spacer \{[^}]*margin-left: auto/);
+  });
+
+  it('puts Clear selection at the right edge above the phone breakpoint', async () => {
+    const { el, sr } = await mount({ items: flagged });
+    el.startSelecting = true;
+    el.open = false;
+    await el.updateComplete;
+    el.open = true;
+    await settle(el);
+
+    // Styling it by data-testid would tie the stylesheet to the test hooks.
+    const clear = q(sr, '[data-testid="selection-clear"]') as HTMLButtonElement;
+    expect(clear.classList.contains('clear')).toBe(true);
+    expect(mediaBlock('@media (min-width: 701px)')).toMatch(
+      /\.appbar\.selecting \.clear \{[^}]*margin-left: auto/,
+    );
+    // Below it the count's flex:1 already holds the buttons at the edge, and an
+    // auto margin on a row that wraps is a phantom item.
+    expect(mediaBlock('@media (max-width: 700px)')).not.toMatch(/\.clear \{[^}]*margin-left: auto/);
+  });
 });
 
 describe('hv-full-view: shell', () => {
