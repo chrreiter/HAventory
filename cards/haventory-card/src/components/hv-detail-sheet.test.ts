@@ -1,4 +1,5 @@
 import './hv-detail-sheet';
+import { setLanguage } from '../i18n';
 import {
   all,
   componentCss,
@@ -1220,5 +1221,39 @@ describe('hv-detail-sheet: the id an automation names', () => {
 
     expect(q(el, '[data-testid="sheet-id"]')?.textContent?.trim()).toBe('i-8');
     expect(button(el).textContent?.trim()).toBe('Copy');
+  });
+});
+
+describe('hv-detail-sheet: the action pair', () => {
+  // The pair splits a phone's row in half — about 176px a side at 390px — and
+  // the sheet is what a phone user opens for every item.
+  it('names the editor alike in the header and the pill, in German', async () => {
+    setLanguage('de');
+    const el = await mount({ id: '1' });
+
+    const header = q(el, '[data-testid="sheet-edit"]')?.textContent?.trim();
+    expect(header).toBe('Bearbeiten');
+    // Two routes into one editor: the shorter of the two names fits the half,
+    // and the header already carries it.
+    expect(q(el, '[data-testid="sheet-edit-details"]')?.textContent?.trim()).toBe(header);
+  });
+
+  it('keeps the fuller English label on the pill', async () => {
+    const el = await mount({ id: '1' });
+
+    // The two are not held equal — only kept inside the half they are given.
+    expect(q(el, '[data-testid="sheet-edit-details"]')?.textContent?.trim()).toBe('Edit details');
+    expect(q(el, '[data-testid="sheet-edit"]')?.textContent?.trim()).toBe('Edit');
+  });
+
+  // jsdom lays out no shadow DOM, so the rule is read off the stylesheet.
+  it('lets the wider of the two labels take the room it needs', async () => {
+    await mount({ id: '1' });
+    const css = componentCss('hv-detail-sheet');
+
+    expect(css).toMatch(
+      /\.actions \.pair \{[^}]*grid-template-columns: minmax\(max-content, 1fr\) minmax\(max-content, 1fr\)/,
+    );
+    expect(css).toMatch(/\.actions \.pair > button \{[^}]*white-space: nowrap/);
   });
 });
