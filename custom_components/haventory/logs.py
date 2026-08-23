@@ -16,7 +16,7 @@ they keep writing `_LOGGER.warning("...", extra={...})`.
 The rendering is `key=value`, space separated, appended to the message — a shape
 `grep` and `awk` both take apart:
 
-    Repository persisted successfully op=persist_complete generation=7 elapsed_ms=12
+    Repository persisted successfully op=persist_complete elapsed_ms=12
 
 `domain` is the one field left out of the text: every record already carries the
 logger name it would repeat.
