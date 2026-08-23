@@ -1149,11 +1149,27 @@ def _validate_optional_text(
         raise ValidationError(f"{field_name} must be at most {max_length} characters")
 
 
+def validate_quantity(value: object) -> int:
+    """Return the quantity, or refuse the value with the one message there is.
+
+    Public because a caller that holds an unvalidated quantity before it holds
+    an item — `haventory/item/set_quantity` and the `items/bulk` row of the same
+    kind — checks the value first, so a payload that is wrong about both is
+    answered on the value rather than on the id.
+
+    Spelled out rather than through ``_is_int_not_bool`` so the comparison and
+    the return narrow to ``int``.
+    """
+
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValidationError("quantity must be an integer >= 0")
+    return value
+
+
 def _validate_item_core_fields(name: str, quantity: int, low_stock_threshold: int | None) -> None:
     if len(validate_required_name(name)) > NAME_MAX_LENGTH:
         raise ValidationError(f"name must be at most {NAME_MAX_LENGTH} characters")
-    if not _is_int_not_bool(quantity) or quantity < 0:
-        raise ValidationError("quantity must be an integer >= 0")
+    validate_quantity(quantity)
     if low_stock_threshold is not None and (
         not _is_int_not_bool(low_stock_threshold) or low_stock_threshold < 0
     ):
@@ -1185,14 +1201,10 @@ def create_item_from_create(
     # returns the trimmed value this stores.
     name = validate_required_name(payload.get("name"))
     description = payload.get("description")
-    # Type before conversion, for the same reason `name` is checked before
-    # `.strip()`: the command schema types `quantity` as `object`, and `int()`
-    # over a non-numeric string raises `ValueError`, which routes to
-    # `unknown_error` instead of naming the field.
-    raw_quantity = payload.get("quantity", 1)
-    if not _is_int_not_bool(raw_quantity):
-        raise ValidationError("quantity must be an integer >= 0")
-    quantity = int(raw_quantity)
+    # Type before use, for the same reason `name` is checked before `.strip()`:
+    # the command schema types `quantity` as `object`, and arithmetic over a
+    # non-integer routes to `unknown_error` instead of naming the field.
+    quantity = validate_quantity(payload.get("quantity", 1))
     status = validate_item_status(
         payload.get("status", DEFAULT_ITEM_STATUS), known_statuses=known_statuses
     )
@@ -1277,10 +1289,7 @@ def _update_name_and_description(new_item: Item, update: ItemUpdate) -> None:
 
 def _update_quantity(new_item: Item, update: ItemUpdate) -> None:
     if "quantity" in update:
-        q = update["quantity"]
-        if not _is_int_not_bool(q) or q < 0:
-            raise ValidationError("quantity must be an integer >= 0")
-        new_item.quantity = q
+        new_item.quantity = validate_quantity(update["quantity"])
 
 
 def _update_status(new_item: Item, update: ItemUpdate, known_statuses: Collection[str]) -> None:

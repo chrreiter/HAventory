@@ -70,6 +70,7 @@ from .models import (
     serialize_status_definition,
     validate_attachment_meta,
     validate_item_filter,
+    validate_quantity,
     validate_sort,
 )
 from .rate_limit import RateLimiter
@@ -378,9 +379,11 @@ def _op_item_set_quantity(
     hass: HomeAssistant, payload: dict[str, Any]
 ) -> tuple[dict[str, Any], str]:
     repo = _repo(hass)
+    # The quantity before the item id: a payload wrong about both is answered on
+    # the value, which is the answer both this op's callers give.
+    quantity = validate_quantity(payload.get("quantity"))
     item_id = _payload_item_id(payload)
-    qty = _payload_int(payload, "quantity")
-    updated = repo.set_quantity(item_id, qty, expected_version=payload.get("expected_version"))
+    updated = repo.set_quantity(item_id, quantity, expected_version=payload.get("expected_version"))
     return serialize_item(hass, updated), "quantity_changed"
 
 
