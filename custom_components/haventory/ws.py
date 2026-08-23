@@ -15,6 +15,7 @@ from typing import Any, cast
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.util import dt as dt_util
 
 try:
@@ -25,7 +26,6 @@ except ImportError:  # pragma: no cover - offline harness without the component
 from . import import_export, todo_bridge
 from . import media as media_mod
 from . import storage as storage_mod
-from .areas import async_get_area_registry
 from .const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
@@ -197,10 +197,10 @@ def ws_guard(
 
     def decorator(func: _WSHandler) -> _WSHandler:
         def _send_error(conn: websocket_api.ActiveConnection, err: dict[str, Any]) -> None:
+            # The envelope is returned to the caller whatever happens here: a
+            # connection that cannot be written to must not swallow the error.
             try:
-                send = getattr(conn, "send_message", None)
-                if callable(send):
-                    send(err)
+                conn.send_message(err)
             except Exception:  # pragma: no cover - defensive logging only
                 LOGGER.debug(
                     "Failed to send WS error message",
@@ -556,14 +556,9 @@ def _register_framework_unsub(
     command, so without an entry here HA core replies ``not_found``
     ("Subscription not found.") on every teardown — surfacing as an unhandled
     rejection in the card. Registering the id makes the standard lifecycle work.
-
-    The ``getattr``/``isinstance`` probe mirrors ``_register_close_listener`` so the
-    offline test stubs (which expose no ``subscriptions`` dict) are unaffected.
     """
 
-    subscriptions = getattr(conn, "subscriptions", None)
-    if isinstance(subscriptions, dict):
-        subscriptions[sub_id] = functools.partial(_drop_subscription, hass, conn, sub_id)
+    conn.subscriptions[sub_id] = functools.partial(_drop_subscription, hass, conn, sub_id)
 
 
 def _unregister_framework_unsub(conn: websocket_api.ActiveConnection, sub_id: int) -> None:
@@ -574,54 +569,28 @@ def _unregister_framework_unsub(conn: websocket_api.ActiveConnection, sub_id: in
     ``connection.subscriptions``.
     """
 
-    subscriptions = getattr(conn, "subscriptions", None)
-    if isinstance(subscriptions, dict):
-        subscriptions.pop(sub_id, None)
+    conn.subscriptions.pop(sub_id, None)
 
 
 def _register_close_listener(hass: HomeAssistant, conn: websocket_api.ActiveConnection) -> None:
-    """Attach cleanup to a connection close callback when available.
+    """Have the connection drop its subscriptions when it closes.
 
-    On real Home Assistant, ``ActiveConnection`` exposes a ``subscriptions``
-    dict whose values are invoked when the connection closes — registering
-    there is what prevents disconnected clients from leaking subscription
-    state. The ``on_close``/``add_close_callback`` probes support the offline
-    test stubs.
+    ``ActiveConnection.subscriptions`` holds zero-arg callbacks Home Assistant
+    invokes on disconnect, so registering there is what keeps a client that
+    vanishes from leaking subscription state.
 
     Idempotency is derived from the state itself, not stamped on the connection:
     real HA's ``ActiveConnection`` is ``__slots__``-based (no ``__dict__``), so a
-    ``conn._haventory_close_registered = True`` marker raises ``AttributeError`` on
-    every subscribe there — a benign-but-noisy exception the offline stubs never
-    surface because they carry a ``__dict__``. Our ``"haventory/cleanup"`` key and
-    the idempotent ``_cleanup_subscriptions_for_conn`` make repeat registration a
-    harmless no-op, so no marker is needed.
+    ``conn._haventory_close_registered = True`` marker would raise
+    ``AttributeError`` on every subscribe. The ``"haventory/cleanup"`` key — a
+    string, which cannot collide with HA's integer subscription ids — is the
+    marker instead, and ``_cleanup_subscriptions_for_conn`` is idempotent.
     """
 
-    subscriptions = getattr(conn, "subscriptions", None)
-    if isinstance(subscriptions, dict):
-        # Real-HA path. String key cannot collide with HA's integer subscription
-        # ids; its presence is also the "already registered" marker.
-        if "haventory/cleanup" not in subscriptions:
-            subscriptions["haventory/cleanup"] = functools.partial(
-                _cleanup_subscriptions_for_conn, hass, conn
-            )
-        return
-
-    # Offline-stub path: connections expose on_close / add_close_callback instead of
-    # a subscriptions dict. `_cleanup_subscriptions_for_conn` is idempotent, so even a
-    # repeat registration here only ever removes the (already-removed) bucket.
-    closer = getattr(conn, "on_close", None)
-    if not callable(closer):
-        closer = getattr(conn, "add_close_callback", None)
-    if callable(closer):
-        try:
-            closer(lambda: _cleanup_subscriptions_for_conn(hass, conn))
-        except Exception:  # pragma: no cover - defensive
-            LOGGER.debug(
-                "Failed to register WS close listener",
-                extra={"domain": DOMAIN, "op": "subscribe_close_hook"},
-                exc_info=True,
-            )
+    if "haventory/cleanup" not in conn.subscriptions:
+        conn.subscriptions["haventory/cleanup"] = functools.partial(
+            _cleanup_subscriptions_for_conn, hass, conn
+        )
 
 
 def _now_ts() -> str:
@@ -631,16 +600,10 @@ def _now_ts() -> str:
 def _send_event_message(
     conn: websocket_api.ActiveConnection, subscription_id: int, event_payload: dict[str, Any]
 ) -> None:
+    # One dead connection must not stop the fan-out reaching the others, so the
+    # failure is logged here rather than raised into the broadcast loop.
     try:
-        msg = {"id": subscription_id, "type": "event", "event": event_payload}
-        send = getattr(conn, "send_message", None)
-        if callable(send):
-            send(msg)
-            return
-        async_send = getattr(conn, "async_send_message", None)
-        if callable(async_send):  # pragma: no cover - alternate interface
-            # Fire and forget in tests; assume sync in stub
-            async_send(msg)
+        conn.send_message({"id": subscription_id, "type": "event", "event": event_payload})
     except Exception:  # pragma: no cover - defensive logging only
         LOGGER.debug(
             "Failed to send WS event message",
@@ -1913,7 +1876,7 @@ async def ws_location_create(
     # Validate area_id against HA area registry when provided
     area_id = msg.get("area_id") if "area_id" in msg else None
     if area_id is not None:
-        reg = await async_get_area_registry(hass)
+        reg = ar.async_get(hass)
         if reg.async_get_area(area_id) is None:
             raise ValidationError("unknown area_id")
     loc = _repo(hass).create_location(
@@ -1954,8 +1917,11 @@ async def ws_location_update(
     new_parent = msg["new_parent_id"] if "new_parent_id" in msg else UNSET
     area_id = msg["area_id"] if "area_id" in msg else UNSET
     if area_id is not UNSET and area_id is not None:
-        reg = await async_get_area_registry(hass)
-        if reg.async_get_area(area_id) is None:
+        reg = ar.async_get(hass)
+        # Whatever the frame carried: the command schema types `area_id`
+        # `object`, and the registry lookup is what refuses a value it has no
+        # area for.
+        if reg.async_get_area(cast("str", area_id)) is None:
             raise ValidationError("unknown area_id")
     repo = _repo(hass)
     before = repo.get_location(msg["location_id"])
@@ -2252,7 +2218,7 @@ async def ws_status_delete(
 async def ws_areas_list(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    reg = await async_get_area_registry(hass)
+    reg = ar.async_get(hass)
     entries = reg.async_list_areas()
     areas = [{"id": a.id, "name": a.name} for a in entries]
     conn.send_message(websocket_api.result_message(msg.get("id", 0), {"areas": areas}))
@@ -2444,64 +2410,61 @@ async def ws_import_execute(
 # -----------------------------
 
 
+# Every command this integration serves. Home Assistant keys its command
+# registry by command type, so registering the list again — which a reload does
+# — replaces each handler rather than adding a second one.
+HANDLERS: tuple[Any, ...] = (
+    ws_ping,
+    ws_version,
+    ws_config,
+    ws_stats,
+    ws_distinct_values,
+    ws_health,
+    ws_subscribe,
+    ws_unsubscribe,
+    ws_item_create,
+    ws_item_get,
+    ws_item_update,
+    ws_item_delete,
+    ws_item_adjust_quantity,
+    ws_item_set_quantity,
+    ws_item_check_out,
+    ws_item_check_in,
+    ws_reminder_set,
+    ws_reminder_clear,
+    ws_reminder_bump,
+    ws_item_add_tags,
+    ws_item_remove_tags,
+    ws_item_update_custom_fields,
+    ws_item_set_low_stock_threshold,
+    ws_item_attachment_add,
+    ws_item_attachment_remove,
+    ws_item_attachment_update,
+    ws_item_attachment_reorder,
+    ws_item_move,
+    ws_items_bulk,
+    ws_item_list,
+    ws_location_create,
+    ws_location_get,
+    ws_location_update,
+    ws_location_delete,
+    ws_location_list,
+    ws_location_tree,
+    ws_location_move_subtree,
+    ws_status_list,
+    ws_status_create,
+    ws_status_update,
+    ws_status_reorder,
+    ws_status_delete,
+    ws_areas_list,
+    ws_export,
+    ws_import_preview,
+    ws_import_execute,
+)
+
+
 def setup(hass: HomeAssistant) -> None:
-    # Idempotent: avoid duplicate registration across reloads
-    bucket = hass.data.setdefault(DOMAIN, {})
-    if bucket.get("ws_registered"):
-        return
+    """Register every HAventory WebSocket command."""
 
-    handlers = [
-        ws_ping,
-        ws_version,
-        ws_config,
-        ws_stats,
-        ws_distinct_values,
-        ws_health,
-        ws_subscribe,
-        ws_unsubscribe,
-        ws_item_create,
-        ws_item_get,
-        ws_item_update,
-        ws_item_delete,
-        ws_item_adjust_quantity,
-        ws_item_set_quantity,
-        ws_item_check_out,
-        ws_item_check_in,
-        ws_reminder_set,
-        ws_reminder_clear,
-        ws_reminder_bump,
-        ws_item_add_tags,
-        ws_item_remove_tags,
-        ws_item_update_custom_fields,
-        ws_item_set_low_stock_threshold,
-        ws_item_attachment_add,
-        ws_item_attachment_remove,
-        ws_item_attachment_update,
-        ws_item_attachment_reorder,
-        ws_item_move,
-        ws_items_bulk,
-        ws_item_list,
-        ws_location_create,
-        ws_location_get,
-        ws_location_update,
-        ws_location_delete,
-        ws_location_list,
-        ws_location_tree,
-        ws_location_move_subtree,
-        ws_status_list,
-        ws_status_create,
-        ws_status_update,
-        ws_status_reorder,
-        ws_status_delete,
-        ws_areas_list,
-        ws_export,
-        ws_import_preview,
-        ws_import_execute,
-    ]
-
-    for h in handlers:
-        websocket_api.async_register_command(hass, h)
-
-    # Track our handlers for test stubs cleanup during unload
-    bucket["ws_handlers"] = handlers
-    bucket["ws_registered"] = True
+    for handler in HANDLERS:
+        websocket_api.async_register_command(hass, handler)

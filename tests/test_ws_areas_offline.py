@@ -7,9 +7,9 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.areas import async_get_area_registry
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 
 from runtime_helpers import install_runtime
 from ws_helpers import ws_send
@@ -24,7 +24,7 @@ async def test_ws_areas_list_returns_registry_entries() -> None:
     ws_setup(hass)
 
     # Seed HA's area registry stub
-    reg = await async_get_area_registry(hass)
+    reg = ar.async_get(hass)
     reg._add("a1", "Garage")  # type: ignore[attr-defined]
     reg._add("a2", "Office")  # type: ignore[attr-defined]
 

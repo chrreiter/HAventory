@@ -101,23 +101,19 @@ async def async_setup(hass: HomeAssistant, entry: ConfigEntry) -> None:
     runtime.todo.links = await _async_load_links(store)
     apply_options(hass, entry)
 
-    on_unload = getattr(entry, "async_on_unload", None)
-    bus = getattr(hass, "bus", None)
-    listen = getattr(bus, "async_listen", None)
-    if callable(listen) and callable(on_unload):
-        # The public automation surface rather than a hook in every mutation
-        # handler. Both events, because neither covers the other: a rename or a
-        # quantity edit that leaves an item low fires only `item_changed`, and
-        # the bulk path — which passes no item — fires only `low_stock`. A
-        # mutation firing both runs the pass twice, and the second finds the
-        # list already converged and calls nothing.
-        async def _on_inventory_event(_event: Any) -> None:
-            await async_reconcile(hass)
+    # The public automation surface rather than a hook in every mutation
+    # handler. Both events, because neither covers the other: a rename or a
+    # quantity edit that leaves an item low fires only `item_changed`, and the
+    # bulk path — which passes no item — fires only `low_stock`. A mutation
+    # firing both runs the pass twice, and the second finds the list already
+    # converged and calls nothing.
+    async def _on_inventory_event(_event: Any) -> None:
+        await async_reconcile(hass)
 
-        for event_type in (EVENT_ITEM_CHANGED, EVENT_LOW_STOCK):
-            on_unload(listen(event_type, _on_inventory_event))
+    for event_type in (EVENT_ITEM_CHANGED, EVENT_LOW_STOCK):
+        entry.async_on_unload(hass.bus.async_listen(event_type, _on_inventory_event))
 
-    if getattr(hass, "is_running", True) or not (callable(listen) and callable(on_unload)):
+    if hass.is_running:
         await async_reconcile(hass)
         return
 
@@ -144,8 +140,8 @@ async def async_setup(hass: HomeAssistant, entry: ConfigEntry) -> None:
         _stop_waiting_for_start()
         await async_reconcile(hass)
 
-    remove_started = listen(EVENT_HOMEASSISTANT_STARTED, _on_started)
-    on_unload(_stop_waiting_for_start)
+    remove_started = hass.bus.async_listen(EVENT_HOMEASSISTANT_STARTED, _on_started)
+    entry.async_on_unload(_stop_waiting_for_start)
 
 
 async def async_reconcile(hass: HomeAssistant) -> None:

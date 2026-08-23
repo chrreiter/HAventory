@@ -135,16 +135,6 @@ _CORRUPT_SAMPLE_IDS = 3
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
-async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
-    """Set up the HAventory domain at Home Assistant startup.
-
-    Initializes an empty domain bucket in hass.data with no side effects.
-    """
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
-    return True
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) -> bool:
     """Set up HAventory from a config entry."""
     if DOMAIN not in hass.data:
@@ -194,12 +184,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
     _register_media_view(hass)
     await _async_sweep_orphaned_media(hass, repository)
 
-    # Re-read the options when they change. Guarded with getattr so the
-    # minimal offline-test ConfigEntry stubs keep working.
-    add_listener = getattr(entry, "add_update_listener", None)
-    on_unload = getattr(entry, "async_on_unload", None)
-    if callable(add_listener) and callable(on_unload):
-        on_unload(add_listener(_async_options_updated))
+    # Re-read the options when they change, and stop listening with the entry.
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
     # The shopping-list bridge, after the repository it reads and the update
     # listener above: its first pass needs the low-stock set, and an options
@@ -212,10 +198,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
     # Register WebSocket commands
     ws_mod.setup(hass)
 
-    # Entity platforms, after the repository is in the bucket the entities read
-    # so the first state write has data. Guarded like the update-listener wiring
-    # below: the offline HomeAssistant stub has no `config_entries`.
-    await _async_forward_platforms(hass, entry)
+    # Entity platforms, after the repository is on the entry the entities read
+    # so the first state write has data.
+    await hass.config_entries.async_forward_entry_setups(entry, list(PLATFORMS))
 
     # Serve the bundled card and point the frontend at it
     await _register_frontend_module(hass)
@@ -371,26 +356,6 @@ async def _async_settle_lossy_load(
     )
 
 
-async def _async_forward_platforms(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Set up the entity platforms this entry owns, where there are any."""
-
-    config_entries = getattr(hass, "config_entries", None)
-    forward = getattr(config_entries, "async_forward_entry_setups", None)
-    if forward is None:
-        return
-    await forward(entry, list(PLATFORMS))
-
-
-async def _async_unload_platforms(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Take the entity platforms down before the bucket they read is emptied."""
-
-    config_entries = getattr(hass, "config_entries", None)
-    unload = getattr(config_entries, "async_unload_platforms", None)
-    if unload is None:
-        return True
-    return bool(await unload(entry, list(PLATFORMS)))
-
-
 def _register_media_view(hass: HomeAssistant) -> None:
     """Serve `/api/haventory/media/...`, at most once per Home Assistant run.
 
@@ -521,37 +486,6 @@ async def _async_flush_pending_writes(hass: HomeAssistant, *, op: str) -> None:
         )
 
 
-def _cleanup_ws_test_stub_registry(hass: HomeAssistant) -> None:
-    """Take our handlers back out of the offline stub's command registry.
-
-    Real Home Assistant has no API for this, which is why teardown drops the
-    runtime instead; the stub does, and leaving handlers in its list would carry
-    them into the next test.
-    """
-
-    bucket = hass.data.get(DOMAIN) or {}
-    try:  # pragma: no cover - exercised in offline tests only
-        registry = hass.data.get("__ws_commands__")
-        handlers = bucket.get("ws_handlers") or []
-        if isinstance(registry, list) and handlers:
-            for h in handlers:
-                try:
-                    while h in registry:
-                        registry.remove(h)
-                except ValueError:  # pragma: no cover - defensive
-                    LOGGER.debug(
-                        "Failed to remove a WS handler from test stub registry",
-                        extra={"domain": DOMAIN, "op": "unload_ws_stub_cleanup"},
-                    )
-                    break
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.debug(
-            "Failed to cleanup WS handlers from test stub registry",
-            extra={"domain": DOMAIN, "op": "unload_ws_stub_cleanup"},
-            exc_info=True,
-        )
-
-
 async def _async_teardown_entry(hass: HomeAssistant, *, op: str, release_panel: bool) -> None:
     """Give up everything the config entry owns, in the order that keeps it safe.
 
@@ -587,8 +521,6 @@ async def _async_teardown_entry(hass: HomeAssistant, *, op: str, release_panel: 
     if release_panel:
         _remove_sidebar_panel(hass)
 
-    _forget_registration_flags(hass)
-
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry.
@@ -604,42 +536,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloads, and a reload leaves it alone.
     """
 
-    # Ahead of the teardown, which empties the bucket the handler list lives in.
-    _cleanup_ws_test_stub_registry(hass)
-
-    # Before the teardown too: the entities read the repository out of that
-    # bucket, and an entity still registered against an emptied one reports
-    # unavailable rather than being gone.
-    unloaded = await _async_unload_platforms(hass, entry)
+    # Ahead of the teardown that gives up the repository the entities read: an
+    # entity still registered against a released one reports unavailable rather
+    # than being gone.
+    unloaded = bool(await hass.config_entries.async_unload_platforms(entry, list(PLATFORMS)))
 
     disabled = getattr(entry, "disabled_by", None) is not None
     await _async_teardown_entry(hass, op="unload", release_panel=disabled)
 
     return unloaded
-
-
-def _forget_registration_flags(hass: HomeAssistant) -> None:
-    """Forget that the WebSocket commands and services were registered.
-
-    Not the runtime — Home Assistant takes that back itself, and a command
-    refuses from the moment the entry stops being `LOADED`. What is left here is
-    bookkeeping: Home Assistant has no API for unregistering a WebSocket command
-    or a service, so the next setup re-registers over the top, and the offline
-    stub registry — which *can* unregister — needs the handler list at this point
-    to take ours back out.
-
-    `_STATIC_PATH_KEY` and `_MEDIA_VIEW_KEY` stay: each records an aiohttp route,
-    which cannot be unregistered and so outlives every entry. Dropping either
-    flag would make the next setup in the same run register the same route a
-    second time.
-    """
-
-    bucket = hass.data.get(DOMAIN)
-    if not isinstance(bucket, dict):
-        return
-
-    for key in ("ws_registered", "services_registered", "ws_handlers"):
-        bucket.pop(key, None)
 
 
 async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
@@ -1260,17 +1165,9 @@ def _clear_lossy_load_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     Returns early when there is nothing to spend, so the ordinary boot — every
     boot — does not write the entry back unchanged.
-
-    Guarded with getattr for the offline test harness, whose HomeAssistant stub
-    has no config-entry registry — the same reason the platform forwarding is.
     """
 
     if not _lossy_load_allowed(entry):
-        return
-
-    config_entries = getattr(hass, "config_entries", None)
-    update = getattr(config_entries, "async_update_entry", None)
-    if not callable(update):
         return
 
     options = {
@@ -1278,7 +1175,7 @@ def _clear_lossy_load_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
         for key, value in (getattr(entry, "options", None) or {}).items()
         if key != CONF_ALLOW_LOSSY_LOAD
     }
-    update(entry, options=options)
+    hass.config_entries.async_update_entry(entry, options=options)
 
 
 def _corrupt_store_message(report: LoadReport, *, store_key: str) -> str:

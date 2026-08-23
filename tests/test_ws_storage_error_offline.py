@@ -32,13 +32,6 @@ from runtime_helpers import install_runtime, runtime_of
 from ws_helpers import RecordingConn, ws_send
 
 
-class _ConnStub(RecordingConn):
-    """Accepts a close callback and drops it: nothing here drives disconnect."""
-
-    def on_close(self, callback: Callable[[], None]) -> None:
-        pass
-
-
 def _make_hass() -> tuple[HomeAssistant, Repository, DomainStore]:
     hass = HomeAssistant()
     repo = Repository()
@@ -172,7 +165,7 @@ async def test_failed_persist_delivers_no_event(
     child = repo.create_location(name="Garage", parent_id=str(parent.id))
     item = repo.create_item({"name": "Seeded", "quantity": 3, "tags": ["seed"]})
 
-    conn = _ConnStub()
+    conn = RecordingConn()
     for sub_id, topic in ((901, "items"), (902, "locations"), (903, "stats")):
         res = await ws_send(hass, sub_id, "haventory/subscribe", conn=conn, topic=topic)
         assert res["success"] is True
@@ -200,7 +193,7 @@ async def test_failed_persist_in_bulk_discards_the_whole_batch(monkeypatch, capl
     first = repo.create_item({"name": "One", "quantity": 1})
     second = repo.create_item({"name": "Two", "quantity": 1})
 
-    conn = _ConnStub()
+    conn = RecordingConn()
     await ws_send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
     conn.messages.clear()
 
@@ -248,7 +241,7 @@ async def test_event_reaches_subscriber_only_after_the_write_resolves(monkeypatc
 
     hass, _repo, store = _make_hass()
 
-    conn = _ConnStub()
+    conn = RecordingConn()
     await ws_send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
     conn.messages.clear()
 

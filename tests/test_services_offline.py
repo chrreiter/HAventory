@@ -163,26 +163,12 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
 
     hass = HomeAssistant()
 
-    # Provide a minimal services registry stub with async_register behavior
-    class _Services:
-        def __init__(self) -> None:
-            self._registered: list[tuple[str, str, object, object]] = []
-            self._responses: dict[str, object] = {}
-
-        def async_register(  # type: ignore[no-untyped-def]
-            self, domain, name, handler, schema=None, *, supports_response=SupportsResponse.NONE
-        ):
-            self._registered.append((domain, name, handler, schema))
-            self._responses[name] = supports_response
-
-    hass.services = _Services()  # type: ignore[attr-defined]
-
     # Wire repository and store
     install_runtime(hass)
 
     services_mod.setup(hass)
     # Ensure all expected services are registered
-    names = {n for (_d, n, _h, _s) in hass.services._registered}
+    names = {name for (_d, name, _h, _s, _r) in hass.services.registered}
     assert {
         "item_create",
         "item_update",
@@ -200,7 +186,7 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
     # OPTIONAL on every service: a caller passing `response_variable` gets the
     # entity back, and one that omits it is unaffected. ONLY would break every
     # existing automation that calls these without asking for a response.
-    assert set(hass.services._responses.values()) == {SupportsResponse.OPTIONAL}
+    assert {r for (_d, _n, _h, _s, r) in hass.services.registered} == {SupportsResponse.OPTIONAL}
 
     # Home Assistant classifies each handler with HassJob and dispatches anything
     # that is neither a coroutine function nor a @callback to the executor, where
@@ -208,7 +194,9 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
     # `async def` is what keeps the service from silently doing nothing; the
     # end-to-end proof lives in tests/integration/test_services.py.
     not_awaitable = [
-        n for (_d, n, h, _s) in hass.services._registered if not inspect.iscoroutinefunction(h)
+        name
+        for (_d, name, h, _s, _r) in hass.services.registered
+        if not inspect.iscoroutinefunction(h)
     ]
     assert not not_awaitable
 
@@ -216,8 +204,8 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
     caplog.clear()
     caplog.set_level("WARNING")
     # Find item_update handler
-    _domain, _name, handler, _schema = next(
-        r for r in hass.services._registered if r[1] == "item_update"
+    _domain, _name, handler, _schema, _response = next(
+        r for r in hass.services.registered if r[1] == "item_update"
     )
 
     class _Call:

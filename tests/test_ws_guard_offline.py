@@ -25,11 +25,10 @@ from ws_helpers import ws_send
 def _get_handler(
     hass: HomeAssistant, type_: str
 ) -> Callable[[HomeAssistant, object, dict], Coroutine[Any, Any, dict]]:
-    handlers = hass.data.get("__ws_commands__", [])
-    for h in handlers:
-        if callable(h) and getattr(h, "_ws_command", None) == type_:
-            return h
-    raise AssertionError("No handler found for type " + type_)
+    handler = hass.data.get("__ws_commands__", {}).get(type_)
+    if handler is None:
+        raise AssertionError("No handler found for type " + type_)
+    return handler
 
 
 class _ConnCollect:

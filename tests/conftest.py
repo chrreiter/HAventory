@@ -95,6 +95,24 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     ha_const.STATE_UNKNOWN = "unknown"
     sys.modules["homeassistant.const"] = ha_const
 
+    # homeassistant.exceptions — ahead of the core stubs, whose service registry
+    # raises HomeAssistantError the way a refusing service does.
+    ha_exceptions = types.ModuleType("homeassistant.exceptions")
+
+    class HomeAssistantError(Exception):  # type: ignore[override]
+        pass
+
+    class ConfigEntryNotReady(HomeAssistantError):  # type: ignore[override]
+        pass
+
+    class ConfigEntryError(HomeAssistantError):  # type: ignore[override]
+        pass
+
+    ha_exceptions.HomeAssistantError = HomeAssistantError
+    ha_exceptions.ConfigEntryNotReady = ConfigEntryNotReady
+    ha_exceptions.ConfigEntryError = ConfigEntryError
+    sys.modules["homeassistant.exceptions"] = ha_exceptions
+
     # homeassistant.core
     ha_core = types.ModuleType("homeassistant.core")
 
@@ -206,6 +224,8 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def __init__(self) -> None:
             self._entries: list = []
             self.updates: list[dict] = []
+            self.forwarded: list[tuple] = []
+            self.unloaded: list[tuple] = []
 
         def async_entries(self, domain=None):
             if domain is None:
@@ -229,6 +249,88 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             if entry in self._entries:
                 self._entries.remove(entry)
 
+        async def async_forward_entry_setups(self, entry, platforms) -> None:
+            """Take note of the platforms the entry asked for.
+
+            Offline there is no entity platform to run — the entities are
+            asserted in the phacc suite — so recording the request is the whole
+            behaviour.
+            """
+
+            self.forwarded.append((entry, list(platforms)))
+
+        async def async_unload_platforms(self, entry, platforms) -> bool:
+            self.unloaded.append((entry, list(platforms)))
+            return True
+
+    class _Services:  # type: ignore[override]
+        """Stand in for HA's service registry: what is registered, and what is called.
+
+        Registration is recorded, not dispatched: offline a test invokes a
+        handler itself, so what this pins is *that* a service is registered and
+        with which schema. How Home Assistant classifies and dispatches to the
+        handler is asserted in the phacc suite instead.
+
+        ``async_call`` is the other direction — the ``todo.*`` calls the
+        shopping-list bridge makes. ``refuse`` makes a named service answer the
+        way one that cannot do what it is asked does.
+        """
+
+        def __init__(self) -> None:
+            self.registered: list[tuple[str, str, object, object, object]] = []
+            self.calls: list[tuple[str, dict]] = []
+            self.refuse: set[str] = set()
+
+        def async_register(  # type: ignore[no-untyped-def]
+            self, domain, service, handler, schema=None, *, supports_response=None
+        ) -> None:
+            # Real HA keys the registry by domain and service name, so a second
+            # registration replaces the first rather than adding one.
+            self.registered = [entry for entry in self.registered if entry[:2] != (domain, service)]
+            self.registered.append((domain, service, handler, schema, supports_response))
+
+        def has_service(self, domain: str, service: str) -> bool:
+            return any(entry[:2] == (domain, service) for entry in self.registered)
+
+        async def async_call(  # type: ignore[no-untyped-def]
+            self, domain, service, data=None, blocking=False, **_kwargs
+        ) -> None:
+            self.calls.append((f"{domain}.{service}", dict(data or {})))
+            if service in self.refuse:
+                raise HomeAssistantError(f"{service} refused")
+
+        @property
+        def called(self) -> list[str]:
+            """The services called so far, oldest first, as ``domain.service``."""
+
+            return [name for name, _data in self.calls]
+
+        def clear(self) -> None:
+            self.calls.clear()
+
+    class _Http:  # type: ignore[override]
+        """Stand in for ``hass.http``, with aiohttp's one hard rule.
+
+        aiohttp cannot unregister a route and refuses a second one on the same
+        path, so a duplicate static path raises here rather than being recorded
+        — which is what makes "registered at most once per run" assertable.
+        """
+
+        def __init__(self) -> None:
+            self.static_paths: list = []
+            self.static_path_calls = 0
+            self.views: list = []
+
+        async def async_register_static_paths(self, configs) -> None:
+            self.static_path_calls += 1
+            for config in configs:
+                if any(existing.url_path == config.url_path for existing in self.static_paths):
+                    raise RuntimeError(f"Duplicate static path: {config.url_path}")
+                self.static_paths.append(config)
+
+        def register_view(self, view) -> None:
+            self.views.append(view)
+
     class HomeAssistant:  # type: ignore[override]
         def __init__(self) -> None:
             self.data = {}
@@ -249,6 +351,11 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             # resolves it through here. A test that wants a loaded HAventory
             # calls `install_runtime(hass)`, which registers one.
             self.config_entries = _ConfigEntries()
+            self.services = _Services()
+            self.http = _Http()
+            # What was handed to a worker thread, in order. A test telling an
+            # event-loop file read apart from an offloaded one reads this.
+            self.executor_jobs: list = []
 
         def async_create_background_task(self, target, name, eager_start=True):
             """Stand in for HA's tracked-task helper; the real one also cancels on shutdown."""
@@ -260,6 +367,7 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             Running the callable on a genuine worker thread keeps the offline suite
             honest about what does and does not touch the event loop thread.
             """
+            self.executor_jobs.append(target)
             return await asyncio.get_running_loop().run_in_executor(None, target, *args)
 
     class ServiceCall:  # type: ignore[override]
@@ -301,23 +409,6 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     ha_core.SupportsResponse = SupportsResponse
     ha_core.callback = callback
     sys.modules["homeassistant.core"] = ha_core
-
-    # homeassistant.exceptions
-    ha_exceptions = types.ModuleType("homeassistant.exceptions")
-
-    class HomeAssistantError(Exception):  # type: ignore[override]
-        pass
-
-    class ConfigEntryNotReady(HomeAssistantError):  # type: ignore[override]
-        pass
-
-    class ConfigEntryError(HomeAssistantError):  # type: ignore[override]
-        pass
-
-    ha_exceptions.HomeAssistantError = HomeAssistantError
-    ha_exceptions.ConfigEntryNotReady = ConfigEntryNotReady
-    ha_exceptions.ConfigEntryError = ConfigEntryError
-    sys.modules["homeassistant.exceptions"] = ha_exceptions
 
     # homeassistant.config_entries
     ha_config_entries = types.ModuleType("homeassistant.config_entries")
@@ -727,7 +818,10 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             return None, error_message(iden, ERR_INVALID_FORMAT, humanize_error(msg, err))
 
     def async_register_command(hass: HomeAssistant, handler):  # type: ignore[override]
-        registry = hass.data.setdefault("__ws_commands__", [])
+        # Keyed by command type, as real HA keys it: registering a command a
+        # second time replaces the first handler rather than adding one, which
+        # is what makes a reload leave one handler per command.
+        registry = hass.data.setdefault("__ws_commands__", {})
 
         if not hasattr(handler, "_ws_schema"):
             # Real HA reads the same attributes off the handler and fails here
@@ -743,6 +837,9 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
                 class _StubConn:  # simple capture stub used in offline tests
                     def __init__(self) -> None:
                         self.last = None
+                        # HA's own per-connection teardown registry, which the
+                        # subscribe path writes into.
+                        self.subscriptions: dict = {}
 
                     def send_message(self, m):
                         self.last = m
@@ -777,7 +874,7 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             except Exception:
                 pass
 
-        registry.append(_wrapped)
+        registry[handler._ws_command] = _wrapped
 
     ha_ws.BASE_COMMAND_MESSAGE_SCHEMA = BASE_COMMAND_MESSAGE_SCHEMA
     ha_ws.ERR_INVALID_FORMAT = ERR_INVALID_FORMAT
@@ -947,7 +1044,7 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def async_list_areas(self):
             return list(self._areas.values())
 
-    async def async_get(hass: HomeAssistant):  # type: ignore[override]
+    def async_get(hass: HomeAssistant):  # type: ignore[override]
         registry = hass.data.get("__area_registry__")
         if registry is None:
             registry = _AreaRegistry()

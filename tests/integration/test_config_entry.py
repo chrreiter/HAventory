@@ -78,8 +78,6 @@ async def test_config_entry_setup_and_unload(hass: HomeAssistant) -> None:
     # thing only a real core can be asked to prove.
     assert not hasattr(entry, "runtime_data")
     assert find_runtime(hass) is None
-    # Ephemeral registration flags are cleared on unload.
-    assert hass.data[DOMAIN].get("ws_registered") is None
 
 
 async def test_unloaded_entry_leaves_the_ws_api_refusing(

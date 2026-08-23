@@ -26,7 +26,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable
+    from collections.abc import Awaitable, Callable
 
     from homeassistant.core import HomeAssistant
 
@@ -42,17 +42,40 @@ class WsHandler(Protocol):
 
 
 class RecordingConn:
-    """Stands in for HA's ``ActiveConnection``, keeping everything sent to it.
+    """Stands in for HA's ``ActiveConnection``: what was sent, and what is subscribed.
 
-    Only the surface a handler touches on the way out. A test that needs more —
-    a subscription registry, close callbacks — subclasses this and adds it.
+    ``subscriptions`` is HA's own registry — message id to zero-arg teardown —
+    which core's ``unsubscribe_events`` command and the disconnect path both
+    drive. :meth:`core_unsubscribe_events` is that command and :meth:`close` is
+    that disconnect, so a test drives either teardown the way the framework
+    does.
     """
 
     def __init__(self) -> None:
         self.messages: list[dict[str, Any]] = []
+        self.subscriptions: dict[Any, Callable[[], None]] = {}
 
     def send_message(self, msg: dict[str, Any]) -> None:
         self.messages.append(msg)
+
+    def core_unsubscribe_events(self, subscription: int) -> bool:
+        """Pop-and-call one teardown, as core's ``unsubscribe_events`` does.
+
+        ``False`` for an id the registry does not hold — the ``not_found`` core
+        answers a teardown it cannot resolve.
+        """
+
+        if subscription in self.subscriptions:
+            self.subscriptions.pop(subscription)()
+            return True
+        return False
+
+    def close(self) -> None:
+        """Disconnect: every registered teardown runs, then the registry empties."""
+
+        for unsub in list(self.subscriptions.values()):
+            unsub()
+        self.subscriptions.clear()
 
     def events(self, *, topic: str | None = None) -> list[dict[str, Any]]:
         """The event payloads pushed on this connection, oldest first.
@@ -75,10 +98,10 @@ class RecordingConn:
 def ws_handler(hass: HomeAssistant, type_: str) -> WsHandler:
     """The registered handler for one command type, as HA would dispatch to it."""
 
-    for handler in hass.data.get("__ws_commands__", []):
-        if callable(handler) and getattr(handler, "_ws_command", None) == type_:
-            return handler
-    raise AssertionError(f"No handler registered for type {type_}")
+    handler = hass.data.get("__ws_commands__", {}).get(type_)
+    if handler is None:
+        raise AssertionError(f"No handler registered for type {type_}")
+    return handler
 
 
 async def ws_call(

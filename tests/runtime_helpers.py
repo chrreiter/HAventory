@@ -30,7 +30,6 @@ from typing import Any
 
 from custom_components.haventory import (
     async_remove_entry,
-    async_setup,
     async_setup_entry,
     async_unload_entry,
 )
@@ -122,7 +121,6 @@ async def setup_entry(hass: HomeAssistant, entry: Any = None, **kwargs: Any) -> 
         entry = ConfigEntry(**kwargs)
     entry.state = ConfigEntryState.SETUP_IN_PROGRESS
     hass.config_entries.add(entry)
-    await async_setup(hass, {})
     ok = await async_setup_entry(hass, entry)
     entry.state = ConfigEntryState.LOADED if ok else ConfigEntryState.SETUP_ERROR
     assert ok is True, "async_setup_entry did not report success"
