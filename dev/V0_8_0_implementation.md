@@ -34,8 +34,8 @@ short local session per user-visible PR.
 
 The owner's total involvement, by design:
 
-1. **Pre-flight** (§2) — eight decisions, most of them a yes to a recommendation; the
-   first is needed before M2 is pasted, the rest before the session that names them.
+1. **Pre-flight** (§2) — eight decisions, all taken on 2026-08-23; the verdicts are in
+   the file, so no session has to ask.
 2. **Paste one prompt per session** — ten pastes: M1–M6, L1, M7, L2, Z.
 3. **Read each handover** (the last message of the session and the comment it leaves on
    #236) and run its hand-test list.
@@ -152,7 +152,7 @@ repeat the gate in five places and the two test modes in four (§6.M6 carries th
   reason is HA Cast, which ignores `extra_js_url`. A real cost for a real household. Keep.
 - **The desktop in-place editor expander** (`editorTemplate`/`editorEpoch`, ≈110 lines):
   removing it moves the form above the list on a desktop card. A product change, not a
-  subtraction. Keep, unless §2 item 3 says otherwise.
+  subtraction. Keep (§2 item 3).
 - **The card's mirror of the backend's size caps** (`ui/item-form.ts`): deleting it turns
   an inline field error into a Save-time banner. Keep.
 - **A native `<datalist>` for the category combobox**: the editor's own comment records
@@ -228,44 +228,49 @@ Recorded as comments on the issues; the short version, so a session is not surpr
 
 ## 2. Owner pre-flight
 
-Decisions that would otherwise stop a session mid-way. Each has a recommendation; "yes"
-to all eight is a valid answer and the prompts in §8 assume it. Items 1 and 8 are needed
-before M2 is pasted; the rest before the session that names them.
+Decisions that would otherwise stop a session mid-way. **All eight were decided by the
+owner on 2026-08-23** — the verdict heads each item; the reasoning beneath it is kept so
+a session knows what the alternative was and why it was not taken. The prompts in §8
+assume these verdicts.
 
-1. **The rate limiter: delete it (recommended), or shrink it to one global command
-   bucket with three options.** Measured: deletion removes ≈471 backend, ≈120 card,
+1. **Decided: delete.** The rate limiter: delete it (recommended), or shrink it to one
+   global command bucket with three options. Measured: deletion removes ≈471 backend, ≈120 card,
    ≈147 docs, ≈907 test and ≈661 skill lines, and with it the `rate_limited` error code,
    the options section (collapsed and off by default today), the health/diagnostics
    counters and the card's "Rate limited" banner. A household that turned it on loses
    the limit; stale option keys are ignored. Shrinking keeps ≈900 lines of plumbing for a
    feature whose only known callers are two skill scripts. The PR is left open for the
-   owner either way. *Needed before M2.*
-2. **Seed the three built-in statuses in the server's language** (`hass.config.language`
+   owner either way.
+2. **Decided: seed in the server's language.** The three built-in statuses (`hass.config.language`
    at first store write, through the same `async_get_translations` door the calendar
    summaries use since #572, English for any language without a translation) —
    recommended for #536. An existing store keeps its English seeds (the organize dialog
    renames them); a household whose members read different languages sees the server's.
    The alternative the issue weighs — a display-time translation while the label still
    equals the seed — is a rule the card would have to apply on every surface. *M5.*
-3. **The desktop in-place editor expander stays** (recommended; §1.3). Saying "move the
-   form above the list" adds ≈110 lines of removal to M4 and one user-visible change.
-4. **`CODECOV_TOKEN`**: add it and #514 ships in M6; don't, and M6 closes #514 as
+3. **Decided: keep.** The desktop in-place editor expander stays (§1.3). Saying "move
+   the form above the list" would add ≈110 lines of removal to M4 and one user-visible
+   change; if it is ever wanted, it is its own issue with a mock-up, not a cut.
+4. **Decided: don't add it.** `CODECOV_TOKEN` stays absent; M6 closes #514 as
    not-planned with the reason (coverage is already in every run's summary and
-   artifacts). Either is fine; leaving it open a third milestone is not.
-5. **The milestone after V0.8.0 exists before the collapse PR opens.** #229 files the
-   adopter-deletion issue into it. Recommended name **V0.9.0** ("Clean candidate"); M6
-   creates it with `gh api` if it is absent, so this is a naming decision only.
-6. **Drop the ten offline twins of phacc's frontend tests** (recommended; M2). CI runs
-   phacc on every PR, so nothing is uncovered; what is lost is that those ten facts can no
-   longer be checked on a Windows host without Docker.
-7. **The dev Home Assistant, the token, the phone, the store copy** for L1, L2 and Z:
-   `home-assistant` on `http://localhost:8123`, `HA_BASE_URL` / `HA_TOKEN` exported; a
-   phone on the LAN (the firewall profile) if the phone tests are to run locally; and,
-   for L2, a copy of the production store for the collapse rehearsal. And the brands PR
+   artifacts, and a coverage badge is the Scorecard argument of #497 in miniature). If
+   the secret appears before M6 runs, M6 ships #514 in its #497 PR instead.
+5. **Decided: V0.9.0 — and it exists** (milestone 16, created 2026-08-23). The
+   collapse PR files the adopter-deletion issue into it; nothing is created.
+6. **Decided: drop them.** The ten offline twins of phacc's frontend tests go in M2's
+   test-folds PR. CI runs phacc on every PR, so nothing is uncovered; what is lost is that
+   those ten facts can no longer be checked on a Windows host without Docker. The
+   cross-language pins in the same file stay.
+7. **Decided: the phone is the owner's.** No LAN opening for the sessions; Playwright's
+   viewport matrix (375 px and up, both themes) covers the widths, and the companion app
+   itself is checked by hand. So every `[phone]` step lives in a handover's "Test this by
+   hand", never in "Validate locally". The rest as always: `home-assistant` on
+   `http://localhost:8123`, `HA_BASE_URL` / `HA_TOKEN` exported per local session; for
+   L2, a copy of the production store taken on the day of the rehearsal; the brands PR
    (#196) whenever it suits.
-8. **One master at a time, or two.** The default is one (§4's serial order). Saying
-   "two" lets M1 ‖ M3 and M2 ‖ M4 run side by side; the three cross-lane PRs check
-   `gh pr list` before they open (§3). Nothing else changes.
+8. **Decided: one at a time.** §4's serial order, no overlap. The lane-overlap option
+   (M1 ‖ M3, M2 ‖ M4, cross-lane PRs checking `gh pr list` before opening) stays
+   written in §3 and §4 in case the owner changes this later; the prompts assume serial.
 
 **Retired since the first draft**, so nobody looks for them: "#540's mark-up before the
 wording session" (the mark-up now comes *after* the consolidation, from the owner's read
@@ -682,7 +687,7 @@ in this session stacks on it.
    replacing fourteen `_setup`s; `install_runtime(…, ws=True)` replacing six
    `_make_hass`; one `tests/online_helpers.py` for the three smokes' four identical
    helpers; `_utc_day_offset` once; the two `MockResourceCollection` pairs once; a
-   `mountHost` for the card's four host specs; and, if §2 item 6 is yes, the ten offline
+   `mountHost` for the card's four host specs; and (§2 item 6: yes) the ten offline
    frontend tests with a phacc twin, `conftest.py`'s hand-written `async_register_panel`
    and the `__panel_registrations__` log (the cross-language pins in the same file stay).
    While in there: any test that freezes `dt_util.now` and then compares against
@@ -859,9 +864,9 @@ multi-selecting; keyboard-only from the search box to the first table row in the
 captures on the assets branch, looked at, not only counted.
 
 **Validate locally**: `[browser]` the list above at 1920 and 375 on the dev HA, against
-0.7.1's captures; `[phone]` edit from a row on `/haventory` and in the card — the Save
-pill whole, the action row one line in German; `[phone]` the organize dialog's phone page
-and the editor's phone sheet.
+0.7.1's captures. **Test this by hand** (the owner's, §2 item 7): `[phone]` edit from a
+row on `/haventory` and in the card — the Save pill whole, the action row one line in
+German; `[phone]` the organize dialog's phone page and the editor's phone sheet.
 
 ### 6.M5 — i18n: the reader, plural categories and the folds, the accessible names, the seed
 
@@ -870,8 +875,8 @@ rate-limiter PR. The order inside the milestone is the owner's: consolidate firs
 the German wording from the owner's read (M7) — **this session rewords nothing.**
 
 1. **"refactor(store): drop the retry-after reader nobody sends to"** — refs #230 (item
-   7) — only if the rate limiter was deleted (otherwise the shrink made the backend send
-   it; skip and say so). `retryAfterHintMs`, `nonNegativeNumber`, the hint half of
+   7). The limiter was deleted (§2 item 1), so nothing will ever send the hint.
+   `retryAfterHintMs`, `nonNegativeNumber`, the hint half of
    `subscribeRetryDelayMs`, the two hint tests, the `frontend_architecture.md` paragraph.
 2. **"refactor(i18n): plural categories, one key per thing-in-a-role, and a test for a
    key nothing reads"** — **closes #542**. Three parts, three commits:
@@ -959,8 +964,9 @@ subagents for the defects it finds, one per defect, merged one at a time.
    organize dialog's four tabs, bulk tag/untag, check-out and return, reminders and the
    calendar, every `haventory.*` service with its response, the to-do bridge, the sensors,
    Repairs with a hand-corrupted store, keyboard-only through the table and dialogs, a
-   slow link, a dropped WebSocket, a forced two-tab conflict. `[phone]` on the LAN: the
-   card and `/haventory` in the companion app.
+   slow link, a dropped WebSocket, a forced two-tab conflict. The phone is the owner's
+   (§2 item 7): collect every `[phone]` step the masters left into the handover's "Test
+   this by hand", in one list.
 5. **Fix what is found**: a defect that clears the bar is an issue (bug template,
    reproduction, screenshot) on V0.8.0 and a PR in the same session where the fix is
    small and obvious; the rest is filed. Judge the #585 question (are the first eight
@@ -983,9 +989,10 @@ merged and closed what it found; no V0.8.0 PR open.
 1. **"ci: retire the Scorecard badge and workflow; rework the badge row"** — **closes
    #497** to the letter of its "Done when": `scorecard.yml` deleted, the open Scorecard
    alerts dismissed over the API, the CodeQL badge dropped, the header row at four
-   badges, the My HA button at the head of Installation, `HACS-Custom` kept. **#514** in
-   the same PR if `CODECOV_TOKEN` exists (`gh secret list`), else closed as not-planned
-   with the reason (§2 item 4).
+   badges, the My HA button at the head of Installation, `HACS-Custom` kept. **#514**
+   closed as not-planned in the same PR's comment, with the reason (§2 item 4: the
+   secret is not added) — unless `gh secret list` shows it has appeared meanwhile, in
+   which case it ships here instead.
 2. **"docs: the status vocabulary is the household's; triggers are `trigger:`"** —
    **closes #331** (the sentence is in `docs/developing.md`'s architecture list), plus
    the sweep the README rewrite named and did not finish: the six `platform:` trigger
@@ -1032,8 +1039,8 @@ merged and closed what it found; no V0.8.0 PR open.
    `tests/integration/test_schema_migration.py` is rewritten v9 → 1. Docs:
    `data_shapes.md`'s example envelopes and the three function names it cites, the
    contract's import section, the README's two lines, `release_testing_plan.md`'s
-   D7/D8/E3/E4 restated against v1. **In this PR:** create milestone V0.9.0 if absent
-   (§2 item 5) and file the adopter-deletion issue (🔧 Task) into it: delete
+   D7/D8/E3/E4 restated against v1. **In this PR:** file the adopter-deletion issue
+   (🔧 Task) into milestone V0.9.0 (§2 item 5; it exists): delete
    `adopt_dev_schema`, `ADOPTABLE_SCHEMA_VERSIONS` and the import-side exception. The
    release-notes text (in-place upgrade; take an export first as the way back) and the
    rehearsal protocol (#229's 2026-08-21 comment, item 1) go in the PR body.
@@ -1218,7 +1225,8 @@ Model: Fable 5, effort xhigh. Cloud session. Master.
 You are master session M2 of the V0.8.0 plan, dev/V0_8_0_implementation.md — read it in
 full (§2 items 1 and 6, §3, §5, §6.M2, §8.S), then CLAUDE.md and CONTRIBUTING.md, then
 M1's comment on #236 (the HA recipe's outcome and its handover). Start condition: M1's
-nine PRs are merged and no backend PR is open; the owner has answered pre-flight item 1.
+nine PRs are merged and no backend PR is open. §2 item 1 is decided: the limiter is
+deleted, not shrunk.
 
 Re-run §3's HA recipe in your environment. Then the seven PRs of §6.M2 in order, one
 subagent each, one at a time, under §3's review and §5's merge rule. PR 7 (the rate
@@ -1326,8 +1334,8 @@ milestone issues are #229, #497, #514, #331, #540 (M7's) and whatever L1 filed f
 Re-run §3's HA recipe. Then the five PRs of §6.M6 in order, one subagent each, one at a
 time: the three docs/CI PRs merged under §5 (the backend gate run on every README edit);
 then the collapse PR — everything green, the release-notes text and the rehearsal
-protocol in its body, the V0.9.0 milestone created if absent and the adopter-deletion
-issue filed into it — and PR 5 stacked on it; write the handover and **stop — the owner
+protocol in its body, the adopter-deletion issue filed into the V0.9.0 milestone — and
+PR 5 stacked on it; write the handover and **stop — the owner
 merges PRs 4 and 5 after L2's rehearsal.**
 
 End with the six-part handover as your last message and as a comment on #236.
