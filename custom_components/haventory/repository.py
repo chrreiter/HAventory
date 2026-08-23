@@ -27,7 +27,6 @@ from .logs import context_logger
 from .models import (
     DEFAULT_ITEM_STATUS,
     EMPTY_LOCATION_PATH,
-    LOCATION_GUARD_MAX_STEPS,
     AttachmentMeta,
     Item,
     ItemCreate,
@@ -38,6 +37,7 @@ from .models import (
     StatusDefinition,
     apply_item_update,
     build_location_path,
+    build_location_path_from_map,
     create_item_from_create,
     date_sort_key,
     filter_items,
@@ -47,6 +47,7 @@ from .models import (
     item_is_low_stock,
     item_is_overdue,
     item_reminder_is_due,
+    location_chain_to_root,
     location_sort_key,
     monotonic_timestamp_after,
     new_uuid4,
@@ -63,6 +64,7 @@ from .models import (
     validate_location_name,
     validate_status_definition,
     validate_status_slug,
+    walk_location_chain,
 )
 
 LOGGER = context_logger(__name__)
@@ -431,18 +433,9 @@ class Repository:
         stores ``None``.
         """
 
-        cursor: str | None = location_key
-        guard = 0
-        while cursor is not None:
-            guard += 1
-            if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
-                return None
-            loc = self._locations_by_id.get(cursor)
-            if loc is None:
-                return None
+        for loc in walk_location_chain(location_key, locations_by_id=self._locations_by_id):
             if loc.area_id is not None:
                 return str(loc.area_id)
-            cursor = str(loc.parent_id) if loc.parent_id is not None else None
         return None
 
     def _reindex_item_replacement(self, old: Item, new: Item) -> None:
@@ -497,19 +490,17 @@ class Repository:
         raise ValidationError("area_id must be a string or null")
 
     def _find_location_root(self, location_key: str) -> str:
-        """Walk up the parent chain to find the root location id."""
-        cursor: str | None = location_key
+        """The id at the top of the tree ``location_key`` sits in.
+
+        A chain ending on a parent id no location carries answers with that id
+        rather than with the last node that does exist: it is the id the tree
+        claims as its root, and every caller looks the answer up in a map and
+        tolerates a miss.
+        """
+
         root_key = location_key
-        guard = 0
-        while cursor is not None:
-            guard += 1
-            if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
-                break
-            root_key = cursor
-            loc = self._locations_by_id.get(cursor)
-            if loc is None:
-                break
-            cursor = str(loc.parent_id) if loc.parent_id is not None else None
+        for loc in walk_location_chain(location_key, locations_by_id=self._locations_by_id):
+            root_key = str(loc.parent_id) if loc.parent_id is not None else str(loc.id)
         return root_key
 
     def _propagate_area_to_root(self, location_key: str, area_id: str | None) -> set[str]:
@@ -651,35 +642,20 @@ class Repository:
         return result
 
     def _get_ancestors(self, location_id: str) -> list[str]:
-        """Return list of ancestor location IDs from parent up to root.
+        """The ancestor ids of a location, from its parent up to the root.
 
-        A hand-edited or corrupt store can carry a cyclic ``parent_id`` chain,
-        which this walk would otherwise follow forever — during setup, since
-        ``load_state`` reaches it once per item. The visited set is what bounds the
-        walk to the size of the cycle; the step ceiling its four siblings cite is
-        the backstop for a chain that is merely absurdly deep. Breaking rather than
-        raising matches ``_find_location_root``, because
-        ``_remove_item_from_subtree_index`` walks the same chain on the mutation
-        path and must not learn to throw.
+        Empty for a root, and bounded rather than endless for a chain a corrupt
+        store has closed into a loop — the shared walk stops on an id it has
+        already passed. That it does not raise is what the subtree index needs:
+        ``_remove_item_from_subtree_index`` walks the same chain on every item
+        mutation.
         """
-        ancestors: list[str] = []
-        visited: set[str] = {location_id}
-        cursor: str | None = location_id
-        guard = 0
-        while cursor:
-            guard += 1
-            if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
-                break
-            loc = self._locations_by_id.get(cursor)
-            if not loc or not loc.parent_id:
-                break
-            parent_key = str(loc.parent_id)
-            if parent_key in visited:
-                break
-            visited.add(parent_key)
-            ancestors.append(parent_key)
-            cursor = parent_key
-        return ancestors
+
+        return [
+            str(loc.parent_id)
+            for loc in walk_location_chain(location_id, locations_by_id=self._locations_by_id)
+            if loc.parent_id is not None
+        ]
 
     def _unrooted_location_ids(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Split the locations that never reach a root into members and descendants.
@@ -839,23 +815,8 @@ class Repository:
                     queue.append(cid)
 
         for loc_id in to_fix:
-            loc = loc_map[loc_id]
-            # Build chain root->loc by following parent links in the given locations map
-            chain: list[Location] = []
-            cursor_id: str | None = loc_id
-            guard = 0
-            while cursor_id is not None:
-                guard += 1
-                if guard > LOCATION_GUARD_MAX_STEPS:  # defensive; should never happen
-                    raise ValidationError("location graph too deep or cyclic")
-                node = loc_map.get(cursor_id)
-                if node is None:  # pragma: no cover - corrupted map
-                    raise ValidationError("location_id must reference an existing location chain")
-                chain.append(node)
-                cursor_id = str(node.parent_id) if node.parent_id is not None else None
-            chain.reverse()
-            new_path = build_location_path(chain)
-            loc_map[loc_id] = replace(loc, path=new_path)
+            new_path = build_location_path_from_map(loc_id, locations_by_id=loc_map)
+            loc_map[loc_id] = replace(loc_map[loc_id], path=new_path)
 
     def _update_items_location_paths_for_locations(self, affected_location_ids: set[str]) -> None:
         """Refresh ``location_path`` for items under any of the given locations.
@@ -1696,37 +1657,23 @@ class Repository:
 
         new_id = new_uuid4()
         new_key = str(new_id)
-        # Build path using parent chain plus new node
-        chain: list[Location] = []
-        if parent_key is not None:
-            # Build parent chain root->parent
-            cursor: str | None = parent_key
-            guard = 0
-            lineage: list[Location] = []
-            while cursor is not None:
-                guard += 1
-                if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
-                    raise ValidationError("location graph too deep or cyclic")
-                node = self._locations_by_id.get(cursor)
-                if node is None:
-                    raise ValidationError("parent_id must reference an existing location")
-                lineage.append(node)
-                cursor = str(node.parent_id) if node.parent_id is not None else None
-            lineage.reverse()
-            chain.extend(lineage)
+        lineage = (
+            location_chain_to_root(parent_key, locations_by_id=self._locations_by_id)
+            if parent_key is not None
+            else []
+        )
 
-        # New locations never store area_id directly - it's always on root
-        # Area will be propagated to root after creation if specified
+        # An area is stored on the root of a tree and inherited by everything
+        # under it, so a new node never carries one of its own; a requested area
+        # is propagated up after the node exists.
         new_loc = Location(
             id=new_id,
             parent_id=parsed_parent,
             name=name,
-            area_id=None,  # Don't set area directly on new location
+            area_id=None,
             path=EMPTY_LOCATION_PATH,
         )
-        chain.append(new_loc)
-        new_path = build_location_path(chain)
-        new_loc = replace(new_loc, path=new_path)
+        new_loc = replace(new_loc, path=build_location_path([*lineage, new_loc]))
 
         self._add_location(new_loc)
 

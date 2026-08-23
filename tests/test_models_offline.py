@@ -43,6 +43,7 @@ from custom_components.haventory.models import (
     validate_optional_date,
     validate_status_definition,
     validate_tags,
+    walk_location_chain,
 )
 
 UUID4_RE = re.compile(
@@ -158,6 +159,48 @@ async def test_denormalized_location_path_generation() -> None:
     # And lookup via map works from leaf
     path2 = build_location_path_from_map(uuid.UUID(leaf_id), locations_by_id=by_id)
     assert path2.display_path == path.display_path
+
+
+def test_the_chain_walk_ends_on_a_loop_instead_of_following_it() -> None:
+    """A store edited into a cycle must not cost the walk more than the cycle.
+
+    Every walk up the parent chain shares this one, including the ones the
+    item-index path takes on each mutation, so a loop has to end the walk
+    rather than spin in it.
+    """
+
+    first_id = new_uuid4_str()
+    second_id = new_uuid4_str()
+    by_id = {
+        first_id: _make_location(first_id, "First", second_id),
+        second_id: _make_location(second_id, "Second", first_id),
+    }
+
+    walked = list(walk_location_chain(first_id, locations_by_id=by_id))
+
+    assert [loc.name for loc in walked] == ["First", "Second"]
+
+
+@pytest.mark.parametrize(
+    ("parent_id", "message"),
+    [
+        (None, "existing location chain"),
+        ("cycle", "too deep or cyclic"),
+    ],
+)
+def test_a_chain_that_reaches_no_root_is_refused(parent_id: str | None, message: str) -> None:
+    """A path is stored on every item under the node, so a partial one is refused.
+
+    The two ways a chain fails to reach a root are named apart: a parent no
+    location carries, and a parent the walk has already passed.
+    """
+
+    leaf_id = new_uuid4_str()
+    missing_id = new_uuid4_str()
+    leaf = _make_location(leaf_id, "Bin 3", missing_id if parent_id is None else leaf_id)
+
+    with pytest.raises(ValidationError, match=message):
+        build_location_path_from_map(leaf_id, locations_by_id={leaf_id: leaf})
 
 
 @pytest.mark.asyncio

@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Literal, NotRequired, TypedDict
@@ -1224,6 +1224,57 @@ def load_reminder_interval(value: object) -> ReminderInterval | None:
         return None
 
 
+def walk_location_chain(
+    start_id: str | uuid.UUID, *, locations_by_id: Mapping[str, Location]
+) -> Iterator[Location]:
+    """Yield the locations from ``start_id`` upwards, the node itself first.
+
+    The one walk up the parent chain. It ends without raising on a parent id no
+    location carries, on an id it has already yielded, and at
+    ``LOCATION_GUARD_MAX_STEPS``: a hand-edited or corrupt store can close a
+    chain into a loop, and the item-index path walks it on every mutation, so
+    the walk has to end by itself rather than throw there.
+
+    A caller that needs the whole chain therefore cannot read a short answer as
+    a complete one — :func:`location_chain_to_root` is that caller's version.
+    """
+
+    cursor: str | None = str(start_id)
+    seen: set[str] = set()
+    while cursor is not None and cursor not in seen and len(seen) < LOCATION_GUARD_MAX_STEPS:
+        location = locations_by_id.get(cursor)
+        if location is None:
+            return
+        seen.add(cursor)
+        yield location
+        cursor = str(location.parent_id) if location.parent_id is not None else None
+
+
+def location_chain_to_root(
+    leaf_id: str | uuid.UUID, *, locations_by_id: Mapping[str, Location]
+) -> list[Location]:
+    """The chain root→leaf, or a ``ValidationError`` naming what stopped it.
+
+    A chain that does not reach a root is refused rather than shortened,
+    because what is built from it is the denormalized path stored on the node
+    and on every item under it: a partial chain would store a display path
+    missing its leading names.
+    """
+
+    chain = list(walk_location_chain(leaf_id, locations_by_id=locations_by_id))
+    if not chain:
+        raise ValidationError("location_id must reference an existing location")
+    last_parent = chain[-1].parent_id
+    if last_parent is not None:
+        if len(chain) >= LOCATION_GUARD_MAX_STEPS or str(last_parent) in {
+            str(node.id) for node in chain
+        }:
+            raise ValidationError("location graph too deep or cyclic")
+        raise ValidationError("location_id must reference an existing location chain")
+    chain.reverse()
+    return chain
+
+
 def build_location_path(location_chain: list[Location]) -> LocationPath:
     """Build a denormalized LocationPath from a chain ordered root->leaf."""
 
@@ -1239,34 +1290,17 @@ def build_location_path(location_chain: list[Location]) -> LocationPath:
 
 
 def build_location_path_from_map(
-    leaf_location_id: uuid.UUID, *, locations_by_id: dict[str, Location]
+    leaf_location_id: str | uuid.UUID, *, locations_by_id: Mapping[str, Location]
 ) -> LocationPath:
-    """Follow parent links to build LocationPath given a leaf location ID.
+    """The denormalized path of one location, given the map it lives in.
 
-    Raises ValidationError if the leaf ID is unknown.
+    Raises ``ValidationError`` when the leaf id is unknown or the chain above
+    it never reaches a root.
     """
 
-    # locations_by_id is keyed by string UUIDs
-    leaf_key = str(leaf_location_id)
-    if leaf_key not in locations_by_id:
-        raise ValidationError("location_id must reference an existing location")
-
-    chain: list[Location] = []
-    cursor_id: uuid.UUID | None = leaf_location_id
-    guard = 0
-    while cursor_id:
-        guard += 1
-        if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate cycles
-            raise ValidationError("location graph too deep or cyclic")
-        location = locations_by_id.get(str(cursor_id))
-        if location is None:
-            # Broken link in chain
-            raise ValidationError("location_id must reference an existing location chain")
-        chain.append(location)
-        cursor_id = location.parent_id
-    # We collected leaf->root; reverse to root->leaf
-    chain.reverse()
-    return build_location_path(chain)
+    return build_location_path(
+        location_chain_to_root(leaf_location_id, locations_by_id=locations_by_id)
+    )
 
 
 # -----------------------------
