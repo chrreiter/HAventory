@@ -19,7 +19,7 @@ from collections import deque
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Any, TypedDict
+from typing import Any, TypedDict, TypeVar
 
 from .calendar_projection import next_occurrence_after
 from .exceptions import ConflictError, NotFoundError, ValidationError
@@ -68,6 +68,11 @@ from .models import (
 )
 
 LOGGER = context_logger(__name__)
+
+
+#: What an index bucket is keyed by. A string for every item index; the location
+#: tree's children index adds ``None`` for the roots.
+_BucketKey = TypeVar("_BucketKey", str, str | None)
 
 
 class PageResult(TypedDict):
@@ -331,15 +336,26 @@ class Repository:
     # Internal helpers — indexing
     # -----------------------------
 
-    def _add_to_bucket(self, bucket: dict[str, set[str]], key: str, item_id: str) -> None:
-        bucket.setdefault(key, set()).add(item_id)
+    def _add_to_bucket(
+        self, bucket: dict[_BucketKey, set[str]], key: _BucketKey, member: str
+    ) -> None:
+        bucket.setdefault(key, set()).add(member)
 
-    def _remove_from_bucket(self, bucket: dict[str, set[str]], key: str, item_id: str) -> None:
-        s = bucket.get(key)
-        if not s:
+    def _remove_from_bucket(
+        self, bucket: dict[_BucketKey, set[str]], key: _BucketKey, member: str
+    ) -> None:
+        """Drop a member, and the bucket with it when that empties it.
+
+        An empty bucket is indistinguishable from an absent one everywhere it
+        is read, so leaving one behind would grow the index by every key the
+        inventory has ever used.
+        """
+
+        members = bucket.get(key)
+        if not members:
             return
-        s.discard(item_id)
-        if not s:
+        members.discard(member)
+        if not members:
             bucket.pop(key, None)
 
     def _index_item(self, item: Item) -> None:
@@ -578,42 +594,6 @@ class Repository:
                 if not s:
                     self._locations_by_area_id.pop(str(loc.area_id), None)
 
-    def _stage_location_update(
-        self,
-        *,
-        loc: Location,
-        updated_name: str,
-        target_parent_id: uuid.UUID | None,
-        parent_changed: bool,
-        target_area: str | None,
-    ) -> tuple[dict[str, Location], dict[str | None, set[str]], Location]:
-        """Create staged maps with the proposed location update applied.
-
-        Returns (staged_locations_by_id, staged_children_by_parent, new_loc).
-        """
-
-        staged_locations_by_id: dict[str, Location] = dict(self._locations_by_id)
-        staged_children_by_parent: dict[str | None, set[str]] = {
-            k: set(v) for k, v in self._children_ids_by_parent_id.items()
-        }
-
-        new_loc = replace(loc, name=updated_name, parent_id=target_parent_id, area_id=target_area)
-        key = str(loc.id)
-        staged_locations_by_id[key] = new_loc
-
-        if parent_changed:
-            # Remove from old parent's children in staged map
-            old_parent = str(loc.parent_id) if loc.parent_id is not None else None
-            if old_parent in staged_children_by_parent:
-                staged_children_by_parent[old_parent].discard(key)
-                if not staged_children_by_parent[old_parent]:
-                    staged_children_by_parent.pop(old_parent)
-            # Add to new parent's children bucket in staged map
-            parent_key: str | None = str(target_parent_id) if target_parent_id is not None else None
-            staged_children_by_parent.setdefault(parent_key, set()).add(key)
-
-        return staged_locations_by_id, staged_children_by_parent, new_loc
-
     def _update_location_area_index(
         self, *, location_key: str, old_area: str | None, new_area: str | None
     ) -> None:
@@ -782,41 +762,17 @@ class Repository:
         for anc in self._get_ancestors(loc_key):
             self._remove_from_bucket(self._items_in_subtree, anc, item_key)
 
-    def _rebuild_paths_for_subtree(
-        self,
-        root_id: str,
-        *,
-        locations_by_id: dict[str, Location] | None = None,
-        children_ids_by_parent_id: dict[str | None, set[str]] | None = None,
-    ) -> None:
-        """Recompute ``Location.path`` for a subtree rooted at ``root_id``.
+    def _rebuild_paths_for_subtree(self, root_id: str) -> None:
+        """Recompute ``Location.path`` for the subtree rooted at ``root_id``.
 
-        If ``locations_by_id`` and/or ``children_ids_by_parent_id`` are provided,
-        the computation mutates those maps instead of the repository's live maps.
+        Reads the live maps, so a move writes the new parent link first and
+        calls this second — a path built from the old link would be stored on
+        the node and denormalized onto every item under it.
         """
 
-        loc_map = locations_by_id if locations_by_id is not None else self._locations_by_id
-        child_map = (
-            children_ids_by_parent_id
-            if children_ids_by_parent_id is not None
-            else self._children_ids_by_parent_id
-        )
-
-        to_fix = [root_id]
-        # Collect descendants using the provided child map
-        queue = deque([root_id])
-        visited: set[str] = set()
-        while queue:
-            current = queue.popleft()
-            for cid in child_map.get(current, set()):
-                if cid not in visited:
-                    visited.add(cid)
-                    to_fix.append(cid)
-                    queue.append(cid)
-
-        for loc_id in to_fix:
-            new_path = build_location_path_from_map(loc_id, locations_by_id=loc_map)
-            loc_map[loc_id] = replace(loc_map[loc_id], path=new_path)
+        for loc_id in (root_id, *self._collect_descendant_ids(root_id)):
+            new_path = build_location_path_from_map(loc_id, locations_by_id=self._locations_by_id)
+            self._locations_by_id[loc_id] = replace(self._locations_by_id[loc_id], path=new_path)
 
     def _update_items_location_paths_for_locations(self, affected_location_ids: set[str]) -> None:
         """Refresh ``location_path`` for items under any of the given locations.
@@ -1750,29 +1706,26 @@ class Repository:
         parsed_area, area_change_requested = self._parse_area_change(area_id, loc.area_id)
         name_changed = updated_name != loc.name
 
-        # Validate move invariants if changing parent
+        # Everything that can refuse the move has refused it by here, so the
+        # tree is rewritten in place: the parent link first, then the paths that
+        # are derived from it.
         if parent_changed:
             self._validate_parent_move(location_key=key, target_parent_id=target_parent_id)
+            self._remove_from_bucket(
+                self._children_ids_by_parent_id,
+                str(loc.parent_id) if loc.parent_id is not None else None,
+                key,
+            )
+            self._add_to_bucket(
+                self._children_ids_by_parent_id,
+                str(target_parent_id) if target_parent_id is not None else None,
+                key,
+            )
 
-        # For staging, don't change area on this location - area propagates to root
-        staged_locations_by_id, staged_children_by_parent, _ = self._stage_location_update(
-            loc=loc,
-            updated_name=updated_name,
-            target_parent_id=target_parent_id,
-            parent_changed=parent_changed,
-            target_area=loc.area_id,  # Keep current area in staging; propagation happens after
-        )
-
-        # Attempt to rebuild paths against staged maps; if this fails, nothing is committed
-        self._rebuild_paths_for_subtree(
-            key,
-            locations_by_id=staged_locations_by_id,
-            children_ids_by_parent_id=staged_children_by_parent,
-        )
-
-        # Commit: swap in staged structures atomically
-        self._children_ids_by_parent_id = staged_children_by_parent
-        self._locations_by_id = staged_locations_by_id
+        # The area is left as it stands: it belongs to the root of a tree, and
+        # a requested change is propagated there once the node has moved.
+        self._locations_by_id[key] = replace(loc, name=updated_name, parent_id=target_parent_id)
+        self._rebuild_paths_for_subtree(key)
 
         # Update affected items (now that live maps are consistent)
         affected = {key}
