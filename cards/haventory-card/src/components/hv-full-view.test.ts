@@ -159,6 +159,117 @@ describe('hv-full-view: phone-width app bar', () => {
   });
 });
 
+describe('hv-full-view: the app bar between a phone and a wide desktop', () => {
+  const flagged = [
+    makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 }),
+    makeItem({ id: '2', checked_out: true }),
+    makeItem({ id: '3', checked_out: true, due_date: '2020-01-01' }),
+  ];
+
+  // The bar reads its own width, and jsdom has no layout — its ResizeObserver
+  // stub never calls anyone back. The width the observer would report is handed
+  // to the same entry point instead; the pixel measurements come from a browser.
+  function measure(el: HVFullView, width: number) {
+    (el as unknown as { _setBarWidth(width: number): void })._setBarWidth(width);
+  }
+
+  // The stylesheet has exactly two conditional blocks, so "up to the next one"
+  // is the whole of the first and everything after the second.
+  function mediaBlock(at: string): string {
+    const css = componentCss('hv-full-view');
+    const start = css.indexOf(at);
+    expect(start).toBeGreaterThan(-1);
+    const rest = css.slice(start + at.length);
+    const end = rest.indexOf('@media');
+    return end === -1 ? rest : rest.slice(0, end);
+  }
+
+  it('holds the quick-filter pills in one strip that scrolls rather than wraps', async () => {
+    const { sr } = await mount({ items: flagged });
+    const strip = q(sr, '[data-testid="full-pills"]') as HTMLElement;
+    expect(strip).toBeTruthy();
+    expect(strip.querySelector('[data-testid="full-badge-low"]')).toBeTruthy();
+    expect(strip.querySelector('[data-testid="full-badge-out"]')).toBeTruthy();
+    expect(strip.parentElement?.classList.contains('appbar')).toBe(true);
+
+    const css = componentCss('hv-full-view');
+    expect(css).toMatch(/\.appbar \.pills \{[^}]*flex-wrap: nowrap/);
+    expect(css).toMatch(/\.appbar \.pills \{[^}]*overflow-x: auto/);
+  });
+
+  // An empty strip is still a flex item with a gap in front of it.
+  it('leaves the strip out when no count has anything to report', async () => {
+    const { sr } = await mount({ items: [makeItem({ id: '1' })] });
+    expect(q(sr, '[data-testid="full-pills"]')).toBe(null);
+  });
+
+  it('keeps the bar to one row above the phone breakpoint', async () => {
+    const wide = mediaBlock('@media (min-width: 701px)');
+    expect(wide).not.toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
+    // Selection mode reuses the bar for a sentence and two labelled buttons,
+    // and goes on wrapping — nothing there is stranded by a second line.
+    expect(wide).toMatch(/\.appbar\.selecting \{[^}]*flex-wrap: wrap/);
+    // The phone branch keeps its own three rows, pills included.
+    const phone = mediaBlock('@media (max-width: 700px)');
+    expect(phone).toMatch(/\.appbar \{[^}]*flex-wrap: wrap/);
+    expect(phone).toMatch(/\.appbar \.pills \{[^}]*flex-wrap: wrap/);
+  });
+
+  it('drops the add button to its icon on a tight bar without losing its name', async () => {
+    const { el, sr } = await mount({ items: flagged });
+    const add = () => q(sr, '[data-testid="full-add-item"]') as HTMLButtonElement;
+    const label = () => add().querySelector('.add-label') as HTMLElement;
+
+    measure(el, 1400);
+    await settle(el);
+    expect(label().classList.contains('hv-sr-only')).toBe(false);
+
+    measure(el, 1000);
+    await settle(el);
+    expect(label().classList.contains('hv-sr-only')).toBe(true);
+    expect(add().getAttribute('aria-label')).toBe('Add item');
+    expect(add().getAttribute('title')).toBe('Add item');
+    expect(add().textContent?.trim()).toBe('Add item');
+  });
+
+  it('lowers the search box floor only on the tightest step', async () => {
+    const { el, sr } = await mount({ items: flagged });
+    const bar = () => q(sr, '.appbar') as HTMLElement;
+
+    measure(el, 1400);
+    await settle(el);
+    expect(bar().classList.contains('tight')).toBe(false);
+
+    measure(el, 1000);
+    await settle(el);
+    expect(bar().classList.contains('tight')).toBe(true);
+    expect(bar().classList.contains('tighter')).toBe(false);
+
+    measure(el, 880);
+    await settle(el);
+    expect(bar().classList.contains('tighter')).toBe(true);
+
+    expect(componentCss('hv-full-view')).toMatch(/\.appbar\.tighter \.search \{[^}]*min-width: 200px/);
+  });
+
+  // A phone-width viewport is the narrow branch's, and it dresses the same
+  // controls its own way — a measured width must not step on it.
+  it('leaves the phone bar to the narrow branch', async () => {
+    const restore = stubViewport(true);
+    try {
+      const { el, sr } = await mount({ items: flagged });
+      measure(el, 375);
+      await settle(el);
+      expect((q(sr, '.appbar') as HTMLElement).classList.contains('tight')).toBe(false);
+      const add = q(sr, '[data-testid="full-add-item"]') as HTMLButtonElement;
+      expect(add.textContent?.trim()).toBe('Add');
+      expect(add.querySelector('.add-label')?.classList.contains('hv-sr-only')).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe('hv-full-view: shell', () => {
   it('renders nothing when closed', async () => {
     const { el, sr } = await mount();
