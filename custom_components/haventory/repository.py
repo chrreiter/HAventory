@@ -1292,10 +1292,12 @@ class Repository:
         )
 
     def adjust_quantity(
-        self, item_id: str | uuid.UUID, delta: int, *, expected_version: int | None = None
+        self, item_id: str | uuid.UUID, delta: object, *, expected_version: int | None = None
     ) -> Item:
-        # Reject booleans (an int subclass) so the single-command path matches
-        # the bulk validator and never silently treats True/False as +/-1.
+        # `object` because this is where the type is answered: the command
+        # schema types `delta` as `object` so the refusal names the field, and
+        # every surface reaches the arithmetic through here. Booleans are an
+        # int subclass, and are refused rather than read as +/-1.
         if isinstance(delta, bool) or not isinstance(delta, int):
             raise ValidationError("delta must be an integer")
         current = self.get_item(item_id)

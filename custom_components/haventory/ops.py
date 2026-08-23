@@ -91,14 +91,6 @@ def _payload_tags(payload: dict[str, Any]) -> list[str]:
     return normalize_string_list(payload.get("tags"), field_name="tags", casefold=True)
 
 
-def _payload_int(payload: dict[str, Any], key: str) -> int:
-    """Extract a required integer field from an (unschema'd) op payload."""
-    value = payload.get(key)
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValidationError(f"{key} must be an integer")
-    return value
-
-
 def _op_item_create(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     item = _repo(hass).create_item(cast("ItemCreate", payload))
     return Written("item", serialize_item(hass, item), "created")
@@ -141,7 +133,7 @@ def _op_item_adjust_quantity(hass: HomeAssistant, payload: dict[str, Any]) -> Wr
     repo = _repo(hass)
     item_id = _payload_item_id(payload)
     updated = repo.adjust_quantity(
-        item_id, _payload_int(payload, "delta"), expected_version=payload.get("expected_version")
+        item_id, payload.get("delta"), expected_version=payload.get("expected_version")
     )
     return Written("item", serialize_item(hass, updated), "quantity_changed")
 
