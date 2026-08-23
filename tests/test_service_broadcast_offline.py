@@ -111,6 +111,36 @@ async def test_every_item_service_delivers_its_own_action() -> None:
 
 
 @pytest.mark.asyncio
+async def test_an_update_carrying_a_location_announces_the_move_on_both_surfaces() -> None:
+    """One edit, one action name, whichever door it came through.
+
+    `haventory/item/update` reads the move out of the keys the caller sent and
+    announces `moved`; the service beside it announced `updated` for the same
+    write, so a card filtered by location dropped the row on one path and kept
+    it on the other.
+    """
+
+    hass = _hass()
+    shelf = await services_mod.service_location_create(hass, {"name": "Shelf"})
+    location_id = shelf["location"]["id"]
+    created = await services_mod.service_item_create(hass, {"name": "Widget"})
+    item_id = created["item"]["id"]
+    conn = await _subscribed(hass, "items")
+
+    await services_mod.service_item_update(hass, {"item_id": item_id, "location_id": location_id})
+    from_service = _actions(conn, "items")
+    conn.messages.clear()
+
+    res = await ws_send(
+        hass, 2, "haventory/item/update", conn=conn, item_id=item_id, location_id=None
+    )
+    assert res["success"] is True, res
+
+    assert from_service == ["moved"]
+    assert _actions(conn, "items") == from_service
+
+
+@pytest.mark.asyncio
 async def test_the_location_services_reach_a_locations_subscription() -> None:
     """The other half of "a `haventory.*` mutation reaches no subscriber"."""
 

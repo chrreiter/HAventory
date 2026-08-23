@@ -231,7 +231,11 @@ async def service_item_update(hass: HomeAssistant, data: dict) -> dict[str, Any]
         item = repo.update_item(payload["item_id"], update, expected_version=expected)  # type: ignore[arg-type]
         await async_persist_repo(hass)
         serialized = serialize_item(hass, item)
-        notify_mutation(hass, action="updated", item=serialized)
+        # The same edit gets the same action name as `haventory/item/update`
+        # gives it: a call that carried a location moved the item, and a
+        # subscriber filtered by location acts on `moved`.
+        action = "moved" if "location_id" in update else "updated"
+        notify_mutation(hass, action=action, item=serialized)
         return {"item": serialized}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
         _raise_service_error(op, {"item_id": item_id}, exc)
