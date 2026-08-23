@@ -3,10 +3,10 @@
 Implements CRUD and helper commands for items and locations.
 Adheres to the envelope: input {id, type, ...payload}, output result_message/error_message.
 
-A payload field carrying a value the model has a rule for is typed `object`, so
-the model answers a wrong type as `validation_error` naming the field. A concrete
-schema type would have Home Assistant refuse the frame as `invalid_format` before
-the guard runs, and log the client's payload at ERROR while doing it.
+Most payload fields are typed `object` rather than concretely, so a wrong type
+is answered by the model as `validation_error` naming the field. A concrete
+schema type has Home Assistant refuse the frame as `invalid_format` before the
+guard runs, and log the client's payload at ERROR while naming nothing.
 
 Handlers only. A mutation announces itself through a door in `events.py`, which
 covers the bus and the entities as well as the wire; the subscription registry

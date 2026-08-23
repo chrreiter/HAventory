@@ -44,18 +44,19 @@ Transport-level errors produced by Home Assistant itself (before a handler runs)
 A client handles both, and does not have to know which field answers which — the split is
 about *where* the frame stopped, not about the field's name.
 
-`validation_error` is what a value earns. Every field carrying data a caller composes — a
-name, a quantity, an id, a filter, and every collection written whole (`tags`,
-`custom_fields`, `custom_fields_set`, `custom_fields_unset`, `set`, `unset`,
-`attachment_ids`, `slugs`) — is typed `object` in its command schema, so the model is what
-reads it and the refusal names the field at WARNING with no traceback. A bare string where a
-list belongs is the case worth naming: iterating one yields its characters, so it is refused
-rather than read.
+`validation_error` is what a value earns. Most payload fields are typed `object` in their
+command schema — names, quantities, ids, filters, and every collection a caller writes whole
+(`tags`, `custom_fields`, `custom_fields_set`, `custom_fields_unset`, `set`, `unset`,
+`attachment_ids`, `slugs`) — so the model is what reads them and the refusal names the field
+at WARNING with no traceback. A bare string where a list belongs is the case worth naming:
+iterating one yields its characters, so it is refused rather than read.
 
 `invalid_format` is Home Assistant's, raised before the guard runs and logged with the
 client's payload at ERROR. It answers a frame the command schema refuses on shape — a missing
-`id`, an unknown top-level key, a required field left out — and the handful of scalars whose
-schema type is still the whole of their rule, such as `expected_version` and the flags.
+`id`, an unknown top-level key, a required field left out — and the scalars a schema still
+types concretely: `expected_version`, the flags, the date strings, the attachment and status
+handles, import's `document` and `policy`. That list is not itself part of the contract, and
+a client that keys on it will drift with the next widening: handle both codes.
 
 Under either code nothing is written. The `items/bulk` payloads carry no schema at all, so
 every wrong type in a row answers that row with `validation_error` and leaves the item as it
