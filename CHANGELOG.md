@@ -1,5 +1,68 @@
 # Changelog
 
+## [0.7.0](https://github.com/chrreiter/HAventory/compare/v0.6.0...v0.7.0) (2026-08-23)
+
+
+### Features
+
+* **brand:** ship icons and logos inside the integration ([#502](https://github.com/chrreiter/HAventory/issues/502)) ([f84d04b](https://github.com/chrreiter/HAventory/commit/f84d04b9181c7b833c952fa23002ba958832eeb0))
+* **card:** make an item's and a location's id readable and copyable ([#580](https://github.com/chrreiter/HAventory/issues/580)) ([06c9b0d](https://github.com/chrreiter/HAventory/commit/06c9b0d14a675a9f1233cbbe14c9c939dd9e0978))
+* **card:** show the row thumbnail in the full view and the sidebar panel ([#534](https://github.com/chrreiter/HAventory/issues/534)) ([456b6dc](https://github.com/chrreiter/HAventory/commit/456b6dca0960bc811f2f9a11e9dc98114146ece6)), closes [#490](https://github.com/chrreiter/HAventory/issues/490)
+* **counts:** a checked-out due count, and an inspection pill that means due ([#511](https://github.com/chrreiter/HAventory/issues/511)) ([713f37e](https://github.com/chrreiter/HAventory/commit/713f37e367a5e0ea35b33a14d756e605e07ff3d1))
+* **i18n:** translate the card components (1/2) ([#538](https://github.com/chrreiter/HAventory/issues/538)) ([7844c0d](https://github.com/chrreiter/HAventory/commit/7844c0df98fb9001328c2c06c73bf7c122520015)), closes [#190](https://github.com/chrreiter/HAventory/issues/190)
+* **i18n:** translate the card components (2/2) ([#539](https://github.com/chrreiter/HAventory/issues/539)) ([f1461df](https://github.com/chrreiter/HAventory/commit/f1461df756da304563dca6aadc4af22a23cdfbd2)), closes [#190](https://github.com/chrreiter/HAventory/issues/190)
+* **i18n:** translation mechanism, German backend translations and the shared copy modules ([#537](https://github.com/chrreiter/HAventory/issues/537)) ([e4a75af](https://github.com/chrreiter/HAventory/commit/e4a75af627de6ca2b69ab3240a91f7aa9bca2bed)), closes [#190](https://github.com/chrreiter/HAventory/issues/190)
+* **sensor:** checked-out, locations and inspection-due counts ([#504](https://github.com/chrreiter/HAventory/issues/504)) ([5c22c83](https://github.com/chrreiter/HAventory/commit/5c22c83b59a7dfd431bbef148e48fa3e43d56e9d)), closes [#493](https://github.com/chrreiter/HAventory/issues/493)
+* **sensor:** name the four counts so an automation reads unambiguously ([#492](https://github.com/chrreiter/HAventory/issues/492)) ([aba8f8b](https://github.com/chrreiter/HAventory/commit/aba8f8b41f75df7212b1e28dee8732f1faeae65f))
+* **services:** give every service field a name and a description ([#593](https://github.com/chrreiter/HAventory/issues/593)) ([c7c469a](https://github.com/chrreiter/HAventory/commit/c7c469a6de61f0690910dd1fc2018f30240c9f75))
+
+
+### Bug Fixes
+
+* **backend:** measure every date against the instance's own day ([#579](https://github.com/chrreiter/HAventory/issues/579)) ([9e269db](https://github.com/chrreiter/HAventory/commit/9e269dbdb2d4060694d49cdea1adbe102ffc16ac))
+* **calendar:** write event summaries in the server language ([#572](https://github.com/chrreiter/HAventory/issues/572)) ([198b05e](https://github.com/chrreiter/HAventory/commit/198b05e7324022035d3f7c1ed004a4fe8064b1e4)), closes [#562](https://github.com/chrreiter/HAventory/issues/562)
+* **card:** cap the filter panel's label chips behind More… ([#585](https://github.com/chrreiter/HAventory/issues/585)) ([f281cd2](https://github.com/chrreiter/HAventory/commit/f281cd2ea6b319e3d766c2fa9b5f97892e97b32d))
+* **card:** give each sidebar facet list one tab stop and an arrow layer ([#578](https://github.com/chrreiter/HAventory/issues/578)) ([6fe7d8e](https://github.com/chrreiter/HAventory/commit/6fe7d8e334f8567edc3015875fb33569d0019729)), closes [#574](https://github.com/chrreiter/HAventory/issues/574)
+* **card:** give the locations tree one tab stop and an arrow layer ([#575](https://github.com/chrreiter/HAventory/issues/575)) ([31dd109](https://github.com/chrreiter/HAventory/commit/31dd1099a92daeca8105f19fcbb0e4721a21f40d)), closes [#559](https://github.com/chrreiter/HAventory/issues/559)
+* **card:** keep the detail sheet's action pair on one line in German ([#586](https://github.com/chrreiter/HAventory/issues/586)) ([5c99551](https://github.com/chrreiter/HAventory/commit/5c9955122b0a7039e2047e39099fa62dad41f3db))
+* **card:** keep the filtered total honest when an event inserts a row ([#554](https://github.com/chrreiter/HAventory/issues/554)) ([b878bfe](https://github.com/chrreiter/HAventory/commit/b878bfe837d005e5fd3d2bbabc061478daa209e5)), closes [#505](https://github.com/chrreiter/HAventory/issues/505)
+* **card:** keep the full view's phone-width bars whole in German ([#561](https://github.com/chrreiter/HAventory/issues/561)) ([34297f9](https://github.com/chrreiter/HAventory/commit/34297f90e9aeb0e79afdd01e5801d8ee05c6bb91))
+* **card:** keep the location tree's tally whole when an area name is long ([#533](https://github.com/chrreiter/HAventory/issues/533)) ([730e52f](https://github.com/chrreiter/HAventory/commit/730e52fdfd5f6426f07833e72d28881c164e6f55)), closes [#426](https://github.com/chrreiter/HAventory/issues/426)
+* **card:** keep the panel's phone filter footer and toolbar one row each ([#587](https://github.com/chrreiter/HAventory/issues/587)) ([8d60d80](https://github.com/chrreiter/HAventory/commit/8d60d8061067622c00d836ca351f8cbd44cb4e89)), closes [#582](https://github.com/chrreiter/HAventory/issues/582)
+* **card:** keep the phone editor's action row on one line in German ([#573](https://github.com/chrreiter/HAventory/issues/573)) ([583ea1d](https://github.com/chrreiter/HAventory/commit/583ea1de9529ad8bd4e15ea3b4f14908773e6735)), closes [#560](https://github.com/chrreiter/HAventory/issues/560)
+* **card:** one tone for a date that has passed ([#553](https://github.com/chrreiter/HAventory/issues/553)) ([ce28c86](https://github.com/chrreiter/HAventory/commit/ce28c86560846968fc4815120330aec6eec37036)), closes [#498](https://github.com/chrreiter/HAventory/issues/498)
+* **card:** say Overdue on the table row, not Checked out ([#552](https://github.com/chrreiter/HAventory/issues/552)) ([6a92614](https://github.com/chrreiter/HAventory/commit/6a92614e2cf1b3b2e597aca0e100f1b9d4b199c7)), closes [#499](https://github.com/chrreiter/HAventory/issues/499)
+* free an item's attachment files on every delete surface ([#592](https://github.com/chrreiter/HAventory/issues/592)) ([52fae71](https://github.com/chrreiter/HAventory/commit/52fae71c61d748b7335b13d65fd8a8433032ff10))
+* **logging:** put the context a bug report needs into the message text ([#510](https://github.com/chrreiter/HAventory/issues/510)) ([44ad859](https://github.com/chrreiter/HAventory/commit/44ad859bdb9f987d8f516fb3f7ccdde05ab2b073)), closes [#430](https://github.com/chrreiter/HAventory/issues/430)
+* name the date field that was refused ([#590](https://github.com/chrreiter/HAventory/issues/590)) ([e286b48](https://github.com/chrreiter/HAventory/commit/e286b489e5eb03d3969c2cf37ce61f06b536dc42)), closes [#566](https://github.com/chrreiter/HAventory/issues/566)
+* **panel:** keep an open `/haventory` page across a reload ([#550](https://github.com/chrreiter/HAventory/issues/550)) ([20e484b](https://github.com/chrreiter/HAventory/commit/20e484b12a0f19221371dce1534f508df5601c30)), closes [#507](https://github.com/chrreiter/HAventory/issues/507)
+* refuse a tags value that is not a list of strings ([#591](https://github.com/chrreiter/HAventory/issues/591)) ([2517a9b](https://github.com/chrreiter/HAventory/commit/2517a9be98d82086d03fc477728d400125711924)), closes [#567](https://github.com/chrreiter/HAventory/issues/567)
+* roll the counts and the card over at the instance's midnight ([#588](https://github.com/chrreiter/HAventory/issues/588)) ([c322683](https://github.com/chrreiter/HAventory/commit/c3226833d431959ec6c584fcd35455b2a804e3f1))
+* **services:** broadcast service mutations to WebSocket subscribers ([#506](https://github.com/chrreiter/HAventory/issues/506)) ([10115fc](https://github.com/chrreiter/HAventory/commit/10115fcd0195d3ee4fe05824fc632e32b1c02b36)), closes [#450](https://github.com/chrreiter/HAventory/issues/450)
+* **skills:** give the restart layer a budget that outlasts a post-kill boot ([#557](https://github.com/chrreiter/HAventory/issues/557)) ([ed44f2e](https://github.com/chrreiter/HAventory/commit/ed44f2e1c5bb063b71aa89f8417d5544635cc17b))
+* **skills:** make stress.py honour the worktree's .env and name its target ([#524](https://github.com/chrreiter/HAventory/issues/524)) ([0a6e902](https://github.com/chrreiter/HAventory/commit/0a6e902e9ec5652097cb400e22e9ad3bfe70211b)), closes [#432](https://github.com/chrreiter/HAventory/issues/432)
+* **skills:** submit the 0.7.0 options form whole, and only put the rate-limit knobs in their own section ([#556](https://github.com/chrreiter/HAventory/issues/556)) ([874758c](https://github.com/chrreiter/HAventory/commit/874758c33e0229a32c843f9b6b4b6c82f813c217))
+* **storage:** count a stored row with no name as unreadable ([#501](https://github.com/chrreiter/HAventory/issues/501)) ([9d54bb3](https://github.com/chrreiter/HAventory/commit/9d54bb329c0a652b4baa3e606da8a6db5cb7323c)), closes [#466](https://github.com/chrreiter/HAventory/issues/466)
+* **todo:** stop logging an ERROR for a start listener that has already fired ([#551](https://github.com/chrreiter/HAventory/issues/551)) ([3c1a2be](https://github.com/chrreiter/HAventory/commit/3c1a2be0a7a724ca3fae5a2f6d01dcf87ec559c4)), closes [#508](https://github.com/chrreiter/HAventory/issues/508)
+
+
+### Performance Improvements
+
+* **media:** serve row thumbnails instead of the stored picture ([#576](https://github.com/chrreiter/HAventory/issues/576)) ([268fc02](https://github.com/chrreiter/HAventory/commit/268fc02fdbea0b2b808c90c6d6ce40ed3b741986)), closes [#563](https://github.com/chrreiter/HAventory/issues/563)
+
+
+### Documentation
+
+* add [#493](https://github.com/chrreiter/HAventory/issues/493) (three more sensors) to S2 and run every session on Opus 5 ([#494](https://github.com/chrreiter/HAventory/issues/494)) ([af8a68d](https://github.com/chrreiter/HAventory/commit/af8a68d87752f40150c845acaea29c28aea7cacc))
+* add the V0.7.0 fixup session plan ([#571](https://github.com/chrreiter/HAventory/issues/571)) ([6b260cf](https://github.com/chrreiter/HAventory/commit/6b260cf4df4781e606f1e7045138d835402af560))
+* add the V0.7.0 session plan and retire the V0.6.0 one ([#489](https://github.com/chrreiter/HAventory/issues/489)) ([1b7d854](https://github.com/chrreiter/HAventory/commit/1b7d854bf1135081e97e96b01ebcab2d4771466a))
+* **brand:** say what HAventory does now on its social preview ([#503](https://github.com/chrreiter/HAventory/issues/503)) ([c0e8b77](https://github.com/chrreiter/HAventory/commit/c0e8b7717cd9ad46b139722fbf3bc5f44ea1c520))
+* one declared floor, and a guard against a second README version ([#513](https://github.com/chrreiter/HAventory/issues/513)) ([16aad36](https://github.com/chrreiter/HAventory/commit/16aad36fa75e5ff622a765e2b09cef2a0e367a0b)), closes [#235](https://github.com/chrreiter/HAventory/issues/235)
+* plan the V0.7.0 items filed after the plan, and keep the Fable sweep last ([#545](https://github.com/chrreiter/HAventory/issues/545)) ([6c3b4e8](https://github.com/chrreiter/HAventory/commit/6c3b4e87bf325c42742007fabc3c8aa0f76f0e0b))
+* purge development residue and trim CLAUDE.md ([#543](https://github.com/chrreiter/HAventory/issues/543)) ([068af8f](https://github.com/chrreiter/HAventory/commit/068af8f2bdaba48ca62f0e115603b34115f2ee03)), closes [#216](https://github.com/chrreiter/HAventory/issues/216)
+* state the invalid_format / validation_error split as a rule; count the sortable fields right ([#541](https://github.com/chrreiter/HAventory/issues/541)) ([3e8c79f](https://github.com/chrreiter/HAventory/commit/3e8c79f178a05fd4d4113676bbb2588ab25fe1c6)), closes [#441](https://github.com/chrreiter/HAventory/issues/441)
+* user-first README with screenshots ([#547](https://github.com/chrreiter/HAventory/issues/547)) ([f4e1b74](https://github.com/chrreiter/HAventory/commit/f4e1b74294be361cfcc9b3f27cd31ce6ef75ae18))
+
 ## [0.6.0](https://github.com/chrreiter/HAventory/compare/v0.5.0...v0.6.0) (2026-08-15)
 
 
