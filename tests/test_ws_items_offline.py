@@ -98,6 +98,31 @@ async def test_item_update_normalizes_a_tag_list_carrying_a_null() -> None:
 
 
 @pytest.mark.asyncio
+async def test_item_update_refuses_a_bad_inspection_date_by_its_own_name() -> None:
+    """A client sending a malformed date is told which of its fields is wrong."""
+
+    hass = HomeAssistant()
+    install_runtime(hass)
+    ws_setup(hass)
+
+    created = await ws_send(hass, 1, "haventory/item/create", name="Boiler")
+    item_id = created["result"]["id"]
+    version = created["result"]["version"]
+
+    res = await ws_send(
+        hass, 2, "haventory/item/update", item_id=item_id, inspection_date="2026-13-01"
+    )
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+    assert res["error"]["message"] == "inspection_date must be a valid calendar date (YYYY-MM-DD)"
+
+    stored = await ws_send(hass, 3, "haventory/item/get", item_id=item_id)
+    assert stored["result"]["version"] == version
+    assert stored["result"]["inspection_date"] is None
+
+
+@pytest.mark.asyncio
 async def test_item_quantity_and_checkout_helpers() -> None:
     """Adjust/set quantity and check in/out via WS."""
 

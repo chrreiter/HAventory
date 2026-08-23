@@ -446,19 +446,23 @@ def new_uuid4_str() -> str:
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def normalize_date_yyyy_mm_dd(value: str) -> str:
+def normalize_date_yyyy_mm_dd(value: str, *, field_name: str) -> str:
     """Validate and normalize a YYYY-MM-DD date string.
+
+    ``field_name`` is required because the refusal names it: several fields run
+    through here, and the message is the whole of what a script, an action call
+    or an import document gets back.
 
     Returns the normalized value or raises ValidationError.
     """
 
     if not isinstance(value, str) or not DATE_RE.match(value):
-        raise ValidationError("due_date must be in 'YYYY-MM-DD' format")
+        raise ValidationError(f"{field_name} must be in 'YYYY-MM-DD' format")
     try:
         # This ensures the date components are valid (e.g., no Feb 30)
         datetime.strptime(value, "%Y-%m-%d")
     except ValueError as exc:
-        raise ValidationError("due_date must be a valid calendar date (YYYY-MM-DD)") from exc
+        raise ValidationError(f"{field_name} must be a valid calendar date (YYYY-MM-DD)") from exc
     return value
 
 
@@ -744,7 +748,7 @@ def validate_due_date_rules(*, checked_out: bool, due_date: str | None) -> str |
         return None
     if not checked_out:
         raise ValidationError("due_date is only valid when checked_out is true")
-    return normalize_date_yyyy_mm_dd(due_date)
+    return normalize_date_yyyy_mm_dd(due_date, field_name="due_date")
 
 
 def validate_item_status(
@@ -955,29 +959,18 @@ def load_attachments(value: object) -> list[AttachmentMeta]:
     return [validate_attachment_meta(entry) for entry in value]
 
 
-def validate_inspection_date(inspection_date: str | None) -> str | None:
-    """Validate inspection_date format (YYYY-MM-DD) if provided.
+def validate_optional_date(value: str | None, *, field_name: str) -> str | None:
+    """Validate one optional YYYY-MM-DD field, naming it in any refusal.
 
-    The date is when the item is next due for inspection; a past date is
-    accepted and means the inspection is overdue.
+    Only the shape is checked, because a date in the past means something on
+    every field that runs through here: an inspection date behind today is
+    overdue, and a reminder anchor behind today is still where its series
+    counts from.
     """
 
-    if inspection_date is None:
+    if value is None:
         return None
-    return normalize_date_yyyy_mm_dd(inspection_date)
-
-
-def validate_reminder_date(reminder_date: str | None) -> str | None:
-    """Validate the reminder anchor's format if provided.
-
-    A past anchor is accepted: it is the date the series counts from, and a
-    recurring reminder set up years ago is still due on whichever occurrence
-    comes next.
-    """
-
-    if reminder_date is None:
-        return None
-    return normalize_date_yyyy_mm_dd(reminder_date)
+    return normalize_date_yyyy_mm_dd(value, field_name=field_name)
 
 
 def validate_reminder_interval(value: object) -> ReminderInterval | None:
@@ -1017,7 +1010,7 @@ def validate_reminder_rules(
     an occurrence reads as a reminder that quietly does nothing.
     """
 
-    normalized_date = validate_reminder_date(reminder_date)
+    normalized_date = validate_optional_date(reminder_date, field_name="reminder_date")
     interval = validate_reminder_interval(reminder_interval)
     if interval is not None and normalized_date is None:
         raise ValidationError("reminder_interval requires a reminder_date to count from")
@@ -1042,7 +1035,7 @@ def load_reminder_anchor(value: object, *, reminder_date: str | None) -> str | N
     if not isinstance(value, str) or not value or value > reminder_date:
         return reminder_date
     try:
-        return normalize_date_yyyy_mm_dd(value)
+        return normalize_date_yyyy_mm_dd(value, field_name="reminder_anchor")
     except ValidationError:
         return reminder_date
 
@@ -1210,7 +1203,9 @@ def create_item_from_create(
     _validate_item_core_fields(name, quantity, low_stock_threshold)
     validate_custom_fields(custom_fields)
     normalized_due_date = validate_due_date_rules(checked_out=checked_out, due_date=due_date)
-    normalized_inspection_date = validate_inspection_date(inspection_date)
+    normalized_inspection_date = validate_optional_date(
+        inspection_date, field_name="inspection_date"
+    )
     normalized_reminder_date, reminder_interval = validate_reminder_rules(
         reminder_date=payload.get("reminder_date"),
         reminder_interval=payload.get("reminder_interval"),
@@ -1299,7 +1294,9 @@ def _update_checkout_and_due_date(new_item: Item, update: ItemUpdate) -> None:
 
 def _update_inspection_date(new_item: Item, update: ItemUpdate) -> None:
     if "inspection_date" in update:
-        new_item.inspection_date = validate_inspection_date(update["inspection_date"])
+        new_item.inspection_date = validate_optional_date(
+            update["inspection_date"], field_name="inspection_date"
+        )
 
 
 def _update_reminder(new_item: Item, update: ItemUpdate) -> None:

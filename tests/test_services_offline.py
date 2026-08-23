@@ -67,6 +67,25 @@ async def test_item_create_and_update_flow_logs_and_mutates() -> None:
 
 
 @pytest.mark.asyncio
+async def test_item_update_refuses_a_bad_inspection_date_by_its_own_name() -> None:
+    """An action is typed by hand, and the refusal is all the author is shown."""
+
+    hass = HomeAssistant()
+    install_runtime(hass)
+    await services_mod.service_item_create(hass, {"name": "Boiler"})
+    repo: Repository = repo_of(hass)
+    item_id = next(iter(repo._debug_get_internal_indexes()["items_by_id"]))
+
+    with pytest.raises(ValidationError) as refusal:
+        await services_mod.service_item_update(
+            hass, {"item_id": item_id, "inspection_date": "2026-02-30"}
+        )
+
+    assert str(refusal.value) == "inspection_date must be a valid calendar date (YYYY-MM-DD)"
+    assert repo.get_item(item_id).inspection_date is None
+
+
+@pytest.mark.asyncio
 async def test_item_move_and_quantity_helpers() -> None:
     """Move item between locations and adjust quantities via helpers."""
 
