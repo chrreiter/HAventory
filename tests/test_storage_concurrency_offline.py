@@ -1,7 +1,7 @@
-"""Tests for storage concurrency, locking, and debouncing.
+"""Tests for storage concurrency and locking.
 
-Verifies that the persistence layer correctly handles concurrent operations,
-prevents race conditions, and properly debounces rapid changes.
+Verifies that the persistence layer serializes writes to the one store file and
+survives concurrent mutations.
 """
 
 import asyncio
@@ -9,45 +9,12 @@ import logging
 from unittest.mock import AsyncMock
 
 import pytest
-from custom_components.haventory import storage as storage_mod
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.models import ItemCreate, ItemUpdate
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import (
-    PERSIST_DEBOUNCE_DELAY,
-    DomainStore,
-    async_persist_immediate,
-    async_persist_repo,
-    async_request_persist,
-)
-from custom_components.haventory.ws import setup as ws_setup
+from custom_components.haventory.storage import DomainStore, async_persist_repo
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, runtime_of
-from ws_helpers import ws_send
-
-# Named constants for test assertions
-RAPID_MUTATION_COUNT = 3
-
-
-class _TrackedTaskHass(HomeAssistant):
-    """hass double that records the background tasks it is handed.
-
-    Mirrors ``HomeAssistant.async_create_background_task``'s signature so the
-    debounced persist path is driven through the same call it makes against a
-    real core, and keeps every scheduled task addressable for assertions. It
-    subclasses the stub rather than standing alone because the persist path
-    resolves its runtime through `hass.config_entries`.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.background_tasks: list[tuple[str, asyncio.Task]] = []
-
-    def async_create_background_task(self, target, name, eager_start=True):
-        task = asyncio.create_task(target, name=name)
-        self.background_tasks.append((name, task))
-        return task
+from runtime_helpers import install_runtime
 
 
 @pytest.mark.asyncio
@@ -77,185 +44,6 @@ async def test_persist_lock_prevents_concurrent_saves():
 
     # Verify operations were serialized (each completes before next starts)
     assert save_order == ["start", "end", "start", "end", "start", "end"]
-
-
-@pytest.mark.asyncio
-async def test_debounce_coalesces_rapid_changes():
-    """Rapid persist requests are coalesced into a single save operation."""
-    hass = _TrackedTaskHass()
-
-    # Create mock store that counts save calls
-    mock_store = AsyncMock(spec=DomainStore)
-    save_count = []
-
-    async def count_save(data):
-        save_count.append(1)
-
-    mock_store.async_save = count_save
-
-    # Create repository and store
-    repo = Repository()
-    install_runtime(hass, repository=repo, store=mock_store)
-
-    # Request multiple rapid persists
-    for _ in range(10):
-        await async_request_persist(hass)
-        await asyncio.sleep(0.01)  # 10ms between requests
-
-    # Wait for debounce delay plus buffer
-    await asyncio.sleep(PERSIST_DEBOUNCE_DELAY + 0.2)
-
-    # Should have only saved once (all requests coalesced)
-    assert len(save_count) == 1
-
-
-@pytest.mark.asyncio
-async def test_debounce_cancels_pending_task():
-    """New persist request cancels previous pending task."""
-    hass = _TrackedTaskHass()
-
-    mock_store = AsyncMock(spec=DomainStore)
-    mock_store.async_save = AsyncMock()
-
-    repo = Repository()
-    install_runtime(hass, repository=repo, store=mock_store)
-
-    # Request first persist
-    await async_request_persist(hass)
-    first_task = runtime_of(hass).persist_task
-    assert first_task is not None
-    assert not first_task.done()
-
-    # Request second persist before first completes
-    await asyncio.sleep(0.1)  # Wait a bit but not full delay
-    await async_request_persist(hass)
-    second_task = runtime_of(hass).persist_task
-
-    # Give time for cancellation to propagate
-    await asyncio.sleep(0.01)
-
-    # First task should be cancelled or done
-    assert first_task.cancelled() or first_task.done()
-    assert second_task is not first_task
-
-
-@pytest.mark.asyncio
-async def test_immediate_persist_bypasses_debounce():
-    """Immediate persist cancels pending debounced task and saves immediately."""
-    hass = _TrackedTaskHass()
-
-    mock_store = AsyncMock(spec=DomainStore)
-    save_times = []
-
-    async def record_save(data):
-        save_times.append(asyncio.get_event_loop().time())
-
-    mock_store.async_save = record_save
-
-    repo = Repository()
-    install_runtime(hass, repository=repo, store=mock_store)
-
-    # Request debounced persist
-    start_time = asyncio.get_event_loop().time()
-    await async_request_persist(hass)
-
-    # Immediately request immediate persist
-    await asyncio.sleep(0.1)
-    await async_persist_immediate(hass)
-
-    # Should have saved immediately, not after debounce delay
-    elapsed = save_times[0] - start_time
-    assert elapsed < PERSIST_DEBOUNCE_DELAY
-
-
-@pytest.mark.asyncio
-async def test_debounce_schedules_ha_tracked_background_task(monkeypatch):
-    """The debounced persist is scheduled through hass, not asyncio directly.
-
-    A task handed to Home Assistant is cancelled and awaited on shutdown; a bare
-    asyncio task is not, so the scheduling call itself is the contract here.
-    """
-    monkeypatch.setattr(storage_mod, "PERSIST_DEBOUNCE_DELAY", 0.05)
-
-    hass = _TrackedTaskHass()
-    saved: list[dict] = []
-
-    async def record_save(data):
-        saved.append(data)
-
-    mock_store = AsyncMock(spec=DomainStore)
-    mock_store.async_save = record_save
-    repo = Repository()
-    repo.create_item(ItemCreate(name="Tracked"))
-    install_runtime(hass, repository=repo, store=mock_store)
-
-    await async_request_persist(hass)
-
-    assert len(hass.background_tasks) == 1
-    name, task = hass.background_tasks[0]
-    assert DOMAIN in name
-    assert runtime_of(hass).persist_task is task
-
-    await asyncio.sleep(0.2)
-
-    assert task.done()
-    assert len(saved) == 1
-    assert len(saved[0]["items"]) == 1
-
-
-@pytest.mark.asyncio
-async def test_debounce_coalesces_across_tracked_tasks(monkeypatch):
-    """Every request gets its own tracked task, but only the last one persists."""
-    monkeypatch.setattr(storage_mod, "PERSIST_DEBOUNCE_DELAY", 0.05)
-
-    hass = _TrackedTaskHass()
-    saved: list[dict] = []
-
-    async def record_save(data):
-        saved.append(data)
-
-    mock_store = AsyncMock(spec=DomainStore)
-    mock_store.async_save = record_save
-    install_runtime(hass, repository=Repository(), store=mock_store)
-
-    for _ in range(RAPID_MUTATION_COUNT):
-        await async_request_persist(hass)
-        await asyncio.sleep(0.01)
-
-    await asyncio.sleep(0.2)
-
-    assert len(hass.background_tasks) == RAPID_MUTATION_COUNT
-    assert all(task.done() for _, task in hass.background_tasks)
-    assert len(saved) == 1
-
-
-@pytest.mark.asyncio
-async def test_debounced_tracked_task_reports_failure_without_raising(monkeypatch, caplog):
-    """A failing debounced persist is logged inside the task, never propagated.
-
-    The tracked task belongs to Home Assistant once scheduled, so a storage
-    failure has to surface as a log record rather than as a task exception.
-    """
-    caplog.set_level(logging.ERROR)
-    monkeypatch.setattr(storage_mod, "PERSIST_DEBOUNCE_DELAY", 0.05)
-
-    hass = _TrackedTaskHass()
-
-    async def refuse_save(_data):
-        raise OSError("disk went away")
-
-    failing_store = AsyncMock(spec=DomainStore)
-    failing_store.async_save = refuse_save
-    install_runtime(hass, store=failing_store)
-
-    await async_request_persist(hass)
-    _, task = hass.background_tasks[0]
-
-    await asyncio.sleep(0.2)
-
-    assert task.done()
-    assert task.exception() is None
-    assert any("Debounced persist task failed" in rec.message for rec in caplog.records)
 
 
 @pytest.mark.asyncio
@@ -331,59 +119,3 @@ async def test_persist_with_timing_logs(caplog):
     assert any("Repository persisted successfully" in rec.message for rec in caplog.records)
     # Check that elapsed_ms is in the extra dict of at least one record
     assert any(hasattr(rec, "elapsed_ms") for rec in caplog.records)
-
-
-@pytest.mark.asyncio
-async def test_debounce_request_logs(caplog):
-    """Debounced persist requests log appropriately."""
-    caplog.set_level(logging.DEBUG)
-
-    hass = _TrackedTaskHass()
-
-    mock_store = AsyncMock(spec=DomainStore)
-    mock_store.async_save = AsyncMock()
-
-    repo = Repository()
-    install_runtime(hass, repository=repo, store=mock_store)
-
-    await async_request_persist(hass)
-
-    # Check for debounce logs
-    assert any("Persist requested, debouncing" in rec.message for rec in caplog.records)
-
-
-# -----------------------------------------------------------------------------
-# Integration test: verify WS handlers use immediate persistence for error propagation
-# -----------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_ws_mutations_use_immediate_persistence(monkeypatch):
-    """WS mutations use immediate persistence to ensure storage errors propagate.
-
-    Verifies that each WS mutation triggers an immediate persist (async_persist_repo),
-    not debounced persistence. This ensures @ws_guard can catch and report StorageError.
-    """
-    hass = HomeAssistant()
-    repo = Repository()
-    install_runtime(hass, repository=repo)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
-
-    # Track calls to async_persist_repo (immediate)
-    immediate_calls: list[bool] = []
-
-    async def track_immediate(h):
-        immediate_calls.append(True)
-
-    monkeypatch.setattr(storage_mod, "async_persist_repo", track_immediate)
-
-    # Execute multiple WS mutations
-    await ws_send(hass, 1, "haventory/item/create", name="Item 1")
-    await ws_send(hass, 2, "haventory/item/create", name="Item 2")
-    await ws_send(hass, 3, "haventory/item/create", name="Item 3")
-
-    # Each WS mutation should trigger an immediate persist
-    assert len(immediate_calls) == RAPID_MUTATION_COUNT
-    assert len(immediate_calls) > 0, "WS must use immediate persistence for error propagation"

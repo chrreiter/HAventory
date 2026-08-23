@@ -204,7 +204,6 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
   - **WebSocket / service handlers**: immediate saves via `async_persist_repo` — storage
     errors propagate to clients as `storage_error`.
   - **Shutdown/unload**: immediate save via `async_persist_immediate`.
-  - **Debounced saves**: `async_request_persist` for batch/internal operations only.
   - **Concurrency**: all persist paths use `asyncio.Lock` to serialize writes.
 - Repository generation counter increments on every state modification (optimistic locking/debugging).
 - WebSocket-first CRUD via `homeassistant.components.websocket_api` decorators.

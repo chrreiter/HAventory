@@ -86,9 +86,6 @@ class HAventoryRuntime:
     # Serializes every write to the one store file. Per entry, because it guards
     # that entry's store and nothing else.
     persist_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    # The pending debounced write, cancelled by anything that is about to write
-    # itself or to take the repository away.
-    persist_task: asyncio.Task[None] | None = None
     subscriptions: dict[Any, dict[int, Subscription]] = field(default_factory=dict)
     # Which items were low when the last mutation was announced. Seeded at setup
     # so a restart re-announces nothing, and diffed after every mutation.
