@@ -357,6 +357,43 @@ running *inside* WSL2 publishes onto the VM rather than the LAN, so that case ad
 needs mirrored networking mode or a `netsh interface portproxy` forward. This is the only way
 to test real fingers, momentum scrolling, iOS Safari, and the HA Companion app's webview.
 
+### Measure the DOM / read a component's state
+
+```bash
+cd .claude/skills/run-haventory
+node probe.mjs --eval 'deepQuery("hv-list").getBoundingClientRect().toJSON()'
+node probe.mjs --element haventory-card --mobile \
+  --search projector --tap '[data-testid="row-secondary"]' --out row.png
+node probe.mjs --viewport 900x800 --locale de-DE \
+  --eval '({ bar: deepQuery(".appbar").clientWidth, heading: deepQuery(".appbar h2").scrollWidth })'
+```
+
+`probe.mjs` is `screenshot.mjs`'s sibling for numbers instead of pixels: same login, the same
+`--path`/`--element`/`--mobile`/`--viewport`/`--locale`/`--dark`, the same actions in the order
+typed (`--search`, `--click`/`--tap`, `--fill '<sel>=><value>'`, `--press`, `--wait`) — plus
+`--eval '<expression>'`, which runs last. It answers what a screenshot only shows: whether that
+chip really fits inside its line, what state a component holds, and — by injecting a `<style>`
+into a shadow root — whether a CSS hypothesis works on the running card before it is written
+into the source. `node probe.mjs --help` lists every flag, and `--out` still takes a screenshot
+of the state the actions left behind.
+
+- The JSON result is the **only** thing on stdout; the target line, each action and any console
+  error go to stderr, so `node probe.mjs --eval … | jq .` works.
+- `deepQuery(sel)` / `deepQueryAll(sel)` are in scope and walk every open shadow root — a plain
+  `querySelector` stops at the first boundary and every HAventory component sits behind one. The
+  expression may `await`, and its value has to survive `JSON.stringify`: return
+  `…getBoundingClientRect().toJSON()` or a plain object of numbers, never a node.
+- Defaults are the sidebar panel (`/haventory`, `haventory-panel`) at 1280x900 with no touch.
+  `--element haventory-card` with no `--path` asks `card_views.mjs` where the card is.
+- **`--viewport` alone only resizes the window**, unlike `screenshot.mjs`: it leaves `isMobile`
+  off, because that flag switches HA to its narrow, sidebar-collapsed layout, which is not the
+  layout a desktop window of the same width has. `--touch` adds the phone emulation, `--mobile`
+  is the whole iPhone 15 descriptor.
+- `--locale de-DE` decides the language only while the **profile's** language is unset (HA then
+  falls back to the browser's); a profile that names a language wins over the flag — set it over
+  WS as under "Screenshot the setup and options screens".
+- [Windows/Git Bash] prefix the command with `MSYS_NO_PATHCONV=1` when you pass `--path /haventory`.
+
 ### Drive the import sheet
 
 `drive_import.mjs` puts a backup document through the card's own Import UI — overflow menu →
@@ -619,7 +656,8 @@ The full gate, with the numbers kept next to it, is the sibling `/test-haventory
 
 The harness has its own unit cover for the parts that decide where a run looks and which
 instance it looks at: `card_views.mjs` (which views hold the card, which URL addresses them,
-what `--path` and `--dashboard` asked for, which `.env` wins) and `surfaces.mjs`, whose
+what `--path` and `--dashboard` asked for, which `.env` wins), `probe.mjs` (which actions
+run in which order, and which screen a measurement was taken on) and `surfaces.mjs`, whose
 tables are checked about themselves — every selector a desktop surface asserts **absent** has
 to be one a narrow surface asserts present, so a typo cannot leave a `hidden` check passing
 vacuously. No HA and no dependency beyond Node:
@@ -698,8 +736,9 @@ destructive clean-start mode), then `Online smoke test completed successfully.`
   back to the browser language whenever the profile has none — so with the profile cleared
   the whole UI, HAventory included, still comes up German and a screenshot proves nothing
   about which language a string came from. Name it: `screenshot.mjs --locale en-US`, or set
-  the profile language over WS (see "Screenshot the setup and options screens"). The other
-  harnesses do not take `--locale`, so drive them by setting the profile.
+  the profile language over WS (see "Screenshot the setup and options screens"). Only
+  `screenshot.mjs` and `probe.mjs` take `--locale`; drive the others by setting the
+  profile.
 - **`HA_CONTAINER` turns `smoke_online.sh` destructive**: when set, the script
   `rm -f`s `haventory_store` inside that container and restarts HA before testing —
   all dev items/locations are gone. Leave it unset unless you *want* a wiped store.
