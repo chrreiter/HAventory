@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 
 import pytest
+from custom_components.haventory import subscriptions as subs_mod
 from custom_components.haventory import ws as ws_mod
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.runtime import find_runtime
@@ -185,7 +186,7 @@ async def test_removal_drops_live_subscriptions() -> None:
     await remove_entry(hass, entry)
     conn.messages.clear()
 
-    ws_mod.broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
+    subs_mod.broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
 
     assert conn.messages == []
     assert hass.data[DOMAIN].get("subscriptions") in (None, {})

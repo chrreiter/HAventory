@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
-from custom_components.haventory.ws import _subs_bucket, broadcast_event
+from custom_components.haventory.subscriptions import broadcast_event, open_subscriptions
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
@@ -164,12 +164,12 @@ async def test_subscriptions_cleanup_on_connection_close() -> None:
     conn = RecordingConn()
     await ws_send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
 
-    subs = _subs_bucket(hass)
+    subs = open_subscriptions(hass)
     assert subs.get(conn)
 
     conn.close()
 
-    assert conn not in _subs_bucket(hass)
+    assert conn not in open_subscriptions(hass)
 
 
 @pytest.mark.asyncio
@@ -729,7 +729,7 @@ async def test_framework_unsubscribe_events_tears_down_subscription() -> None:
     # Emulate core ``unsubscribe_events``: the id is found -> success (no not_found).
     assert conn.core_unsubscribe_events(sub_id) is True
     assert sub_id not in conn.subscriptions
-    assert conn not in _subs_bucket(hass)  # our bucket was cleaned up too
+    assert conn not in open_subscriptions(hass)  # our bucket was cleaned up too
 
     # No further deliveries after teardown.
     conn.messages.clear()
@@ -754,7 +754,7 @@ async def test_dedicated_unsubscribe_clears_framework_registry() -> None:
     res = await ws_send(hass, 602, "haventory/unsubscribe", conn=conn, subscription=sub_id)
     assert res["success"] is True
     assert sub_id not in conn.subscriptions
-    assert conn not in _subs_bucket(hass)
+    assert conn not in open_subscriptions(hass)
 
 
 @pytest.mark.asyncio
@@ -793,9 +793,9 @@ async def test_subscribe_on_slotted_connection_never_stamps_attribute() -> None:
 
     # Both subscriptions are live in our bucket, and the disconnect path
     # (subscriptions.values()) tears them all down without drift.
-    assert _subs_bucket(hass).get(conn)
+    assert open_subscriptions(hass).get(conn)
     conn.close()
-    assert conn not in _subs_bucket(hass)
+    assert conn not in open_subscriptions(hass)
 
     # Sanity: the stub really is slotted like real HA (rejects arbitrary attrs).
     with pytest.raises(AttributeError):

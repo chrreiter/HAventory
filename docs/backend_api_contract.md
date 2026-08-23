@@ -1,6 +1,6 @@
 ## HAventory WebSocket API Contract
 
-This document specifies the WebSocket message envelope, error taxonomy, command catalog, and event delivery semantics implemented by `custom_components/haventory/ws.py`.
+This document specifies the WebSocket message envelope, error taxonomy, command catalog, and event delivery semantics implemented by `custom_components/haventory/ws.py`, with the subscription registry and the event fan-out in `custom_components/haventory/subscriptions.py`.
 
 ### Envelope
 

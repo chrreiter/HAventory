@@ -1,23 +1,25 @@
 """Announcing a mutation — to WebSocket subscribers, to the bus, to the sensors.
 
-One call per mutation path covers all three. Every path — WebSocket handler,
-`haventory.*` service, bulk operation, import — calls `notify_mutation` after
-its durable write, which broadcasts the `items` event to subscribed clients,
-fires `haventory_item_changed` on the bus, diffs the low-stock set to fire
-`haventory_low_stock`, dispatches the signal the sensors repaint on, and
-broadcasts the fresh `stats` counts. A command that rewrites many items at once
-calls `notify_bulk_mutation` instead: one `items` event and one counts event for
-the batch, a bus event per item, one diff and one repaint.
+Every write path announces itself through one of the doors here, and each door
+covers all three surfaces at once. A path that reached `subscriptions.py`
+directly would tell a card what it never told the bus, so the two would disagree
+about the same edit.
 
-That the two surfaces are one call is the point rather than a convenience: they
-were two, and every `haventory.*` service call reached the bus and no subscriber
-at all, so a card left open showed a stale list until something made it re-list.
-
-A location mutation calls `notify_location_mutation`, which broadcasts the
-`locations` event and the counts and repaints, but announces nothing on the bus —
-no item changed, only the tree the items are counted and pathed against.
-`notify_location_changed` is the repaint on its own, for the paths that have
-already broadcast.
+- `notify_mutation`, after the durable write of one item: it broadcasts the
+  `items` event, fires `haventory_item_changed` on the bus, diffs the low-stock
+  set to fire `haventory_low_stock`, dispatches the signal the sensors repaint
+  on, and broadcasts the fresh `stats` counts.
+- `notify_bulk_mutation`, for a command that rewrote many items: one `items`
+  event and one counts event for the batch, a bus event per item, one diff and
+  one repaint.
+- `notify_dataset_replaced`, for an import: a `reloaded` event on both item
+  topics, and no per-row announcement anywhere.
+- `notify_location_mutation`, which broadcasts the `locations` event and the
+  counts and repaints, but announces nothing on the bus — no item changed, only
+  the tree the items are counted and pathed against. `notify_location_changed`
+  is the repaint on its own, for the paths that have already broadcast.
+- `notify_status_mutation`, for the status vocabulary: the `statuses` topic and
+  nothing else, because a label is neither an item nor a count.
 
 Bus events bypass the rate limiter: it budgets WebSocket subscription traffic,
 and these are internal to Home Assistant. The WebSocket half charged here is
@@ -48,37 +50,9 @@ from .const import (
 from .logs import context_logger
 from .models import iso_utc_now
 from .runtime import HAventoryRuntime, find_runtime
+from .subscriptions import broadcast_counts, broadcast_event
 
 LOGGER = context_logger(__name__)
-
-# The WebSocket items vocabulary, reused verbatim: an automation and a card
-# client describe the same mutation with the same word.
-ITEM_ACTIONS: frozenset[str] = frozenset(
-    {"created", "updated", "moved", "quantity_changed", "checked_out", "checked_in", "deleted"}
-)
-
-
-def _broadcast_event(
-    hass: HomeAssistant, *, topic: str, action: str, payload: dict[str, Any] | None = None
-) -> None:
-    """Hand one event to the WebSocket broadcaster.
-
-    The import is function-local because `ws.py` imports this module at its own
-    module scope; at module scope here the two would be a cycle. Python caches
-    the module, so every call after the first is a dictionary lookup.
-    """
-
-    from .ws import broadcast_event  # noqa: PLC0415 - the cycle, see above
-
-    broadcast_event(hass, topic=topic, action=action, payload=payload)
-
-
-def _broadcast_counts(hass: HomeAssistant) -> None:
-    """Hand the fresh counts to the WebSocket broadcaster. Local import as above."""
-
-    from .ws import broadcast_counts  # noqa: PLC0415 - the cycle, see above
-
-    broadcast_counts(hass)
 
 
 def seed_low_stock_snapshot(hass: HomeAssistant) -> None:
@@ -117,7 +91,7 @@ def async_track_day_rollover(hass: HomeAssistant) -> Callable[[], None]:
     @callback
     def _rollover(_now: datetime) -> None:
         try:
-            _broadcast_counts(hass)
+            broadcast_counts(hass)
         except Exception:
             # Best-effort, as every announcement here is, and for a sharper
             # reason: an exception escaping into the tracker can take the next
@@ -165,7 +139,7 @@ def notify_mutation(
             return
 
         if item is not None:
-            _broadcast_event(hass, topic="items", action=action, payload={"item": item})
+            broadcast_event(hass, topic="items", action=action, payload={"item": item})
             _fire_item_changed(hass, action, item)
 
         _fire_low_stock_transitions(hass, runtime, item=item)
@@ -173,7 +147,7 @@ def notify_mutation(
         async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
 
         if counts:
-            _broadcast_counts(hass)
+            broadcast_counts(hass)
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a mutation",
@@ -184,7 +158,7 @@ def notify_mutation(
 def notify_counts(hass: HomeAssistant) -> None:
     """Broadcast the counts alone, for a batch that suppressed them per row."""
 
-    _broadcast_counts(hass)
+    broadcast_counts(hass)
 
 
 def notify_bulk_mutation(
@@ -208,7 +182,7 @@ def notify_bulk_mutation(
         # One `items` event for the batch, carrying no row: a subscriber is
         # being told its list is stale, not which rows moved, and a payload per
         # row would be a whole inventory on the wire.
-        _broadcast_event(hass, topic="items", action=action, payload=None)
+        broadcast_event(hass, topic="items", action=action, payload=None)
 
         for item in items:
             _fire_item_changed(hass, action, item)
@@ -218,12 +192,28 @@ def notify_bulk_mutation(
         _fire_low_stock_transitions(hass, runtime, item=None)
 
         async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
-        _broadcast_counts(hass)
+        broadcast_counts(hass)
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a bulk mutation",
             extra={"domain": DOMAIN, "op": "notify_bulk_mutation", "action": action},
         )
+
+
+def notify_dataset_replaced(hass: HomeAssistant) -> None:
+    """Announce that the whole dataset was rewritten, after the persist.
+
+    One `reloaded` event per topic and no per-item announcement at all: an
+    import replaces items and locations wholesale, and both an automation and a
+    card want one signal rather than one per row. Passing no item to
+    ``notify_mutation`` leaves it the rest of its job — the low-stock diff still
+    runs, so a restock done by import announces itself, the sensors repaint, and
+    the counts go out.
+    """
+
+    broadcast_event(hass, topic="items", action="reloaded", payload=None)
+    broadcast_event(hass, topic="locations", action="reloaded", payload=None)
+    notify_mutation(hass, action="reloaded")
 
 
 def notify_location_mutation(
@@ -246,10 +236,10 @@ def notify_location_mutation(
     `locations_total` and every `location_path` stay exactly as they were.
     """
 
-    _broadcast_event(hass, topic="locations", action=action, payload={"location": location})
+    broadcast_event(hass, topic="locations", action=action, payload={"location": location})
     if repaint:
         notify_location_changed(hass)
-    _broadcast_counts(hass)
+    broadcast_counts(hass)
 
 
 def notify_location_changed(hass: HomeAssistant) -> None:
@@ -276,6 +266,30 @@ def notify_location_changed(hass: HomeAssistant) -> None:
             "Failed to repaint after a location change",
             extra={"domain": DOMAIN, "op": "notify_location_changed"},
         )
+
+
+def notify_status_mutation(
+    hass: HomeAssistant,
+    *,
+    action: str,
+    status: dict[str, Any] | None = None,
+    statuses: list[dict[str, Any]] | None = None,
+) -> None:
+    """Announce a change to the status vocabulary, after the persist.
+
+    The `statuses` topic alone. A status is a label items may carry: defining,
+    renaming or removing one moves no item, no count and nothing an entity
+    renders, so there is nothing to fire on the bus and nothing to repaint. A
+    delete that reassigns the items off the slug announces those beside this
+    call, as the ordinary bulk item mutation they are.
+
+    ``statuses`` carries the whole vocabulary for a reorder, which is the one
+    action that describes the list rather than an entry of it; ``status``
+    carries the single entry for the rest.
+    """
+
+    payload = {"statuses": statuses} if statuses is not None else {"status": status}
+    broadcast_event(hass, topic="statuses", action=action, payload=payload)
 
 
 def _fire_item_changed(hass: HomeAssistant, action: str, item: dict[str, Any]) -> None:

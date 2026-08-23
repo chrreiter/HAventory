@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory import storage as storage_mod
+from custom_components.haventory import subscriptions as subs_mod
 from custom_components.haventory import ws as ws_mod
 from custom_components.haventory.exceptions import NotLoadedError
 from custom_components.haventory.runtime import find_runtime, loaded_runtime
@@ -120,15 +121,15 @@ async def test_a_close_callback_after_teardown_is_a_no_op() -> None:
     conn = RecordingConn()
 
     assert (await ws_send(hass, 1, "haventory/subscribe", conn=conn, topic="items"))["success"]
-    assert ws_mod._subs_bucket(hass)
+    assert subs_mod.open_subscriptions(hass)
 
     unload_runtime(hass)
 
     # Both callbacks, on a hass with no runtime left to look one up in.
-    ws_mod._drop_subscription(hass, conn, 1)
-    ws_mod._cleanup_subscriptions_for_conn(hass, conn)
+    subs_mod._drop_subscription(hass, conn, 1)
+    subs_mod._cleanup_subscriptions_for_conn(hass, conn)
 
-    assert ws_mod._subs_bucket(hass) == {}
+    assert subs_mod.open_subscriptions(hass) == {}
 
 
 @pytest.mark.asyncio
@@ -143,6 +144,6 @@ async def test_a_broadcast_after_teardown_reaches_nobody_and_raises_nothing() ->
     conn.messages.clear()
 
     unload_runtime(hass)
-    ws_mod.broadcast_event(hass, topic="items", action="created", payload=None)
+    subs_mod.broadcast_event(hass, topic="items", action="created", payload=None)
 
     assert conn.events() == []

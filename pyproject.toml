@@ -113,6 +113,7 @@ module = [
   "haventory.runtime",
   "haventory.serialization",
   "haventory.storage",
+  "haventory.subscriptions",
   "haventory.ws",
 ]
 disallow_any_generics = true

@@ -29,7 +29,7 @@ from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
 from runtime_helpers import install_runtime
-from ws_helpers import RecordingConn, ws_send
+from ws_helpers import ITEM_ACTIONS, RecordingConn, ws_send
 
 _BULK_ROWS = 3
 
@@ -107,7 +107,7 @@ async def test_every_item_service_delivers_its_own_action() -> None:
         await handler(hass, payload)
 
     assert _actions(conn, "items") == [action for _h, _p, action in calls]
-    assert {a for a in _actions(conn, "items")} <= events_mod.ITEM_ACTIONS
+    assert {a for a in _actions(conn, "items")} <= ITEM_ACTIONS
 
 
 @pytest.mark.asyncio

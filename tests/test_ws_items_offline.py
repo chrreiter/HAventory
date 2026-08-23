@@ -26,6 +26,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from custom_components.haventory import events as events_mod
 from custom_components.haventory import media as media_mod
 from custom_components.haventory import ws as ws_mod
 from custom_components.haventory.repository import Repository
@@ -512,7 +513,7 @@ async def test_attachment_add_announces_the_item_as_updated(upload, monkeypatch)
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     broadcasts: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        ws_mod,
+        events_mod,
         "broadcast_event",
         lambda _hass, *, topic, action, payload=None: broadcasts.append((topic, action)),
     )

@@ -31,6 +31,15 @@ if TYPE_CHECKING:
     from homeassistant.core import HomeAssistant
 
 
+# The item-action vocabulary `docs/backend_api_contract.md` documents for both
+# surfaces — the `items` topic and `haventory_item_changed` — so a test can hold
+# either to the same words. `reloaded` is not one of them: it says the dataset
+# moved wholesale, carries no item and fires nothing on the bus.
+ITEM_ACTIONS: frozenset[str] = frozenset(
+    {"created", "updated", "moved", "quantity_changed", "checked_out", "checked_in", "deleted"}
+)
+
+
 class WsHandler(Protocol):
     """What the stub registry stores: a dispatchable, command-tagged coroutine."""
 

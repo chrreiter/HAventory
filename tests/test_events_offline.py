@@ -14,6 +14,7 @@ Scenarios:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pytest
 from custom_components.haventory import events as events_mod
@@ -36,7 +37,7 @@ from runtime_helpers import (
     unload_entry,
     unload_runtime,
 )
-from ws_helpers import RecordingConn, ws_send
+from ws_helpers import ITEM_ACTIONS, RecordingConn, ws_send
 
 LOW_THRESHOLD = 3
 # One create, then the reassignment's edit.
@@ -89,7 +90,7 @@ async def test_every_websocket_item_mutation_reaches_the_bus() -> None:
 
     fired = hass.bus.events_of(EVENT_ITEM_CHANGED)
     assert len(fired) == len(commands) + 1
-    assert {e["action"] for e in fired} <= events_mod.ITEM_ACTIONS
+    assert {e["action"] for e in fired} <= ITEM_ACTIONS
     assert fired[0]["action"] == "created"
     assert fired[-1]["action"] == "deleted"
     assert {e["item_id"] for e in fired} == {item_id}
@@ -225,7 +226,7 @@ def test_an_emptied_bucket_is_a_no_op() -> None:
     assert hass.bus.events_of(EVENT_LOW_STOCK) == []
 
 
-@pytest.mark.parametrize("action", sorted(events_mod.ITEM_ACTIONS))
+@pytest.mark.parametrize("action", sorted(ITEM_ACTIONS))
 def test_every_action_in_the_vocabulary_fires(action: str) -> None:
     hass, repo = _hass()
     _item, serialized = _create(repo, hass, name="Widget")
@@ -520,7 +521,7 @@ async def test_a_failing_rollover_broadcast_is_logged_rather_than_raised(
     def _boom(_hass: HomeAssistant) -> None:
         raise RuntimeError("no counts today")
 
-    monkeypatch.setattr(events_mod, "_broadcast_counts", _boom)
+    monkeypatch.setattr(events_mod, "broadcast_counts", _boom)
 
     action(None)
 
@@ -528,3 +529,25 @@ async def test_a_failing_rollover_broadcast_is_logged_rather_than_raised(
     assert [r.levelno for r in records] == [logging.ERROR]
     assert records[0].op == "day_rollover"
     assert records[0].exc_info is not None
+
+
+def test_nothing_but_events_py_reaches_the_broadcaster() -> None:
+    """One door: a write path announces through here, or subscribers hear nothing.
+
+    A module calling `subscriptions.broadcast_event` itself would reach a card
+    without firing the bus event, diffing the low-stock set or repainting the
+    entities beside it, so the same edit would look different depending on which
+    surface was watching. Read from the source rather than by importing: several
+    modules pull in Home Assistant packages the offline stubs do not provide.
+    """
+
+    package = Path(events_mod.__file__).parent
+    offenders = []
+    for path in sorted(package.glob("*.py")):
+        if path.name in {"events.py", "subscriptions.py"}:
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if "broadcast_event(" in line or "broadcast_counts(" in line:
+                offenders.append(f"{path.name}:{number}: {line.strip()}")
+
+    assert offenders == [], "announce through events.py: it covers the bus and the entities too"
