@@ -197,10 +197,10 @@ def ws_guard(
 
     def decorator(func: _WSHandler) -> _WSHandler:
         def _send_error(conn: websocket_api.ActiveConnection, err: dict[str, Any]) -> None:
+            # The envelope is returned to the caller whatever happens here: a
+            # connection that cannot be written to must not swallow the error.
             try:
-                send = getattr(conn, "send_message", None)
-                if callable(send):
-                    send(err)
+                conn.send_message(err)
             except Exception:  # pragma: no cover - defensive logging only
                 LOGGER.debug(
                     "Failed to send WS error message",
@@ -556,14 +556,9 @@ def _register_framework_unsub(
     command, so without an entry here HA core replies ``not_found``
     ("Subscription not found.") on every teardown — surfacing as an unhandled
     rejection in the card. Registering the id makes the standard lifecycle work.
-
-    The ``getattr``/``isinstance`` probe mirrors ``_register_close_listener`` so the
-    offline test stubs (which expose no ``subscriptions`` dict) are unaffected.
     """
 
-    subscriptions = getattr(conn, "subscriptions", None)
-    if isinstance(subscriptions, dict):
-        subscriptions[sub_id] = functools.partial(_drop_subscription, hass, conn, sub_id)
+    conn.subscriptions[sub_id] = functools.partial(_drop_subscription, hass, conn, sub_id)
 
 
 def _unregister_framework_unsub(conn: websocket_api.ActiveConnection, sub_id: int) -> None:
@@ -574,54 +569,28 @@ def _unregister_framework_unsub(conn: websocket_api.ActiveConnection, sub_id: in
     ``connection.subscriptions``.
     """
 
-    subscriptions = getattr(conn, "subscriptions", None)
-    if isinstance(subscriptions, dict):
-        subscriptions.pop(sub_id, None)
+    conn.subscriptions.pop(sub_id, None)
 
 
 def _register_close_listener(hass: HomeAssistant, conn: websocket_api.ActiveConnection) -> None:
-    """Attach cleanup to a connection close callback when available.
+    """Have the connection drop its subscriptions when it closes.
 
-    On real Home Assistant, ``ActiveConnection`` exposes a ``subscriptions``
-    dict whose values are invoked when the connection closes — registering
-    there is what prevents disconnected clients from leaking subscription
-    state. The ``on_close``/``add_close_callback`` probes support the offline
-    test stubs.
+    ``ActiveConnection.subscriptions`` holds zero-arg callbacks Home Assistant
+    invokes on disconnect, so registering there is what keeps a client that
+    vanishes from leaking subscription state.
 
     Idempotency is derived from the state itself, not stamped on the connection:
     real HA's ``ActiveConnection`` is ``__slots__``-based (no ``__dict__``), so a
-    ``conn._haventory_close_registered = True`` marker raises ``AttributeError`` on
-    every subscribe there — a benign-but-noisy exception the offline stubs never
-    surface because they carry a ``__dict__``. Our ``"haventory/cleanup"`` key and
-    the idempotent ``_cleanup_subscriptions_for_conn`` make repeat registration a
-    harmless no-op, so no marker is needed.
+    ``conn._haventory_close_registered = True`` marker would raise
+    ``AttributeError`` on every subscribe. The ``"haventory/cleanup"`` key — a
+    string, which cannot collide with HA's integer subscription ids — is the
+    marker instead, and ``_cleanup_subscriptions_for_conn`` is idempotent.
     """
 
-    subscriptions = getattr(conn, "subscriptions", None)
-    if isinstance(subscriptions, dict):
-        # Real-HA path. String key cannot collide with HA's integer subscription
-        # ids; its presence is also the "already registered" marker.
-        if "haventory/cleanup" not in subscriptions:
-            subscriptions["haventory/cleanup"] = functools.partial(
-                _cleanup_subscriptions_for_conn, hass, conn
-            )
-        return
-
-    # Offline-stub path: connections expose on_close / add_close_callback instead of
-    # a subscriptions dict. `_cleanup_subscriptions_for_conn` is idempotent, so even a
-    # repeat registration here only ever removes the (already-removed) bucket.
-    closer = getattr(conn, "on_close", None)
-    if not callable(closer):
-        closer = getattr(conn, "add_close_callback", None)
-    if callable(closer):
-        try:
-            closer(lambda: _cleanup_subscriptions_for_conn(hass, conn))
-        except Exception:  # pragma: no cover - defensive
-            LOGGER.debug(
-                "Failed to register WS close listener",
-                extra={"domain": DOMAIN, "op": "subscribe_close_hook"},
-                exc_info=True,
-            )
+    if "haventory/cleanup" not in conn.subscriptions:
+        conn.subscriptions["haventory/cleanup"] = functools.partial(
+            _cleanup_subscriptions_for_conn, hass, conn
+        )
 
 
 def _now_ts() -> str:
@@ -631,16 +600,10 @@ def _now_ts() -> str:
 def _send_event_message(
     conn: websocket_api.ActiveConnection, subscription_id: int, event_payload: dict[str, Any]
 ) -> None:
+    # One dead connection must not stop the fan-out reaching the others, so the
+    # failure is logged here rather than raised into the broadcast loop.
     try:
-        msg = {"id": subscription_id, "type": "event", "event": event_payload}
-        send = getattr(conn, "send_message", None)
-        if callable(send):
-            send(msg)
-            return
-        async_send = getattr(conn, "async_send_message", None)
-        if callable(async_send):  # pragma: no cover - alternate interface
-            # Fire and forget in tests; assume sync in stub
-            async_send(msg)
+        conn.send_message({"id": subscription_id, "type": "event", "event": event_payload})
     except Exception:  # pragma: no cover - defensive logging only
         LOGGER.debug(
             "Failed to send WS event message",
