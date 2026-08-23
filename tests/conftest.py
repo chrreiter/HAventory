@@ -253,7 +253,8 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             """Take note of the platforms the entry asked for.
 
             Offline there is no entity platform to run — the entities are
-            asserted in the phacc suite — so setting one up is the record alone.
+            asserted in the phacc suite — so recording the request is the whole
+            behaviour.
             """
 
             self.forwarded.append((entry, list(platforms)))

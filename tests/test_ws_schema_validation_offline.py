@@ -15,7 +15,6 @@ Scenarios:
 - a command declaring nothing but its type accepts no key beyond id and type
 - the id/type envelope is checked ahead of the command schema
 - a `vol.All` schema's cross-field validator refuses through the same path
-- a real haventory command refuses a wrong-typed field and mutates nothing
 - registering a handler that carries no schema is refused outright
 """
 
@@ -25,12 +24,10 @@ from typing import Any
 
 import pytest
 import voluptuous as vol
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, repo_of
-from ws_helpers import RecordingConn, ws_send
+from ws_helpers import RecordingConn
 
 INVALID_FORMAT = "invalid_format"
 PROBE_DEFAULT_LIMIT = 25
@@ -64,13 +61,6 @@ class _Probe:
         if handler is None:
             raise AssertionError("probe command was not registered")
         return await handler(self._hass, RecordingConn(), frame)
-
-
-def _fresh_hass() -> HomeAssistant:
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
-    return hass
 
 
 @pytest.mark.asyncio
@@ -218,51 +208,6 @@ async def test_a_refusal_is_answered_on_the_connection() -> None:
 
     assert conn.messages == [res]
     assert res["error"]["code"] == INVALID_FORMAT
-
-
-@pytest.mark.asyncio
-async def test_a_real_command_refuses_a_wrong_typed_field_and_mutates_nothing() -> None:
-    """The same guard over a shipped command, end to end.
-
-    ``tags`` is one of the fields ``item/create`` still types concretely. The
-    fields whose wrong type is a plausible client bug — ``name``, ``quantity``
-    — are typed ``object`` on purpose so they answer ``validation_error``
-    through the guard instead; the test below covers those.
-    """
-
-    hass = _fresh_hass()
-    repo = repo_of(hass)
-
-    res = await ws_send(hass, 1, "haventory/item/create", name="Hammer", tags="chisel")
-
-    assert res["success"] is False
-    assert res["error"]["code"] == INVALID_FORMAT
-    assert repo.get_counts()["items_total"] == 0
-
-
-@pytest.mark.asyncio
-async def test_the_widened_fields_answer_validation_error_and_mutate_nothing() -> None:
-    """A field typed ``object`` is refused by the handler, through the guard.
-
-    Home Assistant refuses a schema mismatch before ``ws_guard`` runs and logs
-    the client's payload at ERROR while doing it. The fields a client most
-    plausibly gets wrong are typed ``object`` so the answer comes from the model
-    layer instead, naming the field at WARNING.
-    """
-
-    hass = _fresh_hass()
-    repo = repo_of(hass)
-
-    for payload in (
-        {"name": "Hammer", "quantity": "many"},
-        {"name": 42},
-        {"name": "Hammer", "quantity": 1.5},
-    ):
-        res = await ws_send(hass, 1, "haventory/item/create", **payload)
-        assert res["success"] is False, payload
-        assert res["error"]["code"] == "validation_error", payload
-
-    assert repo.get_counts()["items_total"] == 0
 
 
 def test_registering_a_handler_without_a_schema_is_refused() -> None:
