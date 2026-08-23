@@ -5,9 +5,9 @@ Regression coverage for the PR #91 review:
   can never leave a durable partially-indexed phantom item;
 - boolean quantity/delta/low_stock_threshold are rejected consistently on the
   single-command paths (matching the bulk validator), never stored as a bool;
-- a value the model refuses is refused before the item is looked up, so
-  `haventory/item/set_quantity` and the `items/bulk` row of the same kind answer
-  one payload with one code.
+- a value the payload is wrong about is refused before the item is looked up, so
+  a single-item command and the `items/bulk` row of the same kind answer one
+  payload with one code.
 """
 
 from __future__ import annotations
@@ -167,6 +167,32 @@ async def test_a_refused_quantity_answers_alike_from_the_command_and_from_bulk()
                 "payload": {"item_id": missing, "quantity": -1},
             }
         ],
+    )
+
+    assert single["success"] is False
+    assert single["error"]["code"] == "validation_error"
+    row = batch["result"]["results"]["a"]
+    assert row["success"] is False
+    assert row["error"]["code"] == single["error"]["code"]
+    assert row["error"]["message"] == single["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_an_item_id_of_the_wrong_type_names_the_field_on_both_surfaces() -> None:
+    """`item_id` is typed `object` in the schema, so the handler is what names it.
+
+    A number where an id belongs is a client bug, and `not_found` sends its
+    author looking for a missing item instead.
+    """
+
+    hass = _make_hass()
+
+    single = await ws_send(hass, 1, "haventory/item/update", item_id=7, name="X")
+    batch = await ws_send(
+        hass,
+        2,
+        "haventory/items/bulk",
+        operations=[{"op_id": "a", "kind": "item_update", "payload": {"item_id": 7, "name": "X"}}],
     )
 
     assert single["success"] is False
