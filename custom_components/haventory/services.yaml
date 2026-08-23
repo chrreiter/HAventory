@@ -64,8 +64,10 @@ item_create:
     tags:
       required: false
       example: ["tool", "garage"]
+      # A list of strings, which is what `item_update` declares for the same
+      # field: a text box would hand the schema a bare string.
       selector:
-        text:
+        object:
     category:
       required: false
       example: "tools"
@@ -78,6 +80,7 @@ item_create:
         number:
     custom_fields:
       required: false
+      example: {"sku": "A-1"}
       selector:
         object:
 
@@ -95,18 +98,22 @@ item_update:
         number:
     name:
       required: false
+      example: "Hammer"
       selector:
         text:
     description:
       required: false
+      example: "16 oz claw hammer"
       selector:
         text:
     quantity:
       required: false
+      example: 1
       selector:
         number:
     status:
       required: false
+      example: "ok"
       selector:
         select:
           # The built-ins are suggestions, not the whole vocabulary: a household
@@ -120,46 +127,57 @@ item_update:
             - "needs_repair"
     checked_out:
       required: false
+      example: false
       selector:
         boolean:
     due_date:
       required: false
+      example: "2025-01-01"
       selector:
         date:
     inspection_date:
       required: false
+      example: "2025-06-01"
       selector:
         date:
     reminder_date:
       required: false
+      example: "2025-09-01"
       selector:
         date:
     reminder_interval:
       required: false
+      example: {"unit": "months", "count": 3}
       selector:
         object:
     location_id:
       required: false
+      example: "uuid-of-location"
       selector:
         text:
     tags:
       required: false
+      example: ["tool", "garage"]
       selector:
         object:
     category:
       required: false
+      example: "tools"
       selector:
         text:
     low_stock_threshold:
       required: false
+      example: 1
       selector:
         number:
     custom_fields_set:
       required: false
+      example: {"sku": "A-1"}
       selector:
         object:
     custom_fields_unset:
       required: false
+      example: ["sku"]
       selector:
         object:
 
@@ -167,10 +185,12 @@ item_delete:
   fields:
     item_id:
       required: true
+      example: "uuid-of-item"
       selector:
         text:
     expected_version:
       required: false
+      example: 2
       selector:
         number:
 
@@ -178,14 +198,17 @@ item_move:
   fields:
     item_id:
       required: true
+      example: "uuid-of-item"
       selector:
         text:
     new_location_id:
       required: false
+      example: "uuid-of-location"
       selector:
         text:
     expected_version:
       required: false
+      example: 2
       selector:
         number:
 
@@ -193,14 +216,17 @@ item_adjust_quantity:
   fields:
     item_id:
       required: true
+      example: "uuid-of-item"
       selector:
         text:
     delta:
       required: true
+      example: -1
       selector:
         number:
     expected_version:
       required: false
+      example: 2
       selector:
         number:
 
@@ -208,14 +234,17 @@ item_set_quantity:
   fields:
     item_id:
       required: true
+      example: "uuid-of-item"
       selector:
         text:
     quantity:
       required: true
+      example: 5
       selector:
         number:
     expected_version:
       required: false
+      example: 2
       selector:
         number:
 
@@ -223,6 +252,7 @@ item_check_out:
   fields:
     item_id:
       required: true
+      example: "uuid-of-item"
       selector:
         text:
     due_date:
@@ -232,6 +262,7 @@ item_check_out:
         date:
     expected_version:
       required: false
+      example: 2
       selector:
         number:
 
@@ -239,10 +270,12 @@ item_check_in:
   fields:
     item_id:
       required: true
+      example: "uuid-of-item"
       selector:
         text:
     expected_version:
       required: false
+      example: 2
       selector:
         number:
 
@@ -263,10 +296,12 @@ location_create:
   fields:
     name:
       required: true
+      example: "Garage"
       selector:
         text:
     parent_id:
       required: false
+      example: "uuid-of-location"
       selector:
         text:
     area_id:
@@ -279,14 +314,17 @@ location_update:
   fields:
     location_id:
       required: true
+      example: "uuid-of-location"
       selector:
         text:
     name:
       required: false
+      example: "Garage"
       selector:
         text:
     new_parent_id:
       required: false
+      example: "uuid-of-location"
       selector:
         text:
     area_id:
@@ -299,5 +337,6 @@ location_delete:
   fields:
     location_id:
       required: true
+      example: "uuid-of-location"
       selector:
         text:

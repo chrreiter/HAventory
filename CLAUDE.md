@@ -39,6 +39,8 @@ Each module documents its own traps; this is the map to which file to open.
 - `subscriptions.py` — the subscription registry and the fan-out that writes events on the
   wire; `events.py` holds the doors every write path announces through, one per topic, and
   is the only module that calls the broadcaster.
+- `ops.py` — one function per write, shared by `ws.py` and `services.py`: the repository call,
+  the event the write earns, and the order persist / announce / answer happen in.
 - `services.py` / `services.yaml` — `haventory.*`; read the registration comment before changing
   how a handler is bound.
 - `stale_files.py` — `RETIRED_PATHS`, swept on setup because a HACS upgrade never deletes.

@@ -17,7 +17,7 @@ import json
 import re
 import uuid
 from collections import deque
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any, NamedTuple, TypedDict
@@ -2055,6 +2055,25 @@ class Repository:
         if not loc:
             raise NotFoundError("location not found")
         return loc
+
+    def iter_locations(self) -> Iterator[Location]:
+        """Every location, in the order the index holds them.
+
+        A view rather than a list: the caller decides whether to sort, and gets
+        no copy of the index it could write back into.
+        """
+
+        return iter(self._locations_by_id.values())
+
+    def children_of(self, parent_id: str | uuid.UUID | None) -> frozenset[str]:
+        """The ids directly under ``parent_id`` — ``None`` asks for the roots.
+
+        Frozen, because the set behind it is the live child index: a caller that
+        added to it would move a location without touching a path.
+        """
+
+        key = str(parent_id) if parent_id is not None else None
+        return frozenset(self._children_ids_by_parent_id.get(key, frozenset()))
 
     def update_location(
         self,

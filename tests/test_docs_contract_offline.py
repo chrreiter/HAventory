@@ -14,6 +14,7 @@ Scenarios:
 - the contract's exception list names every concretely-typed command field, and no other
 - the extractor reports a missing name rather than silently matching an empty list
 - the contract's `quick_filters` vocabulary is `QUICK_FILTER_KEYS`
+- the contract's `items/bulk` kinds are the subset of the op table a row may name
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import re
 from pathlib import Path
 
 import pytest
-from custom_components.haventory import ws
+from custom_components.haventory import ops, ws
 from custom_components.haventory.const import QUICK_FILTER_KEYS
 
 CONTRACT = Path(__file__).resolve().parents[1] / "docs" / "backend_api_contract.md"
@@ -125,6 +126,22 @@ def test_the_extractor_reports_a_missing_name() -> None:
 
     with pytest.raises(AssertionError, match="is not in"):
         _bulleted_names(markdown, "#### No such heading")
+
+
+def test_contract_names_every_kind_a_bulk_row_may_take() -> None:
+    """The op table is wider than the batch, so the two lists are held together.
+
+    `ops.OPS` also carries the writes only a command or a service can make — a
+    create, a reminder bump, the location verbs — and `items/bulk` refuses
+    those. The document is where a client author reads which is which.
+    """
+
+    text = CONTRACT.read_text(encoding="utf-8")
+    line = next(ln for ln in text.splitlines() if ln.lstrip().startswith("- Supported `kind`"))
+    documented = set(re.findall(r"`([a-z][a-z0-9_]*)`", line.split("values:", 1)[1]))
+
+    assert documented == set(ops.BULK_KINDS)
+    assert ops.BULK_KINDS < set(ops.OPS), "every bulk kind is an operation, and not every one"
 
 
 def test_contract_names_the_whole_quick_filter_vocabulary() -> None:
