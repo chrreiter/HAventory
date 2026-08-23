@@ -23,15 +23,21 @@ Bus events bypass the rate limiter: it budgets WebSocket subscription traffic,
 and these are internal to Home Assistant. The WebSocket half charged here is
 charged exactly as it is when a WebSocket handler broadcasts, because it is the
 same call.
+
+One thing announced here follows no mutation at all: `async_track_day_rollover`
+broadcasts the counts at the instance's local midnight, because five of them are
+derived from today's date and so move on their own.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from datetime import datetime
 from typing import Any
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
     DOMAIN,
@@ -87,6 +93,42 @@ def seed_low_stock_snapshot(hass: HomeAssistant) -> None:
     if runtime is None:
         return
     runtime.low_stock_ids = runtime.repository.low_stock_item_ids
+
+
+def async_track_day_rollover(hass: HomeAssistant) -> Callable[[], None]:
+    """Broadcast the counts at the instance's local midnight; returns the unsub.
+
+    Five of the counts are derived from today's date rather than from stored
+    state, so they move on the day boundary with nothing having been mutated.
+    The date-derived sensors and `calendar.haventory` each track that instant
+    already; a `stats` subscriber heard about mutations only, so a card left
+    open across midnight showed yesterday's figures until somebody edited
+    something — while the sensors beside it on the same dashboard had moved.
+
+    Local midnight, not UTC: the stored dates are calendar days as the household
+    wrote them, which is the boundary every other surface measures against.
+
+    The counts alone. The sensors and the calendar hold their own trackers, and
+    `SIGNAL_INVENTORY_CHANGED` from here would rewrite the counts that cannot
+    have moved. Nothing is scheduled or stored either — the tick is a re-read of
+    what the repository already derives on demand.
+    """
+
+    @callback
+    def _rollover(_now: datetime) -> None:
+        try:
+            _broadcast_counts(hass)
+        except Exception:
+            # Best-effort, as every announcement here is, and for a sharper
+            # reason: an exception escaping into the tracker can take the next
+            # day's tick with it, and the counts would then stay stale until a
+            # restart rather than for one day.
+            LOGGER.exception(
+                "Failed to broadcast the counts at the day rollover",
+                extra={"domain": DOMAIN, "op": "day_rollover"},
+            )
+
+    return async_track_time_change(hass, _rollover, hour=0, minute=0, second=0)
 
 
 def notify_mutation(

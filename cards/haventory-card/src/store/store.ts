@@ -33,6 +33,7 @@ import type {
 } from './types';
 import { WSClient } from './ws';
 import { DEFAULT_SORT } from './sort';
+import { onDayChange } from '../ui/day-clock';
 import { normalizeQuickFilters } from '../ui/quick-filters';
 import { sortLocationTree } from './location-tree';
 
@@ -377,6 +378,8 @@ export class Store {
   /** Detaches the connection-lifecycle listeners; null while none is attached. */
   private connectionReadyUnsub: Unsubscribe | null = null;
   private connectionLostUnsub: Unsubscribe | null = null;
+  /** Detaches the day clock the counts are re-read on; null while none is attached. */
+  private dayChangeUnsub: Unsubscribe | null = null;
   /** Counts down the grace period on a closed socket; null while it is open. */
   private connectionLostHandle: ReturnType<typeof setTimeout> | null = null;
   /** Last untouched `distinct_values` result, so drafts can be re-merged. */
@@ -454,7 +457,25 @@ export class Store {
       this.subscribeTopics();
       this.watchAreaRegistry();
       this.watchConnectionGaps();
+      this.watchDayChange();
     }
+  }
+
+  /**
+   * Re-read the counts when the browser's day turns over.
+   *
+   * The pills are backend figures, and the backend broadcasts them at the
+   * instance's own midnight — that event is the primary path and it lands
+   * first. This is the backstop: the rate limiter may drop it, and an older
+   * backend does not send it at all, either of which leaves the pills on
+   * yesterday's numbers until the next edit while the rows beside them have
+   * already rolled over. One read a day costs nothing.
+   */
+  private watchDayChange() {
+    this.dayChangeUnsub?.();
+    this.dayChangeUnsub = onDayChange(() => {
+      void this.refreshStats().catch(() => undefined);
+    });
   }
 
   /**
@@ -750,6 +771,10 @@ export class Store {
     // every reconnect, for as long as the page is open.
     this.connectionReadyUnsub?.();
     this.connectionLostUnsub?.();
+    // Module-level, and so outliving this store exactly as the connection
+    // listeners above do.
+    this.dayChangeUnsub?.();
+    this.dayChangeUnsub = null;
     this.cancelConnectionLostGrace();
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
     this.areaRegistryUnsub = null;

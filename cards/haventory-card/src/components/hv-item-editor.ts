@@ -13,6 +13,7 @@ import {
   isOverdue,
   relativeTime,
 } from '../ui/relative-time';
+import { onDayChange } from '../ui/day-clock';
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
 import { discardPrompt } from '../ui/discard';
@@ -1606,11 +1607,24 @@ export class HVItemEditor extends LitElement {
     this._categoryBox = null;
   }
 
+  /**
+   * The editor marks a past due date as overdue, and it is the surface most
+   * likely to be sitting open when the day turns over.
+   */
+  connectedCallback(): void {
+    super.connectedCallback();
+    this._dayUnsub = onDayChange(() => this.requestUpdate());
+  }
+
   disconnectedCallback(): void {
     super.disconnectedCallback();
+    this._dayUnsub?.();
+    this._dayUnsub = undefined;
     this._closeCategory();
     this._clearCopied();
   }
+
+  private _dayUnsub?: () => void;
 
   private _clearCopied() {
     clearTimeout(this._copiedTimer);

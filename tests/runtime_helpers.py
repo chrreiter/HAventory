@@ -139,6 +139,14 @@ async def unload_entry(hass: HomeAssistant, entry: Any) -> bool:
 
     entry.state = ConfigEntryState.UNLOAD_IN_PROGRESS
     unloaded = await async_unload_entry(hass, entry)
+    if unloaded:
+        # What `entry.async_on_unload` collected during setup — the options
+        # listener, the bridge's bus subscriptions, the midnight tick. Home
+        # Assistant runs them itself at exactly this point, and a test that
+        # skipped them would show every one of them still live after an unload.
+        run_on_unload = getattr(entry, "run_on_unload", None)
+        if callable(run_on_unload):
+            run_on_unload()
     if unloaded and hasattr(entry, "runtime_data"):
         del entry.runtime_data
     entry.state = ConfigEntryState.NOT_LOADED if unloaded else ConfigEntryState.FAILED_UNLOAD

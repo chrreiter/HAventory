@@ -954,3 +954,61 @@ describe('hv-data-table: row menu', () => {
     expect(seen).toEqual(['key', 'delete']);
   });
 });
+
+describe('hv-data-table: the day turning over', () => {
+  const mounted: HVDataTable[] = [];
+
+  beforeEach(() => {
+    // The clock is module-level and arms on its first subscriber, so every
+    // table this file mounted earlier has to be disconnected before the fake
+    // clock is installed — otherwise the deadline is still the real midnight.
+    document.body.innerHTML = '';
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 22, 23, 59, 58));
+  });
+
+  afterEach(() => {
+    while (mounted.length) mounted.pop()?.remove();
+    vi.useRealTimers();
+  });
+
+  async function mountAndTrack(items: Partial<Item>[], props: Partial<HVDataTable> = {}) {
+    const el = await mount(items, props);
+    mounted.push(el);
+    return el;
+  }
+
+  // The cells tone themselves off the clock at render, and a table on a wall
+  // tablet is redrawn by nothing else all night.
+  it('tones a due date that passed overnight, with no property change', async () => {
+    const el = await mountAndTrack([{ id: '1', due_date: '2026-08-22' }]);
+    expect(q(el, '[data-testid="cell-due_date"]')?.classList.contains('overdue')).toBe(false);
+
+    vi.advanceTimersByTime(3_000);
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="cell-due_date"]')?.classList.contains('overdue')).toBe(true);
+  });
+
+  it('tones an inspection dated tomorrow once tomorrow arrives', async () => {
+    const el = await mountAndTrack([{ id: '1', inspection_date: '2026-08-23' }], {
+      columns: ['inspection_date'],
+    });
+    expect(q(el, '[data-testid="cell-inspection_date"]')?.classList.contains('due')).toBe(false);
+
+    vi.advanceTimersByTime(3_000);
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="cell-inspection_date"]')?.classList.contains('due')).toBe(true);
+  });
+
+  it('leaves a disconnected table out of it', async () => {
+    const el = await mountAndTrack([{ id: '1', due_date: '2026-08-22' }]);
+    el.remove();
+
+    vi.advanceTimersByTime(3_000);
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="cell-due_date"]')?.classList.contains('overdue')).toBe(false);
+  });
+});

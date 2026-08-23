@@ -443,6 +443,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `responsive.ts` | The two phone predicates: `ResponsiveController` (a Lit reactive controller driving mobile mode from the card's own measured width, ≤600px) and `NARROW_QUERY`, the viewport query every fixed overlay switches on. |
 | `dialog-sheet.ts` | The bottom-sheet presentation the host dialogs share under `mobile`, as one `css` block added to each of their `static styles`. |
 | `relative-time.ts` | "2 h ago" / "Jul 31" formatting, overdue checks, and the `+N days` arithmetic the check-out chips use. |
+| `day-clock.ts` | `onDayChange(cb)`: one shared timer to the next local midnight, so everything that renders a date re-renders when the day turns. See "The day turning over". |
 | `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the `custom_fields_set` / `custom_fields_unset` diff. |
 | `value-rewrite.ts` | Tag/category rename, merge and removal as batches of item updates. |
 | `health-codes.ts` | Turns the health payload's repeated bare issue codes into one counted sentence each. |
@@ -544,6 +545,24 @@ load was refused outright still has them. Home Assistant rebuilds the Lovelace v
 socket reconnects and does so before a restarting instance has set the integration up, so
 that card is the common case rather than the odd one — and without the watches it would keep
 its loading skeleton for as long as the page stayed open.
+
+**The day turning over.** Every date the card renders — the overdue and inspection chips, the
+table's tones, the sheet's facts — is a pure function of the item and the clock, read at
+render, so nothing redrew when the only thing that moved was the date. A card on a wall
+tablet therefore sat on yesterday's chips until somebody edited something, while the sensors
+beside it had rolled over at midnight. `ui/day-clock.ts` is one module-level timer to the
+next local midnight (plus a second, so a timer firing a hair early still reads the new day);
+`hv-list-row`, `hv-data-table`, `hv-detail-sheet` and `hv-item-editor` subscribe on connect
+and re-render, and the store re-reads `haventory/stats`. It also compares the day on
+`visibilitychange`, because a device that slept through midnight wakes with a timer that
+fired late or not at all.
+
+The counts have two paths and want both: the backend broadcasts `stats/counts` at the
+*instance's* midnight, which is the one that keeps the pills agreeing with the sensors, and
+the store's own read covers that event being dropped by the rate limiter or served by a
+backend too old to send it. The rows follow the *browser's* midnight, which is the day their
+chips are compared against; the two are one instant in the ordinary case, and the zone split
+is the follow-up #579 named.
 
 **Why the card offers a manual Refresh.** Subscription events carry no sequence number or
 generation, and the rate limiter can drop them silently, so a client cannot detect a gap.

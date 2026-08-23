@@ -7,9 +7,13 @@ Scenarios:
 - a restock fires `cleared`; deleting a low item fires `cleared` with no name
 - the snapshot seeded at setup keeps a restart from re-announcing
 - a torn-down entry makes the helper a no-op rather than a `KeyError`
+- setup tracks the instance's local midnight, the tick broadcasts the counts to
+  a `stats` subscriber, unload cancels it, and a failing broadcast is logged
 """
 
 from __future__ import annotations
+
+import logging
 
 import pytest
 from custom_components.haventory import events as events_mod
@@ -24,12 +28,20 @@ from custom_components.haventory.serialization import serialize_item
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, installed_entry, repo_of, unload_runtime
-from ws_helpers import ws_send
+from runtime_helpers import (
+    install_runtime,
+    installed_entry,
+    repo_of,
+    setup_entry,
+    unload_entry,
+    unload_runtime,
+)
+from ws_helpers import RecordingConn, ws_send
 
 LOW_THRESHOLD = 3
 # One create, then the reassignment's edit.
 _AFTER_A_REASSIGNMENT = 2
+EVENTS_LOGGER = "custom_components.haventory.events"
 
 
 def _hass() -> tuple[HomeAssistant, Repository]:
@@ -425,3 +437,94 @@ async def test_the_location_services_repaint_the_count_too() -> None:
     await services_mod.service_location_delete(hass, {"location_id": created["location"]["id"]})
     assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
     assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
+
+
+# -----------------------------
+# The day rollover
+# -----------------------------
+
+
+def _rollover_action(hass: HomeAssistant):
+    """The one thing setup asked to be called at the instance's midnight."""
+
+    assert len(hass.time_change_trackers) == 1, hass.time_change_trackers
+    action, hour, minute, second = hass.time_change_trackers[0]
+    assert (hour, minute, second) == (0, 0, 0)
+    return action
+
+
+@pytest.mark.asyncio
+async def test_setup_tracks_the_instances_local_midnight_once() -> None:
+    """One tracker, on the day boundary, running on the event loop.
+
+    Home Assistant hands a plain function to an executor thread and a
+    `@callback` to the loop, so the marker is what keeps this broadcast off a
+    worker thread.
+    """
+
+    hass = HomeAssistant()
+    await setup_entry(hass)
+
+    action = _rollover_action(hass)
+    assert getattr(action, "_hass_callback", False) is True
+
+
+@pytest.mark.asyncio
+async def test_the_midnight_tick_sends_one_counts_event_to_a_subscriber() -> None:
+    """The rollover the issue asks for: fresh counts with nothing mutated.
+
+    An item dated tomorrow is not due today, and nobody edits it overnight — so
+    without this tick a card left open keeps yesterday's figure while the
+    date-derived sensors beside it have already moved.
+    """
+
+    hass = HomeAssistant()
+    await setup_entry(hass)
+    conn = RecordingConn()
+    assert (await ws_send(hass, 1, "haventory/subscribe", conn=conn, topic="stats"))["success"]
+    created = await ws_send(hass, 2, "haventory/item/create", conn=conn, name="Harness")
+    assert created["success"] is True, created
+    conn.messages.clear()
+
+    _rollover_action(hass)(None)
+
+    events = conn.events(topic="stats")
+    assert [e["action"] for e in events] == ["counts"]
+    assert events[0]["counts"]["items_total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_unload_cancels_the_midnight_tick() -> None:
+    """An unloaded entry owns no counts, so nothing may go on broadcasting them."""
+
+    hass = HomeAssistant()
+    entry = await setup_entry(hass)
+    assert len(hass.time_change_trackers) == 1
+
+    await unload_entry(hass, entry)
+
+    assert hass.time_change_trackers == []
+
+
+@pytest.mark.asyncio
+async def test_a_failing_rollover_broadcast_is_logged_rather_than_raised(
+    caplog, monkeypatch
+) -> None:
+    """An exception reaching the tracker can cost every following day's tick."""
+
+    hass = HomeAssistant()
+    await setup_entry(hass)
+    action = _rollover_action(hass)
+    caplog.set_level(logging.DEBUG, logger=EVENTS_LOGGER)
+
+    def _boom(_hass: HomeAssistant) -> None:
+        raise RuntimeError("no counts today")
+
+    monkeypatch.setattr(events_mod, "_broadcast_counts", _boom)
+
+    action(None)
+
+    records = [r for r in caplog.records if r.name == EVENTS_LOGGER]
+    assert [r.levelno for r in records] == [logging.ERROR]
+    assert records[0].op == "day_rollover"
+    assert records[0].exc_info is not None
