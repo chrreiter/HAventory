@@ -17,10 +17,14 @@ Three findings are reported separately, because they mean different things:
               boundary, which is what the taxonomy exists to prevent.
   EXPECTED    contract-defined WARNING rejections. Fuzz layers produce these by
               the hundred; they are the policy working.
-  KNOWN       type-loose frames rejected by HA core's own schema check before
-              ``ws_guard`` runs, logged by ``websocket_api`` at ERROR with the
-              client payload. Tracked as open item 53 — a deliberate trade-off,
-              not a regression, so it is surfaced without failing the sweep.
+  KNOWN       ERROR lines HA core writes on its own account for a rejection
+              this integration already logged at WARNING: type-loose frames
+              rejected by core's schema check before ``ws_guard`` runs (open
+              item 53), a ``haventory.*`` service call the handler refused (the
+              WebSocket ``call_service`` command logs every ``HomeAssistantError``
+              at ERROR, core's own ``ServiceValidationError`` included), and the
+              REST ``/api/services`` view's 500 for the same refusal. Surfaced
+              without failing the sweep, because no change here can quiet them.
 
 Usage (from the repo root):
   uv run python .claude/skills/run-haventory/log_sweep.py                 # last 30m
@@ -70,6 +74,20 @@ HAVENTORY = re.compile(r"haventory", re.IGNORECASE)
 CORE_SCHEMA_REJECT = re.compile(
     r"websocket_api\.http\.connection.*(expected |invalid |required key|extra keys)", re.IGNORECASE
 )
+# HA core's own ERROR for a `haventory.*` service call the handler refused: the
+# WebSocket `call_service` command logs every `HomeAssistantError` at ERROR —
+# its own `ServiceValidationError` included — and the script engine logs every
+# failed action the same way, so the line is core's severity policy, not this
+# integration's. The integration's own WARNING for the same rejection sits
+# beside it; that one is what the taxonomy judges.
+CORE_SERVICE_CALL_REJECT = re.compile(
+    r"websocket_api\.http\.connection.*Error during service call to haventory\."
+)
+# The REST `/api/services` view maps only `vol.Invalid` and `ServiceNotFound`
+# to 400 and lets every other `HomeAssistantError` reach aiohttp as a 500 with a
+# traceback — for core's services as much as for these. A traceback under
+# `aiohttp.server` that ends on a recoverable HAventory exception is that view.
+CORE_REST_SERVICE_REJECT = re.compile(r"\[aiohttp\.server\] Error handling request")
 # HA prints this for every custom integration at every startup.
 LOADER_NOTICE = re.compile(r"homeassistant\.loader\].*custom integration")
 # The storage layer only ever raises StorageError and its subclasses, so ERROR is
@@ -132,6 +150,10 @@ def classify(record: list[str]) -> tuple[str, str]:
         return "BLOCKING", "unknown_error reached the boundary"
     if loud and CORE_SCHEMA_REJECT.search(body):
         return "KNOWN", "HA core schema rejection before ws_guard (item 53)"
+    if loud and CORE_SERVICE_CALL_REJECT.search(head) and not has_traceback:
+        return "KNOWN", "HA core logs a refused service call at ERROR (core's own severity)"
+    if loud and CORE_REST_SERVICE_REJECT.search(head) and recoverable:
+        return "KNOWN", "HA core's REST services view answers a refused call with a 500"
     if loud and (
         any(name in body for name in ACTIONABLE_EXCEPTIONS) or STORAGE_LOGGER.search(head)
     ):

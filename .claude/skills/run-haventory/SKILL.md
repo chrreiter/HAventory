@@ -567,8 +567,12 @@ uv run python .claude/skills/run-haventory/log_sweep.py --all --show 20
 Groups the container log into records (so a traceback stays with its header) and sorts them
 three ways: **BLOCKING** — an HAventory traceback, an `unknown_error`, or a
 client-recoverable code logged at ERROR; **EXPECTED** — the contract's WARNING rejections,
-which fuzz layers produce by the hundred; **KNOWN** — type-loose frames HA core rejects
-before `ws_guard` runs (open item 53), surfaced without failing the sweep. Exits 1 on any
+which fuzz layers produce by the hundred; **KNOWN** — ERROR lines HA core writes on its own
+account for a rejection the integration already logged at WARNING: type-loose frames it
+rejects before `ws_guard` runs (open item 53), a refused `haventory.*` service call (core's
+`call_service` logs every `HomeAssistantError` at ERROR, its own `ServiceValidationError`
+included) and the REST `/api/services` view's 500 for the same refusal — surfaced without
+failing the sweep, because no change in the integration can quiet them. Exits 1 on any
 blocking finding. Run it after every online layer: offline stubs stay green while real HA
 throws, which is how the `__slots__` bug was found.
 
