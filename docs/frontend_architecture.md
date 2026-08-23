@@ -364,6 +364,15 @@ mark is the separator, and it costs the line about what that separator cost. An 
 that itself contains ` › ` splits into two segments and comes back unmarked, which reads as
 the line always did rather than marking the wrong words.
 
+That line is three elements rather than one run of text — the lead the row is flagged with,
+the pill, and the path tail. An ellipsis only ever replaces text, and the pill is an atomic
+box: on a checked-out row with an overdue date the line ran out of room beside *Check in*
+and the pill was cut mid-word, while every other row on the screen elided its path with a
+"…". As flex items on a wrapping row capped at its first line, a piece that does not fit
+wraps out of sight and is dropped whole instead. The " · " that introduces whichever piece
+follows the lead sits inside that piece, so a line that drops the piece drops the separator
+with it rather than ending on a dot.
+
 Both live in `ui/location-path.ts`, because `hv-data-table` writes the same line: its
 `narrow` property — the phone breakpoint, handed down by `hv-full-view`, which is the only
 thing that can read a media query on the table's behalf — swaps the wrapping location cell
