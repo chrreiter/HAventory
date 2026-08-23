@@ -585,8 +585,13 @@ def validate_custom_fields(
                 )
 
 
-def validate_tags(tags: list[str] | None, *, previous: Collection[str] = ()) -> list[str]:
+def validate_tags(tags: object, *, previous: Collection[str] = ()) -> list[str]:
     """Normalize an *item's* tag list and enforce the item-side tag caps.
+
+    Every item write crosses here, which is why the shape is checked here too:
+    :func:`normalize_tags` iterates whatever it is handed, and ``item/update``
+    types ``tags`` as ``object``, so a string would reach the store as its
+    characters. ``None`` is what clears the list.
 
     Separate from :func:`normalize_tags`, which also normalizes *filter* values:
     a filter naming sixty tags is a query, not an item, and is not over any
@@ -598,7 +603,7 @@ def validate_tags(tags: list[str] | None, *, previous: Collection[str] = ()) -> 
     absolute check would refuse along with everything else.
     """
 
-    normalized = normalize_tags(tags)
+    normalized = normalize_string_list(tags, field_name="tags", casefold=True)
     previous_tags = set(previous)
     for tag in normalized:
         if tag not in previous_tags and len(tag) > TAG_MAX_LENGTH:
@@ -614,12 +619,14 @@ def validate_tags(tags: list[str] | None, *, previous: Collection[str] = ()) -> 
 ITEM_FILTER_KEYS: Final[frozenset[str]] = frozenset(ItemFilter.__annotations__)
 
 
-def normalize_filter_values(value: object, *, field_name: str, casefold: bool = False) -> list[str]:
-    """Normalize a multi-select filter list: trim, drop blanks, de-duplicate.
+def normalize_string_list(value: object, *, field_name: str, casefold: bool = False) -> list[str]:
+    """Normalize a list of strings a caller writes whole: trim, drop blanks, dedupe.
 
     A bare string is the mistake worth naming rather than absorbing: iterating
     one yields characters, so ``categories: "Tools"`` would quietly filter by
-    five single letters instead of by a category.
+    five single letters instead of by a category, and ``tags: "kitchen"`` would
+    store seven one-letter tags. ``None`` is the empty list — on an item's tags,
+    the value that clears them.
     """
 
     if value is None:
@@ -652,7 +659,7 @@ def selected_categories(flt: ItemFilter) -> list[str]:
     scalar = (flt.get("category") or "").strip().casefold() if "category" in flt else ""
     if scalar:
         selection.append(scalar)
-    for value in normalize_filter_values(
+    for value in normalize_string_list(
         flt.get("categories"), field_name="categories", casefold=True
     ):
         if value not in selection:
@@ -672,7 +679,7 @@ def selected_location_ids(flt: ItemFilter) -> list[str]:
     scalar = flt.get("location_id") if "location_id" in flt else None
     if scalar is not None:
         selection.append(str(scalar).strip())
-    for value in normalize_filter_values(flt.get("location_ids"), field_name="location_ids"):
+    for value in normalize_string_list(flt.get("location_ids"), field_name="location_ids"):
         if value not in selection:
             selection.append(value)
     return selection
@@ -1360,7 +1367,7 @@ def _update_location_and_path(
 
 def _update_tags_category_threshold(new_item: Item, update: ItemUpdate) -> None:
     if "tags" in update:
-        new_item.tags = validate_tags(update.get("tags") or [], previous=new_item.tags)
+        new_item.tags = validate_tags(update.get("tags"), previous=new_item.tags)
     if "category" in update:
         _validate_optional_text(
             update["category"],

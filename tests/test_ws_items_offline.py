@@ -67,32 +67,37 @@ async def test_item_create_get_update_delete_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_item_update_normalizes_a_tag_list_carrying_a_null() -> None:
+async def test_item_update_refuses_a_tag_list_carrying_a_null() -> None:
     """`item/update` is the one command that can carry a null tag to the model.
 
     Every other command taking tags declares `[str]`, which Home Assistant
     refuses a null against before dispatch. `item/update` types each field as
-    `object` and leaves the shape to `apply_item_update`, so `normalize_tags`
-    has to drop the null rather than store it — a stored `None` would break
-    every tag index and filter that assumes strings.
+    `object` and leaves the shape to `apply_item_update`, which answers with
+    the same rule one layer down — a stored `None` would break every tag index
+    and filter that assumes strings, and dropping it silently would store a
+    list the caller did not send.
     """
 
     hass = HomeAssistant()
     install_runtime(hass)
     ws_setup(hass)
 
-    created = await ws_send(hass, 1, "haventory/item/create", name="Battery")
+    created = await ws_send(hass, 1, "haventory/item/create", name="Battery", tags=["li-ion"])
     item_id = created["result"]["id"]
 
     res = await ws_send(
         hass, 2, "haventory/item/update", item_id=item_id, tags=["Li-Ion", None, " spare "]
     )
 
-    assert res["success"] is True
-    assert res["result"]["tags"] == ["li-ion", "spare"]
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+    assert res["error"]["message"] == "tags must be a list of strings"
+
+    unchanged = await ws_send(hass, 3, "haventory/item/get", item_id=item_id)
+    assert unchanged["result"]["tags"] == ["li-ion"]
 
     # The narrow schemas hold the line for the commands that declare `[str]`.
-    refused = await ws_send(hass, 3, "haventory/item/add_tags", item_id=item_id, tags=["x", None])
+    refused = await ws_send(hass, 4, "haventory/item/add_tags", item_id=item_id, tags=["x", None])
     assert refused["success"] is False
     assert refused["error"]["code"] == "invalid_format"
 
@@ -120,6 +125,39 @@ async def test_item_update_refuses_a_bad_inspection_date_by_its_own_name() -> No
     stored = await ws_send(hass, 3, "haventory/item/get", item_id=item_id)
     assert stored["result"]["version"] == version
     assert stored["result"]["inspection_date"] is None
+
+
+@pytest.mark.asyncio
+async def test_item_update_refuses_a_string_tags_and_keeps_the_item() -> None:
+    """A string `tags` writes nothing, and a null still clears the list.
+
+    `tags: "kitchen"` iterates as seven characters, so the item would come back
+    carrying seven one-letter tags a caller never wrote. The refusal leaves the
+    item's tags and its version alone, which is what tells a client its edit
+    did not land.
+    """
+
+    hass = HomeAssistant()
+    install_runtime(hass)
+    ws_setup(hass)
+
+    created = await ws_send(hass, 1, "haventory/item/create", name="Chisel", tags=["tools"])
+    item_id = created["result"]["id"]
+    version_before = created["result"]["version"]
+
+    res = await ws_send(hass, 2, "haventory/item/update", item_id=item_id, tags="kitchen")
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+    assert res["error"]["message"] == "tags must be a list of strings"
+
+    unchanged = await ws_send(hass, 3, "haventory/item/get", item_id=item_id)
+    assert unchanged["result"]["tags"] == ["tools"]
+    assert unchanged["result"]["version"] == version_before
+
+    cleared = await ws_send(hass, 4, "haventory/item/update", item_id=item_id, tags=None)
+    assert cleared["success"] is True
+    assert cleared["result"]["tags"] == []
 
 
 @pytest.mark.asyncio

@@ -64,7 +64,11 @@ that keep a concrete schema type, and therefore still answer `invalid_format`.
 `tags` is the one name on both sides: concrete on `item/create`, `item/add_tags` and
 `item/remove_tags`, `object` on `item/update`. The same wrong value therefore answers a
 different code depending on which command carried it, which is the reason to handle both
-rather than to key on the field name.
+rather than to key on the field name. Under either code nothing is written: a `tags` that is
+not a list of strings — a bare string above all, which iterates as its characters — is
+refused before the list is read. The `items/bulk` payloads carry no schema at all, so
+`item_update`, `item_add_tags` and `item_remove_tags` answer that row with
+`validation_error` and leave the item as it was.
 
 `tests/test_docs_contract_offline.py` reads the schemas back off the registered handlers and
 fails when this list and the code disagree, so a new concretely-typed field arrives here in
