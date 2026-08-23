@@ -775,6 +775,11 @@ export const en = {
   'hv.import.warnings.other':
     '{clashes} — the file would add entries under a name something here already uses, under a different id. Import matches on the id alone, so these become duplicates rather than an update.',
   'hv.import.warningsMore': '…and {count} more.',
+  'hv.import.attachmentsMissing.one':
+    '{missing} of {referenced} attachments names a file this install does not have — that photo or manual will show as missing after the import.',
+  'hv.import.attachmentsMissing.other':
+    '{missing} of {referenced} attachments name files this install does not have — those photos and manuals will show as missing after the import.',
+  'hv.import.attachmentsMissingHint': 'A Home Assistant backup carries the files as well.',
   'hv.import.allOrNothing':
     'Import is all-or-nothing: any failure rolls the whole document back. On success every connected card reloads its data.',
   'hv.import.importing': 'Importing…',

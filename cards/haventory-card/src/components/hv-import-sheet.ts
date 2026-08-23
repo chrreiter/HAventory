@@ -612,6 +612,12 @@ export class HVImportSheet extends LitElement {
     const willWrite = itemWrites + locationWrites;
     // Absent on a preview from a backend that predates warnings.
     const warnings = preview.warnings ?? [];
+    // The export carries attachment metadata and not the bytes, so a document
+    // written on another machine points at files this one never had. There is
+    // nothing to fix before importing — but the photos are gone afterwards, and
+    // a user who was not told reads that as data loss. Zeroes when the backend
+    // predates the count, which renders as nothing.
+    const files = preview.attachments ?? { referenced: 0, missing: 0 };
 
     return html`
       <div class="head">
@@ -657,6 +663,18 @@ export class HVImportSheet extends LitElement {
                       })}</span
                     >`
                   : null}
+              </span>
+            </div>`
+          : null}
+        ${files.missing
+          ? html`<div class="alert warn" data-testid="import-attachments-missing">
+              <span class="glyph">${icon('alert', 18)}</span>
+              <span>
+                ${tn('hv.import.attachmentsMissing', files.missing, {
+                  missing: files.missing,
+                  referenced: files.referenced,
+                })}
+                <span class="hint">${t('hv.import.attachmentsMissingHint')}</span>
               </span>
             </div>`
           : null}

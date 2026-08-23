@@ -739,6 +739,11 @@ export const de: Record<TranslationKey, string> = {
   'hv.import.warnings.other':
     '{clashes} – die Datei würde Einträge unter einem Namen hinzufügen, den hier schon etwas trägt, aber mit einer anderen ID. Der Import ordnet allein über die ID zu, also entstehen Duplikate statt Aktualisierungen.',
   'hv.import.warningsMore': '… und {count} weitere.',
+  'hv.import.attachmentsMissing.one':
+    '{missing} von {referenced} Anhängen nennt eine Datei, die es auf dieser Installation nicht gibt – dieses Foto oder diese Anleitung fehlt nach dem Import.',
+  'hv.import.attachmentsMissing.other':
+    '{missing} von {referenced} Anhängen nennen Dateien, die es auf dieser Installation nicht gibt – diese Fotos und Anleitungen fehlen nach dem Import.',
+  'hv.import.attachmentsMissingHint': 'Ein Home-Assistant-Backup sichert die Dateien mit.',
   'hv.import.allOrNothing':
     'Der Import gilt ganz oder gar nicht: Jeder Fehler rollt das ganze Dokument zurück. Bei Erfolg lädt jede verbundene Karte ihre Daten neu.',
   'hv.import.importing': 'Wird importiert …',

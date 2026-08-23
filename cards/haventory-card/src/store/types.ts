@@ -550,6 +550,14 @@ export interface ImportPreview {
   items: ImportBuckets;
   locations: ImportBuckets;
   counts: { items?: ImportBucketCounts; locations?: ImportBucketCounts };
+  /**
+   * How many attachment references the imported dataset would hold, and how
+   * many of them name a file this install does not have. An export carries
+   * attachment metadata and not bytes, so importing one onto another machine
+   * leaves dangling references — a caveat, not an error. Optional, like
+   * `warnings`, so a preview from a backend that predates it still type-checks.
+   */
+  attachments?: { referenced: number; missing: number };
 }
 
 /** Result of haventory/import/execute after a successful apply. */
