@@ -1,4 +1,10 @@
-"""Offline tests for repository text search (Phase 2.4)."""
+"""Offline tests for repository text search.
+
+``q`` is a substring test: every word of the normalized query must appear
+somewhere in the normalized name, description, category, tags or location
+display path of an item. These tests are what that contract means in cases a
+faster shortcut over words or fragments would get wrong.
+"""
 
 import pytest
 from custom_components.haventory.repository import Repository
@@ -56,15 +62,11 @@ async def test_text_search_prefix_autocomplete() -> None:
 
 
 @pytest.mark.asyncio
-async def test_text_search_fuzzy_matching() -> None:
-    """Text search provides basic typo tolerance via trigrams."""
+async def test_text_search_matches_inside_a_word() -> None:
+    """A fragment that starts no word still matches the word holding it."""
     repo = Repository()
     i1 = repo.create_item({"name": "Battery AA"})
 
-    # Substring search via trigrams (not a prefix)
-    # "atter" exists within "Battery"
-
-    # "atter" -> att, tte, ter. All are in "Battery".
     results = repo.list_items(flt={"q": "atter"})["items"]
     assert len(results) == 1
     assert results[0].id == i1.id
@@ -72,18 +74,11 @@ async def test_text_search_fuzzy_matching() -> None:
 
 @pytest.mark.asyncio
 async def test_text_search_accent_insensitive_end_to_end() -> None:
-    """Accent-insensitive search works through list_items (index + post-filter).
-
-    Regression: the index normalized accents (NFKD) but the filter_items
-    post-filter only casefolded, so "cafe" found the candidate in the index
-    and then discarded it — list_items returned nothing for unaccented queries
-    against accented content.
-    """
+    """An unaccented query finds accented content through ``list_items``."""
     repo = Repository()
     i1 = repo.create_item({"name": "Probe Café"})
     repo.create_item({"name": "Plain Mug"})
 
-    # Unaccented query vs accented content (the previously broken direction)
     for query in ("cafe", "CAFE", "Cafe"):
         results = repo.list_items(flt={"q": query})["items"]
         assert len(results) == 1, f"q={query!r} should match 'Probe Café'"
@@ -130,13 +125,11 @@ async def test_text_search_multi_word_and_logic() -> None:
 
 @pytest.mark.asyncio
 async def test_text_search_short_fragment_matches_mid_word() -> None:
-    """A fragment shorter than a trigram still matches mid-word.
+    """A one- or two-character fragment matches mid-word like any other.
 
-    Regression: the text index was authoritative for ``q``, so a two-character
-    fragment that starts no word found no word bucket, no name-prefix bucket and
-    no trigram fallback (which needs three characters) — and the empty index
-    result was reported as "no match" instead of falling through to the scan that
-    implements the documented substring contract.
+    The contract is a substring test over the item's text, so query length
+    carries no meaning of its own — a fragment too short to be a word is
+    answered exactly like a long one.
     """
     repo = Repository()
     i1 = repo.create_item({"name": "Kiwi"})
@@ -146,7 +139,6 @@ async def test_text_search_short_fragment_matches_mid_word() -> None:
     assert len(results) == 1
     assert results[0].id == i1.id
 
-    # One character is below the prefix floor as well, so no index reaches it.
     results = repo.list_items(flt={"q": "w"})["items"]
     assert len(results) == 1
     assert results[0].id == i1.id
@@ -154,12 +146,10 @@ async def test_text_search_short_fragment_matches_mid_word() -> None:
 
 @pytest.mark.asyncio
 async def test_short_fragment_matches_beyond_the_word_starts_it_hits() -> None:
-    """A short fragment returns mid-word matches alongside the word-start ones.
+    """A fragment returns mid-word matches alongside the word-start ones.
 
-    The name-prefix index is built from two characters up, so "wi" *does* find
-    "Wine" — a non-empty index result that is still missing "Kiwi". Treating a
-    non-empty result as complete would leave the bug alive whenever the inventory
-    happens to hold a word starting with the fragment.
+    "wi" starts "Wine" and sits inside "Kiwi"; both are matches, and an answer
+    holding only the word-start one is the shape a word-keyed shortcut produces.
     """
     repo = Repository()
     kiwi = repo.create_item({"name": "Kiwi"})
@@ -171,54 +161,92 @@ async def test_short_fragment_matches_beyond_the_word_starts_it_hits() -> None:
 
 
 @pytest.mark.asyncio
-async def test_short_fragment_falls_through_while_long_one_stays_indexed() -> None:
-    """Only queries the index cannot cover give up the indexed path.
-
-    ``_get_filtered_candidates`` returning ``None`` means "scan everything";
-    returning a list means the index narrowed the field. The fall-through must be
-    confined to sub-trigram fragments, or the fast path is disabled for every
-    search.
-    """
-    repo = Repository()
-    repo.create_item({"name": "Kiwi"})
-    repo.create_item({"name": "Hammer"})
-
-    assert repo._get_filtered_candidates({"q": "wi"}) is None
-    assert repo._get_filtered_candidates({"q": "w"}) is None
-
-    # Three characters reach the trigram fallback, so the index stays in charge.
-    candidates = repo._get_filtered_candidates({"q": "iwi"})
-    assert candidates is not None
-    assert [c.name for c in candidates] == ["Kiwi"]
-
-    # An indexed query that genuinely matches nothing still short-circuits.
-    assert repo._get_filtered_candidates({"q": "zzz"}) == []
-
-
-@pytest.mark.asyncio
-async def test_short_fragment_still_uses_the_other_indexes() -> None:
-    """Dropping ``q`` from the index pre-filter leaves the sibling indexes intact."""
+async def test_a_q_filter_still_narrows_by_its_siblings() -> None:
+    """``q`` alongside an indexed filter answers over that filter's candidates."""
     repo = Repository()
     kiwi = repo.create_item({"name": "Kiwi", "category": "Fruit"})
     repo.create_item({"name": "Kiwi Box", "category": "Storage"})
-
-    candidates = repo._get_filtered_candidates({"q": "wi", "category": "Fruit"})
-    assert candidates is not None
-    assert [c.id for c in candidates] == [kiwi.id]
 
     results = repo.list_items(flt={"q": "wi", "category": "Fruit"})["items"]
     assert [x.id for x in results] == [kiwi.id]
 
 
 @pytest.mark.asyncio
-async def test_punctuation_only_query_falls_through_to_the_scan() -> None:
-    """A query with no indexable word is outside the index, not proof of no match."""
+async def test_punctuation_only_query_is_matched_literally() -> None:
+    """Punctuation is text like any other, not a query with nothing in it."""
     repo = Repository()
     i1 = repo.create_item({"name": "Wow!!!"})
     repo.create_item({"name": "Hammer"})
 
-    assert repo._get_filtered_candidates({"q": "!!!"}) is None
-
     results = repo.list_items(flt={"q": "!!!"})["items"]
     assert len(results) == 1
     assert results[0].id == i1.id
+
+
+@pytest.mark.asyncio
+async def test_mid_word_match_survives_a_word_start_hit_elsewhere() -> None:
+    """A fragment that is one item's whole word still matches inside others.
+
+    The answer is a substring test per item, so what any other item is called
+    cannot decide whether this one matches.
+    """
+    repo = Repository()
+    light = repo.create_item({"name": "Light"})
+    flashlight = repo.create_item({"name": "Flashlight"})
+    repo.create_item({"name": "Hammer"})
+
+    results = repo.list_items(flt={"q": "light"})["items"]
+    assert {x.id for x in results} == {light.id, flashlight.id}
+
+
+@pytest.mark.asyncio
+async def test_accented_query_matches_unaccented_content() -> None:
+    """Accents are stripped on both sides, so either spelling finds the other."""
+    repo = Repository()
+    plain = repo.create_item({"name": "Cafe Sign"})
+    repo.create_item({"name": "Plain Mug"})
+
+    for query in ("café", "CAFÉ", "Café"):
+        results = repo.list_items(flt={"q": query})["items"]
+        assert [x.id for x in results] == [plain.id], f"q={query!r} should match 'Cafe Sign'"
+
+
+@pytest.mark.asyncio
+async def test_multi_word_query_ands_across_fields_and_the_path() -> None:
+    """Each query word may land in a different field, and all of them must land."""
+    repo = Repository()
+    shelf = repo.create_location(name="Basement Shelf")
+    match = repo.create_item(
+        {
+            "name": "Torch",
+            "description": "Spare emergency lamp",
+            "category": "Tools",
+            "tags": ["camping"],
+            "location_id": str(shelf.id),
+        }
+    )
+    repo.create_item({"name": "Torch", "description": "Spare emergency lamp"})
+
+    # name + description + tag + category + display path, one word from each.
+    results = repo.list_items(flt={"q": "torch emergency camping tools basement"})["items"]
+    assert [x.id for x in results] == [match.id]
+
+    # A word no field carries drops the item, however many of the others match.
+    results = repo.list_items(flt={"q": "torch attic"})["items"]
+    assert results == []
+
+
+@pytest.mark.asyncio
+async def test_a_query_that_normalizes_away_narrows_nothing() -> None:
+    """A query that ASCII folding empties matches every item.
+
+    ``normalize_search_text`` keeps only what NFKD can render as ASCII, so a
+    query written in a script without word boundaries — Japanese here — reduces
+    to no words at all, and a filter with no words to test excludes nobody.
+    """
+    repo = Repository()
+    battery = repo.create_item({"name": "電池ケース"})
+    hammer = repo.create_item({"name": "Hammer"})
+
+    results = repo.list_items(flt={"q": "電池"})["items"]
+    assert {x.id for x in results} == {battery.id, hammer.id}

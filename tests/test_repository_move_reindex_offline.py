@@ -1,10 +1,10 @@
 """Offline tests for the fast-path item reindexing on subtree moves.
 
-The subtree move/rename path updates items via path-token deltas instead of a
-full unindex/index cycle. These tests pin the invariants that must survive:
+The subtree move/rename path rewrites each item's denormalized
+``location_path`` in place instead of running a full unindex/index cycle.
+These tests pin the invariants that must survive:
 
 - text search agrees with the denormalized path after moves/renames
-- the text indexes stay byte-identical to a from-scratch rebuild
 - rewriting the derived ``location_path`` leaves ``version`` and ``updated_at``
   alone, so optimistic-concurrency tokens held by clients stay valid
 - effective-area buckets follow the subtree to its new ancestry
@@ -62,21 +62,6 @@ async def test_search_follows_location_rename() -> None:
     assert {i.name for i in res["items"]} == {"Hammer", "Garage opener"}
     res = repo.list_items(flt=ItemFilter(q="alpha"))
     assert res["items"] == []
-
-
-@pytest.mark.asyncio
-async def test_text_indexes_match_fresh_rebuild_after_moves() -> None:
-    """Delta-maintained text indexes must equal a from-scratch rebuild."""
-    repo, t = _build_tree()
-
-    repo.update_location(t["shelf"].id, new_parent_id=t["attic"].id)
-    repo.update_location(t["shelf"].id, name="Rack Beta")
-    repo.update_location(t["shelf"].id, new_parent_id=t["garage"].id)
-
-    rebuilt = Repository.from_state(repo.export_state())
-    assert repo._word_to_item_ids == rebuilt._word_to_item_ids
-    assert repo._trigram_to_item_ids == rebuilt._trigram_to_item_ids
-    assert repo._name_prefix_to_item_ids == rebuilt._name_prefix_to_item_ids
 
 
 @pytest.mark.asyncio
