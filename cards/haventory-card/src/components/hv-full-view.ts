@@ -182,14 +182,14 @@ export class HVFullView extends LitElement {
          */
         --hv-tap-min: initial;
         --hv-input-font: initial;
-        /* The app bar compresses in steps and its pill strip scrolls, but it
-           keeps a floor — the leading button, the title, the search box's own
-           minimum, Add item and the ⋮ — and the grid column takes that floor
-           whatever the screen is. On a phone held sideways, 760px, the surface
-           was therefore wider than the viewport, and with overflow hidden the
-           difference did not exist: the ⋮ was sliced down the middle, the
-           editor's Save sat flush against the screen edge, and no gesture could
-           bring either back.
+        /* The app bar compresses in steps and its pill strip scrolls, so it
+           fits whatever width it is given; the body below it does not — the
+           sidebar and the table's own minimum set a floor the grid column
+           takes whatever the screen is. On a phone held sideways, 760px, the
+           surface was therefore wider than the viewport, and with overflow
+           hidden the difference did not exist: the ⋮ was sliced down the
+           middle, the editor's Save sat flush against the screen edge, and no
+           gesture could bring either back.
 
            Vertical stays clipped — this surface *is* the viewport and the
            boxes inside it do their own scrolling — but when the layout
@@ -216,6 +216,13 @@ export class HVFullView extends LitElement {
       .appbar {
         display: flex;
         align-items: center;
+        /* A grid item's minimum is its min-content, and for a nowrap flex row
+           that is every item laid out in full — the pill strip included, which
+           made the column as wide as the unscrolled pills and left the bar
+           overhanging the panel by their width instead of shrinking the strip.
+           Zero here hands the width back to the column, which is what lets the
+           strip give. */
+        min-width: 0;
         gap: 12px;
         padding: 10px 16px;
         background: var(--hv-primary);
