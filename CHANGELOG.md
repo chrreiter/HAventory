@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.1](https://github.com/chrreiter/HAventory/compare/v0.7.0...v0.7.1) (2026-08-23)
+
+
+### Bug Fixes
+
+* **backend:** log a healthy empty store at DEBUG, not WARNING ([#601](https://github.com/chrreiter/HAventory/issues/601)) ([7e41760](https://github.com/chrreiter/HAventory/commit/7e417605e2c9522cc2b21576bee414a57363b905))
+* **card:** drop the phone row's area pill whole instead of slicing it ([#614](https://github.com/chrreiter/HAventory/issues/614)) ([135b96a](https://github.com/chrreiter/HAventory/commit/135b96a617918a44d8afeb6a2ba2bf42a0efe403)), closes [#608](https://github.com/chrreiter/HAventory/issues/608)
+* **card:** give a picture whose file is gone the missing state ([#606](https://github.com/chrreiter/HAventory/issues/606)) ([5e73841](https://github.com/chrreiter/HAventory/commit/5e738415bd32eee7f894e5a3df10a51b352f2b88))
+* **card:** hold the panel heading whole and clear the app bar's dead spacers ([#611](https://github.com/chrreiter/HAventory/issues/611)) ([e9704e4](https://github.com/chrreiter/HAventory/commit/e9704e476d23b1b035ee182593e0ba269fa34b48))
+* **card:** keep a phone-width panel row one line high whatever the path's depth ([#604](https://github.com/chrreiter/HAventory/issues/604)) ([a84bb41](https://github.com/chrreiter/HAventory/commit/a84bb417c038316d0c8bf10d86c3e6adba1f6b06))
+* **card:** keep the panel's app bar on one row down to the narrow layout ([#605](https://github.com/chrreiter/HAventory/issues/605)) ([95e79d7](https://github.com/chrreiter/HAventory/commit/95e79d72ba551e7a33b1ddc8aa22e6c0979ceef5))
+* **card:** show the import preview's missing-attachment caveat ([#602](https://github.com/chrreiter/HAventory/issues/602)) ([e392dd4](https://github.com/chrreiter/HAventory/commit/e392dd4dcf6105ecf2d65a11536a38ab25b7dff7)), closes [#597](https://github.com/chrreiter/HAventory/issues/597)
+* **media:** keep a picture's transparency in its row tile ([#603](https://github.com/chrreiter/HAventory/issues/603)) ([fef5b09](https://github.com/chrreiter/HAventory/commit/fef5b09d93ec1659ce6a92bc0e4f49dd6716fb6b))
+* **media:** name a row tile for the encoder generation that wrote it ([#612](https://github.com/chrreiter/HAventory/issues/612)) ([ed2a667](https://github.com/chrreiter/HAventory/commit/ed2a6674fd0b21ecfda3ec155a9f83f17f417695)), closes [#609](https://github.com/chrreiter/HAventory/issues/609)
+
 ## [0.7.0](https://github.com/chrreiter/HAventory/compare/v0.6.0...v0.7.0) (2026-08-23)
 
 
