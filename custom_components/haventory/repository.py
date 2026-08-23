@@ -169,11 +169,10 @@ def _parse_reminder_date(value: str, field: str) -> date:
 class Repository:
     """In-memory repository maintaining indexes and providing operations.
 
-    Notes:
-        - Only items carry a ``version`` for optimistic concurrency in Phase 1.
-        - Location changes that affect denormalized item ``location_path``
-          will update impacted items via ``apply_item_update`` to increment
-          their version and ``updated_at`` timestamps.
+    Only items carry a ``version``, and only an item edit moves it. A location
+    rename or move rewrites the denormalized ``location_path`` of every item
+    under it and leaves both ``version`` and ``updated_at`` alone —
+    ``_update_items_location_paths_for_locations`` says what that protects.
     """
 
     # -----------------------------
@@ -703,34 +702,32 @@ class Repository:
                 self._items_in_subtree[loc_id] = in_subtree
 
     def _add_item_to_subtree_index(self, item: Item) -> None:
+        """Put an item in its own location's bucket and in every ancestor's."""
+
         if not item.location_id:
             return
 
         item_key = str(item.id)
         loc_key = str(item.location_id)
-
-        # Add to direct location
-        self._add_to_bucket(self._items_in_subtree, loc_key, item_key)
-
-        # Add to all ancestors
-        for anc in self._get_ancestors(loc_key):
-            self._add_to_bucket(self._items_in_subtree, anc, item_key)
+        for key in (loc_key, *self._get_ancestors(loc_key)):
+            self._add_to_bucket(self._items_in_subtree, key, item_key)
 
     def _remove_item_from_subtree_index(self, item: Item) -> None:
+        """Take an item out of the buckets ``_add_item_to_subtree_index`` put it in.
+
+        The chain is walked again rather than remembered per item: what has to
+        be undone is where the item *was*, and the caller passes the item as it
+        was, so the two walks agree as long as the tree between them has not
+        moved — and a tree that moves rebuilds this index wholesale.
+        """
+
         if not item.location_id:
             return
 
         item_key = str(item.id)
         loc_key = str(item.location_id)
-
-        # Remove from direct location
-        self._remove_from_bucket(self._items_in_subtree, loc_key, item_key)
-
-        # Remove from all ancestors
-        # Optimization: if we moved the item, we called unindex then index.
-        # This naive removal walks up.
-        for anc in self._get_ancestors(loc_key):
-            self._remove_from_bucket(self._items_in_subtree, anc, item_key)
+        for key in (loc_key, *self._get_ancestors(loc_key)):
+            self._remove_from_bucket(self._items_in_subtree, key, item_key)
 
     def _rebuild_paths_for_subtree(self, root_id: str) -> None:
         """Recompute ``Location.path`` for the subtree rooted at ``root_id``.
@@ -747,14 +744,14 @@ class Repository:
     def _update_items_location_paths_for_locations(self, affected_location_ids: set[str]) -> None:
         """Refresh ``location_path`` for items under any of the given locations.
 
-        Fast path for subtree renames/moves. All items in one location share
-        that location's (already recomputed) ``path``, so the only thing that
-        changes per item is the denormalized ``location_path``. Everything else
-        is either untouched (location/category/tag/checkout/low-stock buckets,
-        name sort keys) or rebuilt wholesale by the caller via
-        ``_rebuild_location_hierarchy_indexes`` (subtree index). The effective
-        area is re-resolved once per location and items are re-bucketed only
-        when it actually changed.
+        Fast path for subtree renames and moves. All items in one location
+        share that location's already recomputed ``path``, so the only thing
+        that changes per item is the denormalized ``location_path``. Everything
+        else is either untouched (the location, category, tag, check-out and
+        low-stock buckets) or rebuilt wholesale by the caller through
+        ``_rebuild_location_hierarchy_indexes`` (the subtree index). The
+        effective area is re-resolved once per location and items are
+        re-bucketed only when it actually changed.
 
         ``version`` and ``updated_at`` deliberately stay put. ``location_path``
         is derived from the location tree — no client can write it — so its
