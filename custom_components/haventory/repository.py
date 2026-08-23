@@ -62,6 +62,7 @@ from .models import (
     normalize_tags,
     normalize_text_for_sort,
     parse_uuid4,
+    require_string_list,
     seed_status_definitions,
     selected_categories,
     selected_location_ids,
@@ -335,6 +336,7 @@ class Repository:
     def reorder_statuses(self, slugs: Sequence[str]) -> list[StatusDefinition]:
         """Rewrite display order from a full permutation of the live slugs."""
 
+        slugs = require_string_list(slugs, field_name="slugs")
         if sorted(slugs) != sorted(self._statuses_by_slug):
             raise ValidationError("reorder must name every status exactly once")
         for order, slug in enumerate(slugs):
@@ -1508,6 +1510,7 @@ class Repository:
         renumbering pictures must not move a manual.
         """
 
+        attachment_ids = require_string_list(attachment_ids, field_name="attachment_ids")
         current = self.get_item(item_id)
         of_kind = {str(a.id) for a in current.attachments if a.kind == kind}
         if sorted(attachment_ids) != sorted(of_kind):

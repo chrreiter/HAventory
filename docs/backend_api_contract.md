@@ -41,39 +41,25 @@ Transport-level errors produced by Home Assistant itself (before a handler runs)
 
 #### Which of the two answers a wrong type
 
-Most fields in a command schema are deliberately typed `object` rather than concretely, so
-that a wrong type is answered by the handler as `validation_error` instead of by Home
-Assistant as `invalid_format`. The difference matters to an operator: core refuses the frame
-before the guard runs and logs the client's payload at ERROR, while the guard names the field
-at WARNING with no traceback.
+A client handles both, and does not have to know which field answers which — the split is
+about *where* the frame stopped, not about the field's name.
 
-That is the default, and it widens whenever a command gains a typed-input pass, so the
-object-typed fields are not listed here. What is listed is the **exception** set: the fields
-that keep a concrete schema type, and therefore still answer `invalid_format`.
+`validation_error` is what a value earns. Every field carrying data a caller composes — a
+name, a quantity, an id, a filter, and every collection written whole (`tags`,
+`custom_fields`, `custom_fields_set`, `custom_fields_unset`, `set`, `unset`,
+`attachment_ids`, `slugs`) — is typed `object` in its command schema, so the model is what
+reads it and the refusal names the field at WARNING with no traceback. A bare string where a
+list belongs is the case worth naming: iterating one yields its characters, so it is refused
+rather than read.
 
-- `expected_version`, on every command that takes it.
-- The dates, and the two fields that travel with them: `due_date`, `inspection_date`,
-  `reminder_date`, `reminder_interval`, `checked_out`.
-- The collections a caller writes whole: `tags`, `custom_fields`, `custom_fields_set`,
-  `custom_fields_unset`, `set`, `unset`, `attachment_ids`.
-- The attachment handles: `file_id`, `kind`, `filename`, `title`.
-- `haventory/subscribe`'s own three: `topic`, `include_subtree`, `inspection_overdue_only`.
-- Every field the `haventory/status/*` commands take: `slug`, `slugs`, `label`, `color`,
-  `icon`, `order`, `reassign_to`.
-- Import's `document` and `policy`.
+`invalid_format` is Home Assistant's, raised before the guard runs and logged with the
+client's payload at ERROR. It answers a frame the command schema refuses on shape — a missing
+`id`, an unknown top-level key, a required field left out — and the handful of scalars whose
+schema type is still the whole of their rule, such as `expected_version` and the flags.
 
-`tags` is the one name on both sides: concrete on `item/create`, `item/add_tags` and
-`item/remove_tags`, `object` on `item/update`. The same wrong value therefore answers a
-different code depending on which command carried it, which is the reason to handle both
-rather than to key on the field name. Under either code nothing is written: a `tags` that is
-not a list of strings — a bare string above all, which iterates as its characters — is
-refused before the list is read. The `items/bulk` payloads carry no schema at all, so
-`item_update`, `item_add_tags` and `item_remove_tags` answer that row with
-`validation_error` and leave the item as it was.
-
-`tests/test_docs_contract_offline.py` reads the schemas back off the registered handlers and
-fails when this list and the code disagree, so a new concretely-typed field arrives here in
-the same change.
+Under either code nothing is written. The `items/bulk` payloads carry no schema at all, so
+every wrong type in a row answers that row with `validation_error` and leaves the item as it
+was.
 
 ### Logging
 
@@ -312,7 +298,7 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
   - Takes `expected_version` like any other item edit, and answers `conflict` on a stale one.
 
 - `haventory/item/add_tags`
-  - Payload: `{item_id: string, tags: string[], expected_version?: number}` (tags normalized: trimmed, casefolded, deduped)
+  - Payload: `{item_id: string, tags: string[], expected_version?: number}` (tags normalized: trimmed, casefolded, deduped; a value that is not a list of strings is a `validation_error`)
   - Result: `<Item>`; emits `items/updated` and `stats/counts`.
 
 - `haventory/item/remove_tags`
@@ -359,8 +345,9 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
   - Renumbers one kind. **The first id named takes position 0, which is what makes a picture
     the item's cover** — there is no separate cover flag, so "make cover" is this command.
     Order is per kind, so renumbering pictures never moves a manual.
-  - Refusals: `validation_error` unless `attachment_ids` names every attachment of that kind
-    exactly once, `not_found` for an unknown item, `conflict` for a stale `expected_version`.
+  - Refusals: `validation_error` when `attachment_ids` is not a list of strings, and unless
+    it names every attachment of that kind exactly once; `not_found` for an unknown item;
+    `conflict` for a stale `expected_version`.
 
 - Serving an attachment — `GET /api/haventory/media/{item_id}/{attachment_id}`
   - An authenticated `HomeAssistantView`, not `/local` and not `/haventory_static`: both of those are served without authentication, and an inventory photo is as private as the inventory.
@@ -441,8 +428,9 @@ except `status/delete` with a reassign target.
 - `haventory/status/reorder`
   - Payload: `{slugs: string[]}`
   - Result: `<StatusDefinition[]>` in the new order; emits `statuses/reordered`.
-  - Refusals: `validation_error` unless `slugs` names every live status exactly once — a
-    partial list would leave two definitions claiming one position.
+  - Refusals: `validation_error` when `slugs` is not a list of strings, and unless it names
+    every live status exactly once — a partial list would leave two definitions claiming one
+    position, and a repeat is a client bug rather than something to normalize away.
 
 - `haventory/status/delete`
   - Payload: `{slug: string, reassign_to?: string}`

@@ -51,10 +51,9 @@ async def test_add_remove_tags_success_and_normalization() -> None:
     assert res["success"] is True
     assert res["result"]["tags"] == ["alpha"]
 
-    # A non-string tag is refused by the command's `[str]` schema, so the
-    # handler never runs and the item keeps the tags it had.
+    # A non-string tag is refused by the model, so the item keeps the tags it had.
     res = await ws_send(hass, 4, "haventory/item/add_tags", item_id=item_id, tags=["gamma", None])
-    assert res["success"] is False and res["error"]["code"] == "invalid_format"
+    assert res["success"] is False and res["error"]["code"] == "validation_error"
     res = await ws_send(hass, 5, "haventory/item/get", item_id=item_id)
     assert res["result"]["tags"] == ["alpha"]
 

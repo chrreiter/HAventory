@@ -203,6 +203,81 @@ async def test_an_item_id_of_the_wrong_type_names_the_field_on_both_surfaces() -
     assert row["error"]["message"] == single["error"]["message"]
 
 
+#: Every field a caller writes as a whole collection, under the command that
+#: takes it. Each is typed `object` in its schema, so the refusal is the model's
+#: and names the field the caller sent.
+COLLECTION_FIELDS = [
+    ("haventory/item/create", "tags"),
+    ("haventory/item/create", "custom_fields"),
+    ("haventory/item/update", "tags"),
+    ("haventory/item/update", "custom_fields_set"),
+    ("haventory/item/update", "custom_fields_unset"),
+    ("haventory/item/add_tags", "tags"),
+    ("haventory/item/remove_tags", "tags"),
+    ("haventory/item/update_custom_fields", "set"),
+    ("haventory/item/update_custom_fields", "unset"),
+    ("haventory/item/attachment/reorder", "attachment_ids"),
+    ("haventory/status/reorder", "slugs"),
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("command", "field"), COLLECTION_FIELDS)
+async def test_a_collection_field_given_a_bare_string_is_a_validation_error(
+    command: str, field: str
+) -> None:
+    """A bare string is the case that matters, on every command that takes one.
+
+    Iterating a string yields its characters, so `tags: "kitchen"` would store
+    seven one-letter tags and `slugs: "ok"` would reorder by two. The answer is
+    the same code and the caller's own field name whichever command carried it.
+    """
+
+    hass = _make_hass()
+    created = await ws_send(hass, 1, "haventory/item/create", name="Widget", tags=["alpha"])
+    item_id = created["result"]["id"]
+
+    payload: dict[str, Any] = {field: "oops"}
+    if command == "haventory/item/create":
+        payload["name"] = "Chisel"
+    elif command.startswith("haventory/item/"):
+        payload["item_id"] = item_id
+    if command.endswith("/attachment/reorder"):
+        payload["kind"] = "picture"
+
+    res = await ws_send(hass, 2, command, **payload)
+
+    assert res["success"] is False, res
+    assert res["error"]["code"] == "validation_error", res
+    assert res["error"]["message"].startswith(f"{field} must be "), res
+
+    # Nothing was written: not the item this ran against, and no second one.
+    unchanged = await ws_send(hass, 3, "haventory/item/get", item_id=item_id)
+    assert unchanged["result"]["tags"] == ["alpha"]
+    assert unchanged["result"]["custom_fields"] == {}
+    assert unchanged["result"]["version"] == 1
+    stats = await ws_send(hass, 4, "haventory/stats")
+    assert stats["result"]["items_total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_a_reorder_still_refuses_a_list_naming_one_member_twice() -> None:
+    """The type check must not de-duplicate on the way past.
+
+    Both reorder commands take a permutation of a set they can read for
+    themselves, so a list naming one member twice is a client bug — and
+    normalizing it into a valid permutation would hide it.
+    """
+
+    hass = _make_hass()
+
+    res = await ws_send(hass, 1, "haventory/status/reorder", slugs=["ok", "ok", "missing"])
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+    assert res["error"]["message"] == "reorder must name every status exactly once"
+
+
 # -----------------------------
 # Size caps (one case at each boundary, one over)
 # -----------------------------

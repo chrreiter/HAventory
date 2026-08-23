@@ -636,6 +636,12 @@ shapes as the WebSocket surface — no bespoke service shape exists:
 - `tags` is a list of strings on every item write, and `null` clears the list. A value that
   is not one — a bare string, which iterates as its characters — is refused rather than
   read, on the whole-list write and on the two tag operations alike.
+- Every other collection a caller writes whole follows that rule and answers it the same
+  way, naming the key the caller sent: `custom_fields`, `custom_fields_set`,
+  `custom_fields_unset`, `update_custom_fields`'s `set` and `unset`, `attachment_ids` and
+  `slugs`. The last two name a whole set as a permutation, so nothing is trimmed or
+  de-duplicated on the way in: a list naming one member twice is a client bug, and
+  normalizing it into a valid permutation would hide it.
 
 #### Input caps
 

@@ -28,7 +28,13 @@ from homeassistant.util import dt as dt_util
 from . import media as media_mod
 from .events import notify_counts, notify_location_mutation, notify_mutation
 from .exceptions import ValidationError
-from .models import ItemCreate, ItemUpdate, normalize_string_list, validate_quantity
+from .models import (
+    ItemCreate,
+    ItemUpdate,
+    normalize_string_list,
+    require_string_list,
+    validate_quantity,
+)
 from .repository import UNSET, Repository
 from .runtime import loaded_runtime
 from .serialization import serialize_item, serialize_location
@@ -200,9 +206,7 @@ def _op_item_update_custom_fields(hass: HomeAssistant, payload: dict[str, Any]) 
         update["custom_fields_set"] = dict(set_value)
     unset_value = payload.get("unset")
     if unset_value is not None:
-        if not isinstance(unset_value, list):
-            raise ValidationError("unset must be a list")
-        update["custom_fields_unset"] = list(unset_value)
+        update["custom_fields_unset"] = require_string_list(unset_value, field_name="unset")
     updated = repo.update_item(item_id, update, expected_version=expected)
     return Written("item", serialize_item(hass, updated), "updated")
 
