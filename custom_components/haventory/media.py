@@ -220,7 +220,15 @@ def _encode_thumbnail_blocking(source: Path, target: Path) -> bool:
             # `thumbnail` drops the tag — so a phone photo would come out on
             # its side against an original the browser turns upright.
             oriented = ImageOps.exif_transpose(image) or image
-            oriented = oriented.convert("RGB")
+            # WebP carries alpha, so a picture that has one keeps it: a logo or
+            # a screenshot saved as a transparent PNG would otherwise come out
+            # as a shape on black, and the row and the opened item would show
+            # two different pictures. A palette image carries its transparency
+            # as an index in `info` rather than as a band, and the premultiplied
+            # modes spell the band lowercase.
+            bands = set(oriented.getbands())
+            has_alpha = not bands.isdisjoint({"A", "a"}) or "transparency" in oriented.info
+            oriented = oriented.convert("RGBA" if has_alpha else "RGB")
             oriented.thumbnail((THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE))
             target.parent.mkdir(parents=True, exist_ok=True)
             staging = target.with_name(f"{target.name}.part")
