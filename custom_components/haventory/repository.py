@@ -16,10 +16,10 @@ import copy
 import json
 import uuid
 from collections import deque
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Any, TypedDict
+from typing import Any, TypedDict, TypeVar
 
 from .calendar_projection import next_occurrence_after
 from .exceptions import ConflictError, NotFoundError, ValidationError
@@ -27,33 +27,27 @@ from .logs import context_logger
 from .models import (
     DEFAULT_ITEM_STATUS,
     EMPTY_LOCATION_PATH,
-    LOCATION_GUARD_MAX_STEPS,
     AttachmentMeta,
     Item,
     ItemCreate,
     ItemFilter,
     ItemUpdate,
     Location,
-    LocationPath,
     Sort,
     StatusDefinition,
     apply_item_update,
     build_location_path,
-    coerce_item_status,
+    build_location_path_from_map,
     create_item_from_create,
     date_sort_key,
     filter_items,
-    is_canonical_utc_timestamp,
-    iso_utc_now,
     item_inspection_is_due,
     item_inspection_is_overdue,
     item_is_due,
     item_is_low_stock,
     item_is_overdue,
     item_reminder_is_due,
-    load_attachments,
-    load_reminder_anchor,
-    load_reminder_interval,
+    location_chain_to_root,
     location_sort_key,
     monotonic_timestamp_after,
     new_uuid4,
@@ -68,12 +62,17 @@ from .models import (
     sort_items,
     today_local_date,
     validate_location_name,
-    validate_required_name,
     validate_status_definition,
     validate_status_slug,
+    walk_location_chain,
 )
 
 LOGGER = context_logger(__name__)
+
+
+#: What an index bucket is keyed by. A string for every item index; the location
+#: tree's children index adds ``None`` for the roots.
+_BucketKey = TypeVar("_BucketKey", str, str | None)
 
 
 class PageResult(TypedDict):
@@ -113,20 +112,6 @@ def _log_dropped_overflow(op: str, dropped: int) -> None:
             "dropped_logged": LOAD_DROP_LOG_LIMIT,
         },
     )
-
-
-def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
-    """Return a canonical UTC timestamp, backfilling non-canonical input.
-
-    Item timestamps compare lexicographically for sort/range filters, so on
-    load any missing / null / corrupt value is replaced with a canonical one
-    (the fallback when it is itself canonical, otherwise the current time).
-    """
-    if isinstance(value, str) and is_canonical_utc_timestamp(value):
-        return value
-    if fallback is not None and is_canonical_utc_timestamp(fallback):
-        return fallback
-    return iso_utc_now()
 
 
 @dataclass(frozen=True)
@@ -184,11 +169,10 @@ def _parse_reminder_date(value: str, field: str) -> date:
 class Repository:
     """In-memory repository maintaining indexes and providing operations.
 
-    Notes:
-        - Only items carry a ``version`` for optimistic concurrency in Phase 1.
-        - Location changes that affect denormalized item ``location_path``
-          will update impacted items via ``apply_item_update`` to increment
-          their version and ``updated_at`` timestamps.
+    Only items carry a ``version``, and only an item edit moves it. A location
+    rename or move rewrites the denormalized ``location_path`` of every item
+    under it and leaves both ``version`` and ``updated_at`` alone —
+    ``_update_items_location_paths_for_locations`` says what that protects.
     """
 
     # -----------------------------
@@ -215,15 +199,11 @@ class Repository:
         # Area indexes
         self._locations_by_area_id: dict[str, set[str]] = {}
         self._items_by_area_id: dict[str, set[str]] = {}
-        # Cached name sort keys
-        self._name_sort_key_by_item_id: dict[str, str] = {}
-
         # Location tree indexes
         self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
 
-        # Location Hierarchy Indexes (O(1) subtree lookup)
-        self._location_descendants: dict[str, set[str]] = {}  # loc_id -> all descendant ids
-        self._items_in_subtree: dict[str, set[str]] = {}  # loc_id -> all item ids in subtree
+        # O(1) subtree lookup: loc_id -> every item id in that subtree
+        self._items_in_subtree: dict[str, set[str]] = {}
 
         # What the last load_state could not make sense of; empty on a fresh repo.
         self._last_load_report = LoadReport()
@@ -351,15 +331,26 @@ class Repository:
     # Internal helpers — indexing
     # -----------------------------
 
-    def _add_to_bucket(self, bucket: dict[str, set[str]], key: str, item_id: str) -> None:
-        bucket.setdefault(key, set()).add(item_id)
+    def _add_to_bucket(
+        self, bucket: dict[_BucketKey, set[str]], key: _BucketKey, member: str
+    ) -> None:
+        bucket.setdefault(key, set()).add(member)
 
-    def _remove_from_bucket(self, bucket: dict[str, set[str]], key: str, item_id: str) -> None:
-        s = bucket.get(key)
-        if not s:
+    def _remove_from_bucket(
+        self, bucket: dict[_BucketKey, set[str]], key: _BucketKey, member: str
+    ) -> None:
+        """Drop a member, and the bucket with it when that empties it.
+
+        An empty bucket is indistinguishable from an absent one everywhere it
+        is read, so leaving one behind would grow the index by every key the
+        inventory has ever used.
+        """
+
+        members = bucket.get(key)
+        if not members:
             return
-        s.discard(item_id)
-        if not s:
+        members.discard(member)
+        if not members:
             bucket.pop(key, None)
 
     def _index_item(self, item: Item) -> None:
@@ -384,7 +375,7 @@ class Repository:
             self._checked_out_item_ids.add(item_key)
 
         # low stock
-        if self._is_low_stock(item):
+        if item_is_low_stock(item):
             self._low_stock_item_ids.add(item_key)
 
         # location direct membership
@@ -395,9 +386,6 @@ class Repository:
             eff_area_id = self.effective_area_id(str(item.location_id))
             if eff_area_id is not None:
                 self._add_to_bucket(self._items_by_area_id, eff_area_id, item_key)
-
-        # cached sort key for name
-        self._name_sort_key_by_item_id[item_key] = normalize_text_for_sort(item.name)
 
         # Update subtree index
         self._add_item_to_subtree_index(item)
@@ -423,8 +411,6 @@ class Repository:
             # Remove from any area buckets (area could have changed since indexing)
             self._remove_item_from_all_area_buckets(item_key)
 
-        self._name_sort_key_by_item_id.pop(item_key, None)
-
         # Remove from subtree index
         self._remove_item_from_subtree_index(item)
 
@@ -432,14 +418,14 @@ class Repository:
         self._items_by_id.pop(item_key, None)
 
     def _remove_item_from_all_area_buckets(self, item_key: str) -> None:
-        # Defensive: remove an item id from every area bucket
-        for area_key in list(self._items_by_area_id.keys()):
-            s = self._items_by_area_id.get(area_key)
-            if not s:
-                continue
-            s.discard(item_key)
-            if not s:
-                self._items_by_area_id.pop(area_key, None)
+        """Drop an item from every area bucket.
+
+        The item's own area is derived from a tree that may since have moved,
+        so the bucket it is in cannot be worked out from the item alone.
+        """
+
+        for area_key in list(self._items_by_area_id):
+            self._remove_from_bucket(self._items_by_area_id, area_key, item_key)
 
     def effective_area_id(self, location_key: str) -> str | None:
         """Return the area a location sits in, walking ancestors to find it.
@@ -453,27 +439,21 @@ class Repository:
         stores ``None``.
         """
 
-        cursor: str | None = location_key
-        guard = 0
-        while cursor is not None:
-            guard += 1
-            if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
-                return None
-            loc = self._locations_by_id.get(cursor)
-            if loc is None:
-                return None
+        for loc in walk_location_chain(location_key, locations_by_id=self._locations_by_id):
             if loc.area_id is not None:
                 return str(loc.area_id)
-            cursor = str(loc.parent_id) if loc.parent_id is not None else None
         return None
 
     def _reindex_item_replacement(self, old: Item, new: Item) -> None:
-        # Efficiently reindex by removing old and adding new
+        """Swap one item for its successor across every index.
+
+        In this order: unindexing ends by dropping the id from the primary
+        store, so indexing the replacement first would leave the repository
+        without it.
+        """
+
         self._unindex_item(old)
         self._index_item(new)
-
-    def _is_low_stock(self, item: Item) -> bool:
-        return item_is_low_stock(item)
 
     # -----------------------------
     # Internal helpers — locations
@@ -519,19 +499,17 @@ class Repository:
         raise ValidationError("area_id must be a string or null")
 
     def _find_location_root(self, location_key: str) -> str:
-        """Walk up the parent chain to find the root location id."""
-        cursor: str | None = location_key
+        """The id at the top of the tree ``location_key`` sits in.
+
+        A chain ending on a parent id no location carries answers with that id
+        rather than with the last node that does exist: it is the id the tree
+        claims as its root, and every caller looks the answer up in a map and
+        tolerates a miss.
+        """
+
         root_key = location_key
-        guard = 0
-        while cursor is not None:
-            guard += 1
-            if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
-                break
-            root_key = cursor
-            loc = self._locations_by_id.get(cursor)
-            if loc is None:
-                break
-            cursor = str(loc.parent_id) if loc.parent_id is not None else None
+        for loc in walk_location_chain(location_key, locations_by_id=self._locations_by_id):
+            root_key = str(loc.parent_id) if loc.parent_id is not None else str(loc.id)
         return root_key
 
     def _propagate_area_to_root(self, location_key: str, area_id: str | None) -> set[str]:
@@ -592,58 +570,15 @@ class Repository:
             self._locations_by_area_id.setdefault(str(loc.area_id), set()).add(str(loc.id))
 
     def _remove_location(self, loc: Location) -> None:
-        self._locations_by_id.pop(str(loc.id), None)
-        parent_key: str | None = str(loc.parent_id) if loc.parent_id is not None else None
-        children = self._children_ids_by_parent_id.get(parent_key)
-        if children is not None:
-            children.discard(str(loc.id))
-            if not children:
-                self._children_ids_by_parent_id.pop(parent_key, None)
-        # Remove dedicated children bucket if any
-        self._children_ids_by_parent_id.pop(str(loc.id), None)
-        # area index
-        if loc.area_id is not None:
-            s = self._locations_by_area_id.get(str(loc.area_id))
-            if s is not None:
-                s.discard(str(loc.id))
-                if not s:
-                    self._locations_by_area_id.pop(str(loc.area_id), None)
-
-    def _stage_location_update(
-        self,
-        *,
-        loc: Location,
-        updated_name: str,
-        target_parent_id: uuid.UUID | None,
-        parent_changed: bool,
-        target_area: str | None,
-    ) -> tuple[dict[str, Location], dict[str | None, set[str]], Location]:
-        """Create staged maps with the proposed location update applied.
-
-        Returns (staged_locations_by_id, staged_children_by_parent, new_loc).
-        """
-
-        staged_locations_by_id: dict[str, Location] = dict(self._locations_by_id)
-        staged_children_by_parent: dict[str | None, set[str]] = {
-            k: set(v) for k, v in self._children_ids_by_parent_id.items()
-        }
-
-        new_loc = replace(loc, name=updated_name, parent_id=target_parent_id, area_id=target_area)
         key = str(loc.id)
-        staged_locations_by_id[key] = new_loc
-
-        if parent_changed:
-            # Remove from old parent's children in staged map
-            old_parent = str(loc.parent_id) if loc.parent_id is not None else None
-            if old_parent in staged_children_by_parent:
-                staged_children_by_parent[old_parent].discard(key)
-                if not staged_children_by_parent[old_parent]:
-                    staged_children_by_parent.pop(old_parent)
-            # Add to new parent's children bucket in staged map
-            parent_key: str | None = str(target_parent_id) if target_parent_id is not None else None
-            staged_children_by_parent.setdefault(parent_key, set()).add(key)
-
-        return staged_locations_by_id, staged_children_by_parent, new_loc
+        self._locations_by_id.pop(key, None)
+        parent_key: str | None = str(loc.parent_id) if loc.parent_id is not None else None
+        self._remove_from_bucket(self._children_ids_by_parent_id, parent_key, key)
+        # The node's own children bucket, empty by now: deletion refuses a
+        # location that still has children.
+        self._children_ids_by_parent_id.pop(key, None)
+        if loc.area_id is not None:
+            self._remove_from_bucket(self._locations_by_area_id, str(loc.area_id), key)
 
     def _update_location_area_index(
         self, *, location_key: str, old_area: str | None, new_area: str | None
@@ -651,13 +586,9 @@ class Repository:
         """Maintain the locations-by-area index for a single location id."""
 
         if old_area is not None:
-            s = self._locations_by_area_id.get(old_area)
-            if s is not None:
-                s.discard(location_key)
-                if not s:
-                    self._locations_by_area_id.pop(old_area, None)
+            self._remove_from_bucket(self._locations_by_area_id, old_area, location_key)
         if new_area is not None:
-            self._locations_by_area_id.setdefault(new_area, set()).add(location_key)
+            self._add_to_bucket(self._locations_by_area_id, new_area, location_key)
 
     def _collect_descendant_ids(self, root_id: str) -> set[str]:
         """Collect all descendant location IDs (excluding the root itself)."""
@@ -673,35 +604,20 @@ class Repository:
         return result
 
     def _get_ancestors(self, location_id: str) -> list[str]:
-        """Return list of ancestor location IDs from parent up to root.
+        """The ancestor ids of a location, from its parent up to the root.
 
-        A hand-edited or corrupt store can carry a cyclic ``parent_id`` chain,
-        which this walk would otherwise follow forever — during setup, since
-        ``load_state`` reaches it once per item. The visited set is what bounds the
-        walk to the size of the cycle; the step ceiling its four siblings cite is
-        the backstop for a chain that is merely absurdly deep. Breaking rather than
-        raising matches ``_find_location_root``, because
-        ``_remove_item_from_subtree_index`` walks the same chain on the mutation
-        path and must not learn to throw.
+        Empty for a root, and bounded rather than endless for a chain a corrupt
+        store has closed into a loop — the shared walk stops on an id it has
+        already passed. That it does not raise is what the subtree index needs:
+        ``_remove_item_from_subtree_index`` walks the same chain on every item
+        mutation.
         """
-        ancestors: list[str] = []
-        visited: set[str] = {location_id}
-        cursor: str | None = location_id
-        guard = 0
-        while cursor:
-            guard += 1
-            if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
-                break
-            loc = self._locations_by_id.get(cursor)
-            if not loc or not loc.parent_id:
-                break
-            parent_key = str(loc.parent_id)
-            if parent_key in visited:
-                break
-            visited.add(parent_key)
-            ancestors.append(parent_key)
-            cursor = parent_key
-        return ancestors
+
+        return [
+            str(loc.parent_id)
+            for loc in walk_location_chain(location_id, locations_by_id=self._locations_by_id)
+            if loc.parent_id is not None
+        ]
 
     def _unrooted_location_ids(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Split the locations that never reach a root into members and descendants.
@@ -771,125 +687,71 @@ class Repository:
         )
 
     def _rebuild_location_hierarchy_indexes(self) -> None:
-        """Rebuild location-based hierarchy indexes from scratch."""
-        self._location_descendants.clear()
-        self._items_in_subtree.clear()
+        """Rebuild the subtree index from scratch.
 
-        # Build descendants map
-        for loc_id in self._locations_by_id:
-            descendants = self._collect_descendant_ids(loc_id)
-            if descendants:
-                self._location_descendants[loc_id] = descendants
-
-        # Build items in subtree map
-        # For each location, gather items from itself and all descendants
-        for loc_id in self._locations_by_id:
-            subtree_ids = {loc_id}
-            if loc_id in self._location_descendants:
-                subtree_ids.update(self._location_descendants[loc_id])
-
-            # Aggregate items
-            all_items: set[str] = set()
-            for sub_id in subtree_ids:
-                s = self._items_by_location_id.get(sub_id)
-                if s:
-                    all_items.update(s)
-
-            if all_items:
-                self._items_in_subtree[loc_id] = all_items
-
-    def _add_item_to_subtree_index(self, item: Item) -> None:
-        if not item.location_id:
-            return
-
-        item_key = str(item.id)
-        loc_key = str(item.location_id)
-
-        # Add to direct location
-        self._add_to_bucket(self._items_in_subtree, loc_key, item_key)
-
-        # Add to all ancestors
-        for anc in self._get_ancestors(loc_key):
-            self._add_to_bucket(self._items_in_subtree, anc, item_key)
-
-    def _remove_item_from_subtree_index(self, item: Item) -> None:
-        if not item.location_id:
-            return
-
-        item_key = str(item.id)
-        loc_key = str(item.location_id)
-
-        # Remove from direct location
-        self._remove_from_bucket(self._items_in_subtree, loc_key, item_key)
-
-        # Remove from all ancestors
-        # Optimization: if we moved the item, we called unindex then index.
-        # This naive removal walks up.
-        for anc in self._get_ancestors(loc_key):
-            self._remove_from_bucket(self._items_in_subtree, anc, item_key)
-
-    def _rebuild_paths_for_subtree(
-        self,
-        root_id: str,
-        *,
-        locations_by_id: dict[str, Location] | None = None,
-        children_ids_by_parent_id: dict[str | None, set[str]] | None = None,
-    ) -> None:
-        """Recompute ``Location.path`` for a subtree rooted at ``root_id``.
-
-        If ``locations_by_id`` and/or ``children_ids_by_parent_id`` are provided,
-        the computation mutates those maps instead of the repository's live maps.
+        A location with no items under it gets no entry: an empty bucket reads
+        the same as an absent one everywhere the index is consulted.
         """
 
-        loc_map = locations_by_id if locations_by_id is not None else self._locations_by_id
-        child_map = (
-            children_ids_by_parent_id
-            if children_ids_by_parent_id is not None
-            else self._children_ids_by_parent_id
-        )
+        self._items_in_subtree.clear()
+        for loc_id in self._locations_by_id:
+            in_subtree: set[str] = set()
+            for sub_id in (loc_id, *self._collect_descendant_ids(loc_id)):
+                in_subtree.update(self._items_by_location_id.get(sub_id, ()))
+            if in_subtree:
+                self._items_in_subtree[loc_id] = in_subtree
 
-        to_fix = [root_id]
-        # Collect descendants using the provided child map
-        queue = deque([root_id])
-        visited: set[str] = set()
-        while queue:
-            current = queue.popleft()
-            for cid in child_map.get(current, set()):
-                if cid not in visited:
-                    visited.add(cid)
-                    to_fix.append(cid)
-                    queue.append(cid)
+    def _add_item_to_subtree_index(self, item: Item) -> None:
+        """Put an item in its own location's bucket and in every ancestor's."""
 
-        for loc_id in to_fix:
-            loc = loc_map[loc_id]
-            # Build chain root->loc by following parent links in the given locations map
-            chain: list[Location] = []
-            cursor_id: str | None = loc_id
-            guard = 0
-            while cursor_id is not None:
-                guard += 1
-                if guard > LOCATION_GUARD_MAX_STEPS:  # defensive; should never happen
-                    raise ValidationError("location graph too deep or cyclic")
-                node = loc_map.get(cursor_id)
-                if node is None:  # pragma: no cover - corrupted map
-                    raise ValidationError("location_id must reference an existing location chain")
-                chain.append(node)
-                cursor_id = str(node.parent_id) if node.parent_id is not None else None
-            chain.reverse()
-            new_path = build_location_path(chain)
-            loc_map[loc_id] = replace(loc, path=new_path)
+        if not item.location_id:
+            return
+
+        item_key = str(item.id)
+        loc_key = str(item.location_id)
+        for key in (loc_key, *self._get_ancestors(loc_key)):
+            self._add_to_bucket(self._items_in_subtree, key, item_key)
+
+    def _remove_item_from_subtree_index(self, item: Item) -> None:
+        """Take an item out of the buckets ``_add_item_to_subtree_index`` put it in.
+
+        The chain is walked again rather than remembered per item: what has to
+        be undone is where the item *was*, and the caller passes the item as it
+        was, so the two walks agree as long as the tree between them has not
+        moved — and a tree that moves rebuilds this index wholesale.
+        """
+
+        if not item.location_id:
+            return
+
+        item_key = str(item.id)
+        loc_key = str(item.location_id)
+        for key in (loc_key, *self._get_ancestors(loc_key)):
+            self._remove_from_bucket(self._items_in_subtree, key, item_key)
+
+    def _rebuild_paths_for_subtree(self, root_id: str) -> None:
+        """Recompute ``Location.path`` for the subtree rooted at ``root_id``.
+
+        Reads the live maps, so a move writes the new parent link first and
+        calls this second — a path built from the old link would be stored on
+        the node and denormalized onto every item under it.
+        """
+
+        for loc_id in (root_id, *self._collect_descendant_ids(root_id)):
+            new_path = build_location_path_from_map(loc_id, locations_by_id=self._locations_by_id)
+            self._locations_by_id[loc_id] = replace(self._locations_by_id[loc_id], path=new_path)
 
     def _update_items_location_paths_for_locations(self, affected_location_ids: set[str]) -> None:
         """Refresh ``location_path`` for items under any of the given locations.
 
-        Fast path for subtree renames/moves. All items in one location share
-        that location's (already recomputed) ``path``, so the only thing that
-        changes per item is the denormalized ``location_path``. Everything else
-        is either untouched (location/category/tag/checkout/low-stock buckets,
-        name sort keys) or rebuilt wholesale by the caller via
-        ``_rebuild_location_hierarchy_indexes`` (subtree index). The effective
-        area is re-resolved once per location and items are re-bucketed only
-        when it actually changed.
+        Fast path for subtree renames and moves. All items in one location
+        share that location's already recomputed ``path``, so the only thing
+        that changes per item is the denormalized ``location_path``. Everything
+        else is either untouched (the location, category, tag, check-out and
+        low-stock buckets) or rebuilt wholesale by the caller through
+        ``_rebuild_location_hierarchy_indexes`` (the subtree index). The
+        effective area is re-resolved once per location and items are
+        re-bucketed only when it actually changed.
 
         ``version`` and ``updated_at`` deliberately stay put. ``location_path``
         is derived from the location tree — no client can write it — so its
@@ -1422,7 +1284,7 @@ class Repository:
         # handed to _paginate rather than left as a local rearrangement.
         low_stock_first = bool(flt and flt.get("low_stock_first"))
         if low_stock_first:
-            sorted_items.sort(key=lambda it: not self._is_low_stock(it))
+            sorted_items.sort(key=lambda it: not item_is_low_stock(it))
 
         # Normalize sort for cursor tracking
         if sort is None:
@@ -1460,12 +1322,16 @@ class Repository:
         """Aggregate counts for ``haventory/stats``, ``haventory/health`` and events.
 
         ``status_counts`` covers every defined slug, including the default one
-        the index deliberately does not bucket. The two legacy
-        ``missing_count`` / ``needs_repair_count`` keys stay beside it: one
-        shape serves all three surfaces, and dropping them would move the card
-        in the same release that widens the vocabulary.
+        the index deliberately does not bucket. ``missing_count`` and
+        ``needs_repair_count`` name two of those slugs a second time, on their
+        own keys, because the card reads them there.
+
+        One ``today`` serves every date count, so a call that spans midnight
+        answers about one day rather than two.
         """
 
+        today = today_local_date()
+        items = self._items_by_id.values()
         items_with_location = sum(len(ids) for ids in self._items_by_location_id.values())
         flagged_total = sum(len(ids) for ids in self._status_to_item_ids.values())
         status_counts = {
@@ -1480,11 +1346,25 @@ class Repository:
             "items_total": len(self._items_by_id),
             "low_stock_count": len(self._low_stock_item_ids),
             "checked_out_count": len(self._checked_out_item_ids),
-            "overdue_count": self._count_overdue(),
-            "checked_out_due_count": self._count_checked_out_due(),
-            "inspection_overdue_count": self._count_inspection_overdue(),
-            "inspection_due_count": self._count_inspection_due(),
-            "reminder_due_count": self._count_reminder_due(),
+            "overdue_count": self._count(
+                self._checked_out_items(), lambda it: item_is_overdue(it, today=today)
+            ),
+            # A superset of the one above: the two differ by exactly the items
+            # due back today, the relation the inspection pair also has.
+            "checked_out_due_count": self._count(
+                self._checked_out_items(), lambda it: item_is_due(it, today=today)
+            ),
+            "inspection_overdue_count": self._count(
+                items, lambda it: item_inspection_is_overdue(it, today=today)
+            ),
+            "inspection_due_count": self._count(
+                items, lambda it: item_inspection_is_due(it, today=today)
+            ),
+            # Today counts: a reminder names the day it is asking about, so an
+            # item reminding today is one the household still has to act on.
+            "reminder_due_count": self._count(
+                items, lambda it: item_reminder_is_due(it, today=today)
+            ),
             "missing_count": len(self._status_to_item_ids.get("missing", set())),
             "needs_repair_count": len(self._status_to_item_ids.get("needs_repair", set())),
             "status_counts": status_counts,
@@ -1492,75 +1372,29 @@ class Repository:
             "no_location_count": len(self._items_by_id) - items_with_location,
         }
 
-    def _count_overdue(self) -> int:
-        """Count items whose due date has passed.
+    def _count(self, population: Iterable[Item], matches: Callable[[Item], bool]) -> int:
+        """How many of ``population`` the predicate keeps.
 
-        Deliberately not indexed: "overdue" moves with the calendar, so an index
-        would go stale at midnight with no mutation to invalidate it. A due date
-        only exists on a checked-out item, so the walk is over that set rather
-        than the whole inventory.
+        None of the five date counts is indexed, and none can be: each answer
+        moves with the calendar, so a bucket would go stale at midnight with no
+        mutation to invalidate it.
         """
 
-        today = today_local_date()
-        return sum(
-            1
+        return sum(1 for item in population if matches(item))
+
+    def _checked_out_items(self) -> Iterator[Item]:
+        """The checked-out items themselves.
+
+        A due date only exists on a checked-out item, so the two counts about
+        one walk this set rather than the whole inventory. An inspection or
+        reminder date is independent of any check-out, so those three do not.
+        """
+
+        return (
+            item
             for iid in self._checked_out_item_ids
-            if (it := self._items_by_id.get(iid)) is not None and item_is_overdue(it, today=today)
+            if (item := self._items_by_id.get(iid)) is not None
         )
-
-    def _count_checked_out_due(self) -> int:
-        """Count items that are due back, today included.
-
-        Unindexed and over the checked-out set, for the same two reasons as
-        ``_count_overdue``. This is a superset of it: the two differ by exactly
-        the items due back today, the same relation ``_count_inspection_due``
-        has to ``_count_inspection_overdue``.
-        """
-
-        today = today_local_date()
-        return sum(
-            1
-            for iid in self._checked_out_item_ids
-            if (it := self._items_by_id.get(iid)) is not None and item_is_due(it, today=today)
-        )
-
-    def _count_inspection_overdue(self) -> int:
-        """Count items past the date they were next due for inspection.
-
-        Unindexed for the same reason as ``_count_overdue`` — the answer moves
-        with the calendar, and no mutation invalidates it at midnight. The walk
-        covers the whole inventory rather than a subset: an inspection date is
-        independent of any check-out, so any item can carry one.
-        """
-
-        today = today_local_date()
-        return sum(
-            1 for it in self._items_by_id.values() if item_inspection_is_overdue(it, today=today)
-        )
-
-    def _count_inspection_due(self) -> int:
-        """Count items whose inspection is being asked for, today included.
-
-        Unindexed for the same reason as the two above. This is a superset of
-        ``_count_inspection_overdue``: it walks the same population and the two
-        differ by exactly the items whose inspection date is today.
-        """
-
-        today = today_local_date()
-        return sum(
-            1 for it in self._items_by_id.values() if item_inspection_is_due(it, today=today)
-        )
-
-    def _count_reminder_due(self) -> int:
-        """Count items whose reminder has come round.
-
-        Unindexed for the same reason as the two above, and today counts: a
-        reminder names the day it is asking about, so an item reminding today is
-        one the household still has to act on.
-        """
-
-        today = today_local_date()
-        return sum(1 for it in self._items_by_id.values() if item_reminder_is_due(it, today=today))
 
     def count_matching_by_location(self, flt: ItemFilter | None = None) -> dict[str | None, int]:
         """Count filter matches grouped by the item's own location.
@@ -1718,37 +1552,23 @@ class Repository:
 
         new_id = new_uuid4()
         new_key = str(new_id)
-        # Build path using parent chain plus new node
-        chain: list[Location] = []
-        if parent_key is not None:
-            # Build parent chain root->parent
-            cursor: str | None = parent_key
-            guard = 0
-            lineage: list[Location] = []
-            while cursor is not None:
-                guard += 1
-                if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate
-                    raise ValidationError("location graph too deep or cyclic")
-                node = self._locations_by_id.get(cursor)
-                if node is None:
-                    raise ValidationError("parent_id must reference an existing location")
-                lineage.append(node)
-                cursor = str(node.parent_id) if node.parent_id is not None else None
-            lineage.reverse()
-            chain.extend(lineage)
+        lineage = (
+            location_chain_to_root(parent_key, locations_by_id=self._locations_by_id)
+            if parent_key is not None
+            else []
+        )
 
-        # New locations never store area_id directly - it's always on root
-        # Area will be propagated to root after creation if specified
+        # An area is stored on the root of a tree and inherited by everything
+        # under it, so a new node never carries one of its own; a requested area
+        # is propagated up after the node exists.
         new_loc = Location(
             id=new_id,
             parent_id=parsed_parent,
             name=name,
-            area_id=None,  # Don't set area directly on new location
+            area_id=None,
             path=EMPTY_LOCATION_PATH,
         )
-        chain.append(new_loc)
-        new_path = build_location_path(chain)
-        new_loc = replace(new_loc, path=new_path)
+        new_loc = replace(new_loc, path=build_location_path([*lineage, new_loc]))
 
         self._add_location(new_loc)
 
@@ -1825,29 +1645,26 @@ class Repository:
         parsed_area, area_change_requested = self._parse_area_change(area_id, loc.area_id)
         name_changed = updated_name != loc.name
 
-        # Validate move invariants if changing parent
+        # Everything that can refuse the move has refused it by here, so the
+        # tree is rewritten in place: the parent link first, then the paths that
+        # are derived from it.
         if parent_changed:
             self._validate_parent_move(location_key=key, target_parent_id=target_parent_id)
+            self._remove_from_bucket(
+                self._children_ids_by_parent_id,
+                str(loc.parent_id) if loc.parent_id is not None else None,
+                key,
+            )
+            self._add_to_bucket(
+                self._children_ids_by_parent_id,
+                str(target_parent_id) if target_parent_id is not None else None,
+                key,
+            )
 
-        # For staging, don't change area on this location - area propagates to root
-        staged_locations_by_id, staged_children_by_parent, _ = self._stage_location_update(
-            loc=loc,
-            updated_name=updated_name,
-            target_parent_id=target_parent_id,
-            parent_changed=parent_changed,
-            target_area=loc.area_id,  # Keep current area in staging; propagation happens after
-        )
-
-        # Attempt to rebuild paths against staged maps; if this fails, nothing is committed
-        self._rebuild_paths_for_subtree(
-            key,
-            locations_by_id=staged_locations_by_id,
-            children_ids_by_parent_id=staged_children_by_parent,
-        )
-
-        # Commit: swap in staged structures atomically
-        self._children_ids_by_parent_id = staged_children_by_parent
-        self._locations_by_id = staged_locations_by_id
+        # The area is left as it stands: it belongs to the root of a tree, and
+        # a requested change is propagated there once the node has moved.
+        self._locations_by_id[key] = replace(loc, name=updated_name, parent_id=target_parent_id)
+        self._rebuild_paths_for_subtree(key)
 
         # Update affected items (now that live maps are consistent)
         affected = {key}
@@ -1944,9 +1761,7 @@ class Repository:
         field = sort.get("field")
         order = sort.get("order", "desc")
         if field == "name":
-            return self._name_sort_key_by_item_id.get(str(item.id)) or normalize_text_for_sort(
-                item.name
-            )
+            return normalize_text_for_sort(item.name)
         if field == "quantity":
             return int(item.quantity)
         # The three date fields differ only in which date they read, so they are
@@ -1990,7 +1805,7 @@ class Repository:
 
     def _low_stock_group(self, item: Item) -> int:
         """Which low_stock_first block an item sits in: 0 low-stock, 1 the rest."""
-        return 0 if self._is_low_stock(item) else 1
+        return 0 if item_is_low_stock(item) else 1
 
     def _paginate(
         self,
@@ -2145,42 +1960,7 @@ class Repository:
         if isinstance(locations, dict):
             for loc_id, loc_data in locations.items():
                 try:
-                    path_obj = loc_data.get("path", {}) if isinstance(loc_data, dict) else {}
-                    path = LocationPath(
-                        id_path=[
-                            parse_uuid4(str(x), field_name="path.id_path")
-                            for x in list(path_obj.get("id_path", []) or [])
-                        ],
-                        name_path=list(path_obj.get("name_path", []) or []),
-                        display_path=str(path_obj.get("display_path", "")),
-                        # Backfill for stores written before sort_key was
-                        # persisted (pre-WP4): derive it from display_path.
-                        sort_key=str(path_obj.get("sort_key", ""))
-                        or normalize_text_for_sort(str(path_obj.get("display_path", ""))),
-                    )
-                    loc = Location(
-                        id=parse_uuid4(str(loc_data.get("id", loc_id)), field_name="location.id"),
-                        parent_id=(
-                            parse_uuid4(
-                                str(loc_data.get("parent_id")), field_name="location.parent_id"
-                            )
-                            if loc_data.get("parent_id") is not None
-                            else None
-                        ),
-                        # Not `str(...)`: a missing key would read as "" and a
-                        # stored `null` as the literal "None", both of them rows
-                        # no write path could have produced. Raising here drops
-                        # the row into the load report, which is what the
-                        # corrupt-store repair is built on.
-                        name=validate_required_name(loc_data.get("name")),
-                        area_id=(
-                            str(loc_data.get("area_id"))
-                            if loc_data.get("area_id") is not None
-                            else None
-                        ),
-                        path=path,
-                    )
-                    self._add_location(loc)
+                    self._add_location(Location.from_dict(loc_data, fallback_id=str(loc_id)))
                 except (
                     AttributeError,
                     TypeError,
@@ -2208,75 +1988,11 @@ class Repository:
         if isinstance(items, dict):
             for item_id, item_data in items.items():
                 try:
-                    lp = (item_data or {}).get("location_path", {})
-                    location_path = LocationPath(
-                        id_path=[
-                            parse_uuid4(str(x), field_name="location_path.id_path")
-                            for x in list(lp.get("id_path", []) or [])
-                        ],
-                        name_path=list(lp.get("name_path", []) or []),
-                        display_path=str(lp.get("display_path", "")),
-                        # Backfill for stores written before sort_key was
-                        # persisted (pre-WP4): derive it from display_path.
-                        sort_key=str(lp.get("sort_key", ""))
-                        or normalize_text_for_sort(str(lp.get("display_path", ""))),
+                    self._index_item(
+                        Item.from_dict(
+                            item_data, known_statuses=known_statuses, fallback_id=str(item_id)
+                        )
                     )
-                    item = Item(
-                        id=parse_uuid4(str(item_data.get("id", item_id)), field_name="item.id"),
-                        # See the location above: an unreadable name is a
-                        # corrupt row, not an item called "" or "None".
-                        name=validate_required_name(item_data.get("name")),
-                        description=item_data.get("description"),
-                        quantity=int(item_data.get("quantity", 0)),
-                        # Stores written before the field existed carry no
-                        # status; they read as the default rather than failing.
-                        status=coerce_item_status(
-                            item_data.get("status"), known_statuses=known_statuses
-                        ),
-                        checked_out=bool(item_data.get("checked_out", False)),
-                        due_date=item_data.get("due_date"),
-                        inspection_date=item_data.get("inspection_date"),
-                        # Absent on every store written before v8, and read as
-                        # none there — which is exactly what migrate_7_to_8
-                        # writes, so the two paths agree. The anchor is the same
-                        # story one version later: absent before v9, and equal to
-                        # the date for any reminder nobody has bumped.
-                        reminder_date=item_data.get("reminder_date"),
-                        reminder_anchor=load_reminder_anchor(
-                            item_data.get("reminder_anchor"),
-                            reminder_date=item_data.get("reminder_date"),
-                        ),
-                        reminder_interval=load_reminder_interval(
-                            item_data.get("reminder_interval")
-                        ),
-                        location_id=(
-                            parse_uuid4(
-                                str(item_data.get("location_id")), field_name="item.location_id"
-                            )
-                            if item_data.get("location_id") is not None
-                            else None
-                        ),
-                        tags=list(item_data.get("tags", []) or []),
-                        category=item_data.get("category"),
-                        low_stock_threshold=item_data.get("low_stock_threshold"),
-                        custom_fields=dict(item_data.get("custom_fields", {}) or {}),
-                        # Timestamps compare lexicographically for sort/filter,
-                        # so any non-canonical value (missing / null / corrupt /
-                        # hand-edited import) is backfilled with a canonical one.
-                        created_at=_coerce_canonical_ts(item_data.get("created_at")),
-                        updated_at=_coerce_canonical_ts(
-                            item_data.get("updated_at"),
-                            fallback=_coerce_canonical_ts(item_data.get("created_at")),
-                        ),
-                        version=int(item_data.get("version", 1)),
-                        location_path=location_path,
-                        # Tolerant of absence and of a non-list value (both read
-                        # as none), but not of a malformed *entry*: dropping one
-                        # would lose the only reference to a file on disk, which
-                        # the orphan sweep would then delete.
-                        attachments=load_attachments(item_data.get("attachments")),
-                    )
-                    self._index_item(item)
                 except (
                     AttributeError,
                     TypeError,
@@ -2315,9 +2031,7 @@ class Repository:
         self._items_by_location_id = {}
         self._locations_by_area_id = {}
         self._items_by_area_id = {}
-        self._name_sort_key_by_item_id = {}
         self._children_ids_by_parent_id = {}
-        self._location_descendants = {}
         self._items_in_subtree = {}
 
     def _load_statuses(self, raw: object) -> None:

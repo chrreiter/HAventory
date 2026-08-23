@@ -649,19 +649,12 @@ def _recompute_paths(
     ``None`` when a reference is broken (with ``errors`` populated).
     """
 
-    loc_objs: dict[str, Location] = {}
-    for lid, d in locations.items():
-        loc_objs[lid] = Location(
-            id=parse_uuid4(str(d["id"]), field_name="location.id"),
-            parent_id=(
-                parse_uuid4(str(d["parent_id"]), field_name="location.parent_id")
-                if d.get("parent_id") is not None
-                else None
-            ),
-            name=str(d["name"]),
-            area_id=str(d["area_id"]) if d.get("area_id") is not None else None,
-            path=EMPTY_LOCATION_PATH,
-        )
+    # The path a document carries is dropped rather than read: it is recomputed
+    # below from the names and parent links this import is about to store, and a
+    # hand-edited one would otherwise decide whether the document loads at all.
+    loc_objs: dict[str, Location] = {
+        lid: Location.from_dict({**d, "path": None}) for lid, d in locations.items()
+    }
 
     # Recompute location paths (also validates parent references resolve).
     out_locations: dict[str, Any] = {}
@@ -671,18 +664,7 @@ def _recompute_paths(
         except ValidationError as exc:
             errors.append(_err(f"locations[{lid}].parent_id", str(exc)))
             return None
-        out_locations[lid] = {
-            "id": str(obj.id),
-            "name": obj.name,
-            "parent_id": str(obj.parent_id) if obj.parent_id is not None else None,
-            "area_id": obj.area_id,
-            "path": {
-                "id_path": [str(x) for x in path.id_path],
-                "name_path": list(path.name_path),
-                "display_path": path.display_path,
-                "sort_key": path.sort_key,
-            },
-        }
+        out_locations[lid] = {**obj.to_dict(), "path": path.to_dict()}
 
     out_items: dict[str, Any] = {}
     for iid, d in items.items():
@@ -693,17 +675,11 @@ def _recompute_paths(
             )
             return None
         if loc_id is not None:
-            lp = build_location_path_from_map(
+            location_path = build_location_path_from_map(
                 parse_uuid4(str(loc_id), field_name="item.location_id"), locations_by_id=loc_objs
-            )
-            location_path = {
-                "id_path": [str(x) for x in lp.id_path],
-                "name_path": list(lp.name_path),
-                "display_path": lp.display_path,
-                "sort_key": lp.sort_key,
-            }
+            ).to_dict()
         else:
-            location_path = {"id_path": [], "name_path": [], "display_path": "", "sort_key": ""}
+            location_path = EMPTY_LOCATION_PATH.to_dict()
         entry = dict(d)
         entry["tags"] = normalize_tags(d.get("tags") or [])
         entry["custom_fields"] = dict(d.get("custom_fields") or {})

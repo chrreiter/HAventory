@@ -1,4 +1,4 @@
-"""One ``to_dict()`` per model, and the three shapes that come off it.
+"""One ``to_dict()`` per model, the way back off it, and the three shapes.
 
 An item is serialized for three places, and they are not the same shape:
 
@@ -11,7 +11,8 @@ An item is serialized for three places, and they are not the same shape:
 Held together here rather than in the three modules that emit them: the fields
 were hand-written three times and drifted, and the way that drift shows up is a
 restore that quietly loses something, or a card that reads a key from one
-surface and not another.
+surface and not another. ``from_dict`` is the fourth place the field list is
+written out, which is why the inverse is asserted here too.
 
 ``tests/fixtures/stored_payload.json`` is the golden document. It was generated
 from the serializers as they stood before they were consolidated, so what the
@@ -26,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.import_export import build_export_document
 from custom_components.haventory.models import EMPTY_LOCATION_PATH, Item, Location, LocationPath
 from custom_components.haventory.repository import Repository
@@ -151,6 +153,47 @@ def test_a_changed_entity_breaks_the_golden_comparison(collection: str) -> None:
     entity["name"] = f"{entity['name']} (edited)"
 
     assert dumped(Repository.from_state(payload).export_state()) != golden_text()
+
+
+# --------------------------------------------------------------------------- #
+# The way back
+# --------------------------------------------------------------------------- #
+
+
+def test_every_stored_field_reads_back_into_the_model() -> None:
+    """``from_dict`` is the inverse of ``to_dict``, field for field.
+
+    The load path and the import path both build their models through it, so a
+    field one half of the pair learns and the other does not is a field a
+    restart drops without saying so.
+    """
+    payload = golden_payload()
+    known = frozenset(payload["statuses"])
+    item = next(entry for entry in payload["items"].values() if entry["name"] == "Cordless drill")
+    location = next(entry for entry in payload["locations"].values() if entry["name"] == "Bin 3")
+
+    assert Item.from_dict(item, known_statuses=known).to_dict() == item
+    assert Location.from_dict(location).to_dict() == location
+
+
+def test_a_row_that_carries_no_path_reads_as_the_empty_one() -> None:
+    """The nesting may be absent altogether — an import document leaves it out."""
+
+    location = Location.from_dict({"id": str(uuid.uuid4()), "name": "Garage"})
+
+    assert location.path == EMPTY_LOCATION_PATH
+
+
+@pytest.mark.parametrize("broken", ["garbage", 7, []])
+def test_a_path_of_the_wrong_shape_is_refused(broken: object) -> None:
+    """Absent is old; present and not an object is corrupt.
+
+    The load path turns this refusal into a dropped row named in the report,
+    rather than an entity carrying a path no write path could have written.
+    """
+
+    with pytest.raises(ValidationError):
+        LocationPath.from_dict(broken)
 
 
 # --------------------------------------------------------------------------- #

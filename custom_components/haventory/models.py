@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Final, Literal, NotRequired, TypedDict
@@ -94,6 +94,36 @@ class LocationPath:
             "sort_key": self.sort_key,
         }
 
+    @classmethod
+    def from_dict(cls, data: object) -> LocationPath:
+        """Read back what ``to_dict`` wrote; ``None`` reads as the empty path.
+
+        ``sort_key`` is backfilled from ``display_path`` when the payload
+        carries none: stores written before it was persisted have to sort
+        alongside the ones that were, and it is derived, so recomputing it
+        costs nothing but the read.
+
+        What is refused is a value of the wrong shape — anything present that
+        is not an object, and an ``id_path`` entry that is not a UUID v4. A row
+        carrying one of those is corrupt rather than merely old, and refusing
+        is what lets a load drop it and report it.
+        """
+
+        if data is None:
+            return cls(id_path=[], name_path=[], display_path="", sort_key="")
+        if not isinstance(data, Mapping):
+            raise ValidationError("a location path must be an object")
+        display = str(data.get("display_path", ""))
+        return cls(
+            id_path=[
+                parse_uuid4(str(entry), field_name="path.id_path")
+                for entry in (data.get("id_path") or [])
+            ],
+            name_path=list(data.get("name_path") or []),
+            display_path=display,
+            sort_key=str(data.get("sort_key", "")) or normalize_text_for_sort(display),
+        )
+
 
 EMPTY_LOCATION_PATH = LocationPath(id_path=[], name_path=[], display_path="", sort_key="")
 
@@ -142,6 +172,34 @@ class Location:
             "area_id": str(self.area_id) if self.area_id is not None else None,
             "path": self.path.to_dict(),
         }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any], *, fallback_id: str | None = None) -> Location:
+        """Read back what ``to_dict`` wrote, refusing a row no write path wrote.
+
+        ``fallback_id`` is the key the row was stored under, used when the row
+        itself carries no ``id``.
+
+        The name goes through :func:`validate_required_name` rather than
+        ``str()``: a missing key would read as ``""`` and a stored ``null`` as
+        the literal ``"None"``, putting a location in memory that no write path
+        would accept. Raising here is what lets a load drop the row and report
+        it instead.
+        """
+
+        parent_id = data.get("parent_id")
+        area_id = data.get("area_id")
+        return cls(
+            id=parse_uuid4(str(data.get("id", fallback_id)), field_name="location.id"),
+            parent_id=(
+                parse_uuid4(str(parent_id), field_name="location.parent_id")
+                if parent_id is not None
+                else None
+            ),
+            name=validate_required_name(data.get("name")),
+            area_id=str(area_id) if area_id is not None else None,
+            path=LocationPath.from_dict(data.get("path")),
+        )
 
 
 @dataclass
@@ -289,6 +347,68 @@ class Item:
             "location_path": self.location_path.to_dict(),
             "attachments": [serialize_attachment_meta(meta) for meta in self.attachments],
         }
+
+    @classmethod
+    def from_dict(
+        cls,
+        data: Mapping[str, Any],
+        *,
+        known_statuses: Collection[str] = ITEM_STATUSES,
+        fallback_id: str | None = None,
+    ) -> Item:
+        """Read back what ``to_dict`` wrote, refusing a row no write path wrote.
+
+        ``fallback_id`` is the key the row was stored under, used when the row
+        itself carries no ``id``. ``known_statuses`` has to be the live set:
+        passing the built-ins while the store defines more would rewrite every
+        item on a custom status to the default.
+
+        Absent fields read as the value the build that introduced them writes
+        for an item that has none, so a store written by an older build loads
+        without a migration touching every row. What is *not* tolerated is a
+        malformed value: an unreadable name, id or attachment entry is a corrupt
+        row, and raising is what lets a load drop it and report it.
+        """
+
+        location_id = data.get("location_id")
+        created_at = _coerce_canonical_ts(data.get("created_at"))
+        return cls(
+            id=parse_uuid4(str(data.get("id", fallback_id)), field_name="item.id"),
+            name=validate_required_name(data.get("name")),
+            description=data.get("description"),
+            quantity=int(data.get("quantity", 0)),
+            status=coerce_item_status(data.get("status"), known_statuses=known_statuses),
+            checked_out=bool(data.get("checked_out", False)),
+            due_date=data.get("due_date"),
+            inspection_date=data.get("inspection_date"),
+            reminder_date=data.get("reminder_date"),
+            # Equal to the date for any reminder nobody has bumped, which is
+            # what a store written before the anchor existed carries.
+            reminder_anchor=load_reminder_anchor(
+                data.get("reminder_anchor"), reminder_date=data.get("reminder_date")
+            ),
+            reminder_interval=load_reminder_interval(data.get("reminder_interval")),
+            location_id=(
+                parse_uuid4(str(location_id), field_name="item.location_id")
+                if location_id is not None
+                else None
+            ),
+            tags=list(data.get("tags", []) or []),
+            category=data.get("category"),
+            low_stock_threshold=data.get("low_stock_threshold"),
+            custom_fields=dict(data.get("custom_fields", {}) or {}),
+            # Timestamps compare lexicographically for sort and range filters,
+            # so a missing, null or non-canonical one is backfilled rather than
+            # carried: the alternative is a row that sorts arbitrarily.
+            created_at=created_at,
+            updated_at=_coerce_canonical_ts(data.get("updated_at"), fallback=created_at),
+            version=int(data.get("version", 1)),
+            location_path=LocationPath.from_dict(data.get("location_path")),
+            # Tolerant of absence and of a non-list value (both read as none),
+            # but not of a malformed *entry*: dropping one would lose the only
+            # reference to a file on disk, which the orphan sweep then deletes.
+            attachments=load_attachments(data.get("attachments")),
+        )
 
 
 class ItemCreate(TypedDict, total=False):
@@ -1108,6 +1228,57 @@ def load_reminder_interval(value: object) -> ReminderInterval | None:
         return None
 
 
+def walk_location_chain(
+    start_id: str | uuid.UUID, *, locations_by_id: Mapping[str, Location]
+) -> Iterator[Location]:
+    """Yield the locations from ``start_id`` upwards, the node itself first.
+
+    The one walk up the parent chain. It ends without raising on a parent id no
+    location carries, on an id it has already yielded, and at
+    ``LOCATION_GUARD_MAX_STEPS``: a hand-edited or corrupt store can close a
+    chain into a loop, and the item-index path walks it on every mutation, so
+    the walk has to end by itself rather than throw there.
+
+    A caller that needs the whole chain therefore cannot read a short answer as
+    a complete one — :func:`location_chain_to_root` is that caller's version.
+    """
+
+    cursor: str | None = str(start_id)
+    seen: set[str] = set()
+    while cursor is not None and cursor not in seen and len(seen) < LOCATION_GUARD_MAX_STEPS:
+        location = locations_by_id.get(cursor)
+        if location is None:
+            return
+        seen.add(cursor)
+        yield location
+        cursor = str(location.parent_id) if location.parent_id is not None else None
+
+
+def location_chain_to_root(
+    leaf_id: str | uuid.UUID, *, locations_by_id: Mapping[str, Location]
+) -> list[Location]:
+    """The chain root→leaf, or a ``ValidationError`` naming what stopped it.
+
+    A chain that does not reach a root is refused rather than shortened,
+    because what is built from it is the denormalized path stored on the node
+    and on every item under it: a partial chain would store a display path
+    missing its leading names.
+    """
+
+    chain = list(walk_location_chain(leaf_id, locations_by_id=locations_by_id))
+    if not chain:
+        raise ValidationError("location_id must reference an existing location")
+    last_parent = chain[-1].parent_id
+    if last_parent is not None:
+        if len(chain) >= LOCATION_GUARD_MAX_STEPS or str(last_parent) in {
+            str(node.id) for node in chain
+        }:
+            raise ValidationError("location graph too deep or cyclic")
+        raise ValidationError("location_id must reference an existing location chain")
+    chain.reverse()
+    return chain
+
+
 def build_location_path(location_chain: list[Location]) -> LocationPath:
     """Build a denormalized LocationPath from a chain ordered root->leaf."""
 
@@ -1123,34 +1294,17 @@ def build_location_path(location_chain: list[Location]) -> LocationPath:
 
 
 def build_location_path_from_map(
-    leaf_location_id: uuid.UUID, *, locations_by_id: dict[str, Location]
+    leaf_location_id: str | uuid.UUID, *, locations_by_id: Mapping[str, Location]
 ) -> LocationPath:
-    """Follow parent links to build LocationPath given a leaf location ID.
+    """The denormalized path of one location, given the map it lives in.
 
-    Raises ValidationError if the leaf ID is unknown.
+    Raises ``ValidationError`` when the leaf id is unknown or the chain above
+    it never reaches a root.
     """
 
-    # locations_by_id is keyed by string UUIDs
-    leaf_key = str(leaf_location_id)
-    if leaf_key not in locations_by_id:
-        raise ValidationError("location_id must reference an existing location")
-
-    chain: list[Location] = []
-    cursor_id: uuid.UUID | None = leaf_location_id
-    guard = 0
-    while cursor_id:
-        guard += 1
-        if guard > LOCATION_GUARD_MAX_STEPS:  # pragma: no cover - degenerate cycles
-            raise ValidationError("location graph too deep or cyclic")
-        location = locations_by_id.get(str(cursor_id))
-        if location is None:
-            # Broken link in chain
-            raise ValidationError("location_id must reference an existing location chain")
-        chain.append(location)
-        cursor_id = location.parent_id
-    # We collected leaf->root; reverse to root->leaf
-    chain.reverse()
-    return build_location_path(chain)
+    return build_location_path(
+        location_chain_to_root(leaf_location_id, locations_by_id=locations_by_id)
+    )
 
 
 # -----------------------------
@@ -1549,6 +1703,21 @@ def is_canonical_utc_timestamp(ts: object) -> bool:
     except ValueError:
         return False
     return True
+
+
+def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
+    """Return a canonical UTC timestamp, backfilling non-canonical input.
+
+    Item timestamps compare lexicographically for sort and range filters, so on
+    load any missing / null / corrupt value is replaced with a canonical one
+    (the fallback when it is itself canonical, otherwise the current time).
+    """
+
+    if isinstance(value, str) and is_canonical_utc_timestamp(value):
+        return value
+    if fallback is not None and is_canonical_utc_timestamp(fallback):
+        return fallback
+    return iso_utc_now()
 
 
 def _parse_iso8601_utc(ts: str, *, field_name: str) -> datetime:
