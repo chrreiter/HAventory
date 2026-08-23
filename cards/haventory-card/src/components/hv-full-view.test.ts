@@ -1493,6 +1493,21 @@ describe('hv-full-view: phone-width children', () => {
     }
   });
 
+  // The table is scrolled sideways at this width, so its LOCATION column is off
+  // the screen — and a wrapped path there was still setting the row's height.
+  // The table cannot read the media query itself; this is where it learns.
+  it('tells the table when it is on a phone', async () => {
+    for (const narrow of [true, false]) {
+      const restore = stubViewport(narrow);
+      try {
+        const { sr } = await mount({ items: [makeItem({ id: '1' })] });
+        expect(q(sr, '[data-testid="full-table"]')?.hasAttribute('narrow'), String(narrow)).toBe(narrow);
+      } finally {
+        restore();
+      }
+    }
+  });
+
   // The panel stages its edits on a phone and drops its own footer, expecting
   // its host to provide one. Telling it "phone" without that would stage every
   // edit with no way to apply it.

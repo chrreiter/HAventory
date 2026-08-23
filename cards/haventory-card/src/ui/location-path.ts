@@ -120,6 +120,56 @@ export function renderPathSegments(path: string): TemplateResult[] {
 }
 
 /**
+ * Drop the middle of a long path so both ends survive one line.
+ *
+ * A path reads root-first and clips from the right, so on a phone the half that
+ * goes is the half worth keeping: "Workshop › Parts Cabinet › Drawer A › Small
+ * Bin" rendered as "Workshop › Parts Cabinet › D…", naming the room but not the
+ * drawer or the bin the item is actually in. The root still says which room and
+ * the leaf says where in it; the ancestors between them are what a phone can
+ * afford to lose, and the detail sheet still shows the path in full.
+ *
+ * Two, not three: a phone row has about 200px for this line, and a real
+ * three-segment path ("Workshop › Parts Cabinet › Drawer A", plus a category
+ * after it) needs well over that — so at three it still clipped the leaf off
+ * the end, which is the whole thing this is here to prevent.
+ *
+ * The counterpart to {@link renderPathSegments}: a surface that can give a path
+ * more than one line keeps every segment, one that has exactly one elides here.
+ */
+export function elidePath(path: string, maxSegments = 2): string {
+  const segments = path.split(PATH_SEPARATOR);
+  if (segments.length <= maxSegments) return path;
+  return `${segments[0]}${PATH_SEPARATOR}…${PATH_SEPARATOR}${segments[segments.length - 1]}`;
+}
+
+/**
+ * A one-line location, with the area separated back out of the front of it.
+ *
+ * The area has to travel through `elidePath` as the leading segment — that is
+ * the half the elision keeps — but it is Home Assistant's, not one of our
+ * locations, and the `›` after it reads as though it were one. So the line is
+ * composed and elided exactly as it is shown, then the leading segment is taken
+ * back off for the caller to mark instead of punctuate.
+ *
+ * An area name that itself contains ` › ` lands as two segments and the elided
+ * string no longer starts with it. Then there is nothing safe to mark and the
+ * whole string comes back as `rest`, which renders as the line always did
+ * rather than putting the mark on the wrong words.
+ */
+export function elideMobilePath(
+  areaName: string | null,
+  path: string,
+): { area: string | null; rest: string } {
+  const composed = elidePath([areaName, path].filter(Boolean).join(PATH_SEPARATOR));
+  if (!areaName) return { area: null, rest: composed };
+  if (composed === areaName) return { area: areaName, rest: '' };
+  const prefix = `${areaName}${PATH_SEPARATOR}`;
+  if (!composed.startsWith(prefix)) return { area: null, rest: composed };
+  return { area: areaName, rest: composed.slice(prefix.length) };
+}
+
+/**
  * The area worth marking beside a path, or nothing.
  *
  * Naming a root location after the area it stands in is the most natural thing

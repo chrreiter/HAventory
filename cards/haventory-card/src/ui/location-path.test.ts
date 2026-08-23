@@ -1,6 +1,8 @@
 import { render } from 'lit';
 import {
   areaMarkName,
+  elideMobilePath,
+  elidePath,
   itemPathParts,
   locationLabel,
   locationPathParts,
@@ -133,6 +135,67 @@ describe('pathLabel', () => {
 
   it('is just the path when there is no area', () => {
     expect(pathLabel({ areaName: null, path: 'Fridge' })).toBe('Fridge');
+  });
+});
+
+describe('elidePath', () => {
+  it('leaves a path that already fits alone', () => {
+    expect(elidePath('Garage')).toBe('Garage');
+    expect(elidePath('Garage › Shelf A')).toBe('Garage › Shelf A');
+  });
+
+  // The leaf is the whole point: it is the segment that says where the item
+  // actually is, and right-clipping was dropping exactly that.
+  it('drops the middle rather than the leaf', () => {
+    expect(elidePath('Workshop › Parts Cabinet › Drawer A › Small Bin')).toBe('Workshop › … › Small Bin');
+  });
+
+  // A phone row has ~200px for this line, and three real segments plus a
+  // category needs well over that, so three has to elide as well.
+  it('elides at three segments, not just at four', () => {
+    expect(elidePath('Workshop › Parts Cabinet › Drawer A')).toBe('Workshop › … › Drawer A');
+  });
+
+  it('keeps both ends however deep the tree gets', () => {
+    expect(elidePath('A › B › C › D › E › F')).toBe('A › … › F');
+  });
+
+  it('handles an item with no location at all', () => {
+    expect(elidePath('')).toBe('');
+  });
+});
+
+describe('elideMobilePath', () => {
+  // The area still has to travel through the elision as the leading segment, or
+  // a deep path would drop it; what comes back is the same line with the area
+  // separated out for the row to mark instead of punctuate.
+  it('keeps the room and the bin, and hands the room back on its own', () => {
+    expect(elideMobilePath('Garage', 'Workshop › Parts Cabinet › Drawer A › Small Bin')).toEqual({
+      area: 'Garage',
+      rest: '… › Small Bin',
+    });
+  });
+
+  it('leaves a path that fits alone, area and all', () => {
+    expect(elideMobilePath('Garage', 'Shelf A')).toEqual({ area: 'Garage', rest: 'Shelf A' });
+  });
+
+  it('gives back exactly what elidePath does when there is no area', () => {
+    const path = 'Workshop › Parts Cabinet › Drawer A › Small Bin';
+    expect(elideMobilePath(null, path)).toEqual({ area: null, rest: elidePath(path) });
+  });
+
+  // An area name carrying the separator lands as two segments, so the elided
+  // string no longer starts with it and there is nothing safe to mark. The line
+  // then reads as it always did — the wrong words marked would be worse.
+  it('marks nothing when the area name is itself split by the separator', () => {
+    const result = elideMobilePath('Kitchen › Pantry', 'Shelf A › Box 2');
+    expect(result.area).toBe(null);
+    expect(result.rest).toBe(elidePath('Kitchen › Pantry › Shelf A › Box 2'));
+  });
+
+  it('marks an area that has no path under it', () => {
+    expect(elideMobilePath('Garage', '')).toEqual({ area: 'Garage', rest: '' });
   });
 });
 

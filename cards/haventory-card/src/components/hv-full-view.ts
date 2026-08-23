@@ -2317,6 +2317,7 @@ export class HVFullView extends LitElement {
               .columns=${this.columns}
               .sort=${filters.sort as Sort}
               ?selectable=${this._selecting}
+              ?narrow=${this._narrow}
               .selection=${selection}
               @sort-change=${(e: CustomEvent) => this._setFilters({ sort: (e.detail as { sort: Sort }).sort })}
               @near-end=${(e: CustomEvent) =>
