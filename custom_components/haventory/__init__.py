@@ -184,12 +184,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
     _register_media_view(hass)
     await _async_sweep_orphaned_media(hass, repository)
 
-    # Re-read the options when they change. Guarded with getattr so the
-    # minimal offline-test ConfigEntry stubs keep working.
-    add_listener = getattr(entry, "add_update_listener", None)
-    on_unload = getattr(entry, "async_on_unload", None)
-    if callable(add_listener) and callable(on_unload):
-        on_unload(add_listener(_async_options_updated))
+    # Re-read the options when they change, and stop listening with the entry.
+    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
     # The shopping-list bridge, after the repository it reads and the update
     # listener above: its first pass needs the low-stock set, and an options
@@ -202,10 +198,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
     # Register WebSocket commands
     ws_mod.setup(hass)
 
-    # Entity platforms, after the repository is in the bucket the entities read
-    # so the first state write has data. Guarded like the update-listener wiring
-    # below: the offline HomeAssistant stub has no `config_entries`.
-    await _async_forward_platforms(hass, entry)
+    # Entity platforms, after the repository is on the entry the entities read
+    # so the first state write has data.
+    await hass.config_entries.async_forward_entry_setups(entry, list(PLATFORMS))
 
     # Serve the bundled card and point the frontend at it
     await _register_frontend_module(hass)
@@ -359,26 +354,6 @@ async def _async_settle_lossy_load(
             "backup_key": CORRUPT_BACKUP_STORAGE_KEY,
         },
     )
-
-
-async def _async_forward_platforms(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Set up the entity platforms this entry owns, where there are any."""
-
-    config_entries = getattr(hass, "config_entries", None)
-    forward = getattr(config_entries, "async_forward_entry_setups", None)
-    if forward is None:
-        return
-    await forward(entry, list(PLATFORMS))
-
-
-async def _async_unload_platforms(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Take the entity platforms down before the bucket they read is emptied."""
-
-    config_entries = getattr(hass, "config_entries", None)
-    unload = getattr(config_entries, "async_unload_platforms", None)
-    if unload is None:
-        return True
-    return bool(await unload(entry, list(PLATFORMS)))
 
 
 def _register_media_view(hass: HomeAssistant) -> None:
@@ -564,7 +539,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Ahead of the teardown that gives up the repository the entities read: an
     # entity still registered against a released one reports unavailable rather
     # than being gone.
-    unloaded = await _async_unload_platforms(hass, entry)
+    unloaded = bool(await hass.config_entries.async_unload_platforms(entry, list(PLATFORMS)))
 
     disabled = getattr(entry, "disabled_by", None) is not None
     await _async_teardown_entry(hass, op="unload", release_panel=disabled)
@@ -1190,17 +1165,9 @@ def _clear_lossy_load_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     Returns early when there is nothing to spend, so the ordinary boot — every
     boot — does not write the entry back unchanged.
-
-    Guarded with getattr for the offline test harness, whose HomeAssistant stub
-    has no config-entry registry — the same reason the platform forwarding is.
     """
 
     if not _lossy_load_allowed(entry):
-        return
-
-    config_entries = getattr(hass, "config_entries", None)
-    update = getattr(config_entries, "async_update_entry", None)
-    if not callable(update):
         return
 
     options = {
@@ -1208,7 +1175,7 @@ def _clear_lossy_load_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
         for key, value in (getattr(entry, "options", None) or {}).items()
         if key != CONF_ALLOW_LOSSY_LOAD
     }
-    update(entry, options=options)
+    hass.config_entries.async_update_entry(entry, options=options)
 
 
 def _corrupt_store_message(report: LoadReport, *, store_key: str) -> str:

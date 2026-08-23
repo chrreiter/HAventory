@@ -348,8 +348,4 @@ def _low_stock_payload(
 
 
 def _fire(hass: HomeAssistant, event_type: str, payload: dict[str, Any]) -> None:
-    bus = getattr(hass, "bus", None)
-    fire = getattr(bus, "async_fire", None)
-    if fire is None:
-        return
-    fire(event_type, payload)
+    hass.bus.async_fire(event_type, payload)
