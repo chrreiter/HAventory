@@ -2,6 +2,10 @@
 
 Implements CRUD and helper commands for items and locations.
 Adheres to the envelope: input {id, type, ...payload}, output result_message/error_message.
+
+Handlers only. A mutation announces itself through a door in `events.py`, which
+covers the bus and the entities as well as the wire; the subscription registry
+and the fan-out behind that door are `subscriptions.py`.
 """
 
 from __future__ import annotations

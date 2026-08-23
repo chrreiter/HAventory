@@ -48,8 +48,9 @@ if TYPE_CHECKING:
 class Subscription(TypedDict, total=False):
     """One open `haventory/subscribe`, as the broadcaster matches it.
 
-    Lives here rather than in `ws.py` because the registry holding these is a
-    field of the runtime, and typing that field from `ws.py` would be a cycle.
+    Lives here rather than in `subscriptions.py` because the registry holding
+    these is a field of the runtime, and typing that field from the module that
+    reads the registry would be a cycle.
     """
 
     topic: str

@@ -54,12 +54,6 @@ from .subscriptions import broadcast_counts, broadcast_event
 
 LOGGER = context_logger(__name__)
 
-# The WebSocket items vocabulary, reused verbatim: an automation and a card
-# client describe the same mutation with the same word.
-ITEM_ACTIONS: frozenset[str] = frozenset(
-    {"created", "updated", "moved", "quantity_changed", "checked_out", "checked_in", "deleted"}
-)
-
 
 def seed_low_stock_snapshot(hass: HomeAssistant) -> None:
     """Record which items are low at setup, so a restart re-announces nothing.

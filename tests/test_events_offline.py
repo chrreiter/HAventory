@@ -37,7 +37,7 @@ from runtime_helpers import (
     unload_entry,
     unload_runtime,
 )
-from ws_helpers import RecordingConn, ws_send
+from ws_helpers import ITEM_ACTIONS, RecordingConn, ws_send
 
 LOW_THRESHOLD = 3
 # One create, then the reassignment's edit.
@@ -90,7 +90,7 @@ async def test_every_websocket_item_mutation_reaches_the_bus() -> None:
 
     fired = hass.bus.events_of(EVENT_ITEM_CHANGED)
     assert len(fired) == len(commands) + 1
-    assert {e["action"] for e in fired} <= events_mod.ITEM_ACTIONS
+    assert {e["action"] for e in fired} <= ITEM_ACTIONS
     assert fired[0]["action"] == "created"
     assert fired[-1]["action"] == "deleted"
     assert {e["item_id"] for e in fired} == {item_id}
@@ -226,7 +226,7 @@ def test_an_emptied_bucket_is_a_no_op() -> None:
     assert hass.bus.events_of(EVENT_LOW_STOCK) == []
 
 
-@pytest.mark.parametrize("action", sorted(events_mod.ITEM_ACTIONS))
+@pytest.mark.parametrize("action", sorted(ITEM_ACTIONS))
 def test_every_action_in_the_vocabulary_fires(action: str) -> None:
     hass, repo = _hass()
     _item, serialized = _create(repo, hass, name="Widget")

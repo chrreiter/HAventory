@@ -36,6 +36,9 @@ Each module documents its own traps; this is the map to which file to open.
 - `storage.py` — HA `Store`, schema versioning, serialized writes, and the refusal to read a
   store a newer schema wrote. `migrations.py` is forward-only and **idempotent**.
 - `ws.py` — the primary API surface: CRUD, the four subscription topics, and `ws_guard`.
+- `subscriptions.py` — the subscription registry and the fan-out that writes events on the
+  wire; `events.py` holds the doors every write path announces through, one per topic, and
+  is the only module that calls the broadcaster.
 - `services.py` / `services.yaml` — `haventory.*`; read the registration comment before changing
   how a handler is bound.
 - `stale_files.py` — `RETIRED_PATHS`, swept on setup because a HACS upgrade never deletes.
