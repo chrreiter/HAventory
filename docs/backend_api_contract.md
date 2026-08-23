@@ -138,7 +138,8 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Read-only: emits no events and does not mutate state.
 
 - `haventory/health`
-  - Result: `{healthy: boolean, issues: string[], counts: <stats shape>, generation: number, rate_limit: {enabled: boolean, dropped_commands: number, dropped_events: number}}`
+  - Result: `{healthy: boolean, issues: string[], counts: <stats shape>, rate_limit: {enabled: boolean, dropped_commands: number, dropped_events: number}}`
+  - `healthy` is always `true` and `issues` is always empty. They carried a set of checks comparing the repository's indexes against the entities they index; every hit named a bug in this integration rather than anything a household had done, so the checks run in the test suite (`tests/repository_invariants.py`) and no longer over a household's store. The two fields keep their place and their types so a client written against them still parses the result. What is worth reading here is `counts` — the same shape `haventory/stats` returns — and `rate_limit`.
 
 ### Subscriptions and events
 

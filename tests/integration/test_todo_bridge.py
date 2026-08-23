@@ -152,8 +152,8 @@ async def _create_low_item(hass: HomeAssistant, *, name: str = "Peanut butter") 
         blocking=True,
     )
     await hass.async_block_till_done()
-    items = find_runtime(hass).repository._debug_get_internal_indexes()["items_by_id"]
-    return next(item_id for item_id, item in items.items() if item.name == name)
+    items = find_runtime(hass).repository.list_items()["items"]
+    return next(str(item.id) for item in items if item.name == name)
 
 
 async def test_a_service_mutation_puts_a_line_on_the_list(

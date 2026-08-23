@@ -107,7 +107,6 @@ warn_redundant_casts = true
 # integration stays at the non-strict baseline.
 [[tool.mypy.overrides]]
 module = [
-  "haventory.health",
   "haventory.models",
   "haventory.ops",
   "haventory.repository",

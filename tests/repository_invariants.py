@@ -1,4 +1,4 @@
-"""Consistency checks over a loaded repository.
+"""Consistency checks over a loaded repository, run as the suite's oracle.
 
 Every check compares the repository's indexes against the entities they index:
 an item that says it is checked out has to be in the checked-out set, a location
@@ -7,17 +7,56 @@ clients have to agree with the collections they summarise. Drift here is a bug
 in the repository, not in the data, which is why the issue strings are symbol-
 like names rather than sentences — they name the invariant that broke.
 
-Two callers ask the same question: `haventory/health` over the WebSocket, and
-the config-entry diagnostics download. Both live one layer above this module, so
-neither has to import the other.
+That is also why the checks live here and not in the integration. Nothing a
+household can do produces a hit, so ``haventory/health`` answered with an empty
+list on every install that ever ran it; what the checks are worth is the
+guarantee they give a refactor of ``repository.py``. ``conftest.py`` runs them
+after every test, against every repository the test built, so an index left
+disagreeing with the entities it indexes fails the test that touched it.
+
+Reaching into the private index attributes is the point here: they are the
+subject. A test that needs one of them for its own assertions asks
+``internal_indexes`` rather than growing a second reach-in.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TypedDict
 
-from .models import DEFAULT_ITEM_STATUS, Item, Location
-from .repository import InternalIndexes, Repository
+from custom_components.haventory.models import DEFAULT_ITEM_STATUS, Item, Location
+from custom_components.haventory.repository import Repository
+
+
+class InternalIndexes(TypedDict):
+    """Live references to the repository's internal indexes."""
+
+    items_by_id: dict[str, Item]
+    locations_by_id: dict[str, Location]
+    tags_to_item_ids: dict[str, set[str]]
+    category_to_item_ids: dict[str, set[str]]
+    status_to_item_ids: dict[str, set[str]]
+    checked_out_item_ids: set[str]
+    low_stock_item_ids: set[str]
+    items_by_location_id: dict[str, set[str]]
+    locations_by_area_id: dict[str, set[str]]
+    items_by_area_id: dict[str, set[str]]
+
+
+def internal_indexes(repo: Repository) -> InternalIndexes:
+    """The live index objects, not copies: a check reads what the repository uses."""
+
+    return {
+        "items_by_id": repo._items_by_id,
+        "locations_by_id": repo._locations_by_id,
+        "tags_to_item_ids": repo._tags_to_item_ids,
+        "category_to_item_ids": repo._category_to_item_ids,
+        "status_to_item_ids": repo._status_to_item_ids,
+        "checked_out_item_ids": repo._checked_out_item_ids,
+        "low_stock_item_ids": repo._low_stock_item_ids,
+        "items_by_location_id": repo._items_by_location_id,
+        "locations_by_area_id": repo._locations_by_area_id,
+        "items_by_area_id": repo._items_by_area_id,
+    }
 
 
 def _collect_item_status_issues(
@@ -144,32 +183,27 @@ def _check_locations_consistency(*, locations_by_id: dict[str, Location]) -> lis
     return issues
 
 
-def collect_health_issues(repo: Repository) -> tuple[list[str], dict[str, Any]]:
-    """Return the repository's consistency issues and the counts they were checked against.
+def collect_index_issues(repo: Repository) -> list[str]:
+    """Return the repository's consistency issues; an empty list is what healthy means.
 
-    An empty issue list is what "healthy" means. The counts come back with them
-    because the last four checks compare exactly those numbers against the
-    collections, and a caller reporting one without the other would be quoting
-    an unchecked figure.
+    The counts are compared here rather than anywhere else because they are
+    served straight to clients: a number that has drifted from the collection it
+    summarises is the same class of bug as a bucket that has.
     """
 
-    idx = repo._debug_get_internal_indexes()
+    idx = internal_indexes(repo)
     issues: list[str] = []
     issues.extend(_check_items_consistency(idx))
     issues.extend(_check_index_references(idx))
     issues.extend(_check_locations_consistency(locations_by_id=idx["locations_by_id"]))
 
     counts = repo.get_counts()
-    items_by_id = idx["items_by_id"]
-    locations_by_id = idx["locations_by_id"]
-    checked_out_item_ids = idx["checked_out_item_ids"]
-    low_stock_item_ids = idx["low_stock_item_ids"]
-    if counts.get("items_total") != len(items_by_id):
+    if counts.get("items_total") != len(idx["items_by_id"]):
         issues.append("items_total_count_mismatch")
-    if counts.get("locations_total") != len(locations_by_id):
+    if counts.get("locations_total") != len(idx["locations_by_id"]):
         issues.append("locations_total_count_mismatch")
-    if counts.get("checked_out_count") != len(checked_out_item_ids):
+    if counts.get("checked_out_count") != len(idx["checked_out_item_ids"]):
         issues.append("checked_out_count_mismatch")
-    if counts.get("low_stock_count") != len(low_stock_item_ids):
+    if counts.get("low_stock_count") != len(idx["low_stock_item_ids"]):
         issues.append("low_stock_count_mismatch")
-    return issues, counts
+    return issues

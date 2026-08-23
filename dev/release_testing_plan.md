@@ -39,7 +39,7 @@ A release is "ready" when **all** of the following hold:
 2. Every non-blocker failure is triaged with an impact rating — a GitHub issue, staged
    under #236 if it must land before the first public release — and
    **no failure rated High remains open**.
-3. `haventory/health` returns `healthy: true` (empty `issues`) after **every** lifecycle
+3. `haventory/health`'s `counts` match what the card shows after **every** lifecycle
    scenario in groups D and E — checked after the restart, not before.
 4. No unhandled exception or traceback from `custom_components.haventory` appears in the
    HA log across the entire run.
@@ -82,17 +82,19 @@ contract-defined client-recoverable rejection — `validation_error`, `not_found
 and `rate_limited` each log exactly one WARNING line, no traceback, by design (item 32); a
 traceback from `custom_components.haventory` is always a finding (exit criterion 4).
 
-**2. Objective consistency check.** `haventory/health` (`ws.py`) validates the **in-memory**
-repository — index cross-references and the `counts` aggregates. Called *after a restart* it
-therefore validates what was rehydrated from disk, which makes it the corruption check for
-this plan. Prefer it over eyeballing the JSON:
+**2. Objective consistency check.** `haventory/health` (`ws.py`) reports the `counts`
+aggregates over the **in-memory** repository. Called *after a restart* they describe what
+was rehydrated from disk, which makes them the corruption check for this plan — a count
+that dropped is data that did not come back. Prefer it over eyeballing the JSON. The
+index cross-checks that used to ride along here run in the test suite instead
+(`tests/repository_invariants.py`), so `issues` is empty on every build and says nothing:
 
 ```bash
 HAVENTORY_IGNORE_ENV_FILE=1 HA_BASE_URL=http://<host>:8123 HA_TOKEN=<token> \
   HAV_MSG='{"id":1,"type":"haventory/health"}' uv run python scripts/ws_probe.py
 ```
 
-Pass = `{"healthy": true, "issues": []}` and `counts` matching what the card shows.
+Pass = `counts` matching what the card shows.
 
 `HAVENTORY_IGNORE_ENV_FILE=1` is what makes the two variables beside it win: without it
 the `.env` in the checkout takes precedence, and the probe would answer for the local dev
@@ -171,7 +173,8 @@ dependency group — `uv sync --group probes` first.
 
 ### D — Lifecycle: restart, update, rollback
 
-Run `haventory/health` after **each** of these, and snapshot the store around D7–D9.
+Run `haventory/health` after **each** of these and compare its `counts`, and snapshot the
+store around D7–D9.
 
 | ID | Scenario | Pass criteria | Blocker |
 |----|----------|---------------|---------|
@@ -200,7 +203,7 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 | ID | Scenario | Pass criteria | Blocker |
 |----|----------|---------------|---------|
 | F1 | Structural audit of the store after a mixed workload (creates, moves, renames, deletes, bulk ops) | `jq` parses it; no duplicate ids; every `item.location_id` resolves to an existing location; every `location_path` matches the current tree; every `version` ≥ 1 | ✅ |
-| F2 | `health` after each of D1–D9 and E2–E4 | `healthy: true`, empty `issues` | ✅ |
+| F2 | `health` after each of D1–D9 and E2–E4 | `counts` match the pre-scenario numbers, allowing for what the scenario changed | ✅ |
 | F3 | Scale on **real** hardware: load ~2× the real inventory and measure create/update/list latency | Latency is acceptable at the target size; record the size at which it degrades and publish it as a supported ceiling. Known: whole-dataset rewrite per mutation, ~200 ms/create @1000 items (open item 19) | ✅ |
 | F4 | Store file size across the run | Growth is proportional to content — no unbounded growth from repeated edits | |
 | F5 | Rename a location near the root of a deep tree | All descendant items' `location_path` rewritten; their `version` and `updated_at` unchanged (item 23); `health` healthy | |
@@ -238,7 +241,7 @@ Run `haventory/health` after **each** of these, and snapshot the store around D7
 | ID | Scenario | Pass criteria | Blocker |
 |----|----------|---------------|---------|
 | J1 | 7 days uptime on ENV-A with a card left open on a spare device/tablet | HA process RSS stable (no monotonic climb attributable to HAventory); card still responsive without a reload; store size stable | ✅ |
-| J2 | Daily `haventory/health` + store snapshot during the soak | Healthy every day; snapshots differ only by real changes | ✅ |
+| J2 | Daily `haventory/health` + store snapshot during the soak | `counts` match the card every day; snapshots differ only by real changes | ✅ |
 | J3 | Log review at the end of the soak | No repeated warnings, no unbounded log growth, no reserved-`LogRecord`-key breakage, no PII | ✅ |
 
 ---

@@ -167,9 +167,9 @@ async def test_moving_a_subtree_to_the_top_level_files_it_under_a_new_area() -> 
 async def test_the_tree_is_readable_without_reaching_into_the_indexes() -> None:
     """`location/list` and `location/tree` are ordinary reads, not introspection.
 
-    Both used to walk `_debug_get_internal_indexes()` and the private child map,
-    so the two commands the card opens with depended on a helper written for
-    tests. These two accessors are what they read instead.
+    Both used to walk the location index and the private child map directly, so
+    the two commands the card opens with depended on a helper written for tests.
+    These two accessors are what they read instead.
     """
 
     repo = Repository()

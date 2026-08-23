@@ -15,6 +15,8 @@ from custom_components.haventory.exceptions import NotFoundError, ValidationErro
 from custom_components.haventory.models import ItemFilter, ItemUpdate
 from custom_components.haventory.repository import Repository
 
+from repository_invariants import internal_indexes
+
 # -----------------------------
 # Creating and updating
 # -----------------------------
@@ -190,14 +192,14 @@ def test_counts_and_index_follow_status_changes() -> None:
     assert counts["needs_repair_count"] == 1
 
     # The default status is deliberately not bucketed.
-    idx = repo._debug_get_internal_indexes()
+    idx = internal_indexes(repo)
     assert "ok" not in idx["status_to_item_ids"]
     assert idx["status_to_item_ids"]["missing"] == {str(item.id)}
 
     repo.update_item(item.id, ItemUpdate(status="ok"))
     counts = repo.get_counts()
     assert counts["missing_count"] == 0
-    assert "missing" not in repo._debug_get_internal_indexes()["status_to_item_ids"]
+    assert "missing" not in internal_indexes(repo)["status_to_item_ids"]
 
 
 def test_list_items_filters_by_status_via_index() -> None:
@@ -226,4 +228,4 @@ def test_deleting_an_item_clears_the_status_index() -> None:
     item = repo.create_item({"name": "Hammer", "status": "missing"})
     repo.delete_item(item.id)
     assert repo.get_counts()["missing_count"] == 0
-    assert "missing" not in repo._debug_get_internal_indexes()["status_to_item_ids"]
+    assert "missing" not in internal_indexes(repo)["status_to_item_ids"]

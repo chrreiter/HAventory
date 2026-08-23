@@ -41,15 +41,15 @@ async def _call(hass: HomeAssistant, service: str, data: dict) -> None:
 
 
 def _only_location_id(repo: Repository) -> str:
-    locations = repo._debug_get_internal_indexes()["locations_by_id"]
+    locations = [str(loc.id) for loc in repo.iter_locations()]
     assert len(locations) == 1, locations
-    return next(iter(locations))
+    return locations[0]
 
 
 def _only_item_id(repo: Repository) -> str:
-    items = repo._debug_get_internal_indexes()["items_by_id"]
+    items = repo.list_items()["items"]
     assert len(items) == 1, items
-    return next(iter(items))
+    return str(items[0].id)
 
 
 async def test_all_services_are_registered(hass: HomeAssistant) -> None:

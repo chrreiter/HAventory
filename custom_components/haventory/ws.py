@@ -61,7 +61,6 @@ from .exceptions import (
     log_exc_info,
     log_severity,
 )
-from .health import collect_health_issues
 from .import_export import POLICIES, Policy
 from .logs import context_logger
 from .models import (
@@ -515,9 +514,12 @@ async def ws_distinct_values(
 async def ws_health(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    repo = _repo(hass)
-    issues, counts = collect_health_issues(repo)
-    healthy = len(issues) == 0
+    # `healthy` and `issues` answered a set of checks that compared the
+    # repository's indexes against the entities they index. Every hit named a
+    # bug in this integration rather than anything a household had done, so the
+    # answer was empty on every install that ever asked; the checks run in the
+    # test suite instead, where a disagreement fails a build. The two fields
+    # stay in the result, and stay constant, because clients read them.
     limiter = _rate_limiter(hass)
     rate_limit = {
         "enabled": bool(limiter is not None and limiter.enabled),
@@ -525,10 +527,9 @@ async def ws_health(
         "dropped_events": limiter.dropped_events if limiter is not None else 0,
     }
     result = {
-        "healthy": healthy,
-        "issues": issues,
-        "counts": counts,
-        "generation": repo.generation,
+        "healthy": True,
+        "issues": [],
+        "counts": _repo(hass).get_counts(),
         "rate_limit": rate_limit,
     }
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
@@ -1144,10 +1145,6 @@ async def ws_items_bulk(
 ) -> None:
     operations = _validate_bulk_ops(msg.get("operations"))
     results: dict[str, dict[str, object]] = {}
-
-    # Capture initial state for logging
-    repo = _repo(hass)
-    initial_generation = repo.generation
     successful_ops: list[tuple[str, dict[str, Any], str]] = []  # (op_id, serialized, action)
 
     for op in operations:
@@ -1192,8 +1189,6 @@ async def ws_items_bulk(
                 "total_ops": len(operations),
                 "successful": len(successful_ops),
                 "failed": len(operations) - len(successful_ops),
-                "initial_generation": initial_generation,
-                "final_generation": repo.generation,
             },
         )
 

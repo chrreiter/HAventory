@@ -31,15 +31,10 @@ def test_bulk_all_success():
     item2 = repo.create_item(ItemCreate(name="Item 2", quantity=QTY_20))
     item3 = repo.create_item(ItemCreate(name="Item 3", quantity=QTY_30))
 
-    initial_gen = repo.generation
-
     # Simulate bulk update operations
     repo.update_item(item1.id, ItemUpdate(quantity=QTY_15))
     repo.update_item(item2.id, ItemUpdate(quantity=QTY_25))
     repo.update_item(item3.id, ItemUpdate(quantity=QTY_35))
-
-    # All operations succeeded, generation should have incremented
-    assert repo.generation > initial_gen
 
     # Verify all updates applied
     assert repo.get_item(item1.id).quantity == QTY_15
@@ -245,27 +240,6 @@ def test_bulk_broadcasts_only_successful_ops():
     assert str(item1.id) in [str(bid) for bid in broadcast_items]
     assert str(item2.id) in [str(bid) for bid in broadcast_items]
     assert "fake-id" not in [str(bid) for bid in broadcast_items]
-
-
-def test_bulk_generation_tracking():
-    """Bulk operations track generation changes for debugging."""
-    repo = Repository()
-
-    # Create items
-    item1 = repo.create_item(ItemCreate(name="Item 1"))
-    item2 = repo.create_item(ItemCreate(name="Item 2"))
-
-    initial_gen = repo.generation
-
-    # Perform bulk operations
-    repo.update_item(item1.id, ItemUpdate(quantity=QTY_10))
-    repo.update_item(item2.id, ItemUpdate(quantity=QTY_20))
-
-    final_gen = repo.generation
-
-    # Generation should have incremented for each successful operation
-    # (updates call _reindex which unindexes + indexes, so multiple increments per update)
-    assert final_gen > initial_gen
 
 
 def test_bulk_error_context_preserved():

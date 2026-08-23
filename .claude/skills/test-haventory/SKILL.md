@@ -101,9 +101,9 @@ for i in $(seq 1 45); do \
 ## Run (agent path): the stress regimen
 
 `stress.py` is the adversarial online driver. Each subcommand runs one layer, prefixes its
-data with `stress_test_` (so `cleanup` sweeps it), and polls `haventory/health` as the pass
-gate (`healthy: true`, `issues: []`). Run **one at a time, non-destructive first, `restart`
-last**.
+data with `stress_test_` (so `cleanup` sweeps it), and cross-checks `haventory/health`'s
+`counts` against `haventory/stats` as the pass gate — two reads of one repository that must
+agree. Run **one at a time, non-destructive first, `restart` last**.
 
 Every command prints its target before it acts, and stops if it cannot read the store —
 so "wrong instance" is the first line of output rather than a count that looks off later:
@@ -125,7 +125,7 @@ export PYTHONIOENCODING=utf-8   # [Windows/Git Bash] only; a Linux terminal is U
 S=".claude/skills/test-haventory/stress.py"
 RUN="uv run --no-project --with aiohttp python $S"
 
-$RUN baseline      # health + version — proves the deployed code imported (needs Python 3.14)
+$RUN baseline      # counts + version — proves the deployed code imported (needs Python 3.14)
 $RUN fuzz          # malformed single-mutation inputs; asserts dataset untouched
 $RUN bulkfuzz      # adversarial haventory/items/bulk
 $RUN subteardown   # HA-core unsubscribe_events teardown (the card's path)
@@ -139,7 +139,7 @@ $RUN cleanup       # sweep any leftover stress_test_ data
 
 | subcommand | what it exercises |
 |---|---|
-| `baseline` | health + version snapshot (pass gate reference) |
+| `baseline` | counts + version snapshot (pass gate reference) |
 | `fuzz` | malformed inputs → typed error codes, no `unknown_error`, dataset untouched |
 | `bulkfuzz` | whole-batch rejects, per-op errors, duplicate-op_id loss |
 | `subteardown` | `unsubscribe_events` + dedicated unsubscribe both tear down cleanly |

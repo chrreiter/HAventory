@@ -262,7 +262,7 @@ add-on. Settings → **Repairs** is where a store HAventory refused to load says
 line. The inventory itself is one file, `/config/.storage/haventory_store`.
 
 **Settings → Devices & services → HAventory → ⋮ → Download diagnostics** writes a JSON with
-counts, schema versions, index-health checks, which runtime pieces are loaded and whether
+counts, schema versions, which runtime pieces are loaded and whether
 the card bundle is deployed. It carries no item or location content — no names, notes or
 custom-field values — so it is safe to attach to a public issue. If you need the content,
 use the export instead.

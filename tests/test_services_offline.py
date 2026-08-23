@@ -57,7 +57,7 @@ async def test_item_create_and_update_flow_logs_and_mutates() -> None:
     assert repo.get_counts()["items_total"] == 1
 
     # Update name and quantity
-    item_id = next(iter(repo._debug_get_internal_indexes()["items_by_id"]))
+    item_id = str(repo.list_items()["items"][0].id)
     updated_quantity = 3
     await services_mod.service_item_update(
         hass, {"item_id": item_id, "name": "Widget Pro", "quantity": updated_quantity}
@@ -76,7 +76,7 @@ async def test_item_update_refuses_a_bad_inspection_date_by_its_own_name() -> No
     install_runtime(hass)
     await services_mod.service_item_create(hass, {"name": "Boiler"})
     repo: Repository = repo_of(hass)
-    item_id = next(iter(repo._debug_get_internal_indexes()["items_by_id"]))
+    item_id = str(repo.list_items()["items"][0].id)
 
     with pytest.raises(ValidationError) as refusal:
         await services_mod.service_item_update(
@@ -98,14 +98,14 @@ async def test_item_move_and_quantity_helpers() -> None:
 
     # Create locations and item
     await services_mod.service_location_create(hass, {"name": "Garage"})
-    loc_id = next(iter(repo._debug_get_internal_indexes()["locations_by_id"]))
+    loc_id = str(next(repo.iter_locations()).id)
     # Update location name via service
     await services_mod.service_location_update(hass, {"location_id": loc_id, "name": "Garage2"})
     assert repo.get_location(loc_id).name == "Garage2"
     await services_mod.service_item_create(
         hass, {"name": "Box", "quantity": 1, "location_id": loc_id}
     )
-    item_id = next(iter(repo._debug_get_internal_indexes()["items_by_id"]))
+    item_id = str(repo.list_items()["items"][0].id)
 
     # Move to root
     await services_mod.service_item_move(hass, {"item_id": item_id, "new_location_id": None})
@@ -151,7 +151,7 @@ async def test_services_persist_after_mutations(monkeypatch) -> None:
 
     # Also ensure delete persists
     repo: Repository = repo_of(hass)
-    loc_id = next(iter(repo._debug_get_internal_indexes()["locations_by_id"]))
+    loc_id = str(next(repo.iter_locations()).id)
     await services_mod.service_location_delete(hass, {"location_id": loc_id})
     MIN_PERSISTS_AFTER_DELETE = 3
     assert calls["count"] >= MIN_PERSISTS_AFTER_DELETE
@@ -230,7 +230,7 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
 
     # Create one item to operate on
     await services_mod.service_item_create(hass, {"name": "Widget"})
-    item_id = next(iter(repo._debug_get_internal_indexes()["items_by_id"]))
+    item_id = str(repo.list_items()["items"][0].id)
 
     # Force NotFoundError: delete then try update
     await services_mod.service_item_delete(hass, {"item_id": item_id})
@@ -242,7 +242,7 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
 
     # Force ConflictError via expected_version mismatch
     await services_mod.service_item_create(hass, {"name": "Widget2"})
-    item_id2 = next(reversed(repo._debug_get_internal_indexes()["items_by_id"]))
+    item_id2 = str(repo.list_items()["items"][0].id)
     caplog.clear()
     with pytest.raises(ConflictError):
         await services_mod.service_item_update(

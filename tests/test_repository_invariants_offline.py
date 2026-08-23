@@ -1,16 +1,18 @@
-"""Offline tests for the repository consistency checks in `health.py`.
+"""Offline tests for the index checks the rest of the suite is measured against.
 
-The checks used to be private helpers inside `ws.py`; two callers ask the same
-question now, so they answer from one module. What they report has to be exactly
-what it was — these tests pin the healthy case, one index drift, and each of the
-four count comparisons.
+An oracle nothing tests is an oracle that passes everything. These pin the
+healthy answer, one index drift, and each of the four count comparisons, so a
+check that stopped looking would be caught here rather than by the refactor it
+was supposed to guard.
 """
 
 from __future__ import annotations
 
-from custom_components.haventory.health import collect_health_issues
+import pytest
 from custom_components.haventory.models import ItemCreate, ItemUpdate
 from custom_components.haventory.repository import Repository
+
+from repository_invariants import collect_index_issues, internal_indexes
 
 
 def _seeded() -> tuple[Repository, str]:
@@ -25,19 +27,14 @@ def _seeded() -> tuple[Repository, str]:
 
 
 def test_a_consistent_repository_reports_nothing() -> None:
-    """The healthy answer is an empty list, and the counts it was checked against."""
+    """The healthy answer is an empty list — which is what the oracle demands."""
 
     repo, _ = _seeded()
 
-    issues, counts = collect_health_issues(repo)
-
-    assert issues == []
-    indexes = repo._debug_get_internal_indexes()
-    assert counts["items_total"] == len(indexes["items_by_id"])
-    assert counts["locations_total"] == len(indexes["locations_by_id"])
-    assert counts["checked_out_count"] == len(indexes["checked_out_item_ids"])
+    assert collect_index_issues(repo) == []
 
 
+@pytest.mark.index_drift
 def test_an_item_missing_from_the_checked_out_index_is_reported() -> None:
     """Drift between an item and the index that is supposed to list it.
 
@@ -46,11 +43,9 @@ def test_an_item_missing_from_the_checked_out_index_is_reported() -> None:
     """
 
     repo, borrowed_id = _seeded()
-    repo._debug_get_internal_indexes()["checked_out_item_ids"].discard(borrowed_id)
+    internal_indexes(repo)["checked_out_item_ids"].discard(borrowed_id)
 
-    issues, _ = collect_health_issues(repo)
-
-    assert "checked_out_item_missing_from_index" in issues
+    assert "checked_out_item_missing_from_index" in collect_index_issues(repo)
 
 
 def test_every_count_is_compared_against_the_collection_it_summarises(monkeypatch) -> None:
@@ -73,9 +68,7 @@ def test_every_count_is_compared_against_the_collection_it_summarises(monkeypatc
         },
     )
 
-    issues, _ = collect_health_issues(repo)
-
-    assert set(issues) == {
+    assert set(collect_index_issues(repo)) == {
         "items_total_count_mismatch",
         "locations_total_count_mismatch",
         "checked_out_count_mismatch",

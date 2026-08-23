@@ -205,7 +205,6 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
     errors propagate to clients as `storage_error`.
   - **Shutdown/unload**: immediate save via `async_persist_immediate`.
   - **Concurrency**: all persist paths use `asyncio.Lock` to serialize writes.
-- Repository generation counter increments on every state modification (optimistic locking/debugging).
 - WebSocket-first CRUD via `homeassistant.components.websocket_api` decorators.
 - Services via `hass.services.async_register` with `voluptuous` schemas; handlers re-raise
   validation/repository/storage errors so HA surfaces them.
@@ -424,7 +423,7 @@ throughout.
 - **Import** keeps the mandatory server-side dry run: paste or pick a file, choose
   merge / replace / skip, preview add/update/conflict counts per items and locations, then
   import. An invalid document is shown as a list of JSON paths, not one flat message.
-- **Diagnostics and degraded states** — the ⋮ menu carries a Diagnostics panel (health,
+- **Diagnostics and degraded states** — the ⋮ menu carries a Diagnostics panel (counts,
   rate-limit drop counters, subscription state, copyable report) badged only when
   something is wrong, plus banners for connection loss, rate limiting and the
   payload-free reload an import broadcasts. Because subscription events carry no sequence
