@@ -729,6 +729,32 @@ def test_preview_holds_an_imported_item_to_the_always_enforced_rules(
 
 
 @pytest.mark.parametrize(
+    ("overrides", "field"),
+    [
+        ({"inspection_date": "2026-13-01"}, "inspection_date"),
+        ({"reminder_date": "2026-02-30"}, "reminder_date"),
+        (
+            {"reminder_date": "2026-09-01", "reminder_anchor": "2026-02-30"},
+            "reminder_anchor",
+        ),
+    ],
+)
+def test_a_refused_document_date_names_the_field_its_path_points_at(
+    overrides: dict, field: str
+) -> None:
+    """Path and message have to agree, or the author is sent to another line."""
+
+    repo = Repository()
+    report, target = ie.plan_import(
+        repo, _envelope(_item_doc(**overrides)), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert target is None
+    reported = {e["path"]: e["message"] for e in report["errors"]}
+    assert reported[f"items[0].{field}"] == f"{field} must be a valid calendar date (YYYY-MM-DD)"
+
+
+@pytest.mark.parametrize(
     "overrides",
     [
         {"description": "d" * (DESCRIPTION_MAX_LENGTH + 1)},

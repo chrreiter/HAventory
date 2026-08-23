@@ -40,6 +40,7 @@ from custom_components.haventory.models import (
     serialize_reminder_interval,
     serialize_status_definition,
     validate_attachment_meta,
+    validate_optional_date,
     validate_status_definition,
 )
 
@@ -207,6 +208,68 @@ async def test_invalid_inspection_date_format_raises_validation_error() -> None:
     item = create_item_from_create({"name": "Equipment"})
     with pytest.raises(ValidationError):
         apply_item_update(item, ItemUpdate(inspection_date="invalid-date"))
+
+
+# -----------------------------
+# Date fields
+# -----------------------------
+
+FORMAT_REFUSAL = "{field} must be in 'YYYY-MM-DD' format"
+CALENDAR_REFUSAL = "{field} must be a valid calendar date (YYYY-MM-DD)"
+
+DATE_FIELDS = ["due_date", "inspection_date", "reminder_date"]
+
+
+def _item_payload_with_date(field: str, value: str) -> dict:
+    """An otherwise valid create payload carrying one date field."""
+
+    payload: dict = {"name": "Boiler", field: value}
+    if field == "due_date":
+        # A due date only exists on a checked-out item; without this the create
+        # is refused by that rule instead of by the date's format.
+        payload["checked_out"] = True
+    return payload
+
+
+@pytest.mark.parametrize("field", DATE_FIELDS)
+@pytest.mark.parametrize(
+    ("value", "message"),
+    [("2026-1-1", FORMAT_REFUSAL), ("2026-02-30", CALENDAR_REFUSAL)],
+)
+def test_a_refused_date_names_the_field_that_carried_it(
+    field: str, value: str, message: str
+) -> None:
+    """The message is all a script or import author gets to work from.
+
+    It also pins the two texts themselves: all three fields share them, so a
+    reworded refusal changes what every automation surface reports.
+    """
+
+    with pytest.raises(ValidationError) as refusal:
+        create_item_from_create(_item_payload_with_date(field, value))
+
+    assert str(refusal.value) == message.format(field=field)
+
+
+@pytest.mark.parametrize("field", DATE_FIELDS)
+def test_a_real_calendar_date_is_kept_on_every_date_field(field: str) -> None:
+    item = create_item_from_create(_item_payload_with_date(field, "2026-02-28"))
+
+    assert getattr(item, field) == "2026-02-28"
+
+
+def test_an_update_names_the_date_field_it_refused() -> None:
+    item = create_item_from_create({"name": "Boiler"})
+
+    with pytest.raises(ValidationError) as refusal:
+        apply_item_update(item, ItemUpdate(inspection_date="2026-13-01"))
+
+    assert str(refusal.value) == CALENDAR_REFUSAL.format(field="inspection_date")
+
+
+def test_an_absent_optional_date_is_not_a_refusal() -> None:
+    assert validate_optional_date(None, field_name="inspection_date") is None
+    assert validate_optional_date("2026-02-28", field_name="inspection_date") == "2026-02-28"
 
 
 # -----------------------------

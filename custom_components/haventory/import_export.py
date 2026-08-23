@@ -82,8 +82,7 @@ from .models import (
     serialize_status_definition,
     validate_attachment_meta,
     validate_due_date_rules,
-    validate_inspection_date,
-    validate_reminder_date,
+    validate_optional_date,
     validate_reminder_interval,
     validate_reminder_rules,
     validate_required_name,
@@ -500,7 +499,7 @@ def _validate_inspection_date_doc(
     if inspection_date is None:
         return
     try:
-        validate_inspection_date(inspection_date)
+        validate_optional_date(inspection_date, field_name="inspection_date")
     except ValidationError as exc:
         errors.append(_err(f"{base}.inspection_date", str(exc)))
 
@@ -524,13 +523,13 @@ def _validate_reminder_doc(base: str, doc: dict[str, Any], errors: list[dict[str
 
     if reminder_date is not None:
         try:
-            validate_reminder_date(reminder_date)
+            validate_optional_date(reminder_date, field_name="reminder_date")
         except ValidationError as exc:
             errors.append(_err(f"{base}.reminder_date", str(exc)))
             refused = True
     if anchor is not None:
         try:
-            validate_reminder_date(anchor)
+            validate_optional_date(anchor, field_name="reminder_anchor")
         except ValidationError as exc:
             errors.append(_err(f"{base}.reminder_anchor", str(exc)))
             refused = True
