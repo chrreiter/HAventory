@@ -39,8 +39,10 @@ from .const import (
 from .events import (
     notify_bulk_mutation,
     notify_counts,
+    notify_dataset_replaced,
     notify_location_mutation,
     notify_mutation,
+    notify_status_mutation,
 )
 from .exceptions import (
     ConflictError,
@@ -71,7 +73,7 @@ from .repository import UNSET, Repository
 from .runtime import Subscription, find_runtime, loaded_runtime
 from .serialization import serialize_item, serialize_location
 from .storage import CURRENT_SCHEMA_VERSION
-from .subscriptions import broadcast_event, register_subscription, unregister_subscription
+from .subscriptions import register_subscription, unregister_subscription
 
 LOGGER = context_logger(__name__)
 
@@ -98,8 +100,9 @@ def _require_loaded(hass: HomeAssistant) -> None:
 def _rate_limiter(hass: HomeAssistant) -> RateLimiter | None:
     """The configured rate limiter, or None when limiting is off.
 
-    Resolved without the loaded check: the broadcaster charges this budget, and
-    a broadcast can run during teardown.
+    Resolved without the loaded check: the guard charges a command's token
+    before it has asked whether an entry is loaded at all, so a refusal costs
+    the same whichever answer the command was heading for.
     """
 
     runtime = find_runtime(hass)
@@ -1773,7 +1776,7 @@ async def ws_status_create(
     created = repo.create_status(doc)
     serialized = serialize_status_definition(created)
     await _persist_repo(hass)
-    broadcast_event(hass, topic="statuses", action="created", payload={"status": serialized})
+    notify_status_mutation(hass, action="created", status=serialized)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1804,7 +1807,7 @@ async def ws_status_update(
     updated = repo.update_status(msg["slug"], changes)
     serialized = serialize_status_definition(updated)
     await _persist_repo(hass)
-    broadcast_event(hass, topic="statuses", action="updated", payload={"status": serialized})
+    notify_status_mutation(hass, action="updated", status=serialized)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1825,7 +1828,7 @@ async def ws_status_reorder(
     ordered = repo.reorder_statuses(list(msg["slugs"]))
     serialized = [serialize_status_definition(d) for d in ordered]
     await _persist_repo(hass)
-    broadcast_event(hass, topic="statuses", action="reordered", payload={"statuses": serialized})
+    notify_status_mutation(hass, action="reordered", statuses=serialized)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
 
@@ -1852,7 +1855,7 @@ async def ws_status_delete(
     removed, reassigned = repo.delete_status(msg["slug"], reassign_to=msg.get("reassign_to"))
     serialized = serialize_status_definition(removed)
     await _persist_repo(hass)
-    broadcast_event(hass, topic="statuses", action="deleted", payload={"status": serialized})
+    notify_status_mutation(hass, action="deleted", status=serialized)
     if reassigned:
         # Two topics on purpose: one card is showing the vocabulary, another is
         # showing the items that just moved underneath it — that second topic is
@@ -2033,15 +2036,7 @@ async def ws_import_execute(
     await media_mod.async_sweep_orphans(hass, repo.iter_attachments())
 
     # Tell every subscriber the dataset was replaced wholesale.
-    broadcast_event(hass, topic="items", action="reloaded", payload=None)
-    broadcast_event(hass, topic="locations", action="reloaded", payload=None)
-    # No per-item bus event and no per-item `items` event — an import rewrites
-    # the dataset, and both an automation and a card want one signal rather than
-    # one per row, which is what the two `reloaded` events above are. Passing no
-    # item leaves `notify_mutation` the rest of its job: the low-stock diff still
-    # runs, so a restock done by import announces itself, the sensors repaint,
-    # and the counts go out.
-    notify_mutation(hass, action="reloaded")
+    notify_dataset_replaced(hass)
     # And the shopping list explicitly, because that diff is the only bus signal
     # a wholesale swap produces: a document that renames items or changes their
     # quantities without moving the low-stock set fires nothing at all.

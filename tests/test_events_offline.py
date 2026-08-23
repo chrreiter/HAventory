@@ -14,6 +14,7 @@ Scenarios:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pytest
 from custom_components.haventory import events as events_mod
@@ -528,3 +529,25 @@ async def test_a_failing_rollover_broadcast_is_logged_rather_than_raised(
     assert [r.levelno for r in records] == [logging.ERROR]
     assert records[0].op == "day_rollover"
     assert records[0].exc_info is not None
+
+
+def test_nothing_but_events_py_reaches_the_broadcaster() -> None:
+    """One door: a write path announces through here, or subscribers hear nothing.
+
+    A module calling `subscriptions.broadcast_event` itself would reach a card
+    without firing the bus event, diffing the low-stock set or repainting the
+    entities beside it, so the same edit would look different depending on which
+    surface was watching. Read from the source rather than by importing: several
+    modules pull in Home Assistant packages the offline stubs do not provide.
+    """
+
+    package = Path(events_mod.__file__).parent
+    offenders = []
+    for path in sorted(package.glob("*.py")):
+        if path.name in {"events.py", "subscriptions.py"}:
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if "broadcast_event(" in line or "broadcast_counts(" in line:
+                offenders.append(f"{path.name}:{number}: {line.strip()}")
+
+    assert offenders == [], "announce through events.py: it covers the bus and the entities too"
