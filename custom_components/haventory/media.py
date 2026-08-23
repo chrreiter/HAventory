@@ -181,6 +181,10 @@ def thumbnail_path(root: Path, item_id: str, attachment_id: str) -> Path:
     Named from the attachment id and not from the stored mime, because the
     derived file is always WebP whatever the original is — and because the
     sweep has to be able to name it from metadata alone.
+
+    The suffix carries the encoder generation (``THUMBNAIL_SUFFIX``), so this
+    names only tiles the current encoder would write: one an earlier generation
+    left behind is named by nothing and is swept at the next setup.
     """
 
     resolved_root = root.resolve()

@@ -16,6 +16,8 @@ Scenarios:
 - only a URL versioned by that name may be cached, because the name can change
 - the sweep deletes an unreferenced file and keeps a referenced one
 - the sweep refuses a path resolving outside the media root
+- a tile names the encoder generation that wrote it, and the sweep removes the
+  tiles an earlier generation left behind
 - a tile keeps the transparency its source had, where there is a decoder to
   look at the bytes with
 """
@@ -32,7 +34,9 @@ from custom_components.haventory.const import (
     MAX_ATTACHMENT_BYTES,
     MAX_PICTURES_PER_ITEM,
     MEDIA_NAME_TOKEN_PARAM,
+    THUMBNAIL_GENERATION,
     THUMBNAIL_MAX_EDGE,
+    THUMBNAIL_SUFFIX,
 )
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
@@ -456,7 +460,7 @@ async def test_a_thumbnail_is_encoded_once_and_reused(monkeypatch) -> None:
     assert first is not None and first.is_file()
     assert second == first
     assert len(calls) == 1
-    assert first.name.endswith(".thumb.webp")
+    assert first.name.endswith(THUMBNAIL_SUFFIX)
 
 
 @pytest.mark.asyncio
@@ -551,6 +555,51 @@ async def test_the_sweep_keeps_a_live_thumbnail_and_removes_an_orphaned_one(
     assert removed == (str(orphan.resolve()),)
     assert kept.is_file()
     assert not orphan.exists()
+
+
+# What the first generation of the encoder named its tiles — the one that
+# flattened a transparent picture onto black. Written out rather than derived,
+# because the point of these two tests is that the name changed.
+FIRST_GENERATION_SUFFIX = ".thumb.webp"
+
+
+def test_a_tile_is_named_for_the_encoder_generation_that_wrote_it() -> None:
+    """A tile is written once and read from then on, so a change to the encode
+    only reaches an existing install if the file it wrote stops being named."""
+
+    root = media.media_root(HomeAssistant())
+    item_id = str(new_uuid4())
+    attachment_id = str(new_uuid4())
+
+    path = media.thumbnail_path(root, item_id, attachment_id)
+
+    assert THUMBNAIL_GENERATION > 1
+    assert THUMBNAIL_SUFFIX == f".thumb{THUMBNAIL_GENERATION}.webp"
+    assert path.name == f"{attachment_id}{THUMBNAIL_SUFFIX}"
+    assert not path.name.endswith(FIRST_GENERATION_SUFFIX)
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_removes_a_tile_an_earlier_generation_wrote(monkeypatch) -> None:
+    """The upgrade path: an install carrying tiles from the previous encoder
+    loses them on the next setup, keeping the picture they came from."""
+
+    hass = HomeAssistant()
+    repo, item, meta = await _stored_picture(hass)
+    monkeypatch.setattr(media, "_encode_thumbnail_blocking", _stub_encoder([]))
+    root = media.media_root(hass)
+    current = await media.async_thumbnail(hass, root=root, item_id=str(item.id), meta=meta)
+    assert current is not None
+    original = media.attachment_path(root, str(item.id), str(meta.id), meta.mime)
+    stale = current.with_name(f"{meta.id}{FIRST_GENERATION_SUFFIX}")
+    stale.write_bytes(WEBP_BYTES)
+
+    removed = await media.async_sweep_orphans(hass, repo.iter_attachments())
+
+    assert removed == (str(stale.resolve()),)
+    assert not stale.exists()
+    assert current.is_file()
+    assert original.is_file()
 
 
 @pytest.mark.asyncio
