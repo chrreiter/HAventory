@@ -6,6 +6,7 @@ Scenarios:
 - a deleted row frees its attachment files, after the batch's one write
 - a failed write frees nothing
 - only the rows that were deleted free files
+- a row whose payload has the wrong shape fails only itself
 """
 
 from __future__ import annotations
@@ -282,3 +283,58 @@ async def test_bulk_frees_the_files_of_the_deleted_row_only(monkeypatch) -> None
     assert order == ["save", "unlink"]
     assert unlinked == [(str(gone.id), str(gone_meta.id))]
     assert [str(a.id) for a in repo.get_item(kept.id).attachments] == [str(kept_meta.id)]
+
+
+@pytest.mark.asyncio
+async def test_a_row_whose_tags_are_a_string_fails_only_itself() -> None:
+    """Bulk payloads carry no schema, so the model's tag rule is the only guard.
+
+    `tags: "kitchen"` iterates as its characters on both the whole-list write
+    and the two tag ops, so each row is refused and the item keeps the tags it
+    had while the rest of the batch runs.
+    """
+
+    hass = HomeAssistant()
+    install_runtime(hass)
+    ws_setup(hass)
+
+    created = await ws_send(hass, 1, "haventory/item/create", name="Chisel", tags=["tools"])
+    item_id = created["result"]["id"]
+
+    NEW_QTY = 4
+    ops = [
+        {
+            "op_id": "update",
+            "kind": "item_update",
+            "payload": {"item_id": item_id, "tags": "kitchen"},
+        },
+        {
+            "op_id": "add",
+            "kind": "item_add_tags",
+            "payload": {"item_id": item_id, "tags": "kitchen"},
+        },
+        {
+            "op_id": "remove",
+            "kind": "item_remove_tags",
+            "payload": {"item_id": item_id, "tags": "tools"},
+        },
+        {
+            "op_id": "ok",
+            "kind": "item_set_quantity",
+            "payload": {"item_id": item_id, "quantity": NEW_QTY},
+        },
+    ]
+
+    res = await ws_send(hass, 2, "haventory/items/bulk", operations=ops)
+
+    assert res["success"] is True
+    results = res["result"]["results"]
+    for op_id in ("update", "add", "remove"):
+        assert results[op_id]["success"] is False
+        assert results[op_id]["error"]["code"] == "validation_error"
+        assert results[op_id]["error"]["message"] == "tags must be a list of strings"
+    assert results["ok"]["success"] is True
+
+    got = await ws_send(hass, 3, "haventory/item/get", item_id=item_id)
+    assert got["result"]["tags"] == ["tools"]
+    assert got["result"]["quantity"] == NEW_QTY

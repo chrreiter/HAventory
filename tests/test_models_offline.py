@@ -42,6 +42,7 @@ from custom_components.haventory.models import (
     validate_attachment_meta,
     validate_optional_date,
     validate_status_definition,
+    validate_tags,
 )
 
 UUID4_RE = re.compile(
@@ -95,6 +96,37 @@ async def test_tag_normalization_and_update_clears_fields() -> None:
 
     updated2 = apply_item_update(updated, ItemUpdate(description=None, category=None))
     assert updated2.description is None and updated2.category is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "chisel",
+        {"kitchen": True},
+        7,
+        ["tools", 7],
+        ["tools", None],
+    ],
+)
+def test_a_tags_value_that_is_not_a_list_of_strings_is_refused(value: object) -> None:
+    """The type is checked before the list is iterated.
+
+    A string iterates as its characters, so `tags: "chisel"` would store six
+    one-letter tags — a write the caller never asked for, from a type slip that
+    nothing else on the path can catch. An entry that is not a string is the
+    same slip one level down.
+    """
+
+    with pytest.raises(ValidationError, match="tags must be a list of strings"):
+        validate_tags(value)
+
+
+def test_a_tag_list_is_normalized_and_a_null_clears() -> None:
+    """`None` is how a caller empties the list, and a list is normalized as before."""
+
+    assert validate_tags(None) == []
+    assert validate_tags([]) == []
+    assert validate_tags(["Tools", "  tools  ", "DIY"]) == ["tools", "diy"]
 
 
 @pytest.mark.asyncio

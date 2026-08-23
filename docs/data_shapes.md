@@ -633,6 +633,9 @@ shapes as the WebSocket surface — no bespoke service shape exists:
   logged once; the rest of the inventory still renders.
 - `name` trimmed; max length 120 for items and locations.
 - `custom_fields` keys must be non-empty strings; values must be scalars.
+- `tags` is a list of strings on every item write, and `null` clears the list. A value that
+  is not one — a bare string, which iterates as its characters — is refused rather than
+  read, on the whole-list write and on the two tag operations alike.
 
 #### Input caps
 

@@ -60,7 +60,7 @@ from .models import (
     ItemUpdate,
     iso_utc_now,
     new_uuid4,
-    normalize_tags,
+    normalize_string_list,
     serialize_status_definition,
     today_local_date,
     validate_attachment_meta,
@@ -306,6 +306,16 @@ def _payload_item_id(payload: dict[str, Any]) -> str:
     return value
 
 
+def _payload_tags(payload: dict[str, Any]) -> list[str]:
+    """Extract a normalized tag list from an (unschema'd) op payload.
+
+    The item-side caps are left to the write these ops build, which weighs them
+    against the tags the item already carries: a payload that removes an
+    over-cap legacy list must not be refused for naming that many tags.
+    """
+    return normalize_string_list(payload.get("tags"), field_name="tags", casefold=True)
+
+
 def _payload_int(payload: dict[str, Any], key: str) -> int:
     """Extract a required integer field from an (unschema'd) op payload."""
     value = payload.get(key)
@@ -387,7 +397,7 @@ def _op_item_add_tags(hass: HomeAssistant, payload: dict[str, Any]) -> tuple[dic
     repo = _repo(hass)
     item_id = _payload_item_id(payload)
     expected = payload.get("expected_version")
-    tags = normalize_tags(payload.get("tags"))
+    tags = _payload_tags(payload)
     current = repo.get_item(item_id)
     new_tags = list(dict.fromkeys(list(current.tags) + list(tags)))
     updated = repo.update_item(item_id, ItemUpdate(tags=new_tags), expected_version=expected)
@@ -400,7 +410,7 @@ def _op_item_remove_tags(
     repo = _repo(hass)
     item_id = _payload_item_id(payload)
     expected = payload.get("expected_version")
-    to_remove = set(normalize_tags(payload.get("tags")))
+    to_remove = set(_payload_tags(payload))
     current = repo.get_item(item_id)
     new_tags = [t for t in list(current.tags) if t not in to_remove]
     updated = repo.update_item(item_id, ItemUpdate(tags=new_tags), expected_version=expected)
