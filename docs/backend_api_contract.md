@@ -246,6 +246,7 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
 - `haventory/item/delete`
   - Payload: `{item_id: string, expected_version?: number}`
   - Result: `null`; emits `items/deleted` with the pre-delete snapshot under `item`, and `stats/counts`.
+  - The item's attachment files are deleted with it, after the save. A write that fails leaves every file where it was — the item is still in the store, and its metadata still names them.
 
 - `haventory/item/adjust_quantity`
   - Payload: `{item_id: string, delta: number, expected_version?: number}`
@@ -372,6 +373,7 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
   - Supported `kind` values: `item_update`, `item_delete`, `item_move`, `item_adjust_quantity`, `item_set_quantity`, `item_check_out`, `item_check_in`, `item_add_tags`, `item_remove_tags`, `item_update_custom_fields`, `item_set_low_stock_threshold`.
   - Result: `{results: { [op_id: string]: {success: true, result: <Item>} | {success: false, error: {code, message, context}} }}`; if any success, a single `stats/counts` event is emitted.
   - A failed op fails only itself; the batch continues and reports it under its `op_id`. A failed *write*, by contrast, fails the whole command with `storage_error` and returns no `results` map at all — the batch is one write.
+  - An `item_delete` row frees the item's attachment files, after the batch's one write and on the same terms as `item/delete`: a row that failed keeps every file it had, and a failed write frees nothing at all.
   - **`op_id`s must be unique within one batch**, and are compared as strings — `1` and `"1"` are the same id. A repeat rejects the whole command with `validation_error` and runs nothing, because the results map is keyed by `op_id` and could only report one verdict for the two operations.
 
 - `haventory/item/list`

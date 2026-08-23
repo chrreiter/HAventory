@@ -18,6 +18,7 @@ import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.util import dt as dt_util
 
+from . import media as media_mod
 from .const import DOMAIN
 from .events import notify_counts, notify_location_mutation, notify_mutation
 from .exceptions import (
@@ -249,6 +250,7 @@ async def service_item_delete(hass: HomeAssistant, data: dict) -> dict[str, Any]
         removed = serialize_item(hass, repo.get_item(payload["item_id"]))
         repo.delete_item(payload["item_id"], expected_version=expected)
         await async_persist_repo(hass)
+        await media_mod.async_delete_item_files(hass, [removed])
         notify_mutation(hass, action="deleted", item=removed)
         return {"item": removed}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:

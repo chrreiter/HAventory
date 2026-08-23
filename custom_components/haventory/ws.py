@@ -1185,12 +1185,7 @@ async def ws_item_delete(
     serialized_before = serialize_item(hass, before)
     repo.delete_item(item_id, expected_version=msg.get("expected_version"))
     await _persist_repo(hass)
-    # After the save, for the same reason attachment/remove deletes last: an
-    # orphaned file is swept at setup, while a file deleted ahead of a failed
-    # save would leave stored metadata pointing at nothing.
-    await media_mod.async_delete_attachments(
-        hass, [(str(before.id), a) for a in before.attachments]
-    )
+    await media_mod.async_delete_item_files(hass, [serialized_before])
     notify_mutation(hass, action="deleted", item=serialized_before)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
 
@@ -1820,6 +1815,13 @@ async def ws_items_bulk(
         # before anything else so neither the summary nor an event describes a
         # batch that never reached disk. The whole batch shares this one write.
         await _persist_repo(hass)
+
+        # `deleted` is the action `_op_item_delete` alone returns, so it names
+        # exactly the rows whose files nothing references any more. A row that
+        # failed is not in `successful_ops` and keeps every file it had.
+        await media_mod.async_delete_item_files(
+            hass, [body for _op_id, body, action in successful_ops if action == "deleted"]
+        )
 
         LOGGER.info(
             "Bulk operation completed",
