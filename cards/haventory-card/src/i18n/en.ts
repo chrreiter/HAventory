@@ -74,82 +74,6 @@ export const en = {
   'hv.discard.heading': 'Discard your changes?',
   'hv.discard.message': 'What you have typed since the last save is lost.',
 
-  // ui/health-codes — `haventory/health` issue codes, said in words. Counted,
-  // because the backend repeats a code once per offending entity.
-  'hv.health.itemIdKeyMismatch.one':
-    '{count} item is stored under a key that does not match its id.',
-  'hv.health.itemIdKeyMismatch.other':
-    '{count} items are stored under a key that does not match their id.',
-  'hv.health.itemReferencesMissingLocation.one':
-    '{count} item references a location that no longer exists — it appears under "No location".',
-  'hv.health.itemReferencesMissingLocation.other':
-    '{count} items reference a location that no longer exists — they appear under "No location".',
-  'hv.health.itemMissingFromLocationIndex.one': '{count} item is missing from the location index.',
-  'hv.health.itemMissingFromLocationIndex.other':
-    '{count} items are missing from the location index.',
-  'hv.health.checkedOutItemMissingFromIndex.one':
-    '{count} checked-out item is missing from the checked-out index.',
-  'hv.health.checkedOutItemMissingFromIndex.other':
-    '{count} checked-out items are missing from the checked-out index.',
-  'hv.health.nonCheckedOutItemInIndex.one':
-    '{count} item is in the checked-out index but is not checked out.',
-  'hv.health.nonCheckedOutItemInIndex.other':
-    '{count} items are in the checked-out index but are not checked out.',
-  'hv.health.lowStockItemMissingFromIndex.one':
-    '{count} low-stock item is missing from the low-stock index.',
-  'hv.health.lowStockItemMissingFromIndex.other':
-    '{count} low-stock items are missing from the low-stock index.',
-  'hv.health.nonLowStockItemInIndex.one':
-    '{count} item is in the low-stock index but is not low on stock.',
-  'hv.health.nonLowStockItemInIndex.other':
-    '{count} items are in the low-stock index but are not low on stock.',
-  'hv.health.tagsIndexUnknownItems.one': 'The tag index references {count} item that no longer exists.',
-  'hv.health.tagsIndexUnknownItems.other':
-    'The tag index references {count} items that no longer exist.',
-  'hv.health.categoryIndexUnknownItems.one':
-    'The category index references {count} item that no longer exists.',
-  'hv.health.categoryIndexUnknownItems.other':
-    'The category index references {count} items that no longer exist.',
-  'hv.health.checkedOutIndexUnknownItems.one':
-    'The checked-out index references {count} item that no longer exists.',
-  'hv.health.checkedOutIndexUnknownItems.other':
-    'The checked-out index references {count} items that no longer exist.',
-  'hv.health.lowStockIndexUnknownItems.one':
-    'The low-stock index references {count} item that no longer exists.',
-  'hv.health.lowStockIndexUnknownItems.other':
-    'The low-stock index references {count} items that no longer exist.',
-  'hv.health.locationIndexUnknownItems.one':
-    'The location index references {count} item that no longer exists.',
-  'hv.health.locationIndexUnknownItems.other':
-    'The location index references {count} items that no longer exist.',
-  'hv.health.locationIndexMissingLocation.one':
-    'The location index has {count} bucket for a missing location.',
-  'hv.health.locationIndexMissingLocation.other':
-    'The location index has {count} buckets for missing locations.',
-  'hv.health.locationBucketMismatch.one':
-    '{count} location bucket disagrees with the items it holds.',
-  'hv.health.locationBucketMismatch.other':
-    '{count} location buckets disagree with the items they hold.',
-  'hv.health.locationIdKeyMismatch.one':
-    '{count} location is stored under a key that does not match its id.',
-  'hv.health.locationIdKeyMismatch.other':
-    '{count} locations are stored under a key that does not match their id.',
-  // Four whole-store tallies. One entity each, so both forms say the same thing.
-  'hv.health.itemsTotalMismatch.one': 'The cached item total disagrees with the stored items.',
-  'hv.health.itemsTotalMismatch.other': 'The cached item total disagrees with the stored items.',
-  'hv.health.locationsTotalMismatch.one':
-    'The cached location total disagrees with the stored locations.',
-  'hv.health.locationsTotalMismatch.other':
-    'The cached location total disagrees with the stored locations.',
-  'hv.health.checkedOutCountMismatch.one':
-    'The cached checked-out count disagrees with the stored items.',
-  'hv.health.checkedOutCountMismatch.other':
-    'The cached checked-out count disagrees with the stored items.',
-  'hv.health.lowStockCountMismatch.one':
-    'The cached low-stock count disagrees with the stored items.',
-  'hv.health.lowStockCountMismatch.other':
-    'The cached low-stock count disagrees with the stored items.',
-
   // ui/plural — a count and the noun it counts, for a tally that stands alone.
   // A count inside a sentence gets a key for the whole sentence instead.
   'hv.count.item.one': '{count} item',
@@ -168,8 +92,6 @@ export const en = {
   'hv.count.field.other': '{count} fields',
   'hv.count.filter.one': '{count} filter',
   'hv.count.filter.other': '{count} filters',
-  'hv.count.issue.one': '{count} issue',
-  'hv.count.issue.other': '{count} issues',
   'hv.count.problem.one': '{count} problem',
   'hv.count.problem.other': '{count} problems',
   'hv.count.conflict.one': '{count} conflict',
@@ -708,14 +630,11 @@ export const en = {
   'hv.diagnostics.degraded': 'Degraded',
   'hv.diagnostics.degradedDetail':
     ' — rate limiting is active. Some commands and live updates are being dropped.',
-  'hv.diagnostics.issuesFound': 'Issues found',
-  'hv.diagnostics.issuesFoundDetail': ' — the integration reported problems with its stored data.',
   'hv.diagnostics.noIssues': 'No issues',
   'hv.diagnostics.noIssuesDetail': ' · live',
   'hv.diagnostics.commandsRejected': 'Commands rejected',
   'hv.diagnostics.eventsDropped': 'Events dropped',
   'hv.diagnostics.sinceLastRefresh': 'Since last refresh',
-  'hv.diagnostics.issues': 'Issues',
   'hv.diagnostics.subscriptions': 'Subscriptions',
   'hv.diagnostics.subscriptionsLive': 'items · locations · stats — live',
   'hv.diagnostics.subscriptionsDown': 'not connected',

@@ -6,7 +6,6 @@ import { activeFilterCount, defaultFilters } from './store/store';
 import type { Store } from './store/store';
 import type { ImportPolicy, ImportPreview, ImportSummary } from './store/types';
 import { t, tn } from './i18n';
-import { counted } from './ui/plural';
 import { NARROW_QUERY } from './ui/responsive';
 import type { OrganizeTab } from './components/hv-organize-dialog';
 import type { OverflowMenuEntry } from './components/hv-overflow-menu';
@@ -279,8 +278,6 @@ export class HostSurfaces {
     const rate = st.healthCache?.rate_limit;
     const dropped = (rate?.dropped_commands ?? 0) + (rate?.dropped_events ?? 0);
     if (dropped > 0) return t('hv.surfaces.badge.dropped', { count: dropped });
-    const issues = st.healthCache?.issues.length ?? 0;
-    if (issues > 0) return counted(issues, 'issue');
     if (st.degraded.connectionLost) return t('hv.surfaces.badge.offline');
     return null;
   }

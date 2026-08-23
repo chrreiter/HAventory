@@ -2072,25 +2072,13 @@ describe('hv-card-shell: diagnostics and import', () => {
     const { el, hass, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     let menu = await openMenu(el, sr);
     expect((menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLElement).textContent).not.toContain(
-      'issue',
+      'dropped',
     );
 
-    hass.__setHealth({ healthy: false, issues: ['low_stock_count_mismatch'] });
-    await store.refreshHealth();
-    await settle(el);
-    menu = await openMenu(el, sr);
-    expect((menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLElement).textContent).toContain(
-      '1 issue',
-    );
-  });
-
-  it('badges dropped counters ahead of integrity issues', async () => {
-    const { el, hass, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     hass.__setHealth({ rate_limit: { enabled: true, dropped_commands: 7, dropped_events: 23 } });
     await store.refreshHealth();
     await settle(el);
-
-    const menu = await openMenu(el, sr);
+    menu = await openMenu(el, sr);
     expect((menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLElement).textContent).toContain(
       '30 dropped',
     );

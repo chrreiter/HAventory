@@ -416,16 +416,13 @@ describe('Store', () => {
 
     const health = store.state.value.healthCache;
     expect(health).toBeTruthy();
-    expect(health?.healthy).toBe(true);
-    expect(health?.issues).toEqual([]);
-    expect(typeof health?.generation).toBe('number');
     expect(health?.counts.items_total).toBe(1);
+    expect(health?.rate_limit?.dropped_events).toBe(0);
 
-    // Backend degrades → refreshHealth picks it up
-    hass.__setHealth({ healthy: false, issues: ['item_missing_from_created_at_index'] });
+    // The limiter starts dropping → refreshHealth picks it up
+    hass.__setHealth({ rate_limit: { enabled: true, dropped_commands: 2, dropped_events: 5 } });
     await store.refreshHealth();
-    expect(store.state.value.healthCache?.healthy).toBe(false);
-    expect(store.state.value.healthCache?.issues).toContain('item_missing_from_created_at_index');
+    expect(store.state.value.healthCache?.rate_limit?.dropped_events).toBe(5);
   });
 
   it('deleteLocation removes an empty location and refreshes caches', async () => {

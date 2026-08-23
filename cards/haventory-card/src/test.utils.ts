@@ -43,7 +43,6 @@ export interface MockConfig {
 type HealthPatch = {
   healthy?: boolean;
   issues?: string[];
-  generation?: number;
   rate_limit?: { enabled: boolean; dropped_commands: number; dropped_events: number };
 };
 
@@ -237,7 +236,6 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             healthy: healthOverride?.healthy ?? true,
             issues: healthOverride?.issues ?? [],
             counts,
-            generation: healthOverride?.generation ?? 1,
             rate_limit: healthOverride?.rate_limit ?? {
               enabled: false,
               dropped_commands: 0,

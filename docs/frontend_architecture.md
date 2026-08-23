@@ -137,7 +137,7 @@ haventory-card                     Lovelace element; store owner
     ├── hv-checkout-popover        desktop: anchored due-date step
     ├── hv-organize-dialog         Locations / Categories / Tags / Statuses
     ├── hv-import-sheet            input → preview → summary (+ invalid-document state)
-    ├── hv-diagnostics-panel       health, drop counters, subscriptions, copy report
+    ├── hv-diagnostics-panel       counts, drop counters, subscriptions, copy report
     ├── hv-confirm                 in-app confirmation (replaces window.confirm)
     ├── hv-banner                  the one alert treatment; the degraded and error
     │                              stacks are built in ui/banners.ts and rendered
@@ -269,7 +269,7 @@ Every string above — and every string in every component — comes out of `src
   never to the key, so a partial dictionary shows a mixed screen rather than `hv.action.retry`
   on a button.
 - **A module singleton, not a Lit context.** Half the copy lives in plain functions with no
-  host element (`ui/empty-state`, `ui/health-codes`, `ui/plural`, `describeFailure`), and a
+  host element (`ui/empty-state`, `ui/plural`, `describeFailure`), and a
   context cannot reach any of them without changing every signature. The consequence is a
   rule: **copy cannot be a module constant.** A `const` computed when the module is evaluated
   freezes English into every surface that reads it, because the language arrives with the
@@ -464,7 +464,6 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `day-clock.ts` | `onDayChange(cb)`: one shared timer to the next local midnight, so everything that renders a date re-renders when the day turns. See "The day turning over". |
 | `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the `custom_fields_set` / `custom_fields_unset` diff. |
 | `value-rewrite.ts` | Tag/category rename, merge and removal as batches of item updates. |
-| `health-codes.ts` | Turns the health payload's repeated bare issue codes into one counted sentence each. |
 | `fuzzy.ts` | Nearest-existing-value suggestion for the merge flow. |
 | `empty-state.ts` | The four empty-list situations: which one applies (`emptyKindFor`), its copy and offered actions, and the markup. |
 | `area.ts` | Resolving the HA area behind a location: id → name, and the ancestor walk that mirrors the backend's own resolver. |
@@ -582,8 +581,8 @@ backend too old to send it. The rows follow the *browser's* midnight, which is t
 chips are compared against; the two are one instant in the ordinary case, and the zone split
 is the follow-up #579 named.
 
-**Why the card offers a manual Refresh.** Subscription events carry no sequence number or
-generation, and the rate limiter can drop them silently, so a client cannot detect a gap.
+**Why the card offers a manual Refresh.** Subscription events carry no sequence number, and
+the rate limiter can drop them silently, so a client cannot detect a gap.
 Re-listing on demand is the documented recovery, so it is a first-class action rather than
 a hidden one.
 

@@ -6,7 +6,6 @@ import { dialogSheet } from '../ui/dialog-sheet';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
-import { summarizeIssues } from '../ui/health-codes';
 import { relativeTime } from '../ui/relative-time';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
@@ -46,7 +45,7 @@ export class HVDiagnosticsPanel extends LitElement {
        *
        * A minmax(0, 1fr) track is the container's width instead, which is what
        * gives the percentage something to bite on. Rows get the same treatment
-       * so a panel with several issues in it scrolls its body rather than
+       * so a panel taller than the viewport scrolls its body rather than
        * growing past the top and bottom edges.
        */
       .wrap {
@@ -144,21 +143,6 @@ export class HVDiagnosticsPanel extends LitElement {
         font-size: 11.5px;
         color: var(--hv-text-secondary);
       }
-      .issue {
-        display: flex;
-        gap: 9px;
-        padding: 10px 12px;
-        border: 1px solid var(--hv-warn-border);
-        background: var(--hv-warn-bg);
-        border-radius: 8px;
-        font-size: 12.5px;
-        color: var(--hv-warn-deep);
-        line-height: 1.45;
-      }
-      .issue .glyph {
-        color: var(--hv-warn);
-        flex: none;
-      }
       .facts {
         display: grid;
         gap: 1px;
@@ -244,30 +228,24 @@ export class HVDiagnosticsPanel extends LitElement {
 
   /** Everything the panel shows, as text worth pasting into an issue. */
   get report(): string {
-    const issues = summarizeIssues(this.health?.issues);
     return [
       `HAventory diagnostics`,
       `integration ${this.version?.integration_version ?? 'unknown'} · schema ${this.version?.schema_version ?? '?'}`,
-      `healthy: ${this.health?.healthy ?? 'unknown'} · generation ${this.health?.generation ?? '?'}`,
       `counts: ${JSON.stringify(this.counts ?? {})}`,
       `rate limit: ${JSON.stringify(this.health?.rate_limit ?? {})}`,
       `degraded: ${JSON.stringify(this.degraded ?? {})}`,
       `subscriptions: items=${this.connected?.items ?? false} stats=${this.connected?.stats ?? false}`,
-      ...issues.map((i) => `issue ${i.code} ×${i.count}: ${i.message}`),
     ].join('\n');
   }
 
   render() {
     if (!this.open) return null;
     const z = this._zBase || 9998;
-    const health = this.health;
-    const rate = health?.rate_limit;
-    const issues = summarizeIssues(health?.issues);
+    const rate = this.health?.rate_limit;
     const degraded = this.degraded;
     const live = !!this.connected?.items && !degraded?.connectionLost;
     const rateLimited = !!degraded?.rateLimited || !!(rate?.dropped_commands || rate?.dropped_events);
-    const unhealthy = health ? !health.healthy : false;
-    const bad = unhealthy || rateLimited || !live;
+    const bad = rateLimited || !live;
 
     return html`
       <div class="backdrop" role="presentation" style="z-index:${z}" @click=${this._close}></div>
@@ -307,11 +285,8 @@ export class HVDiagnosticsPanel extends LitElement {
                   : rateLimited
                     ? html`<strong>${t('hv.diagnostics.degraded')}</strong
                         >${t('hv.diagnostics.degradedDetail')}`
-                    : unhealthy
-                      ? html`<strong>${t('hv.diagnostics.issuesFound')}</strong
-                          >${t('hv.diagnostics.issuesFoundDetail')}`
-                      : html`<strong>${t('hv.diagnostics.noIssues')}</strong
-                          >${t('hv.diagnostics.noIssuesDetail')}`}
+                    : html`<strong>${t('hv.diagnostics.noIssues')}</strong
+                        >${t('hv.diagnostics.noIssuesDetail')}`}
               </span>
             </div>
 
@@ -335,18 +310,6 @@ export class HVDiagnosticsPanel extends LitElement {
                 <div class="label">${t('hv.diagnostics.sinceLastRefresh')}</div>
               </div>
             </div>
-
-            ${issues.length
-              ? html`<div style="display:grid;gap:8px">
-                  <span class="hv-label">${t('hv.diagnostics.issues')}</span>
-                  ${issues.map(
-                    (issue) => html`<div class="issue" data-testid="diagnostics-issue" data-code=${issue.code}>
-                      <span class="glyph">${icon('alert', 17)}</span>
-                      <span>${issue.message}</span>
-                    </div>`,
-                  )}
-                </div>`
-              : null}
 
             <div class="facts">
               <div class="fact">
@@ -385,9 +348,7 @@ export class HVDiagnosticsPanel extends LitElement {
               </div>
             </div>
 
-            ${issues.length
-              ? null
-              : html`<span class="note">${t('hv.diagnostics.healthyNote')}</span>`}
+            <span class="note">${t('hv.diagnostics.healthyNote')}</span>
           </div>
 
           <div class="foot">
