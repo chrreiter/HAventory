@@ -211,8 +211,12 @@ Recorded as comments on the issues; the short version, so a session is not surpr
   prints the backend's English detail beside its German heading (the issue's 2026-08-22
   comment) — that is a mechanism fix, not wording, and §6.M5 takes it.
 - **#536**: `calendar.py` now resolves its summaries through
-  `async_get_translations(hass, hass.config.language, "common", …)` (#572). The seed can
-  use the same door; nothing new is needed on the backend side of the mechanism.
+  `async_get_translations(hass, hass.config.language, "common", …)` (#572) — the right
+  rule for a string the backend writes and automations consume. A status label has a
+  per-user display path (the card), so it takes the other rule: the store stays
+  English, the card translates (§2 item 2). Seven card files render a status label
+  today (`hv-list-row`, `hv-filter-chips`, `hv-filter-panel`, `hv-item-editor`,
+  `hv-full-view`, `hv-organize-dialog`, `ui/status.ts`); the backend needs nothing.
 - **#333**: nothing in the tree does what the issue's option 2 describes — the size of the
   fix is still zero lines of existing code; but the attachment directory now also holds
   the generation-named thumbnail tiles (`THUMBNAIL_SUFFIX`), which the delete paths and
@@ -241,13 +245,21 @@ assume these verdicts.
    the limit; stale option keys are ignored. Shrinking keeps ≈900 lines of plumbing for a
    feature whose only known callers are two skill scripts. The PR is left open for the
    owner either way.
-2. **Decided: seed in the server's language.** The three built-in statuses (`hass.config.language`
-   at first store write, through the same `async_get_translations` door the calendar
-   summaries use since #572, English for any language without a translation) —
-   recommended for #536. An existing store keeps its English seeds (the organize dialog
-   renames them); a household whose members read different languages sees the server's.
-   The alternative the issue weighs — a display-time translation while the label still
-   equals the seed — is a rule the card would have to apply on every surface. *M5.*
+2. **Decided: store the English seed; translate the three built-ins at display time,
+   per user.** (Revised the same day — the first verdict, seeding in the server's
+   language at first store write, was withdrawn after checking it against four cases.)
+   The store keeps `OK` / `Missing` / `Needs repair` as language-neutral data; the card
+   shows `t('hv.status.<slug>')` for a built-in slug **while its stored label still
+   equals the English seed**, and the stored label otherwise — Home Assistant's own
+   pattern for entity states. What that holds under, and seeding did not: the server
+   language changing later (the chips follow the reader; nothing stored goes stale), a
+   member whose profile language differs from the server's (each sees their own, like
+   the rest of the card), a German export imported into an English server (an
+   un-renamed store exports the English seeds, so they import as built-ins; only a
+   deliberate rename travels as a rename), and a language that does not exist yet (a
+   French household gets French chips the day the dictionary ships, instead of English
+   frozen into its store). The backend changes nothing; the seed, the adopter and every
+   export stay as they are. *M5.*
 3. **Decided: keep.** The desktop in-place editor expander stays (§1.3). Saying "move
    the form above the list" would add ≈110 lines of removal to M4 and one user-visible
    change; if it is ever wanted, it is its own issue with a mock-up, not a cut.
@@ -276,6 +288,20 @@ assume these verdicts.
 wording session" (the mark-up now comes *after* the consolidation, from the owner's read
 of the screens L1 hands over — §6.L1, §6.M7); "stage #546", "keep #563 out" and "one
 household day" (all shipped in 0.7.0).
+
+**What every decision and package was checked against** (2026-08-23, after item 2's
+first verdict failed the check): the server language changing later; a member whose
+profile language differs from the server's; an export made on one instance imported
+into another (other language, other version); an upgrade in place, including the one
+restart during which the new bundle talks to the old backend; an old backup restored
+after a later release; a language that does not exist yet; names and queries in a
+script without word boundaries. Where a case bites, the package says so where the work
+is: the limiter's skew and stale options (§6.M2 PR 7), `invalid_format` against
+`validation_error` (§6.M1 PR 6), the scan's answers for CJK names (§6.M1 PR 7), the
+`rmdir` that cannot (§6.M2 PR 5), plural categories for a language with `few`/`many`
+(§6.M5 PR 2), the built-ins under all four language cases (§6.M5 PR 4), a 0.1-era v1
+store and a 2–9 backup restored after V0.9.0 (§6.M6 PR 4). Items 3, 4, 6, 7 and 8 have
+no such surface: they decide process, not stored or displayed data.
 
 ## 3. Master sessions, subagents, and when validation is local
 
@@ -380,8 +406,8 @@ M4  card: discard in one place; one workspace; one chrome;       6 PRs   cloud  
     one modal; the widgets written twice; one row chrome
 M5  i18n: the retry-after reader; plural categories + folds by   4 PRs   cloud
     role + the unused-key test (#542); accessible names (#615)
-    + the conflict banner's detail; the seed in the server's
-    language (#536)
+    + the conflict banner's detail; the built-ins translated
+    on display (#536)
 L1  local: deploy main, every regimen, the product at both               local, Fable 5
     widths / themes / languages, every "Validate locally" block
     since the start, fixes; the German review surface for #540
@@ -422,7 +448,8 @@ milestone is the first to populate it (`areas.py`, `health.py`, `rate_limit.py`)
 
 **The subtraction rule.** A cut PR changes no behaviour; its tests are deleted, moved or
 left alone, never rewritten to pass. When a package carries a behaviour change (#333's
-`rmdir`, #615's two keys, the banner detail, the seed's language), that change is **its
+`rmdir`, #615's two keys, the banner detail, the built-ins' display-time translation),
+that change is **its
 own commit with its own test and closes or refs its own issue**, so the per-commit rule
 holds and the changelog names it.
 
@@ -590,7 +617,13 @@ Nine PRs, in order. The master proves the HA recipe (§3) before spawning the fi
    `haventory/subscribe`'s `location_ids` (refuse a non-string entry rather than
    `str()` it); delete the contract's paragraph enumerating the exceptions and the half of
    `test_docs_contract_offline.py` that kept the list in sync; `_payload_int` goes.
-   `docs/backend_api_contract.md` and `docs/data_shapes.md` move in the same PR.
+   `docs/backend_api_contract.md` and `docs/data_shapes.md` move in the same PR. The
+   rule #541 wrote stays true and gets simpler: `invalid_format` is core's answer to a
+   frame whose *shape* the command schema refuses (a missing `id`, an unknown top-level
+   key), `validation_error` is the model's answer to every *value* — a wrong type
+   included. The card's two paths (`host-surfaces.ts` reads `validation_error`'s field
+   errors; anything else is the generic banner) are unchanged and their tests are the
+   pin.
 7. **"refactor(repository): the scan answers q; delete the text index"** — refs #230
    (item 1), BE-REPO-1. **First commit: a benchmark** — `list_items` with `q="Widget"`
    over a generated 10,000-item repository, timed before and after, in a test marked to
@@ -598,7 +631,10 @@ Nine PRs, in order. The master proves the HA recipe (§3) before spawning the fi
    only if the scan is under the 0.5 s the issue named. Then everything BE-REPO-1 lists.
    Tests: the five fall-through tests keep passing and are the oracle; the six
    `_get_filtered_candidates` assertions and the three-dict rebuild comparison go; add
-   the accent/case and multi-word AND cases on results.
+   the accent/case and multi-word AND cases on results, and names in a script without
+   word boundaries (a Japanese or Chinese item name, a query that is a substring of it):
+   the scan's answer is the contract, and a query the index's pre-filter had been
+   narrowing below the scan's answer is a fix to record in the PR body, not a regression.
 8. **"refactor(health): index health becomes a test oracle, not a product feature"** —
    refs #230 (item 2), BE-REPO-2/7, FE-LISTS-L4, I18N-I3. `collect_health_issues` and its
    five checkers move into `tests/` as a fixture that runs after every `Repository` test;
@@ -680,7 +716,9 @@ in this session stacks on it.
    `async_delete_item_files` already unlink both, so the `rmdir` follows the pair. The
    setup sweep removes a directory it has itself just emptied (a tile from an earlier
    encoder generation is its orphan), and no other. Tests: delete → directory gone; a
-   stray file → kept; the sweep on an old-generation tile → directory gone. The docstring
+   stray file → kept; the sweep on an old-generation tile → directory gone. A `rmdir`
+   that fails for any other reason (a tile being served at that instant, a mount point)
+   leaves the directory exactly as today — accepted, and said in the docstring, which
    keeps the constraint and loses the "deliberate tradeoff" sentence.
 6. **"test: one setup per phacc file, one helper per online smoke, and the phacc twins"**
    — refs #230, TESTS-T5/T6. One `setup_entry` fixture in `tests/integration/conftest.py`
@@ -708,8 +746,12 @@ in this session stacks on it.
    subscribe-retry path **stays** (it serves `unavailable`); the `retryAfterHintMs` reader
    is M5's. Skills: `rl_banner.mjs`, `stress.py`'s `ratelimit` regimen and `RL_DEFAULTS`,
    four SKILL.md passages. Tests: `test_ws_rate_limit_offline.py` and the rate-limit
-   cases in seven other files; the card's `describe('Store: rate limiting …')`. Edge case
-   to add: an entry whose options still carry the nine keys sets up and ignores them.
+   cases in seven other files; the card's `describe('Store: rate limiting …')`. Edge cases
+   to add: an entry whose options still carry the nine keys sets up and ignores them,
+   and the options flow's next save drops them; and the one-restart skew a HACS update
+   creates — the new bundle is served from disk while the old backend still runs — means
+   a `rate_limited` frame can still reach the new card once: it renders the generic
+   failure banner like any unknown code (a card test with an unknown code is the pin).
    *If shrinking instead:* BE-WS-C3 — `TokenBucket`, one global command bucket,
    `RateLimitConfig(enabled, per_second, burst)`, three options, `retry_after_ms` emitted
    so the card's reader finally reads something. **Cross-lane**: opens when no card PR
@@ -886,7 +928,11 @@ the German wording from the owner's read (M7) — **this session rewords nothing
      CLDR category its language needs (`few`, `many`) or only `other` where the noun does
      not inflect. The "pairs every counted key" test becomes "every counted key has
      `.other` in English"; the six German pairs that write the same string twice drop
-     their `.one`. In `catalog.test.ts` nothing names `de`: completeness is asserted for
+     their `.one`. The `Dictionary` type admits every CLDR category for a `PluralKey`
+     base (`.few` is not an English key, so the type must say so, or a Polish dictionary
+     cannot compile); a test pins that English and German answer exactly as before for
+     0, 1 and 2 — the change shows only in a language whose rules differ (French:
+     `select(0)` is `one`, which is the point). In `catalog.test.ts` nothing names `de`: completeness is asserted for
      every dictionary typed complete (a `COMPLETE` list in the test, `['de']` today), the
      identical-to-English allowlist is a per-language map, and the orphan and
      placeholder checks already run over `DICTIONARIES`. `CONTRIBUTING.md`'s "Adding a
@@ -917,26 +963,32 @@ the German wording from the owner's read (M7) — **this session rewords nothing
    alone for a `conflict`, the way `ui/editor-error.ts` already drops the backend's
    "version conflict: expected 4, actual 5" inside the form — the numbers say nothing to a
    household, in any language.
-4. **"feat: the built-in statuses in the server's language"** — **closes #536** (§2 item
-   2). The three seed labels live in `strings.json`'s `common` section (and
-   `translations/*.json`) and are resolved once, at first store write, through
-   `async_get_translations(hass, hass.config.language, "common", integrations=[DOMAIN])`
-   — `calendar.py`'s pattern — with the English label for any language the catalog does
-   not carry; `_V6_SEED_STATUSES` is the adopter's (the collapse inherits it; an upgraded
-   store is never re-seeded). The card's `BUILT_IN_STATUSES` stand-in: decide in the PR
-   whether it draws English, `t()`, or nothing until `haventory/config` answers, under
-   one constraint — **no chip changes its wording after first paint on a fresh install in
-   any language** — and state in the PR body what an upgraded store with English seeds
-   shows. `tests/test_frontend_registration.py`'s pin of the stand-in against the seed
-   moves to the English strings. phacc for the translation loading
-   (`tests/integration/test_translations.py`).
+4. **"feat(card): the built-in statuses in the reader's language"** — **closes #536**
+   (§2 item 2). Card only. One helper, `statusLabel(def)` in `ui/status.ts`: for a slug
+   in the built-in set whose stored label equals the English seed (the
+   `BUILT_IN_STATUSES` mirror, which `tests/test_frontend_registration.py` keeps equal to
+   `_SEED_STATUSES`), return `t('hv.status.<slug>')` — three new keys in both
+   dictionaries — else the stored label; applied at every surface that renders a status
+   label (the seven files §1.4 names). Three rules, each a test: **a renamed status shows
+   as stored**, in every language; **the organize dialog's Statuses tab never writes the
+   translation into the store** — an untouched field saves nothing, and the field shows
+   the stored English (with the translation beside it) rather than the translation, so a
+   German household that opens and closes the editor has not silently renamed three
+   statuses for everyone; **the stand-in and the store agree**, so no chip changes its
+   wording when `haventory/config` answers, in any language. Search is unaffected:
+   `_item_matches_q` reads name, description, category, the location path and the tags,
+   never a status label. The backend, the seed, the adopter and the export format are
+   untouched.
 
-phacc for PR 4. **Live checks the master runs** with the profile and the instance
-language set to Deutsch: the card, `/haventory`, a new store's three status chips in
-German with no flicker, the conflict banner from the `routeWebSocket` recipe showing the
-heading only, a screen reader's view of a filter chip's × (`aria-label` in German);
-switch back, all English; screenshots of both on the assets branch. And the bundle size
-before and after in PR 2's body.
+No phacc. **Live checks the master runs** with the profile language set to Deutsch on an
+English-server instance, then the reverse: the card and `/haventory` show *OK / Fehlt /
+Reparatur nötig* (or the dictionary's words) for a fresh store, with no flicker; rename
+one built-in in the organize dialog — it shows as renamed in both languages; open and
+close the Statuses editor without changes — the store's labels are unchanged
+(`haventory/config`); import an export taken before the rename — the built-ins come back
+translated; the conflict banner from the `routeWebSocket` recipe shows the heading only;
+a filter chip's × carries a German `aria-label`. Screenshots of both languages on the
+assets branch, and the bundle size before and after in PR 2's body.
 
 **Validate locally** (L1 walks it; L1 also produces the German review surface for #540 —
 §6.L1): `[dev-ha]` `[browser]` the live-check list in German on the dev HA; `[German]`
@@ -1034,7 +1086,16 @@ merged and closed what it found; no V0.8.0 PR open.
    options, a corrupt backup, the thumbnail tiles) are named in the PR body as untouched.
    Tests per the issue: clean install at v1; a store at each of 2–9 lands at v1 intact; a
    double load is equal; 10 is refused with the store untouched and `ConfigEntryError`; a
-   v9 export imports; the repairs card still works on a v1 store.
+   v9 export imports; the repairs card still works on a v1 store. Two cases the issue
+   does not name: **a store stamped 1 from the 0.1 era** is not today's v1 — it predates
+   every backfill — and with `CURRENT = 1` it reads as current; since the backfills are
+   `setdefault`s, run the adopter on every load at or below 9, including 1, and test "a
+   v1-stamped store lacking `statuses` loads with the seeds". And **the refusal message**
+   for a store above 9 must stay the downgrade one; after V0.9.0 deletes the adopter, a
+   store stamped 2–9 (an old Home Assistant backup restored a year on) must be refused
+   with a message that says "neither current nor adoptable — restore onto 0.8.x first",
+   not "written by a newer schema" — that wording, and the fact that exports stamped 2–9
+   stop importing (re-export on 0.8.x), go into the adopter-deletion issue's text.
    `test_migrations_offline.py`'s per-step tests become adopter tests;
    `tests/integration/test_schema_migration.py` is rewritten v9 → 1. Docs:
    `data_shapes.md`'s example envelopes and the three function names it cites, the
@@ -1292,7 +1353,8 @@ touching src/i18n/ or strings.json is open.
 Re-run §3's HA recipe. Then the four PRs of §6.M5 in order, one subagent each, one at a
 time: the retry-after reader (skip and say so if the limiter was shrunk, not deleted);
 #542 — plural categories, the folds by role, the unused-key test; #615 and the conflict
-banner's detail; #536, the seed in the server's language. This session rewords no
+banner's detail; #536, the built-ins translated on display, per user — the store stays
+English (§2 item 2 says why seeding was withdrawn). This session rewords no
 German: the wording is the owner's, after L1. Run the German live checks on your HA with
 screenshots; put the bundle size before and after in PR 2's body.
 
