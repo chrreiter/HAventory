@@ -317,6 +317,43 @@ def test_service_catalog_agrees_across_registration_yaml_and_strings() -> None:
             assert all(value.strip() for value in text.values()), f"{service}.{field}"
 
 
+def test_every_service_names_the_fields_its_refusal_logs() -> None:
+    """The log context is per service, so the table has to cover every one.
+
+    A service missing from it would raise inside the handler's own `except`, and
+    an operator would get a traceback about logging instead of the refusal.
+    """
+
+    registered = {name for name, _handler, _schema in services_mod.SERVICES}
+    assert set(services_mod._CONTEXT_FIELDS) == registered
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_logs_the_fields_its_own_service_names(caplog) -> None:
+    """`item_move` names the location it was asked for; `item_create` the name."""
+
+    hass = HomeAssistant()
+    install_runtime(hass)
+    caplog.set_level("WARNING")
+
+    with pytest.raises(NotFoundError):
+        await services_mod.service_item_move(
+            hass, {"item_id": "00000000-0000-4000-8000-000000000000", "new_location_id": "shelf-9"}
+        )
+
+    refusal = next(r for r in caplog.records if getattr(r, "op", None) == "item_move")
+    assert refusal.new_location_id == "shelf-9"
+    assert refusal.item_id == "00000000-0000-4000-8000-000000000000"
+
+    caplog.clear()
+    with pytest.raises(ValidationError):
+        await services_mod.service_item_create(hass, {"name": "   "})
+
+    # `item_name`, not `name`: `name` is a reserved LogRecord key.
+    refusal = next(r for r in caplog.records if getattr(r, "op", None) == "item_create")
+    assert refusal.item_name == "   "
+
+
 # -----------------------------
 # Service responses
 # -----------------------------

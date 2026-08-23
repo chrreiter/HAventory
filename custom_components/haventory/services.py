@@ -1,8 +1,15 @@
 """Service registration and handlers for HAventory.
 
 Exposes Home Assistant services under the ``haventory`` domain to perform
-CRUD operations on items and locations. Input is validated with voluptuous
-and operations are delegated to the in-memory ``Repository``.
+CRUD operations on items and locations. Each service is its voluptuous schema
+plus the name of the operation in ``ops.py`` it runs, so a service and the
+WebSocket command doing the same thing reach the repository through one
+function and announce one event.
+
+What the services keep of their own is their ingress and their answer: the
+schemas here are concretely typed, so Home Assistant refuses a wrong type in
+the Actions form before a handler runs, and every service answers the
+``{"item": …}`` / ``{"location": …}`` envelope a ``response_variable`` reads.
 
 Errors from the domain layer (validation, not found, conflicts, storage) are
 logged with contextual fields and re-raised unchanged so Home Assistant
@@ -16,11 +23,9 @@ from typing import Any, NoReturn
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
-from homeassistant.util import dt as dt_util
 
-from . import media as media_mod
+from . import ops
 from .const import DOMAIN
-from .events import notify_counts, notify_location_mutation, notify_mutation
 from .exceptions import (
     ConflictError,
     NotFoundError,
@@ -31,9 +36,6 @@ from .exceptions import (
     log_severity,
 )
 from .logs import context_logger
-from .repository import UNSET, Repository
-from .runtime import loaded_runtime
-from .serialization import serialize_item, serialize_location
 from .storage import async_persist_repo as _storage_async_persist_repo
 
 LOGGER = context_logger(__name__)
@@ -158,17 +160,6 @@ SCHEMA_LOCATION_DELETE = vol.Schema({vol.Required("location_id"): str})
 # -----------------------------
 
 
-def _get_repo(hass: HomeAssistant) -> Repository:
-    """The repository of a loaded entry, or `NotLoadedError`.
-
-    The same client-facing refusal `ws_guard` makes: Home Assistant cannot
-    unregister a service, so these handlers keep answering after the entry is
-    unloaded, disabled or removed, and the state check is what makes them stop.
-    """
-
-    return loaded_runtime(hass).repository
-
-
 def _log_domain_error(op: str, context: dict[str, Any], exc: Exception) -> None:
     # A schema rejection is a validation_error by any other name; voluptuous
     # just raises it before the domain layer gets a chance to.
@@ -201,153 +192,112 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
     await _storage_async_persist_repo(hass)
 
 
+#: What each service's refusal names in its log line, the way `ws_guard`'s
+#: `context_fields` name a command's. `item_name` and `location_name` read the
+#: call's `name`: `name` is a reserved `LogRecord` key, which the record would
+#: be dropped over.
+_CONTEXT_FIELDS: dict[str, tuple[str, ...]] = {
+    "item_create": ("item_name",),
+    "item_update": ("item_id",),
+    "item_delete": ("item_id",),
+    "item_move": ("item_id", "new_location_id"),
+    "item_adjust_quantity": ("item_id", "delta"),
+    "item_set_quantity": ("item_id", "quantity"),
+    "item_check_out": ("item_id", "due_date"),
+    "item_check_in": ("item_id",),
+    "reminder_bump": ("item_id",),
+    "location_create": ("location_name",),
+    "location_update": ("location_id",),
+    "location_delete": ("location_id",),
+}
+
+_DATA_KEY = {"item_name": "name", "location_name": "name"}
+
+
+def _context(name: str, data: dict[str, Any]) -> dict[str, Any]:
+    """The refused call's own fields, read off what the caller sent.
+
+    Off the call rather than off the validated payload: a call refused *by* the
+    schema has no validated payload, and that is the refusal an operator most
+    needs the fields of.
+    """
+
+    return {field: data.get(_DATA_KEY.get(field, field)) for field in _CONTEXT_FIELDS[name]}
+
+
+def _op_payload(name: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """The operation's payload for a validated service call.
+
+    One service names a field differently from the operation it runs:
+    `item_move` takes `new_location_id`, where every other surface writing that
+    field calls it `location_id`. The service name is what a household's
+    automations are written against, so it is translated here rather than moved.
+    """
+
+    if name != "item_move":
+        return payload
+    moved = {key: value for key, value in payload.items() if key != "new_location_id"}
+    # Always set, so a call that omits it moves the item to the top level.
+    moved["location_id"] = payload.get("new_location_id")
+    return moved
+
+
+async def _run_service(hass: HomeAssistant, name: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Run one service call: validate, write, persist, announce, answer.
+
+    The order is the one every write path takes, and the reason is the same:
+    the response and the event both follow the durable write, so a caller with a
+    `response_variable` and a subscriber on the wire are told about a change
+    only once it is on disk.
+    """
+
+    try:
+        payload = _SCHEMAS[name](data)
+        written = ops.run(hass, name, _op_payload(name, payload))
+        await async_persist_repo(hass)
+        await ops.announce(hass, written)
+        # `item` / `location` — the entity the call touched, whole, because the
+        # next call in the automation needs its `version` for `expected_version`.
+        return {written.noun: written.entity}
+    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+        _raise_service_error(name, _context(name, data), exc)
+
+
 # -----------------------------
 # Service handlers (exported for tests)
 # -----------------------------
 
 
 async def service_item_create(hass: HomeAssistant, data: dict) -> dict[str, Any]:
-    op = "item_create"
-    try:
-        payload = SCHEMA_ITEM_CREATE(data)
-        repo = _get_repo(hass)
-        item = repo.create_item(payload)  # type: ignore[arg-type]
-        await async_persist_repo(hass)
-        serialized = serialize_item(hass, item)
-        notify_mutation(hass, action="created", item=serialized)
-        return {"item": serialized}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(op, {"item_name": data.get("name")}, exc)
+    return await _run_service(hass, "item_create", data)
 
 
 async def service_item_update(hass: HomeAssistant, data: dict) -> dict[str, Any]:
-    op = "item_update"
-    item_id = data.get("item_id")
-    try:
-        payload = SCHEMA_ITEM_UPDATE(data)
-        expected = payload.get("expected_version")
-        update = {k: v for k, v in payload.items() if k not in {"item_id", "expected_version"}}
-        repo = _get_repo(hass)
-        item = repo.update_item(payload["item_id"], update, expected_version=expected)  # type: ignore[arg-type]
-        await async_persist_repo(hass)
-        serialized = serialize_item(hass, item)
-        # The same edit gets the same action name as `haventory/item/update`
-        # gives it: a call that carried a location moved the item, and a
-        # subscriber filtered by location acts on `moved`.
-        action = "moved" if "location_id" in update else "updated"
-        notify_mutation(hass, action=action, item=serialized)
-        return {"item": serialized}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(op, {"item_id": item_id}, exc)
+    return await _run_service(hass, "item_update", data)
 
 
 async def service_item_delete(hass: HomeAssistant, data: dict) -> dict[str, Any]:
-    op = "item_delete"
-    item_id = data.get("item_id")
-    try:
-        payload = SCHEMA_ITEM_DELETE(data)
-        expected = payload.get("expected_version")
-        repo = _get_repo(hass)
-        # Read the body before removing it: the delete returns nothing, and after it
-        # the item is unreachable. An unknown id raises NotFoundError here exactly as
-        # the delete would, so the pre-read adds no error surface.
-        removed = serialize_item(hass, repo.get_item(payload["item_id"]))
-        repo.delete_item(payload["item_id"], expected_version=expected)
-        await async_persist_repo(hass)
-        await media_mod.async_delete_item_files(hass, [removed])
-        notify_mutation(hass, action="deleted", item=removed)
-        return {"item": removed}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(op, {"item_id": item_id}, exc)
+    return await _run_service(hass, "item_delete", data)
 
 
 async def service_item_move(hass: HomeAssistant, data: dict) -> dict[str, Any]:
-    op = "item_move"
-    item_id = data.get("item_id")
-    try:
-        payload = SCHEMA_ITEM_MOVE(data)
-        update = {"location_id": payload.get("new_location_id")}
-        expected = payload.get("expected_version")
-        repo = _get_repo(hass)
-        item = repo.update_item(payload["item_id"], update, expected_version=expected)  # type: ignore[arg-type]
-        await async_persist_repo(hass)
-        serialized = serialize_item(hass, item)
-        notify_mutation(hass, action="moved", item=serialized)
-        return {"item": serialized}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(
-            op, {"item_id": item_id, "new_location_id": data.get("new_location_id")}, exc
-        )
+    return await _run_service(hass, "item_move", data)
 
 
 async def service_item_adjust_quantity(hass: HomeAssistant, data: dict) -> dict[str, Any]:
-    op = "item_adjust_quantity"
-    item_id = data.get("item_id")
-    try:
-        payload = SCHEMA_ITEM_ADJUST_QTY(data)
-        repo = _get_repo(hass)
-        item = repo.adjust_quantity(
-            payload["item_id"], payload["delta"], expected_version=payload.get("expected_version")
-        )
-        await async_persist_repo(hass)
-        serialized = serialize_item(hass, item)
-        notify_mutation(hass, action="quantity_changed", item=serialized)
-        return {"item": serialized}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(op, {"item_id": item_id, "delta": data.get("delta")}, exc)
+    return await _run_service(hass, "item_adjust_quantity", data)
 
 
 async def service_item_set_quantity(hass: HomeAssistant, data: dict) -> dict[str, Any]:
-    op = "item_set_quantity"
-    item_id = data.get("item_id")
-    try:
-        payload = SCHEMA_ITEM_SET_QTY(data)
-        repo = _get_repo(hass)
-        item = repo.set_quantity(
-            payload["item_id"],
-            payload["quantity"],
-            expected_version=payload.get("expected_version"),
-        )
-        await async_persist_repo(hass)
-        serialized = serialize_item(hass, item)
-        notify_mutation(hass, action="quantity_changed", item=serialized)
-        return {"item": serialized}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(op, {"item_id": item_id, "quantity": data.get("quantity")}, exc)
+    return await _run_service(hass, "item_set_quantity", data)
 
 
 async def service_item_check_out(hass: HomeAssistant, data: dict) -> dict[str, Any]:
-    op = "item_check_out"
-    item_id = data.get("item_id")
-    try:
-        payload = SCHEMA_ITEM_CHECK_OUT(data)
-        repo = _get_repo(hass)
-        item = repo.check_out(
-            payload["item_id"],
-            due_date=payload["due_date"],
-            expected_version=payload.get("expected_version"),
-        )
-        await async_persist_repo(hass)
-        serialized = serialize_item(hass, item)
-        notify_mutation(hass, action="checked_out", item=serialized)
-        return {"item": serialized}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(op, {"item_id": item_id, "due_date": data.get("due_date")}, exc)
+    return await _run_service(hass, "item_check_out", data)
 
 
 async def service_item_check_in(hass: HomeAssistant, data: dict) -> dict[str, Any]:
-    op = "item_check_in"
-    item_id = data.get("item_id")
-    try:
-        payload = SCHEMA_ITEM_CHECK_IN(data)
-        repo = _get_repo(hass)
-        item = repo.check_in(payload["item_id"], expected_version=payload.get("expected_version"))
-        await async_persist_repo(hass)
-        serialized = serialize_item(hass, item)
-        notify_mutation(hass, action="checked_in", item=serialized)
-        return {"item": serialized}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(op, {"item_id": item_id}, exc)
+    return await _run_service(hass, "item_check_in", data)
 
 
 async def service_reminder_bump(hass: HomeAssistant, data: dict) -> dict[str, Any]:
@@ -359,97 +309,19 @@ async def service_reminder_bump(hass: HomeAssistant, data: dict) -> dict[str, An
     the series goes next, and the answer has to be the same one the card gets.
     """
 
-    op = "reminder_bump"
-    item_id = data.get("item_id")
-    try:
-        payload = SCHEMA_REMINDER_BUMP(data)
-        repo = _get_repo(hass)
-        item = repo.bump_reminder(
-            payload["item_id"],
-            # The household's day, the one the calendar rolls over on.
-            today=dt_util.now().date(),
-            expected_version=payload.get("expected_version"),
-        )
-        await async_persist_repo(hass)
-        serialized = serialize_item(hass, item)
-        notify_mutation(hass, action="updated", item=serialized)
-        return {"item": serialized}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(op, {"item_id": item_id}, exc)
+    return await _run_service(hass, "reminder_bump", data)
 
 
 async def service_location_create(hass: HomeAssistant, data: dict) -> dict[str, Any]:
-    op = "location_create"
-    try:
-        payload = SCHEMA_LOCATION_CREATE(data)
-        repo = _get_repo(hass)
-        loc = repo.create_location(
-            name=payload["name"],
-            parent_id=payload.get("parent_id"),
-            area_id=payload.get("area_id"),
-        )
-        await async_persist_repo(hass)
-        serialized = serialize_location(loc)
-        notify_location_mutation(hass, action="created", location=serialized)
-        return {"location": serialized}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(op, {"location_name": data.get("name")}, exc)
+    return await _run_service(hass, "location_create", data)
 
 
 async def service_location_update(hass: HomeAssistant, data: dict) -> dict[str, Any]:
-    op = "location_update"
-    location_id = data.get("location_id")
-    try:
-        payload = SCHEMA_LOCATION_UPDATE(data)
-        new_parent = payload["new_parent_id"] if "new_parent_id" in payload else UNSET
-        area_id = payload["area_id"] if "area_id" in payload else UNSET
-        repo = _get_repo(hass)
-        before = repo.get_location(payload["location_id"])
-        was_named, was_below = before.name, before.parent_id
-        # The area a location sits in is resolved through its tree, so an area
-        # set on a nested row moves the root's `area_id` and leaves this row's at
-        # None. Comparing the resolved value catches both, exactly as
-        # `ws_location_update` does.
-        was_anchored_at = (was_below, repo.effective_area_id(str(before.id)))
-        loc = repo.update_location(
-            payload["location_id"],
-            name=payload.get("name"),
-            new_parent_id=new_parent,
-            area_id=area_id,
-        )
-        await async_persist_repo(hass)
-        serialized = serialize_location(loc)
-        # One event per call, decided by what changed rather than by which keys
-        # the call carried. A rename or a re-parent also rewrites the path
-        # denormalized onto every item underneath, which the calendar renders;
-        # an area reassignment re-anchors the subtree without moving a path.
-        # No bus event either way: the items themselves did not change.
-        is_anchored_at = (loc.parent_id, repo.effective_area_id(str(loc.id)))
-        repaint = loc.name != was_named or loc.parent_id != was_below
-        if is_anchored_at != was_anchored_at:
-            notify_location_mutation(hass, action="moved", location=serialized, repaint=repaint)
-        elif loc.name != was_named:
-            notify_location_mutation(hass, action="renamed", location=serialized, repaint=repaint)
-        else:
-            notify_counts(hass)
-        return {"location": serialized}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(op, {"location_id": location_id}, exc)
+    return await _run_service(hass, "location_update", data)
 
 
 async def service_location_delete(hass: HomeAssistant, data: dict) -> dict[str, Any]:
-    op = "location_delete"
-    location_id = data.get("location_id")
-    try:
-        payload = SCHEMA_LOCATION_DELETE(data)
-        repo = _get_repo(hass)
-        removed = serialize_location(repo.get_location(payload["location_id"]))
-        repo.delete_location(payload["location_id"])
-        await async_persist_repo(hass)
-        notify_location_mutation(hass, action="deleted", location=removed)
-        return {"location": removed}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        _raise_service_error(op, {"location_id": location_id}, exc)
+    return await _run_service(hass, "location_delete", data)
 
 
 # -----------------------------
@@ -475,6 +347,10 @@ SERVICES: tuple[tuple[str, ServiceHandler, vol.Schema], ...] = (
     ("location_update", service_location_update, SCHEMA_LOCATION_UPDATE),
     ("location_delete", service_location_delete, SCHEMA_LOCATION_DELETE),
 )
+
+#: The same catalog, the way `_run_service` reads it. One table, so a service
+#: that registers is a service that validates.
+_SCHEMAS: dict[str, vol.Schema] = {name: schema for name, _handler, schema in SERVICES}
 
 
 def _bind(

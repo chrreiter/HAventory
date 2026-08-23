@@ -19,8 +19,8 @@ import json
 from typing import Any
 
 import pytest
+from custom_components.haventory import ops as ops_module
 from custom_components.haventory import subscriptions as subs_mod
-from custom_components.haventory import ws as ws_module
 from custom_components.haventory.ws import HANDLERS, UNEXPECTED_ERROR_MESSAGE
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
@@ -58,10 +58,10 @@ async def test_unexpected_exception_maps_to_unknown_error_without_leaking(monkey
     def _boom(*_args: Any, **_kwargs: Any) -> dict:
         raise RuntimeError("SECRET-INTERNAL-DETAIL")
 
-    # Patch the name in `ws`, not in `serialization`: `ws` binds the serializer into
-    # its own namespace at import, so replacing it at the source module would leave
-    # every call site here pointing at the original function.
-    monkeypatch.setattr(ws_module, "serialize_item", _boom)
+    # Patch the name in `ops`, not in `serialization`: the module that calls the
+    # serializer binds it into its own namespace at import, so replacing it at
+    # the source module would leave the call site pointing at the original.
+    monkeypatch.setattr(ops_module, "serialize_item", _boom)
     conn = RecordingConn()
     res = await ws_send(hass, 5, "haventory/item/create", conn=conn, name="Widget")
 
@@ -220,10 +220,10 @@ async def test_bulk_unexpected_per_op_error_is_contained(monkeypatch) -> None:
     repo = repo_of(hass)
     item = repo.create_item({"name": "Widget", "quantity": 1})
 
-    def _boom(_hass: HomeAssistant, _payload: dict) -> tuple[dict, str]:
+    def _boom(_hass: HomeAssistant, _payload: dict) -> ops_module.Written:
         raise RuntimeError("SECRET-OP-DETAIL")
 
-    monkeypatch.setattr(ws_module, "_op_item_update", _boom)
+    monkeypatch.setitem(ops_module.OPS, "item_update", _boom)
 
     res = await ws_send(
         hass,

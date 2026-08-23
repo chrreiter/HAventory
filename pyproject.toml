@@ -109,6 +109,7 @@ warn_redundant_casts = true
 module = [
   "haventory.health",
   "haventory.models",
+  "haventory.ops",
   "haventory.repository",
   "haventory.runtime",
   "haventory.serialization",
