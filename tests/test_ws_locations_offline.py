@@ -10,10 +10,10 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.areas import async_get_area_registry
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 
 from runtime_helpers import install_runtime, repo_of, runtime_of
 from ws_helpers import ws_send
@@ -28,7 +28,7 @@ async def test_location_crud_and_tree() -> None:
     ws_setup(hass)
 
     # Seed areas and create root and child
-    reg = await async_get_area_registry(hass)
+    reg = ar.async_get(hass)
     area_uuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     reg._add(area_uuid, "Garage")  # type: ignore[attr-defined]
 
@@ -68,7 +68,7 @@ async def test_ws_location_create_update_area_validation() -> None:
     assert bad["success"] is False and bad["error"]["code"] == "validation_error"
 
     # Seed area, create ok
-    reg = await async_get_area_registry(hass)
+    reg = ar.async_get(hass)
     area_uuid1 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     reg._add(area_uuid1, "Garage")  # type: ignore[attr-defined]
     created = await ws_send(hass, 2, "haventory/location/create", name="A", area_id=area_uuid1)
@@ -100,7 +100,7 @@ async def test_ws_location_create_update_area_with_non_uuid_id() -> None:
     install_runtime(hass)
     ws_setup(hass)
 
-    reg = await async_get_area_registry(hass)
+    reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
 
     created = await ws_send(hass, 1, "haventory/location/create", name="Root", area_id="kitchen")

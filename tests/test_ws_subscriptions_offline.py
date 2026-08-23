@@ -17,12 +17,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
-from custom_components.haventory.areas import async_get_area_registry
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.ws import _subs_bucket, broadcast_event
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 
 from runtime_helpers import install_runtime, runtime_of
 from ws_helpers import RecordingConn, ws_send
@@ -515,7 +515,7 @@ async def test_reassigning_a_locations_own_area_announces_one_moved_event() -> N
     runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
-    reg = await async_get_area_registry(hass)
+    reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
     reg._add("garage", "Garage")  # type: ignore[attr-defined]
 
@@ -559,7 +559,7 @@ async def test_an_area_set_on_a_nested_location_is_announced_too() -> None:
     runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
-    reg = await async_get_area_registry(hass)
+    reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
     reg._add("bedroom", "Bedroom")  # type: ignore[attr-defined]
 
@@ -608,7 +608,7 @@ async def test_an_area_a_nested_location_already_resolves_to_is_silent() -> None
     runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
-    reg = await async_get_area_registry(hass)
+    reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
 
     conn = RecordingConn()
@@ -649,7 +649,7 @@ async def test_location_update_announces_what_changed_once() -> None:
     runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
-    reg = await async_get_area_registry(hass)
+    reg = ar.async_get(hass)
     reg._add("garage", "Garage")  # type: ignore[attr-defined]
 
     conn = RecordingConn()

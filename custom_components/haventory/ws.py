@@ -15,6 +15,7 @@ from typing import Any, cast
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.util import dt as dt_util
 
 try:
@@ -25,7 +26,6 @@ except ImportError:  # pragma: no cover - offline harness without the component
 from . import import_export, todo_bridge
 from . import media as media_mod
 from . import storage as storage_mod
-from .areas import async_get_area_registry
 from .const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
@@ -1876,7 +1876,7 @@ async def ws_location_create(
     # Validate area_id against HA area registry when provided
     area_id = msg.get("area_id") if "area_id" in msg else None
     if area_id is not None:
-        reg = await async_get_area_registry(hass)
+        reg = ar.async_get(hass)
         if reg.async_get_area(area_id) is None:
             raise ValidationError("unknown area_id")
     loc = _repo(hass).create_location(
@@ -1917,8 +1917,11 @@ async def ws_location_update(
     new_parent = msg["new_parent_id"] if "new_parent_id" in msg else UNSET
     area_id = msg["area_id"] if "area_id" in msg else UNSET
     if area_id is not UNSET and area_id is not None:
-        reg = await async_get_area_registry(hass)
-        if reg.async_get_area(area_id) is None:
+        reg = ar.async_get(hass)
+        # Whatever the frame carried: the command schema types `area_id`
+        # `object`, and the registry lookup is what refuses a value it has no
+        # area for.
+        if reg.async_get_area(cast("str", area_id)) is None:
             raise ValidationError("unknown area_id")
     repo = _repo(hass)
     before = repo.get_location(msg["location_id"])
@@ -2215,7 +2218,7 @@ async def ws_status_delete(
 async def ws_areas_list(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    reg = await async_get_area_registry(hass)
+    reg = ar.async_get(hass)
     entries = reg.async_list_areas()
     areas = [{"id": a.id, "name": a.name} for a in entries]
     conn.send_message(websocket_api.result_message(msg.get("id", 0), {"areas": areas}))
