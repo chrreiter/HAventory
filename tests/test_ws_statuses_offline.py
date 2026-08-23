@@ -15,6 +15,7 @@ for to flag something and find it again.
 from __future__ import annotations
 
 import pytest
+from custom_components.haventory import events as events_mod
 from custom_components.haventory import ws as ws_mod
 from custom_components.haventory.const import DEFAULT_STATUS_COLOR, DEFAULT_STATUS_ICON
 from custom_components.haventory.ws import setup as ws_setup
@@ -42,7 +43,10 @@ def _record_broadcasts(monkeypatch) -> list[Broadcast]:
     def fake(hass, *, topic, action, payload=None):
         seen.append((topic, action, payload))
 
+    # The status handlers broadcast on their own; the item half of a reassigning
+    # delete travels through `events.py`.
     monkeypatch.setattr(ws_mod, "broadcast_event", fake)
+    monkeypatch.setattr(events_mod, "broadcast_event", fake)
     return seen
 
 

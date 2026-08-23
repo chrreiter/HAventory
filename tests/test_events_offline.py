@@ -520,7 +520,7 @@ async def test_a_failing_rollover_broadcast_is_logged_rather_than_raised(
     def _boom(_hass: HomeAssistant) -> None:
         raise RuntimeError("no counts today")
 
-    monkeypatch.setattr(events_mod, "_broadcast_counts", _boom)
+    monkeypatch.setattr(events_mod, "broadcast_counts", _boom)
 
     action(None)
 

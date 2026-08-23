@@ -48,6 +48,7 @@ from .const import (
 from .logs import context_logger
 from .models import iso_utc_now
 from .runtime import HAventoryRuntime, find_runtime
+from .subscriptions import broadcast_counts, broadcast_event
 
 LOGGER = context_logger(__name__)
 
@@ -56,29 +57,6 @@ LOGGER = context_logger(__name__)
 ITEM_ACTIONS: frozenset[str] = frozenset(
     {"created", "updated", "moved", "quantity_changed", "checked_out", "checked_in", "deleted"}
 )
-
-
-def _broadcast_event(
-    hass: HomeAssistant, *, topic: str, action: str, payload: dict[str, Any] | None = None
-) -> None:
-    """Hand one event to the WebSocket broadcaster.
-
-    The import is function-local because `ws.py` imports this module at its own
-    module scope; at module scope here the two would be a cycle. Python caches
-    the module, so every call after the first is a dictionary lookup.
-    """
-
-    from .ws import broadcast_event  # noqa: PLC0415 - the cycle, see above
-
-    broadcast_event(hass, topic=topic, action=action, payload=payload)
-
-
-def _broadcast_counts(hass: HomeAssistant) -> None:
-    """Hand the fresh counts to the WebSocket broadcaster. Local import as above."""
-
-    from .ws import broadcast_counts  # noqa: PLC0415 - the cycle, see above
-
-    broadcast_counts(hass)
 
 
 def seed_low_stock_snapshot(hass: HomeAssistant) -> None:
@@ -117,7 +95,7 @@ def async_track_day_rollover(hass: HomeAssistant) -> Callable[[], None]:
     @callback
     def _rollover(_now: datetime) -> None:
         try:
-            _broadcast_counts(hass)
+            broadcast_counts(hass)
         except Exception:
             # Best-effort, as every announcement here is, and for a sharper
             # reason: an exception escaping into the tracker can take the next
@@ -165,7 +143,7 @@ def notify_mutation(
             return
 
         if item is not None:
-            _broadcast_event(hass, topic="items", action=action, payload={"item": item})
+            broadcast_event(hass, topic="items", action=action, payload={"item": item})
             _fire_item_changed(hass, action, item)
 
         _fire_low_stock_transitions(hass, runtime, item=item)
@@ -173,7 +151,7 @@ def notify_mutation(
         async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
 
         if counts:
-            _broadcast_counts(hass)
+            broadcast_counts(hass)
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a mutation",
@@ -184,7 +162,7 @@ def notify_mutation(
 def notify_counts(hass: HomeAssistant) -> None:
     """Broadcast the counts alone, for a batch that suppressed them per row."""
 
-    _broadcast_counts(hass)
+    broadcast_counts(hass)
 
 
 def notify_bulk_mutation(
@@ -208,7 +186,7 @@ def notify_bulk_mutation(
         # One `items` event for the batch, carrying no row: a subscriber is
         # being told its list is stale, not which rows moved, and a payload per
         # row would be a whole inventory on the wire.
-        _broadcast_event(hass, topic="items", action=action, payload=None)
+        broadcast_event(hass, topic="items", action=action, payload=None)
 
         for item in items:
             _fire_item_changed(hass, action, item)
@@ -218,7 +196,7 @@ def notify_bulk_mutation(
         _fire_low_stock_transitions(hass, runtime, item=None)
 
         async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
-        _broadcast_counts(hass)
+        broadcast_counts(hass)
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a bulk mutation",
@@ -246,10 +224,10 @@ def notify_location_mutation(
     `locations_total` and every `location_path` stay exactly as they were.
     """
 
-    _broadcast_event(hass, topic="locations", action=action, payload={"location": location})
+    broadcast_event(hass, topic="locations", action=action, payload={"location": location})
     if repaint:
         notify_location_changed(hass)
-    _broadcast_counts(hass)
+    broadcast_counts(hass)
 
 
 def notify_location_changed(hass: HomeAssistant) -> None:

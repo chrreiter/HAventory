@@ -33,7 +33,7 @@ from custom_components.haventory.models import (
 )
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.serialization import serialize_item
-from custom_components.haventory.ws import _item_matches_filter
+from custom_components.haventory.subscriptions import _item_matches_filter
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 

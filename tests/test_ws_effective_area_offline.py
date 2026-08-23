@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
-from custom_components.haventory.ws import _item_matches_filter
+from custom_components.haventory.subscriptions import _item_matches_filter
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 

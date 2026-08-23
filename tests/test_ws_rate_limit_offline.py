@@ -19,7 +19,7 @@ import pytest
 import voluptuous as vol
 from custom_components.haventory import _async_options_updated
 from custom_components.haventory import rate_limit as rate_limit_module
-from custom_components.haventory import ws as ws_module
+from custom_components.haventory import subscriptions as subs_mod
 from custom_components.haventory.config_flow import (
     SECTION_RATE_LIMIT,
     SECTION_TODO,
@@ -220,13 +220,13 @@ async def test_per_connection_event_limit(clock: _FakeClock) -> None:
     sub = await ws_send(hass, 100, "haventory/subscribe", conn=subscriber, topic="items")
     assert sub["success"] is True
 
-    ws_module.broadcast_event(hass, topic="items", action="created", payload=None)
-    ws_module.broadcast_event(hass, topic="items", action="created", payload=None)
+    subs_mod.broadcast_event(hass, topic="items", action="created", payload=None)
+    subs_mod.broadcast_event(hass, topic="items", action="created", payload=None)
     assert len(subscriber.events()) == 1
     assert limiter.dropped_events == 1
 
     clock.advance(1.0)
-    ws_module.broadcast_event(hass, topic="items", action="created", payload=None)
+    subs_mod.broadcast_event(hass, topic="items", action="created", payload=None)
     delivered_after_refill = 2
     assert len(subscriber.events()) == delivered_after_refill
 
@@ -240,7 +240,7 @@ async def test_no_budget_consumed_without_matching_subscribers(clock: _FakeClock
 
     # No subscribers at all: nothing is consumed or counted.
     for _ in range(3):
-        ws_module.broadcast_event(hass, topic="items", action="created", payload=None)
+        subs_mod.broadcast_event(hass, topic="items", action="created", payload=None)
     assert limiter.dropped_events == 0
 
     # A subscriber on another topic does not consume the budget either.
@@ -248,7 +248,7 @@ async def test_no_budget_consumed_without_matching_subscribers(clock: _FakeClock
     assert (await ws_send(hass, 99, "haventory/subscribe", conn=other, topic="locations"))[
         "success"
     ]
-    ws_module.broadcast_event(hass, topic="items", action="created", payload=None)
+    subs_mod.broadcast_event(hass, topic="items", action="created", payload=None)
     assert limiter.dropped_events == 0
 
     # The budget is still intact for the first real delivery.
@@ -256,7 +256,7 @@ async def test_no_budget_consumed_without_matching_subscribers(clock: _FakeClock
     assert (await ws_send(hass, 100, "haventory/subscribe", conn=subscriber, topic="items"))[
         "success"
     ]
-    ws_module.broadcast_event(hass, topic="items", action="created", payload=None)
+    subs_mod.broadcast_event(hass, topic="items", action="created", payload=None)
     assert len(subscriber.events()) == 1
 
 
@@ -272,11 +272,11 @@ async def test_one_event_consumes_one_token_across_multiple_subscriptions(
     assert (await ws_send(hass, 301, "haventory/subscribe", conn=conn, topic="items"))["success"]
     assert (await ws_send(hass, 302, "haventory/subscribe", conn=conn, topic="items"))["success"]
 
-    ws_module.broadcast_event(hass, topic="items", action="created", payload=None)
+    subs_mod.broadcast_event(hass, topic="items", action="created", payload=None)
     # Both subscriptions receive the event; only one token was spent.
     assert {m["id"] for m in conn.messages if m["type"] == "event"} == {301, 302}
 
-    ws_module.broadcast_event(hass, topic="items", action="created", payload=None)
+    subs_mod.broadcast_event(hass, topic="items", action="created", payload=None)
     delivered_before_drop = 2  # both subscriptions got the FIRST event only
     assert len(conn.events()) == delivered_before_drop
     assert limiter.dropped_events == 1
@@ -291,8 +291,8 @@ async def test_global_event_limit_drops_for_all_subscribers(clock: _FakeClock) -
     assert (await ws_send(hass, 100, "haventory/subscribe", conn=sub_a, topic="items"))["success"]
     assert (await ws_send(hass, 101, "haventory/subscribe", conn=sub_b, topic="items"))["success"]
 
-    ws_module.broadcast_event(hass, topic="items", action="created", payload=None)
-    ws_module.broadcast_event(hass, topic="items", action="created", payload=None)
+    subs_mod.broadcast_event(hass, topic="items", action="created", payload=None)
+    subs_mod.broadcast_event(hass, topic="items", action="created", payload=None)
     # First event reached both; second was dropped globally.
     assert len(sub_a.events()) == 1
     assert len(sub_b.events()) == 1

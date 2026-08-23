@@ -86,6 +86,7 @@ from .storage import (
     read_schema_version,
     schema_downgrade_message,
 )
+from .subscriptions import notify_backend_unavailable
 
 LOGGER = context_logger(__name__)
 
@@ -507,7 +508,7 @@ async def _async_teardown_entry(hass: HomeAssistant, *, op: str, release_panel: 
 
     await _async_flush_pending_writes(hass, op=op)
 
-    ws_mod.notify_backend_unavailable(hass)
+    notify_backend_unavailable(hass)
 
     # Hand back the frontend module URL; setup re-adds it on the next load. The
     # static route stays, along with the flag that records it: aiohttp cannot

@@ -19,6 +19,7 @@ import json
 from typing import Any
 
 import pytest
+from custom_components.haventory import subscriptions as subs_mod
 from custom_components.haventory import ws as ws_module
 from custom_components.haventory.ws import HANDLERS, UNEXPECTED_ERROR_MESSAGE
 from custom_components.haventory.ws import setup as ws_setup
@@ -263,7 +264,7 @@ async def test_broadcast_failure_does_not_fail_the_command(monkeypatch) -> None:
     def _boom(*_args: Any, **_kwargs: Any) -> None:
         raise RuntimeError("broadcast down")
 
-    monkeypatch.setattr(ws_module, "_send_event_message", _boom)
+    monkeypatch.setattr(subs_mod, "_send_event_message", _boom)
 
     res = await ws_send(hass, 101, "haventory/item/create", conn=conn, name="Widget")
     assert res["success"] is True
