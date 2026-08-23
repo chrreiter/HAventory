@@ -4,7 +4,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { DialogFocus } from '../ui/dialog-focus';
-import { MediaUrls, attachmentNameToken, pictureAlt, pictures } from '../ui/media';
+import { MediaUrls, PictureFallback, attachmentNameToken, pictureAlt, pictures } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import type { Item } from '../store/types';
 import { nextZBase } from '../utils/zindex';
@@ -51,6 +51,17 @@ export class HVLightbox extends LitElement {
         max-width: 100vw;
         max-height: 100vh;
         object-fit: contain;
+      }
+      /* A photo whose file the backend no longer has. White ink like every
+         other control here: the frame behind it is the opaque black above, not
+         a themed surface. */
+      .lightbox .missing {
+        display: grid;
+        place-items: center;
+        gap: 12px;
+        padding: 24px;
+        color: #fff;
+        font: 500 15px var(--hv-font);
       }
       .lightbox .close {
         position: absolute;
@@ -120,6 +131,7 @@ export class HVLightbox extends LitElement {
   @state() private _zBase: number | null = null;
 
   private readonly _urls = new MediaUrls(this);
+  private readonly _pictures = new PictureFallback(this, this._urls);
   private readonly _focus = new DialogFocus();
 
   protected willUpdate(changed: Map<string, unknown>) {
@@ -173,6 +185,12 @@ export class HVLightbox extends LitElement {
     // signature was in flight would flash the page underneath, drop focus on
     // `<body>` — taking Escape with it — and come back a stranger.
     const src = this._urls.get(item.id, shot.id, attachmentNameToken(shot));
+    // The tiles that open this refuse to open a picture whose file is gone, so
+    // what is left for here is the file that goes away while the photo is on
+    // screen. Answered from the failure rather than probed for, because every
+    // arrow press would otherwise ask the backend about a photo it is about to
+    // draw perfectly well.
+    const missing = this._pictures.state(item.id, shot.id) === 'missing';
 
     const many = shots.length > 1;
     const nav = (delta: number) => (e: Event) => {
@@ -207,7 +225,18 @@ export class HVLightbox extends LitElement {
       }}
       @click=${this._close}
     >
-      ${src ? html`<img src=${src} alt=${pictureAlt(item.name, index, shots.length)} />` : null}
+      ${missing
+        ? html`<div class="missing" data-testid="lightbox-missing">
+            ${icon('camera', 48)}
+            <span>${t('hv.term.fileMissing')}</span>
+          </div>`
+        : src
+        ? html`<img
+            src=${src}
+            alt=${pictureAlt(item.name, index, shots.length)}
+            @error=${() => this._pictures.noteError(item.id, shot.id)}
+          />`
+        : null}
       <button class="close" data-testid="lightbox-close" aria-label=${t('hv.lightbox.close')} @click=${this._close}>
         ${icon('close', 22)}
       </button>

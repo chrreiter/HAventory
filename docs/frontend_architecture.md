@@ -452,7 +452,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `area.ts` | Resolving the HA area behind a location: id → name, and the ancestor walk that mirrors the backend's own resolver. |
 | `location-path.ts` | The `/` → `›` convention for a location path, a location's label with a caller-supplied fallback, and the area-beside-the-path composition (`itemPathParts` / `locationPathParts` / `pathTitle` / `renderAreaChip`). |
 | `dialog-focus.ts` | Initial focus and focus return for modal surfaces. Opening must move focus into the panel or its Escape handler never fires. |
-| `media.ts` | Item attachments: the media path builder, the `MediaUrls` signed-URL cache (request, reuse, refresh before expiry, a distinguishable failed state, and the liveness probe that tells a reference whose file is gone from one that opens), the per-kind `pictures()` / `manuals()` selectors and the title-or-filename fallback, and the `MediaBindings` shape a host hands its components. |
+| `media.ts` | Item attachments: the media path builder, the `MediaUrls` signed-URL cache (request, reuse, refresh before expiry, a distinguishable failed state, and the liveness probe that tells a reference whose file is gone from one that opens), `PictureFallback` for the surfaces that let the browser try the URL first, the per-kind `pictures()` / `manuals()` selectors and the title-or-filename fallback, and the `MediaBindings` shape a host hands its components. |
 | `downscale.ts` | Re-encoding an oversized photo in the browser before it is uploaded: the size and type rules, the capped-edge arithmetic, and the decode/encode seam. Fails open — anything that does not work hands the original file back. |
 | `status.ts` | The item-status vocabulary: the definitions a surface renders from (backend's, or the built-in three until `haventory/config` answers), the label / tone-class / glyph lookups with their fallbacks, the colour and glyph vocabularies the management picker offers, and `renderStatusChip` — one renderer so the mark cannot drift between a table cell and a detail sheet. |
 | `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
@@ -629,6 +629,17 @@ Any other key in that record is ignored, so an older or newer payload never brea
   `ui/discard`, so the same decision never reads as two different questions. The phone sheets
   are part of this: `hv-bottom-sheet` reports a scrim tap or a swipe-down and leaves the
   closing to its host, which is what lets `hv-detail-sheet` answer for the form inside it.
+- **An attachment whose file is gone is a state, not an error.** Metadata outlives bytes —
+  a JSON export carries the references and not the files, and a backup that took `.storage`
+  without the config directory's `haventory/` tree leaves every attachment on every item
+  like this — so every surface draws a *File missing* placeholder rather than a dead link or
+  a broken `<img>`. Which way it is found differs by surface. The document rows, the
+  editor's photo grid and the detail sheet's strip ask `MediaUrls.presence()` up front: one
+  item's attachments are few, and asking first is what keeps a URL that can only fail from
+  ever reaching an `<img>`. The row tiles and the lightbox wait for the image to fail and
+  ask then (`PictureFallback`), because a table of two hundred rows would otherwise put two
+  hundred extra questions to the backend to draw tiles that are almost always fine. Only a
+  404 counts as missing; an inconclusive probe leaves the picture alone.
 - **Optimistic writes** stay as they were; a rejected save keeps the expander open with the
   user's text in it, and conflicts render as a banner with *View latest* / *Re-apply*.
 - **Bulk work is chunked**, so progress is determinate and cancel stops cleanly after the

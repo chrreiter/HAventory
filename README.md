@@ -235,8 +235,9 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   WebSocket result the card writes to a file, so it cannot carry binaries; photos and
   manuals live on disk under `<config>/haventory/attachments/`. Importing a document onto
   an install that does not hold those files keeps the references and shows a "file
-  missing" state — the preview reports how many before you write anything, and the item's
-  Documents list marks each affected row rather than offering a link to a 404.
+  missing" state — the preview reports how many before you write anything, and the card
+  marks each affected entry rather than offering a link to a 404 or a broken image: the
+  Documents list on the row, the photo where its tile would be, wherever the card draws one.
   **Home Assistant's own backups are the full-fidelity path**: the media directory sits
   inside the config directory, so a backup and restore carries the files and the store
   together and consistently.

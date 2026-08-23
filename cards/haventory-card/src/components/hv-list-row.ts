@@ -11,6 +11,7 @@ import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
 import {
   MEDIA_VARIANT_THUMB,
   MediaUrls,
+  PictureFallback,
   ROW_THUMB_SIZE,
   ROW_THUMB_SIZE_TOUCH,
   attachmentNameToken,
@@ -173,6 +174,25 @@ export class HVListRow extends LitElement {
       :host([mobile]) .thumb {
         width: ${unsafeCSS(ROW_THUMB_SIZE_TOUCH)}px;
         height: ${unsafeCSS(ROW_THUMB_SIZE_TOUCH)}px;
+      }
+      /* The tile of a picture whose file the backend no longer has. It keeps
+         the box, because a restore without the media directory leaves every row
+         in this state and a list that dropped them all would reflow entirely.
+         The glyph says a picture belongs here; the title and the label say why
+         it is not being shown. */
+      .thumb.missing {
+        display: inline-grid;
+        place-items: center;
+        box-sizing: border-box;
+        border: 1px dashed var(--hv-divider);
+        color: var(--hv-text-tertiary);
+      }
+      /* Between the failure and the probe's answer. Hidden rather than removed:
+         what an errored <img> draws is the browser's broken-image glyph with the
+         alt text spilling out of a 34px square, which is the whole thing this
+         state exists to keep off the row. */
+      .thumb.broken {
+        visibility: hidden;
       }
       /* A mark, not a chip: that an item has a manual is a fact about it, not
          a state anyone has to act on, so it stays out of the hue vocabulary the
@@ -406,6 +426,7 @@ export class HVListRow extends LitElement {
   @property({ attribute: false }) media: MediaBindings | null = null;
 
   private readonly _urls = new MediaUrls(this);
+  private readonly _thumbs = new PictureFallback(this, this._urls);
 
   private _dayUnsub?: () => void;
 
@@ -437,10 +458,24 @@ export class HVListRow extends LitElement {
    * one, so this never decides whether the picture appears. `loading="lazy"`
    * and `decoding="async"` still matter — a long list would otherwise fetch and
    * decode everything at once.
+   *
+   * A file the backend no longer has is answered from the failure rather than
+   * probed for up front — see `PictureFallback`.
    */
   private _renderThumb() {
     const first = pictures(this.item.attachments)[0];
     if (!first) return null;
+    const state = this._thumbs.state(this.item.id, first.id);
+    if (state === 'missing') {
+      return html`<span
+        class="thumb missing"
+        data-testid="row-thumb-missing"
+        role="img"
+        aria-label=${t('hv.term.fileMissing')}
+        title=${t('hv.term.fileMissing')}
+        >${icon('camera', 18)}</span
+      >`;
+    }
     const src = this._urls.get(
       this.item.id,
       first.id,
@@ -449,12 +484,14 @@ export class HVListRow extends LitElement {
     );
     if (!src) return null;
     return html`<img
-      class="thumb"
+      class=${state === 'errored' ? 'thumb broken' : 'thumb'}
       data-testid="row-thumb"
       src=${src}
       alt=${pictureAlt(this.item.name, 0, 1)}
       loading="lazy"
       decoding="async"
+      @error=${() => this._thumbs.noteError(this.item.id, first.id)}
+      @load=${() => this._thumbs.noteLoad(this.item.id, first.id)}
     />`;
   }
 

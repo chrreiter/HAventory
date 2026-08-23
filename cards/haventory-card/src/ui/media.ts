@@ -432,3 +432,65 @@ export class MediaUrls {
     );
   }
 }
+
+/**
+ * What a tile should draw once the browser has had its try at the URL.
+ *
+ * `errored` is the gap between the failure and the answer: the picture may be
+ * gone, or the signature may have lapsed under a connection that dropped, and
+ * the two look identical from inside an `<img>`.
+ */
+export type PictureState = 'ok' | 'errored' | 'missing';
+
+/**
+ * The missing-file state for surfaces that let the browser try the URL first.
+ *
+ * A row cannot probe up front the way a document list does: a table of two
+ * hundred items would ask the backend two hundred extra questions to draw tiles
+ * that are almost always fine. It waits for the `<img>` to fail instead and
+ * only then asks whether the file is missing or the request merely failed — one
+ * probe per broken tile, none at all for a healthy list.
+ *
+ * Only a 404 turns into `missing`: an inconclusive probe leaves the tile in
+ * `errored`, where the caller hides the browser's glyph without claiming the
+ * picture is gone.
+ */
+export class PictureFallback {
+  private readonly host: MediaHost;
+  private readonly urls: MediaUrls;
+  private readonly errored = new Set<string>();
+
+  constructor(host: MediaHost, urls: MediaUrls) {
+    this.host = host;
+    this.urls = urls;
+  }
+
+  /** What to draw for one picture, without asking anything of a tile that loads. */
+  state(itemId: string, attachmentId: string): PictureState {
+    if (!this.errored.has(`${itemId}/${attachmentId}`)) return 'ok';
+    return this.urls.presence(itemId, attachmentId) === 'missing' ? 'missing' : 'errored';
+  }
+
+  /** One tile's image failed to load; find out whether its file is there. */
+  noteError(itemId: string, attachmentId: string): void {
+    this.errored.add(`${itemId}/${attachmentId}`);
+    // Starts the probe. Its answer arrives outside a render, which is what the
+    // re-render below and `MediaUrls`' own host call are for.
+    this.urls.presence(itemId, attachmentId);
+    this.host.requestUpdate();
+  }
+
+  /**
+   * One tile's image loaded after all.
+   *
+   * The failure a probe could not explain sticks to the attachment, and the
+   * next URL for those same bytes — a re-signed one, half an hour later — is
+   * the first chance to find out it was the request and not the file. Without
+   * this the tile would stay in the state a single dropped connection left it
+   * in, holding a picture the browser is now showing.
+   */
+  noteLoad(itemId: string, attachmentId: string): void {
+    if (!this.errored.delete(`${itemId}/${attachmentId}`)) return;
+    this.host.requestUpdate();
+  }
+}

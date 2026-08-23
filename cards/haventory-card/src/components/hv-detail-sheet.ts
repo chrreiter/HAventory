@@ -340,6 +340,21 @@ export class HVDetailSheet extends LitElement {
         object-fit: cover;
         background: var(--hv-surface-raised);
       }
+      /* A picture whose file the backend no longer has: the same box, so the
+         strip keeps its rhythm, carrying the amber mark the document rows below
+         already use for the same fact. */
+      .gallery .missing {
+        display: grid;
+        place-items: center;
+        gap: 6px;
+        box-sizing: border-box;
+        width: 116px;
+        height: 116px;
+        border: 1px dashed var(--hv-divider);
+        border-radius: 10px;
+        background: var(--hv-surface-raised);
+        color: var(--hv-text-tertiary);
+      }
       .documents {
         padding: 0 18px 14px;
       }
@@ -614,12 +629,25 @@ export class HVDetailSheet extends LitElement {
    *
    * Each figure is a button: tapping one opens the lightbox, which is the only
    * way to see a photo at a useful size on a phone.
+   *
+   * A picture whose file the backend cannot find is drawn as missing rather
+   * than handed to an `<img>` that can only draw the browser's broken-image
+   * glyph — the same reason the document rows below probe, and the same state a
+   * restore without the media directory puts every photo in.
    */
   private _renderGallery(item: Item) {
     const shots = pictures(item.attachments);
     if (!shots.length) return null;
     return html`<div class="gallery" data-testid="sheet-gallery">
       ${shots.map((picture, index) => {
+        if (this._urls.presence(item.id, picture.id) === 'missing') {
+          return html`<figure data-testid="sheet-photo">
+            <span class="missing" data-testid="sheet-photo-missing">
+              ${icon('camera', 24)}
+              <span class="hv-chip warning">${t('hv.term.fileMissing')}</span>
+            </span>
+          </figure>`;
+        }
         const src = this._urls.get(item.id, picture.id, attachmentNameToken(picture));
         if (!src) return null;
         return html`<figure data-testid="sheet-photo">

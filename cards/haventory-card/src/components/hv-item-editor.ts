@@ -891,6 +891,26 @@ export class HVItemEditor extends LitElement {
         height: 72px;
         color: var(--hv-text-tertiary);
       }
+      /* A picture whose file the backend no longer has. The tile keeps its box
+         so the strip does not reflow around it, and says what is wrong with the
+         same amber mark the document rows carry. */
+      .photos .placeholder.missing {
+        gap: 4px;
+        box-sizing: border-box;
+        border: 1px dashed var(--hv-input-border);
+        border-radius: 8px;
+      }
+      /* The one place the card-wide chip metric does not fit: this chip sits
+         inside a 72px tile, where 11.5px on a single line would be clipped by
+         the tile's own edge. */
+      .photos .placeholder.missing .hv-chip {
+        max-width: 100%;
+        padding: 1px 5px;
+        font-size: 10px;
+        line-height: 1.2;
+        white-space: normal;
+        text-align: center;
+      }
       /* Under the thumbnail rather than over it: these sit on whatever photo
          was uploaded, and no overlay treatment is legible against every one.
          The same 24px square the organize dialog's reorder buttons take, so
@@ -2408,16 +2428,30 @@ export class HVItemEditor extends LitElement {
         @drop=${drop.drop}
       >
         ${shots.map((picture, index) => {
+          // Asked the same way the document rows ask, and for the same reason:
+          // an export carries the references and not the bytes, so a fresh
+          // install genuinely holds pictures whose files were never uploaded to
+          // it. One item's photos are few enough to ask about up front, which
+          // is what keeps the browser from ever being handed a URL it can only
+          // draw its broken-image glyph for.
+          const missing = this._urls.presence(item.id, picture.id) === 'missing';
           // The tile, not the picture: tapping one opens the lightbox, which
           // asks for the stored file itself.
-          const src = this._urls.get(
-            item.id,
-            picture.id,
-            attachmentNameToken(picture),
-            MEDIA_VARIANT_THUMB,
-          );
+          const src = missing
+            ? null
+            : this._urls.get(
+                item.id,
+                picture.id,
+                attachmentNameToken(picture),
+                MEDIA_VARIANT_THUMB,
+              );
           return html`<figure data-testid="editor-photo">
-            ${src
+            ${missing
+              ? html`<span class="placeholder missing" data-testid="editor-photo-missing">
+                  ${icon('camera', 20)}
+                  <span class="hv-chip warning">${t('hv.term.fileMissing')}</span>
+                </span>`
+              : src
               ? html`<button
                   class="open"
                   data-testid="editor-photo-open"

@@ -1,6 +1,14 @@
 import { setLanguage } from '../i18n';
 import './hv-list-row';
-import { makeAttachment, makeItem, makeManual, makeMediaBindings, mountComponent, q } from '../test.utils';
+import {
+  componentCss,
+  makeAttachment,
+  makeItem,
+  makeManual,
+  makeMediaBindings,
+  mountComponent,
+  q,
+} from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
 import { elideMobilePath, elidePath, isLowStock, rowMenuEntries } from './hv-list-row';
 import { addDays, toIsoDate } from '../ui/relative-time';
@@ -631,6 +639,91 @@ describe('hv-list-row thumbnail', () => {
     await el.updateComplete;
 
     expect(q(el, '[data-testid="row-thumb"]')).toBeNull();
+  });
+});
+
+/**
+ * A restore that brought the store back without the media directory leaves
+ * every picture on every item in this state, so it is a screenful of tiles and
+ * not one odd row.
+ */
+describe('hv-list-row: a picture whose file is gone', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** Answers every liveness probe with `status`. */
+  function serve(status: number) {
+    const probe = vi.fn(async () => new Response(null, { status }));
+    vi.stubGlobal('fetch', probe);
+    return probe;
+  }
+
+  /** A row with one picture, drawn and then failing to load it. */
+  async function broken(probe = () => serve(404)) {
+    const fetched = probe();
+    const el = await mount(
+      { id: 'i-1', name: 'Cordless drill', attachments: [makeAttachment({ id: 'att-1' })] },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    await el.updateComplete;
+    q(el, '[data-testid="row-thumb"]')?.dispatchEvent(new Event('error'));
+    for (let i = 0; i < 4; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await el.updateComplete;
+    }
+    return { el, fetched };
+  }
+
+  it('draws a missing mark in place of the browser’s broken-image glyph', async () => {
+    const { el } = await broken();
+
+    const mark = q(el, '[data-testid="row-thumb-missing"]');
+    expect(mark).toBeTruthy();
+    // Glyph-only in a 34px box, so the state has to reach a screen reader and
+    // a pointer some other way.
+    expect(mark?.getAttribute('aria-label')).toBe('File missing');
+    expect(mark?.getAttribute('title')).toBe('File missing');
+    // No <img> at all: an element with a src is what draws the glyph and spills
+    // the alt text out of the tile.
+    expect(el.shadowRoot?.querySelector('img')).toBeNull();
+  });
+
+  it('costs nothing on a row whose picture loads', async () => {
+    const probe = serve(404);
+    const el = await mount(
+      { id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] },
+      { media: makeMediaBindings() },
+    );
+    await el.updateComplete;
+    await el.updateComplete;
+
+    expect(q(el, '[data-testid="row-thumb"]')).toBeTruthy();
+    expect(probe).not.toHaveBeenCalled();
+  });
+
+  it('keeps the tile when the probe cannot say the file is gone', async () => {
+    const { el } = await broken(() => {
+      const probe = vi.fn(async () => {
+        throw new Error('offline');
+      });
+      vi.stubGlobal('fetch', probe);
+      return probe;
+    });
+
+    expect(q(el, '[data-testid="row-thumb-missing"]')).toBeNull();
+    // The image element stays, and the glyph it would draw is hidden until the
+    // question is settled.
+    const img = q(el, '[data-testid="row-thumb"]');
+    expect(img?.classList.contains('broken')).toBe(true);
+    expect(componentCss('hv-list-row')).toMatch(/\.thumb\.broken \{ visibility: hidden/);
+
+    // A re-signed URL for the same bytes is what finally answers it, and the
+    // row must not keep hiding a picture the browser is now showing.
+    img?.dispatchEvent(new Event('load'));
+    await el.updateComplete;
+    expect(q(el, '[data-testid="row-thumb"]')?.classList.contains('broken')).toBe(false);
   });
 });
 
