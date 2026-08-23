@@ -13,7 +13,6 @@ Scenarios:
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -27,54 +26,6 @@ from homeassistant.core import HomeAssistant
 
 from runtime_helpers import install_runtime, runtime_of
 from ws_helpers import RecordingConn, ws_send
-
-
-class _ConnStub(RecordingConn):
-    """A connection with close callbacks but no subscription registry.
-
-    Deliberately missing ``subscriptions``, which is what exercises the
-    ``on_close`` fallback path.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._close_callbacks: list[Callable[[], None]] = []
-
-    def on_close(self, callback: Callable[[], None]) -> None:
-        self._close_callbacks.append(callback)
-
-    def close(self) -> None:
-        for cb in list(self._close_callbacks):
-            cb()
-
-
-class _HAConnStub(_ConnStub):
-    """Connection stub that mirrors HA's ``ActiveConnection`` subscription registry.
-
-    Real ``ActiveConnection`` exposes a ``subscriptions`` dict (message id -> zero-arg
-    unsub callback) that both the framework's ``unsubscribe_events`` command and the
-    disconnect path drive. The plain ``_ConnStub`` deliberately omits it (exercising the
-    ``on_close`` fallback); this subclass restores it so we can drive the framework
-    teardown path the frontend actually uses.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.subscriptions: dict[Any, Callable[[], None]] = {}
-
-    def core_unsubscribe_events(self, subscription: int) -> bool:
-        """Emulate HA core's ``unsubscribe_events``: pop-and-call, or report missing."""
-        if subscription in self.subscriptions:
-            self.subscriptions.pop(subscription)()
-            return True
-        return False
-
-    def close(self) -> None:
-        # HA calls every registered unsub on disconnect, then any close callbacks.
-        for unsub in list(self.subscriptions.values()):
-            unsub()
-        self.subscriptions.clear()
-        super().close()
 
 
 class _SlottedHAConn:
@@ -125,7 +76,7 @@ async def test_subscribe_receives_item_created_and_counts() -> None:
     install_runtime(hass)
     ws_setup(hass)
 
-    conn = _ConnStub()
+    conn = RecordingConn()
 
     # Subscribe to items and stats on same connection with different ids
     res = await ws_send(hass, 101, "haventory/subscribe", conn=conn, topic="items")
@@ -156,7 +107,7 @@ async def test_unsubscribe_stops_events() -> None:
     install_runtime(hass)
     ws_setup(hass)
 
-    conn = _ConnStub()
+    conn = RecordingConn()
 
     # Subscribe to items
     res = await ws_send(hass, 201, "haventory/subscribe", conn=conn, topic="items")
@@ -186,7 +137,7 @@ async def test_double_subscribe_and_unsubscribe_edge() -> None:
     install_runtime(hass)
     ws_setup(hass)
 
-    conn = _ConnStub()
+    conn = RecordingConn()
 
     # Two subscriptions for same topic with different ids
     await ws_send(hass, 401, "haventory/subscribe", conn=conn, topic="stats")
@@ -210,7 +161,7 @@ async def test_subscriptions_cleanup_on_connection_close() -> None:
     install_runtime(hass)
     ws_setup(hass)
 
-    conn = _ConnStub()
+    conn = RecordingConn()
     await ws_send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
 
     subs = _subs_bucket(hass)
@@ -229,7 +180,7 @@ async def test_location_filters_subtree_and_direct_only() -> None:
     install_runtime(hass)
     ws_setup(hass)
 
-    conn = _ConnStub()
+    conn = RecordingConn()
 
     # Create a small location tree: root -> child
     root = await ws_send(hass, 1, "haventory/location/create", conn=conn, name="Root")
@@ -325,7 +276,7 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
     install_runtime(hass)
     ws_setup(hass)
 
-    conn = _ConnStub()
+    conn = RecordingConn()
 
     SUB_ID_INSPECTION = 401
     SUB_ID_EVERYTHING = 402
@@ -390,7 +341,7 @@ async def test_area_filter_constrains_delivered_events() -> None:
     runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
-    conn = _ConnStub()
+    conn = RecordingConn()
 
     # Kitchen(area=kitchen) -> Drawer, and a separate Garage(area=garage).
     kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
@@ -451,7 +402,7 @@ async def test_area_and_location_filters_are_conjunctive() -> None:
     runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
-    conn = _ConnStub()
+    conn = RecordingConn()
 
     kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
     drawer = repo.create_location(name="Drawer", parent_id=kitchen.id)
@@ -511,7 +462,7 @@ async def test_location_area_change_emits_no_item_events() -> None:
     runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
-    conn = _ConnStub()
+    conn = RecordingConn()
 
     kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
     garage = repo.create_location(name="Garage", area_id="garage")
@@ -568,7 +519,7 @@ async def test_reassigning_a_locations_own_area_announces_one_moved_event() -> N
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
     reg._add("garage", "Garage")  # type: ignore[attr-defined]
 
-    conn = _ConnStub()
+    conn = RecordingConn()
     kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
     drawer = repo.create_location(name="Drawer", parent_id=kitchen.id)
     await ws_send(
@@ -612,7 +563,7 @@ async def test_an_area_set_on_a_nested_location_is_announced_too() -> None:
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
     reg._add("bedroom", "Bedroom")  # type: ignore[attr-defined]
 
-    conn = _ConnStub()
+    conn = RecordingConn()
     root = repo.create_location(name="Home", area_id="kitchen")
     shelf = repo.create_location(name="Shelf", parent_id=root.id)
     created = await ws_send(
@@ -660,7 +611,7 @@ async def test_an_area_a_nested_location_already_resolves_to_is_silent() -> None
     reg = await async_get_area_registry(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
 
-    conn = _ConnStub()
+    conn = RecordingConn()
     root = repo.create_location(name="Home", area_id="kitchen")
     shelf = repo.create_location(name="Shelf", parent_id=root.id)
     await ws_send(hass, 700, "haventory/subscribe", conn=conn, topic="locations")
@@ -701,7 +652,7 @@ async def test_location_update_announces_what_changed_once() -> None:
     reg = await async_get_area_registry(hass)
     reg._add("garage", "Garage")  # type: ignore[attr-defined]
 
-    conn = _ConnStub()
+    conn = RecordingConn()
     root = repo.create_location(name="Root")
     other_root = repo.create_location(name="Other")
     shelf = repo.create_location(name="Shelf", parent_id=root.id)
@@ -762,7 +713,7 @@ async def test_framework_unsubscribe_events_tears_down_subscription() -> None:
     ws_setup(hass)
 
     sub_id = 501
-    conn = _HAConnStub()
+    conn = RecordingConn()
     res = await ws_send(hass, sub_id, "haventory/subscribe", conn=conn, topic="items")
     assert res["success"] is True
 
@@ -796,7 +747,7 @@ async def test_dedicated_unsubscribe_clears_framework_registry() -> None:
     ws_setup(hass)
 
     sub_id = 601
-    conn = _HAConnStub()
+    conn = RecordingConn()
     await ws_send(hass, sub_id, "haventory/subscribe", conn=conn, topic="stats")
     assert sub_id in conn.subscriptions
 
@@ -861,7 +812,7 @@ async def test_location_ids_scopes_a_subscription_to_several_locations() -> None
     runtime_of(hass).store = DomainStore(hass)
     ws_setup(hass)
 
-    conn = _ConnStub()
+    conn = RecordingConn()
 
     # Kitchen -> Drawer, plus Garage and Cellar as separate roots.
     kitchen = repo.create_location(name="Kitchen")
@@ -940,7 +891,12 @@ async def test_subscribe_refuses_location_ids_that_is_not_a_list() -> None:
     ws_setup(hass)
 
     res = await ws_send(
-        hass, 1, "haventory/subscribe", conn=_ConnStub(), topic="items", location_ids="not-a-list"
+        hass,
+        1,
+        "haventory/subscribe",
+        conn=RecordingConn(),
+        topic="items",
+        location_ids="not-a-list",
     )
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"

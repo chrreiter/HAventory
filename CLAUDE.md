@@ -87,9 +87,9 @@ are not discoverable from the code:
 - **Do not set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` here** — phacc must load. `tests/conftest.py`
   stubs HA only when the real package is absent, so the offline run stays byte-identical and
   never collects `tests/integration/`.
-- The offline `HomeAssistant` stub **has no service registry**, so `services.setup()`
-  early-returns. Anything about how HA *dispatches* a handler is asserted in this mode or it is
-  not asserted at all.
+- The offline `HomeAssistant` stub **records** what `services.setup()` registers, so which
+  services exist, with which schema and response mode, is asserted offline. How HA *dispatches*
+  to a handler is asserted in this mode or it is not asserted at all.
 - `scripts/test_integration.sh` **cannot run on a Windows host** (POSIX venv layout, and HA core
   imports `fcntl`). Run it in a container with the venv on a named volume — first run about
   three minutes, re-runs about thirty seconds, host edits picked up through the mount. The

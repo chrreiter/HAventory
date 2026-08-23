@@ -2444,64 +2444,61 @@ async def ws_import_execute(
 # -----------------------------
 
 
+# Every command this integration serves. Home Assistant keys its command
+# registry by command type, so registering the list again — which a reload does
+# — replaces each handler rather than adding a second one.
+HANDLERS: tuple[Any, ...] = (
+    ws_ping,
+    ws_version,
+    ws_config,
+    ws_stats,
+    ws_distinct_values,
+    ws_health,
+    ws_subscribe,
+    ws_unsubscribe,
+    ws_item_create,
+    ws_item_get,
+    ws_item_update,
+    ws_item_delete,
+    ws_item_adjust_quantity,
+    ws_item_set_quantity,
+    ws_item_check_out,
+    ws_item_check_in,
+    ws_reminder_set,
+    ws_reminder_clear,
+    ws_reminder_bump,
+    ws_item_add_tags,
+    ws_item_remove_tags,
+    ws_item_update_custom_fields,
+    ws_item_set_low_stock_threshold,
+    ws_item_attachment_add,
+    ws_item_attachment_remove,
+    ws_item_attachment_update,
+    ws_item_attachment_reorder,
+    ws_item_move,
+    ws_items_bulk,
+    ws_item_list,
+    ws_location_create,
+    ws_location_get,
+    ws_location_update,
+    ws_location_delete,
+    ws_location_list,
+    ws_location_tree,
+    ws_location_move_subtree,
+    ws_status_list,
+    ws_status_create,
+    ws_status_update,
+    ws_status_reorder,
+    ws_status_delete,
+    ws_areas_list,
+    ws_export,
+    ws_import_preview,
+    ws_import_execute,
+)
+
+
 def setup(hass: HomeAssistant) -> None:
-    # Idempotent: avoid duplicate registration across reloads
-    bucket = hass.data.setdefault(DOMAIN, {})
-    if bucket.get("ws_registered"):
-        return
+    """Register every HAventory WebSocket command."""
 
-    handlers = [
-        ws_ping,
-        ws_version,
-        ws_config,
-        ws_stats,
-        ws_distinct_values,
-        ws_health,
-        ws_subscribe,
-        ws_unsubscribe,
-        ws_item_create,
-        ws_item_get,
-        ws_item_update,
-        ws_item_delete,
-        ws_item_adjust_quantity,
-        ws_item_set_quantity,
-        ws_item_check_out,
-        ws_item_check_in,
-        ws_reminder_set,
-        ws_reminder_clear,
-        ws_reminder_bump,
-        ws_item_add_tags,
-        ws_item_remove_tags,
-        ws_item_update_custom_fields,
-        ws_item_set_low_stock_threshold,
-        ws_item_attachment_add,
-        ws_item_attachment_remove,
-        ws_item_attachment_update,
-        ws_item_attachment_reorder,
-        ws_item_move,
-        ws_items_bulk,
-        ws_item_list,
-        ws_location_create,
-        ws_location_get,
-        ws_location_update,
-        ws_location_delete,
-        ws_location_list,
-        ws_location_tree,
-        ws_location_move_subtree,
-        ws_status_list,
-        ws_status_create,
-        ws_status_update,
-        ws_status_reorder,
-        ws_status_delete,
-        ws_areas_list,
-        ws_export,
-        ws_import_preview,
-        ws_import_execute,
-    ]
-
-    for h in handlers:
-        websocket_api.async_register_command(hass, h)
-
-    # Track our handlers for test stubs cleanup during unload
-    bucket["ws_handlers"] = handlers
-    bucket["ws_registered"] = True
+    for handler in HANDLERS:
+        websocket_api.async_register_command(hass, handler)

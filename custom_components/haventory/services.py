@@ -494,17 +494,11 @@ def _bind(
 
 
 def setup(hass: HomeAssistant) -> None:
-    """Register haventory.* services on Home Assistant."""
+    """Register haventory.* services on Home Assistant.
 
-    # Idempotent: avoid duplicate registration across reloads
-    bucket = hass.data.setdefault(DOMAIN, {})
-    if bucket.get("services_registered"):
-        return
-
-    # In offline tests our HomeAssistant stub may not expose a services registry.
-    if not hasattr(hass, "services") or not hasattr(hass.services, "async_register"):
-        bucket["services_registered"] = True
-        return
+    Idempotent because Home Assistant's registry is keyed by domain and service
+    name: a reload registers over the top rather than adding a second handler.
+    """
 
     # OPTIONAL, not ONLY: every one of these is a mutation first and an answer
     # second, so a caller that omits `response_variable` must keep working.
@@ -516,5 +510,3 @@ def setup(hass: HomeAssistant) -> None:
             schema,
             supports_response=SupportsResponse.OPTIONAL,
         )
-
-    bucket["services_registered"] = True

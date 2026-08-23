@@ -20,8 +20,7 @@ from typing import Any
 
 import pytest
 from custom_components.haventory import ws as ws_module
-from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.ws import UNEXPECTED_ERROR_MESSAGE
+from custom_components.haventory.ws import HANDLERS, UNEXPECTED_ERROR_MESSAGE
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
@@ -37,16 +36,13 @@ def _make_hass(*, with_repo: bool = True) -> HomeAssistant:
     return hass
 
 
-@pytest.mark.asyncio
-async def test_every_registered_command_is_guarded() -> None:
+def test_every_registered_command_is_guarded() -> None:
     """All haventory/* handlers must carry the ws_guard structural marker."""
 
-    hass = _make_hass()
-    handlers = hass.data[DOMAIN]["ws_handlers"]
-    assert handlers, "expected registered WS handlers"
+    assert HANDLERS, "expected registered WS handlers"
     unguarded = [
         getattr(h, "__name__", repr(h))
-        for h in handlers
+        for h in HANDLERS
         if not getattr(h, "_haventory_ws_guard", False)
     ]
     assert unguarded == []

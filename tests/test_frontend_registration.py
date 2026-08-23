@@ -15,7 +15,6 @@ that is already taken.
 
 from __future__ import annotations
 
-import asyncio
 import importlib
 import json
 import logging
@@ -44,6 +43,7 @@ from custom_components.haventory.const import (
 )
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, DATA_PANELS, UrlManager
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.core import HomeAssistant
 
 STATIC_URL_PATH = "/haventory_static"
 CARD_PATH = f"{STATIC_URL_PATH}/haventory-card.js"
@@ -138,51 +138,19 @@ class MockLovelaceData:
         self.resources = MockResourceCollection() if resources is None else resources
 
 
-class HttpStub:
-    """Stands in for ``hass.http``, with aiohttp's one hard rule.
-
-    aiohttp cannot unregister a route and rejects a second one on the same path,
-    so a duplicate registration raises here rather than being recorded.
-    """
-
-    def __init__(self) -> None:
-        self.registered: list[Any] = []
-        self.calls = 0
-
-    async def async_register_static_paths(self, configs) -> None:
-        self.calls += 1
-        for config in configs:
-            if any(existing.url_path == config.url_path for existing in self.registered):
-                raise RuntimeError(f"Duplicate static path: {config.url_path}")
-            self.registered.append(config)
-
-
-class HassStub:
-    """Minimal Home Assistant stub: data bucket, static-path registrar, executor."""
-
-    def __init__(self) -> None:
-        self.data: dict[str, Any] = {DATA_EXTRA_MODULE_URL: UrlManager()}
-        self.http = HttpStub()
-        self.executor_jobs: list[Any] = []
-
-    async def async_add_executor_job(self, target, *args):
-        """Mirror HA's executor offload, recording what got handed off.
-
-        A real worker thread, not an inline call: it is what lets a test tell an
-        event-loop file read apart from an offloaded one.
-        """
-        self.executor_jobs.append(target)
-        return await asyncio.get_running_loop().run_in_executor(None, target, *args)
-
-
-def make_hass(*, manifest: Any = _NO_OVERRIDE) -> HassStub:
+def make_hass(*, manifest: Any = _NO_OVERRIDE) -> HomeAssistant:
     """Hass stub with the frontend's URL manager in place.
+
+    The manager is created by the frontend component's own setup, which nothing
+    here runs — so a test that wants the extra-module loader to work has to put
+    one there, and one that does not gets the KeyError a bare hass gives.
 
     `manifest` seeds what the loader hands back for the `haventory` domain: omit it
     for the shipped manifest, pass a dict to choose the version, pass None to make
     the lookup fail the way it does for an integration HA has not loaded.
     """
-    hass = HassStub()
+    hass = HomeAssistant()
+    hass.data[DATA_EXTRA_MODULE_URL] = UrlManager()
     if manifest is not _NO_OVERRIDE:
         hass.data["__integration_manifests__"] = {"haventory": manifest}
     return hass
@@ -204,21 +172,21 @@ def install_bundle(monkeypatch, hav_init, tmp_path, *, built: bool = True) -> Pa
     return www
 
 
-def extra_js_urls(hass: HassStub) -> set[str]:
+def extra_js_urls(hass: HomeAssistant) -> set[str]:
     return set(hass.data[DATA_EXTRA_MODULE_URL].urls)
 
 
-def registered_panel(hass: HassStub) -> Any:
+def registered_panel(hass: HomeAssistant) -> Any:
     """The HAventory entry in the frontend's panel registry, or None."""
     return hass.data.get(DATA_PANELS, {}).get(PANEL_URL_PATH)
 
 
-def panel_registration_attempts(hass: HassStub) -> list[str]:
+def panel_registration_attempts(hass: HomeAssistant) -> list[str]:
     """Every ``async_register_panel`` call, successful or not (see conftest)."""
     return hass.data.get("__panel_registrations__", [])
 
 
-async def setup_frontend(hav_init, hass: HassStub, entry: ConfigEntry) -> None:
+async def setup_frontend(hav_init, hass: HomeAssistant, entry: ConfigEntry) -> None:
     """The two frontend steps of ``async_setup_entry``, in the order it runs them."""
     await hav_init._register_frontend_module(hass)
     await hav_init._async_apply_sidebar_panel(hass, entry)
@@ -280,8 +248,8 @@ async def test_serves_the_bundle_directory_without_cache_headers(hav_init, tmp_p
 
     await hav_init._register_frontend_module(hass)
 
-    assert len(hass.http.registered) == 1
-    config = hass.http.registered[0]
+    assert len(hass.http.static_paths) == 1
+    config = hass.http.static_paths[0]
     assert config.url_path == STATIC_URL_PATH
     assert config.path == str(tmp_path / "www")
     assert config.cache_headers is False
@@ -312,8 +280,8 @@ async def test_static_path_is_registered_once_across_a_reload(hav_init):
     await hav_init.async_unload_entry(hass, ConfigEntry())
     await hav_init._register_frontend_module(hass)
 
-    assert hass.http.calls == 1
-    assert len(hass.http.registered) == 1
+    assert hass.http.static_path_calls == 1
+    assert len(hass.http.static_paths) == 1
 
 
 @pytest.mark.asyncio
@@ -344,7 +312,7 @@ async def test_skips_everything_when_the_bundle_is_not_built(monkeypatch, tmp_pa
 
     await hav_init._register_frontend_module(hass)
 
-    assert hass.http.registered == []
+    assert hass.http.static_paths == []
     assert lovelace_data.resources.created == []
     assert extra_js_urls(hass) == set()
 
@@ -490,7 +458,7 @@ async def test_registers_bare_url_when_no_executor_is_available(monkeypatch, tmp
     hav_init = import_haventory(monkeypatch, "lovelace_data_key")
     install_bundle(monkeypatch, hav_init, tmp_path)
     hass = make_hass(manifest=None)
-    monkeypatch.delattr(HassStub, "async_add_executor_job")
+    monkeypatch.delattr(HomeAssistant, "async_add_executor_job")
     lovelace_data = MockLovelaceData()
     hass.data["lovelace_data_key"] = lovelace_data
 

@@ -135,16 +135,6 @@ _CORRUPT_SAMPLE_IDS = 3
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
-async def async_setup(hass: HomeAssistant, _config: dict) -> bool:
-    """Set up the HAventory domain at Home Assistant startup.
-
-    Initializes an empty domain bucket in hass.data with no side effects.
-    """
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
-    return True
-
-
 async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) -> bool:
     """Set up HAventory from a config entry."""
     if DOMAIN not in hass.data:
@@ -521,37 +511,6 @@ async def _async_flush_pending_writes(hass: HomeAssistant, *, op: str) -> None:
         )
 
 
-def _cleanup_ws_test_stub_registry(hass: HomeAssistant) -> None:
-    """Take our handlers back out of the offline stub's command registry.
-
-    Real Home Assistant has no API for this, which is why teardown drops the
-    runtime instead; the stub does, and leaving handlers in its list would carry
-    them into the next test.
-    """
-
-    bucket = hass.data.get(DOMAIN) or {}
-    try:  # pragma: no cover - exercised in offline tests only
-        registry = hass.data.get("__ws_commands__")
-        handlers = bucket.get("ws_handlers") or []
-        if isinstance(registry, list) and handlers:
-            for h in handlers:
-                try:
-                    while h in registry:
-                        registry.remove(h)
-                except ValueError:  # pragma: no cover - defensive
-                    LOGGER.debug(
-                        "Failed to remove a WS handler from test stub registry",
-                        extra={"domain": DOMAIN, "op": "unload_ws_stub_cleanup"},
-                    )
-                    break
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.debug(
-            "Failed to cleanup WS handlers from test stub registry",
-            extra={"domain": DOMAIN, "op": "unload_ws_stub_cleanup"},
-            exc_info=True,
-        )
-
-
 async def _async_teardown_entry(hass: HomeAssistant, *, op: str, release_panel: bool) -> None:
     """Give up everything the config entry owns, in the order that keeps it safe.
 
@@ -587,8 +546,6 @@ async def _async_teardown_entry(hass: HomeAssistant, *, op: str, release_panel: 
     if release_panel:
         _remove_sidebar_panel(hass)
 
-    _forget_registration_flags(hass)
-
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry.
@@ -604,42 +561,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unloads, and a reload leaves it alone.
     """
 
-    # Ahead of the teardown, which empties the bucket the handler list lives in.
-    _cleanup_ws_test_stub_registry(hass)
-
-    # Before the teardown too: the entities read the repository out of that
-    # bucket, and an entity still registered against an emptied one reports
-    # unavailable rather than being gone.
+    # Ahead of the teardown that gives up the repository the entities read: an
+    # entity still registered against a released one reports unavailable rather
+    # than being gone.
     unloaded = await _async_unload_platforms(hass, entry)
 
     disabled = getattr(entry, "disabled_by", None) is not None
     await _async_teardown_entry(hass, op="unload", release_panel=disabled)
 
     return unloaded
-
-
-def _forget_registration_flags(hass: HomeAssistant) -> None:
-    """Forget that the WebSocket commands and services were registered.
-
-    Not the runtime — Home Assistant takes that back itself, and a command
-    refuses from the moment the entry stops being `LOADED`. What is left here is
-    bookkeeping: Home Assistant has no API for unregistering a WebSocket command
-    or a service, so the next setup re-registers over the top, and the offline
-    stub registry — which *can* unregister — needs the handler list at this point
-    to take ours back out.
-
-    `_STATIC_PATH_KEY` and `_MEDIA_VIEW_KEY` stay: each records an aiohttp route,
-    which cannot be unregistered and so outlives every entry. Dropping either
-    flag would make the next setup in the same run register the same route a
-    second time.
-    """
-
-    bucket = hass.data.get(DOMAIN)
-    if not isinstance(bucket, dict):
-        return
-
-    for key in ("ws_registered", "services_registered", "ws_handlers"):
-        bucket.pop(key, None)
 
 
 async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:

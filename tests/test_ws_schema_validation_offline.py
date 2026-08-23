@@ -60,10 +60,10 @@ class _Probe:
     async def send(self, frame: dict[str, Any]) -> dict[str, Any]:
         """Dispatch one frame the way a client's would arrive."""
 
-        for handler in self._hass.data.get("__ws_commands__", []):
-            if getattr(handler, "_ws_command", None) == self.command:
-                return await handler(self._hass, RecordingConn(), frame)
-        raise AssertionError("probe command was not registered")
+        handler = self._hass.data.get("__ws_commands__", {}).get(self.command)
+        if handler is None:
+            raise AssertionError("probe command was not registered")
+        return await handler(self._hass, RecordingConn(), frame)
 
 
 def _fresh_hass() -> HomeAssistant:
@@ -213,10 +213,8 @@ async def test_a_refusal_is_answered_on_the_connection() -> None:
     probe = _Probe(hass, {vol.Required("type"): "test/probe", vol.Required("name"): str})
     conn = RecordingConn()
 
-    for handler in hass.data["__ws_commands__"]:
-        if getattr(handler, "_ws_command", None) == probe.command:
-            res = await handler(hass, conn, {"id": 1, "type": "test/probe"})
-            break
+    handler = hass.data["__ws_commands__"][probe.command]
+    res = await handler(hass, conn, {"id": 1, "type": "test/probe"})
 
     assert conn.messages == [res]
     assert res["error"]["code"] == INVALID_FORMAT
