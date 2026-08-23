@@ -273,10 +273,17 @@ export class HVDetailSheet extends LitElement {
         gap: 9px;
         padding: 12px 14px 16px;
       }
+      /* Two labels, half a phone row each — about 176px at 390px. Equal halves
+         while both labels fit in one, which is the look; a label a few pixels
+         longer than its half takes what it needs and the other yields, rather
+         than stacking onto a second line inside a 48px pill. */
       .actions .pair {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: minmax(max-content, 1fr) minmax(max-content, 1fr);
         gap: 10px;
+      }
+      .actions .pair > button {
+        white-space: nowrap;
       }
       /* The pair's other half. It shares the row with an .hv-pill.large, and a
          stretch grid gives both the taller one's height — so a private height

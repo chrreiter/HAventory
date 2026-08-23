@@ -76,7 +76,10 @@ def test_today_is_the_instances_day_and_not_the_utc_one() -> None:
     """The whole fix in one line: 01:30 in Auckland is still yesterday in UTC."""
 
     assert today_local_date() == LOCAL_TODAY
-    assert datetime.now(UTC).date().isoformat() == UTC_TODAY
+    # The frozen instant, not the machine's clock: the pair is a claim about
+    # the zone the household is in, and reading the real day here made the
+    # whole file pass only on the date the constants were written.
+    assert INSTANT_UTC.date().isoformat() == UTC_TODAY
 
 
 @pytest.mark.usefixtures("household_in_new_zealand")

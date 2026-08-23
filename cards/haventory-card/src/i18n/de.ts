@@ -321,7 +321,7 @@ export const de: Record<TranslationKey, string> = {
   'hv.sheet.markDone': 'Erledigt',
   'hv.sheet.markDoneTitle':
     'Diese Erinnerung als erledigt markieren und auf ihren nächsten Termin setzen',
-  'hv.sheet.editDetails': 'Details bearbeiten',
+  'hv.sheet.editDetails': 'Bearbeiten',
   'hv.sheet.editItem': 'Gegenstand bearbeiten',
 
   'hv.editor.heading.new': 'Neuer Gegenstand',
