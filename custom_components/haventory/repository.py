@@ -16,7 +16,7 @@ import copy
 import json
 import uuid
 from collections import deque
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any, TypedDict, TypeVar
@@ -200,15 +200,11 @@ class Repository:
         # Area indexes
         self._locations_by_area_id: dict[str, set[str]] = {}
         self._items_by_area_id: dict[str, set[str]] = {}
-        # Cached name sort keys
-        self._name_sort_key_by_item_id: dict[str, str] = {}
-
         # Location tree indexes
         self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
 
-        # Location Hierarchy Indexes (O(1) subtree lookup)
-        self._location_descendants: dict[str, set[str]] = {}  # loc_id -> all descendant ids
-        self._items_in_subtree: dict[str, set[str]] = {}  # loc_id -> all item ids in subtree
+        # O(1) subtree lookup: loc_id -> every item id in that subtree
+        self._items_in_subtree: dict[str, set[str]] = {}
 
         # What the last load_state could not make sense of; empty on a fresh repo.
         self._last_load_report = LoadReport()
@@ -380,7 +376,7 @@ class Repository:
             self._checked_out_item_ids.add(item_key)
 
         # low stock
-        if self._is_low_stock(item):
+        if item_is_low_stock(item):
             self._low_stock_item_ids.add(item_key)
 
         # location direct membership
@@ -391,9 +387,6 @@ class Repository:
             eff_area_id = self.effective_area_id(str(item.location_id))
             if eff_area_id is not None:
                 self._add_to_bucket(self._items_by_area_id, eff_area_id, item_key)
-
-        # cached sort key for name
-        self._name_sort_key_by_item_id[item_key] = normalize_text_for_sort(item.name)
 
         # Update subtree index
         self._add_item_to_subtree_index(item)
@@ -419,8 +412,6 @@ class Repository:
             # Remove from any area buckets (area could have changed since indexing)
             self._remove_item_from_all_area_buckets(item_key)
 
-        self._name_sort_key_by_item_id.pop(item_key, None)
-
         # Remove from subtree index
         self._remove_item_from_subtree_index(item)
 
@@ -428,14 +419,14 @@ class Repository:
         self._items_by_id.pop(item_key, None)
 
     def _remove_item_from_all_area_buckets(self, item_key: str) -> None:
-        # Defensive: remove an item id from every area bucket
-        for area_key in list(self._items_by_area_id.keys()):
-            s = self._items_by_area_id.get(area_key)
-            if not s:
-                continue
-            s.discard(item_key)
-            if not s:
-                self._items_by_area_id.pop(area_key, None)
+        """Drop an item from every area bucket.
+
+        The item's own area is derived from a tree that may since have moved,
+        so the bucket it is in cannot be worked out from the item alone.
+        """
+
+        for area_key in list(self._items_by_area_id):
+            self._remove_from_bucket(self._items_by_area_id, area_key, item_key)
 
     def effective_area_id(self, location_key: str) -> str | None:
         """Return the area a location sits in, walking ancestors to find it.
@@ -455,12 +446,15 @@ class Repository:
         return None
 
     def _reindex_item_replacement(self, old: Item, new: Item) -> None:
-        # Efficiently reindex by removing old and adding new
+        """Swap one item for its successor across every index.
+
+        In this order: unindexing ends by dropping the id from the primary
+        store, so indexing the replacement first would leave the repository
+        without it.
+        """
+
         self._unindex_item(old)
         self._index_item(new)
-
-    def _is_low_stock(self, item: Item) -> bool:
-        return item_is_low_stock(item)
 
     # -----------------------------
     # Internal helpers — locations
@@ -577,22 +571,15 @@ class Repository:
             self._locations_by_area_id.setdefault(str(loc.area_id), set()).add(str(loc.id))
 
     def _remove_location(self, loc: Location) -> None:
-        self._locations_by_id.pop(str(loc.id), None)
+        key = str(loc.id)
+        self._locations_by_id.pop(key, None)
         parent_key: str | None = str(loc.parent_id) if loc.parent_id is not None else None
-        children = self._children_ids_by_parent_id.get(parent_key)
-        if children is not None:
-            children.discard(str(loc.id))
-            if not children:
-                self._children_ids_by_parent_id.pop(parent_key, None)
-        # Remove dedicated children bucket if any
-        self._children_ids_by_parent_id.pop(str(loc.id), None)
-        # area index
+        self._remove_from_bucket(self._children_ids_by_parent_id, parent_key, key)
+        # The node's own children bucket, empty by now: deletion refuses a
+        # location that still has children.
+        self._children_ids_by_parent_id.pop(key, None)
         if loc.area_id is not None:
-            s = self._locations_by_area_id.get(str(loc.area_id))
-            if s is not None:
-                s.discard(str(loc.id))
-                if not s:
-                    self._locations_by_area_id.pop(str(loc.area_id), None)
+            self._remove_from_bucket(self._locations_by_area_id, str(loc.area_id), key)
 
     def _update_location_area_index(
         self, *, location_key: str, old_area: str | None, new_area: str | None
@@ -600,13 +587,9 @@ class Repository:
         """Maintain the locations-by-area index for a single location id."""
 
         if old_area is not None:
-            s = self._locations_by_area_id.get(old_area)
-            if s is not None:
-                s.discard(location_key)
-                if not s:
-                    self._locations_by_area_id.pop(old_area, None)
+            self._remove_from_bucket(self._locations_by_area_id, old_area, location_key)
         if new_area is not None:
-            self._locations_by_area_id.setdefault(new_area, set()).add(location_key)
+            self._add_to_bucket(self._locations_by_area_id, new_area, location_key)
 
     def _collect_descendant_ids(self, root_id: str) -> set[str]:
         """Collect all descendant location IDs (excluding the root itself)."""
@@ -705,32 +688,19 @@ class Repository:
         )
 
     def _rebuild_location_hierarchy_indexes(self) -> None:
-        """Rebuild location-based hierarchy indexes from scratch."""
-        self._location_descendants.clear()
+        """Rebuild the subtree index from scratch.
+
+        A location with no items under it gets no entry: an empty bucket reads
+        the same as an absent one everywhere the index is consulted.
+        """
+
         self._items_in_subtree.clear()
-
-        # Build descendants map
         for loc_id in self._locations_by_id:
-            descendants = self._collect_descendant_ids(loc_id)
-            if descendants:
-                self._location_descendants[loc_id] = descendants
-
-        # Build items in subtree map
-        # For each location, gather items from itself and all descendants
-        for loc_id in self._locations_by_id:
-            subtree_ids = {loc_id}
-            if loc_id in self._location_descendants:
-                subtree_ids.update(self._location_descendants[loc_id])
-
-            # Aggregate items
-            all_items: set[str] = set()
-            for sub_id in subtree_ids:
-                s = self._items_by_location_id.get(sub_id)
-                if s:
-                    all_items.update(s)
-
-            if all_items:
-                self._items_in_subtree[loc_id] = all_items
+            in_subtree: set[str] = set()
+            for sub_id in (loc_id, *self._collect_descendant_ids(loc_id)):
+                in_subtree.update(self._items_by_location_id.get(sub_id, ()))
+            if in_subtree:
+                self._items_in_subtree[loc_id] = in_subtree
 
     def _add_item_to_subtree_index(self, item: Item) -> None:
         if not item.location_id:
@@ -1317,7 +1287,7 @@ class Repository:
         # handed to _paginate rather than left as a local rearrangement.
         low_stock_first = bool(flt and flt.get("low_stock_first"))
         if low_stock_first:
-            sorted_items.sort(key=lambda it: not self._is_low_stock(it))
+            sorted_items.sort(key=lambda it: not item_is_low_stock(it))
 
         # Normalize sort for cursor tracking
         if sort is None:
@@ -1355,12 +1325,16 @@ class Repository:
         """Aggregate counts for ``haventory/stats``, ``haventory/health`` and events.
 
         ``status_counts`` covers every defined slug, including the default one
-        the index deliberately does not bucket. The two legacy
-        ``missing_count`` / ``needs_repair_count`` keys stay beside it: one
-        shape serves all three surfaces, and dropping them would move the card
-        in the same release that widens the vocabulary.
+        the index deliberately does not bucket. ``missing_count`` and
+        ``needs_repair_count`` name two of those slugs a second time, on their
+        own keys, because the card reads them there.
+
+        One ``today`` serves every date count, so a call that spans midnight
+        answers about one day rather than two.
         """
 
+        today = today_local_date()
+        items = self._items_by_id.values()
         items_with_location = sum(len(ids) for ids in self._items_by_location_id.values())
         flagged_total = sum(len(ids) for ids in self._status_to_item_ids.values())
         status_counts = {
@@ -1375,11 +1349,25 @@ class Repository:
             "items_total": len(self._items_by_id),
             "low_stock_count": len(self._low_stock_item_ids),
             "checked_out_count": len(self._checked_out_item_ids),
-            "overdue_count": self._count_overdue(),
-            "checked_out_due_count": self._count_checked_out_due(),
-            "inspection_overdue_count": self._count_inspection_overdue(),
-            "inspection_due_count": self._count_inspection_due(),
-            "reminder_due_count": self._count_reminder_due(),
+            "overdue_count": self._count(
+                self._checked_out_items(), lambda it: item_is_overdue(it, today=today)
+            ),
+            # A superset of the one above: the two differ by exactly the items
+            # due back today, the relation the inspection pair also has.
+            "checked_out_due_count": self._count(
+                self._checked_out_items(), lambda it: item_is_due(it, today=today)
+            ),
+            "inspection_overdue_count": self._count(
+                items, lambda it: item_inspection_is_overdue(it, today=today)
+            ),
+            "inspection_due_count": self._count(
+                items, lambda it: item_inspection_is_due(it, today=today)
+            ),
+            # Today counts: a reminder names the day it is asking about, so an
+            # item reminding today is one the household still has to act on.
+            "reminder_due_count": self._count(
+                items, lambda it: item_reminder_is_due(it, today=today)
+            ),
             "missing_count": len(self._status_to_item_ids.get("missing", set())),
             "needs_repair_count": len(self._status_to_item_ids.get("needs_repair", set())),
             "status_counts": status_counts,
@@ -1387,75 +1375,29 @@ class Repository:
             "no_location_count": len(self._items_by_id) - items_with_location,
         }
 
-    def _count_overdue(self) -> int:
-        """Count items whose due date has passed.
+    def _count(self, population: Iterable[Item], matches: Callable[[Item], bool]) -> int:
+        """How many of ``population`` the predicate keeps.
 
-        Deliberately not indexed: "overdue" moves with the calendar, so an index
-        would go stale at midnight with no mutation to invalidate it. A due date
-        only exists on a checked-out item, so the walk is over that set rather
-        than the whole inventory.
+        None of the five date counts is indexed, and none can be: each answer
+        moves with the calendar, so a bucket would go stale at midnight with no
+        mutation to invalidate it.
         """
 
-        today = today_local_date()
-        return sum(
-            1
+        return sum(1 for item in population if matches(item))
+
+    def _checked_out_items(self) -> Iterator[Item]:
+        """The checked-out items themselves.
+
+        A due date only exists on a checked-out item, so the two counts about
+        one walk this set rather than the whole inventory. An inspection or
+        reminder date is independent of any check-out, so those three do not.
+        """
+
+        return (
+            item
             for iid in self._checked_out_item_ids
-            if (it := self._items_by_id.get(iid)) is not None and item_is_overdue(it, today=today)
+            if (item := self._items_by_id.get(iid)) is not None
         )
-
-    def _count_checked_out_due(self) -> int:
-        """Count items that are due back, today included.
-
-        Unindexed and over the checked-out set, for the same two reasons as
-        ``_count_overdue``. This is a superset of it: the two differ by exactly
-        the items due back today, the same relation ``_count_inspection_due``
-        has to ``_count_inspection_overdue``.
-        """
-
-        today = today_local_date()
-        return sum(
-            1
-            for iid in self._checked_out_item_ids
-            if (it := self._items_by_id.get(iid)) is not None and item_is_due(it, today=today)
-        )
-
-    def _count_inspection_overdue(self) -> int:
-        """Count items past the date they were next due for inspection.
-
-        Unindexed for the same reason as ``_count_overdue`` — the answer moves
-        with the calendar, and no mutation invalidates it at midnight. The walk
-        covers the whole inventory rather than a subset: an inspection date is
-        independent of any check-out, so any item can carry one.
-        """
-
-        today = today_local_date()
-        return sum(
-            1 for it in self._items_by_id.values() if item_inspection_is_overdue(it, today=today)
-        )
-
-    def _count_inspection_due(self) -> int:
-        """Count items whose inspection is being asked for, today included.
-
-        Unindexed for the same reason as the two above. This is a superset of
-        ``_count_inspection_overdue``: it walks the same population and the two
-        differ by exactly the items whose inspection date is today.
-        """
-
-        today = today_local_date()
-        return sum(
-            1 for it in self._items_by_id.values() if item_inspection_is_due(it, today=today)
-        )
-
-    def _count_reminder_due(self) -> int:
-        """Count items whose reminder has come round.
-
-        Unindexed for the same reason as the two above, and today counts: a
-        reminder names the day it is asking about, so an item reminding today is
-        one the household still has to act on.
-        """
-
-        today = today_local_date()
-        return sum(1 for it in self._items_by_id.values() if item_reminder_is_due(it, today=today))
 
     def count_matching_by_location(self, flt: ItemFilter | None = None) -> dict[str | None, int]:
         """Count filter matches grouped by the item's own location.
@@ -1822,9 +1764,7 @@ class Repository:
         field = sort.get("field")
         order = sort.get("order", "desc")
         if field == "name":
-            return self._name_sort_key_by_item_id.get(str(item.id)) or normalize_text_for_sort(
-                item.name
-            )
+            return normalize_text_for_sort(item.name)
         if field == "quantity":
             return int(item.quantity)
         # The three date fields differ only in which date they read, so they are
@@ -1868,7 +1808,7 @@ class Repository:
 
     def _low_stock_group(self, item: Item) -> int:
         """Which low_stock_first block an item sits in: 0 low-stock, 1 the rest."""
-        return 0 if self._is_low_stock(item) else 1
+        return 0 if item_is_low_stock(item) else 1
 
     def _paginate(
         self,
@@ -2094,9 +2034,7 @@ class Repository:
         self._items_by_location_id = {}
         self._locations_by_area_id = {}
         self._items_by_area_id = {}
-        self._name_sort_key_by_item_id = {}
         self._children_ids_by_parent_id = {}
-        self._location_descendants = {}
         self._items_in_subtree = {}
 
     def _load_statuses(self, raw: object) -> None:
