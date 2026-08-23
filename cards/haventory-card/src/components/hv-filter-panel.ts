@@ -28,6 +28,14 @@ const SORT_FIELDS: readonly SortField[] = [
 const CATEGORY_CHIP_LIMIT = 4;
 
 /**
+ * The same for tags, higher because a household names far more of them than it
+ * names categories — eight is two rows of chips at phone width. Without a cap
+ * the group is as long as the whole vocabulary, and every label is a tab stop
+ * between the sort controls and whatever follows the panel.
+ */
+const TAG_CHIP_LIMIT = 8;
+
+/**
  * The element the location chip discloses, named so `aria-controls` can point at
  * it. The holder stays in the tree whether or not it is open — an `aria-controls`
  * that resolves to nothing announces the chip as controlling nothing — and only
@@ -351,6 +359,7 @@ export class HVFilterPanel extends LitElement {
   @state() private _draft: StoreFilters | null = null;
   @state() private _locationOpen = false;
   @state() private _showAllCategories = false;
+  @state() private _showAllTags = false;
   @state() private _tagDraft = '';
   /** Direction a date row falls back to while it holds no date. */
   @state() private _dateDirection: Record<DateField, 'after' | 'before'> = {
@@ -617,6 +626,15 @@ export class HVFilterPanel extends LitElement {
     // Always show selected tags, even ones typed in that no item carries yet.
     const known = all.map((t) => t.value);
     const extras = f.tags.filter((t) => !known.includes(t));
+    // The category group's cut, with the same rule for a selection past it: the
+    // chip that says the filter is on must not be the one "More…" hides.
+    const shown = this._showAllTags
+      ? all
+      : [
+          ...all.slice(0, TAG_CHIP_LIMIT),
+          ...all.slice(TAG_CHIP_LIMIT).filter((t) => selected.has(t.value)),
+        ];
+    const hidden = all.length - shown.length;
     return html`
       <div class="group">
         <div class="group-head">
@@ -642,7 +660,7 @@ export class HVFilterPanel extends LitElement {
           </span>
         </div>
         <div class="chips">
-          ${all.map(
+          ${shown.map(
             (t) => html`<button
               class="hv-chip toggle tag chip ${selected.has(t.value) ? 'on' : ''}"
               data-testid="filter-tag"
@@ -665,6 +683,17 @@ export class HVFilterPanel extends LitElement {
               ${icon('check', 12)}${tagLabel(t)}
             </button>`,
           )}
+          ${hidden > 0
+            ? html`<button
+                class="hv-chip toggle chip more"
+                data-testid="filter-tag-more"
+                @click=${() => {
+                  this._showAllTags = true;
+                }}
+              >
+                ${t('hv.filter.more')} <span class="hv-tally">${hidden}</span>
+              </button>`
+            : null}
           <label class="field" data-testid="filter-tag-add">
             <span class="hv-sr-only">${t('hv.filter.addTag')}</span>
             <input

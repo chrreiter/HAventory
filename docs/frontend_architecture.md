@@ -172,6 +172,16 @@ pair are ordinary tab stops, so a section is still reached, opened and added to 
 arrows. `ui/roving-list.ts` holds the walk and the key handling; `hv-location-tree` runs the
 same shape for the Locations section behind its own shadow boundary.
 
+`hv-filter-panel` answers the same problem by showing less rather than by moving the stop:
+its category and tag groups draw the first `CATEGORY_CHIP_LIMIT` (4) and `TAG_CHIP_LIMIT`
+(8) chips and collapse the rest behind a "More…" chip carrying the hidden tally, so the
+group costs a fixed handful of tab stops whatever the household has named. A selected value
+past the cut is drawn anyway — the chip that says the filter is on must not be the one
+"More…" hides — and the expansion is per mount, left alone by "Clear all" and by the sheet's
+Cancel. Both lists arrive from `distinct_values` sorted alphabetically, so the cut is the
+head of the alphabet, not the most-used values; the tag group's add field takes any label as
+typed, so nothing has to be expanded to reach one.
+
 Each of the four headings offers a create action, and the three that can be counted state
 how many of their thing there is — Status is the household's own vocabulary, whose size says
 nothing about the inventory the facet navigates. Categories and tags come with their

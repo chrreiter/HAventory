@@ -340,6 +340,105 @@ describe('hv-filter-panel: tags', () => {
   });
 });
 
+/**
+ * A vocabulary larger than the label cap, named so the alphabetical order the
+ * backend sends is also the order these read in.
+ */
+const manyTags = (count: number) =>
+  Array.from({ length: count }, (_, i) => ({
+    value: `tag-${String(i).padStart(2, '0')}`,
+    count: count - i,
+  }));
+
+const withTags = (count: number) => ({ distinct: { ...distinct, tags: manyTags(count) } });
+
+describe('hv-filter-panel: the label cap', () => {
+  it('shows the first eight labels and collapses the tail behind More…', async () => {
+    const el = await mount({}, withTags(30));
+    const shown = all(el, '[data-testid="filter-tag"]').map((c) => c.dataset.value);
+
+    expect(shown).toEqual([
+      'tag-00',
+      'tag-01',
+      'tag-02',
+      'tag-03',
+      'tag-04',
+      'tag-05',
+      'tag-06',
+      'tag-07',
+    ]);
+    const more = q(el, '[data-testid="filter-tag-more"]')!;
+    expect(more.textContent).toContain('22');
+
+    (more as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(all(el, '[data-testid="filter-tag"]')).toHaveLength(30);
+    expect(q(el, '[data-testid="filter-tag-more"]')).toBe(null);
+  });
+
+  // Hiding the one chip that says the filter is on would leave the group
+  // looking untouched.
+  it('keeps a selected label past the cut on screen', async () => {
+    const el = await mount({ tags: ['tag-29'] }, withTags(30));
+    const shown = all(el, '[data-testid="filter-tag"]').map((c) => c.dataset.value);
+
+    expect(shown).toHaveLength(9);
+    expect(shown.at(-1)).toBe('tag-29');
+    expect(q(el, '[data-testid="filter-tag-more"]')!.textContent).toContain('21');
+  });
+
+  it('draws no More… when the household names fewer labels than the cap', async () => {
+    const el = await mount();
+
+    expect(all(el, '[data-testid="filter-tag"]')).toHaveLength(3);
+    expect(q(el, '[data-testid="filter-tag-more"]')).toBe(null);
+  });
+
+  it('still shows a typed label no item carries, with the cap in force', async () => {
+    const el = await mount({ tags: ['nobody-uses-this'] }, withTags(30));
+    const shown = all(el, '[data-testid="filter-tag"]').map((c) => c.dataset.value);
+
+    expect(shown).toHaveLength(9);
+    expect(shown.at(-1)).toBe('nobody-uses-this');
+    // A typed label is not one of the known ones the cut counted.
+    expect(q(el, '[data-testid="filter-tag-more"]')!.textContent).toContain('22');
+    expect(q(el, '[data-testid="filter-tag-add"]')).toBeTruthy();
+  });
+
+  // Expanding is a view preference, not a filter, so clearing the filters
+  // leaves it alone — the same as the category group's.
+  it('stays expanded across a clear and a staged cancel', async () => {
+    const el = await mount({ tags: ['tag-03'] }, { ...withTags(30), mobile: true });
+    (q(el, '[data-testid="filter-tag-more"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    el.clearAll();
+    await el.updateComplete;
+    expect(all(el, '[data-testid="filter-tag"]')).toHaveLength(30);
+
+    el.resetDraft();
+    await el.updateComplete;
+    expect(all(el, '[data-testid="filter-tag"]')).toHaveLength(30);
+  });
+
+  // The point of the cap: a stop per label put the household's whole
+  // vocabulary between the sort controls and whatever follows the panel — the
+  // item list on a desktop, the sheet's Cancel and Show N items on a phone.
+  it('spends the same tab stops on a large vocabulary as on a small one', async () => {
+    const stopsIn = async (count: number) => {
+      const el = await mount({}, withTags(count));
+      const group = q(el, '[data-testid="filter-tag-add"]')!.closest('.group')!;
+      const stops = group.querySelectorAll('button, input, select').length;
+      el.remove();
+      return stops;
+    };
+
+    expect(await stopsIn(122)).toBe(await stopsIn(30));
+    // Eight chips, More…, the any/all pair and the add field.
+    expect(await stopsIn(122)).toBe(12);
+  });
+});
+
 describe('hv-filter-panel: show only vs sort', () => {
   // Sort is a daily toggle and the tag cloud renders every tag the household
   // has, so on a phone anything under it is several screens into the sheet.
@@ -837,9 +936,9 @@ describe('hv-filter-panel: inspection due', () => {
 
 /**
  * The seven chips that hold a filter's on/off state, and the filter that turns
- * each one on. The location chip and "More…" are not among them: the first is a
- * disclosure that names the location it holds, the second only reveals the rest
- * of the category tail.
+ * each one on. The location chip and the two "More…" chips are not among them:
+ * the first is a disclosure that names the location it holds, the others only
+ * reveal the rest of a capped group's tail.
  */
 const STATEFUL_CHIPS: { name: string; sel: string; on: Partial<StoreFilters> }[] = [
   {
@@ -892,8 +991,9 @@ describe('hv-filter-panel: pressed state', () => {
       // Every toggle in the panel paints itself, rows included: a row is a chip
       // in another shape, not a checkbox that paints a box inside it.
       const painted = (b: HTMLElement) => b.classList.contains('on');
+      const skip = ['filter-location', 'filter-category-more', 'filter-tag-more'];
       const toggles = all(el, 'button.chip, button.check').filter(
-        (b) => b.dataset.testid !== 'filter-location' && b.dataset.testid !== 'filter-category-more',
+        (b) => !skip.includes(b.dataset.testid ?? ''),
       );
 
       expect(toggles.length, `mobile=${mobile}`).toBeGreaterThanOrEqual(STATEFUL_CHIPS.length);
