@@ -32,7 +32,9 @@ async def _item(hass: HomeAssistant, name: str = "HVAC filter") -> str:
 
 
 def _today() -> date:
-    return datetime.now(UTC).date()
+    """The day a bump counts from, read off the clock the bump itself reads."""
+
+    return dt_util.now().date()
 
 
 def _freeze(monkeypatch, today: date) -> None:
