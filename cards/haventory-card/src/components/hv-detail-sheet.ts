@@ -627,13 +627,11 @@ export class HVDetailSheet extends LitElement {
   /**
    * The picture strip, or nothing at all when the item has none.
    *
-   * Each figure is a button: tapping one opens the lightbox, which is the only
-   * way to see a photo at a useful size on a phone.
-   *
-   * A picture whose file the backend cannot find is drawn as missing rather
-   * than handed to an `<img>` that can only draw the browser's broken-image
-   * glyph — the same reason the document rows below probe, and the same state a
-   * restore without the media directory puts every photo in.
+   * Each figure is a button: tapping one opens the lightbox, the only way to
+   * see a photo at a useful size on a phone. A picture whose file the backend
+   * cannot find is drawn as missing rather than handed to an `<img>` that can
+   * only show the browser's broken-image glyph — the state a restore without
+   * the media directory puts every photo in, and why the document rows probe.
    */
   private _renderGallery(item: Item) {
     const shots = pictures(item.attachments);
@@ -678,10 +676,9 @@ export class HVDetailSheet extends LitElement {
    * Each row is an anchor to the signed media URL rather than a button that
    * opens one: the URL has to be on the element before the tap, or the popup
    * blocker eats the new tab a handler would open after awaiting a signature.
-   *
    * A reference whose file the backend cannot find is shown as missing instead
-   * of as a link that leads to a 404 — a JSON export carries the metadata and
-   * not the bytes, so a fresh install genuinely can hold one.
+   * of as a link to a 404 — a JSON export carries the metadata and not the
+   * bytes, so a fresh install genuinely can hold one.
    */
   private _renderDocuments(item: Item) {
     const docs = manuals(item.attachments);

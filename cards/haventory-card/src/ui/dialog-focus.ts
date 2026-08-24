@@ -1,15 +1,11 @@
 /**
  * Initial focus and focus return for the card's modal surfaces.
  *
- * Every dialog here closes on Escape via a `keydown` listener on its own panel.
- * That only fires when focus is already inside the panel, and opening a dialog
- * does not move focus on its own — so a dialog opened from the overflow menu
- * left `document.activeElement` on `<body>` and simply ignored Escape.
- *
- * Focusing the panel fixes three things at once: Escape reaches the handler,
- * screen readers announce the dialog, and because the panel carries
- * `tabindex="-1"` a click on non-focusable content inside it keeps focus in the
- * dialog rather than dropping back to the body.
+ * Every dialog closes on Escape through a `keydown` listener on its own panel,
+ * and opening one moves focus nowhere by itself, so the panel takes focus or
+ * Escape never reaches it. `tabindex="-1"` on the panel also has screen readers
+ * announce the dialog and keeps a click on non-focusable content inside it from
+ * dropping focus back to the body.
  */
 
 /** The genuinely focused element, following `activeElement` through shadow roots. */
@@ -24,17 +20,13 @@ export function deepActiveElement(): HTMLElement | null {
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /**
- * Whether the browser is drawing this element, and would therefore let it take
- * focus.
+ * Whether the browser is drawing this element, and would let it take focus.
  *
- * `visibility: hidden` is how this card holds a control in the layout without
- * offering it — the table's row actions are hidden until their row is hovered
- * or focused. `.focus()` on one of those is a silent no-op, so a trap that
- * ended on it would leave focus on its sentinel and never wrap.
- *
- * `checkVisibility` is the browser's own answer and needs a layout to give it.
- * jsdom performs none and does not implement the method; treating everything
- * as drawn there is exactly what a plain `querySelectorAll` would have said.
+ * `visibility: hidden` holds a control in the layout without offering it — the
+ * table's row actions until their row is hovered — and `.focus()` on one is a
+ * silent no-op, so a trap ending there never wraps. jsdom lays nothing out and
+ * implements no `checkVisibility`; treating everything there as drawn is what a
+ * plain `querySelectorAll` says anyway.
  */
 function isRendered(el: HTMLElement): boolean {
   if (typeof el.checkVisibility !== 'function') return true;
@@ -45,18 +37,14 @@ function isRendered(el: HTMLElement): boolean {
  * Every focusable control under `root`, in tab order, descending into the shadow
  * root of any custom element on the way.
  *
- * `querySelectorAll` stops at the first shadow boundary, so on a surface
- * assembled from `hv-*` components it finds only the controls that surface
- * renders itself. A focus trap built on that list picks a first and a last that
- * sit somewhere in the middle of what can actually be reached, and Tab walks
- * straight out of the trap through everything the query could not see.
- *
- * The walk follows the flattened tree, which is the one the tab order is taken
- * from: a host element renders its shadow root in its place, and its light
- * children appear only where a `<slot>` pulls them in. Walking the light
- * children directly instead would collect content that is written but not
- * rendered — the card passes the expanded view's whole empty state to the table
- * as light DOM, and its buttons exist next to every row it is not showing.
+ * `querySelectorAll` stops at the first shadow boundary, so a trap built on it
+ * takes a first and a last from the middle of what can be reached, and Tab
+ * walks straight out through everything the query could not see. The walk
+ * follows the flattened tree, which is where tab order comes from: a host
+ * renders its shadow root in its place and its light children appear only where
+ * a `<slot>` pulls them in. Walking light children directly collects what is
+ * written but not rendered — the card hands the table the expanded view's whole
+ * empty state, buttons and all, beside every row it is not showing.
  */
 export function deepFocusables(root: ParentNode | null | undefined): HTMLElement[] {
   const found: HTMLElement[] = [];
@@ -98,13 +86,11 @@ export class DialogFocus {
    * panel. Acts only on the open/close transitions, so re-renders never pull
    * focus away from whatever the user is typing in.
    *
-   * `onOpenerGone` is the caller's answer to a close whose opener no longer
-   * exists — a row deleted by the action, a photo removed from under the
-   * lightbox. Focus was on the panel that has just been taken out of the
-   * document, so the browser drops it on `<body>`: outside the surface still on
-   * screen, out of reach of the Escape that would close it, and back at the top
-   * of the page for the next Tab. Only the caller knows where focus belongs
-   * instead, so it acts rather than naming an element.
+   * `onOpenerGone` answers a close whose opener is gone — a row deleted by the
+   * action, a photo removed from under the lightbox. Focus sits on the panel
+   * leaving the document, so the browser drops it on `<body>`: outside the
+   * surface still on screen and out of reach of its Escape. Only the caller
+   * knows where focus belongs instead, so it acts rather than naming an element.
    */
   sync(
     open: boolean,

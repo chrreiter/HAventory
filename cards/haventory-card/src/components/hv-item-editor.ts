@@ -96,10 +96,9 @@ const MORE_FIELDS_ID = 'editor-more-fields';
 /**
  * One file the picker is working through, and how it ended up.
  *
- * A failed entry keeps the `File` itself so Retry can send exactly what was
- * picked. Without it the user would have to find the file again — and on a
- * phone that means retaking the photo, because the original came from the
- * camera and was never on disk.
+ * A failed entry keeps the `File` itself so Retry sends exactly what was
+ * picked; without it the user has to find the file again, and on a phone that
+ * means retaking a photo the camera never wrote to disk.
  */
 interface UploadEntry {
   id: string;
@@ -133,12 +132,11 @@ function errorText(err: unknown, fallback = t('hv.editor.upload.failed')): strin
  * The one edit surface: the inline expander, the full view and the mobile sheet.
  *
  * The row expands in place and the location tree opens *inside* the form, so
- * picking a location never stacks a second modal over the edit surface.
- *
- * Every editable field lives here: name, description, quantity, low-stock
- * threshold, category (with suggestions), tags, location, checked-out plus due
- * date, inspection date and typed custom fields. On mobile the rarely-touched
- * half collapses behind one "More fields" disclosure rather than being dropped.
+ * picking a location never stacks a second modal over the edit surface. Every
+ * editable field lives here: name, description, quantity, low-stock threshold,
+ * category (with suggestions), tags, location, checked-out plus due date,
+ * inspection date and typed custom fields — on mobile the rarely-touched half
+ * collapses behind one "More fields" disclosure rather than being dropped.
  */
 @customElement('hv-item-editor')
 export class HVItemEditor extends LitElement {
@@ -211,13 +209,12 @@ export class HVItemEditor extends LitElement {
         grid-column: span 1;
       }
       /* Packed to the top rather than sharing out the row's surplus. A grid
-         item stretches by default, so a cell holding a label and a control grew
-         to whatever the tallest cell in the row needed — the Description
-         textarea — and its two auto rows split the difference between them.
-         That is why the status select came out taller than an input and shorter
-         than the textarea beside it: exactly the midpoint. The same hazard is
-         guarded inside the boxes on the state row, which are stretched on
-         purpose; this closes it at the top. */
+         item stretches by default, so a cell holding a label and a control
+         takes the height of the tallest cell in the row — the Description
+         textarea — and its two auto rows split the difference, leaving a select
+         taller than an input and shorter than the textarea beside it. The boxes
+         on the state row are stretched on purpose and close the same hazard
+         inside themselves. */
       .cell {
         display: grid;
         align-content: start;
@@ -225,13 +222,11 @@ export class HVItemEditor extends LitElement {
         min-width: 0;
       }
       /* Checked out and Due date are two halves of one fact; Next inspection is
-         unrelated to both. The boxes below carry that split visually, so the
-         three fields are never read as three peer settings of the same kind.
-
-         Both boxes take the height of the taller one. Left to size themselves
-         they never agreed — one carries a note, the other three offset chips —
-         and a row of two boxes of different heights reads as four stacked
-         pieces rather than two. */
+         unrelated to both, and the boxes below carry that split visually so the
+         three are never read as three peer settings. Both boxes take the height
+         of the taller one: sized to themselves they disagree — one carries a
+         note, the other three offset chips — and two boxes of different heights
+         read as four stacked pieces rather than two. */
       .state {
         display: grid;
         /* Even halves. At 2fr/1fr the inspection box was narrow enough that its
@@ -302,13 +297,11 @@ export class HVItemEditor extends LitElement {
       /*
        * The button and the due date share a row by construction, not by
        * matching heights: three named rows, and column 1 of the label row is
-       * simply empty because the button carries no label of its own. Aligning
-       * the two halves by hand instead only moved the dead air — top-aligned
-       * put the button level with the *label* opposite it, bottom-aligned put
-       * the gap between the caption and the first control.
-       *
-       * The note spans the box: it says what state both controls are in, not
-       * just the field above it.
+       * empty because the button carries no label of its own. Aligning the two
+       * halves by hand only moves the dead air — top-aligned puts the button
+       * level with the *label* opposite it, bottom-aligned puts the gap between
+       * the caption and the first control. The note spans the box: it says what
+       * state both controls are in, not just the field above it.
        */
       .checkout-body {
         grid-template-columns: 1fr 1fr;
@@ -493,16 +486,15 @@ export class HVItemEditor extends LitElement {
         padding: 4px 0;
       }
       /* The category list is the one holder that must NOT take part in the
-         layout. In flow it grew its own grid cell, which grew the row, which
-         stretched the Location button beside it to ~130px — the form visibly
-         came apart every time the suggestions opened. The location tree below
-         is the opposite case: it is meant to push the form open, so it keeps
-         the in-flow rule above.
+         layout: in flow it grows its own grid cell, which grows the row and
+         stretches the Location button beside it, so the form comes apart every
+         time the suggestions open. The location tree below is the opposite case
+         and keeps the in-flow rule above — it is meant to push the form open.
 
-         Fixed rather than absolute, because the expanded view puts the whole
-         form inside an editor-holder that is max-height 70dvh with
-         overflow-y auto, and an absolute list would be clipped by it. Same
-         technique the checkout popover and the overflow menu already use. */
+         Fixed rather than absolute: the expanded view puts the whole form
+         inside an editor-holder that is max-height 70dvh with overflow-y auto,
+         and an absolute list would be clipped by it. Same technique the
+         checkout popover and the overflow menu use. */
       .list-holder.floating {
         position: fixed;
         margin-top: 0;
@@ -746,15 +738,13 @@ export class HVItemEditor extends LitElement {
         font: 400 12px var(--hv-font);
         color: var(--hv-text-secondary);
       }
-      /* The id is not read, it is pasted — printed in full and offered to one
-         tap: user-select: all takes the whole uuid from a single click or
-         long-press, which is the copy route left when the browser has no
-         clipboard API (Home Assistant over plain http:// is not a secure
-         context). A uuid carries no space to break at, so it is allowed to
-         break anywhere rather than push the button off a phone's row.
-         A row of its own above the actions, never a fourth control inside
-         them: that row is Delete, Cancel and Save, and at 375px the three of
-         them have 343px to spend. */
+      /* The id is not read, it is pasted: user-select: all takes the whole uuid
+         from a single click or long-press, which is the copy route left when
+         the browser has no clipboard API (Home Assistant over plain http:// is
+         not a secure context). A uuid carries no space to break at, so it may
+         break anywhere rather than push the button off a phone's row — and it
+         takes a row of its own above Delete, Cancel and Save, which have 343px
+         to spend at 375px. */
       .id-row {
         display: flex;
         align-items: center;
@@ -771,13 +761,11 @@ export class HVItemEditor extends LitElement {
         user-select: all;
       }
       /* Delete is hv-text-button danger from the shared sheet — the same
-         borderless red every other destructive action in the card uses (the
-         detail sheet's own Delete item, the organize dialog's Delete).
-         The row is Delete, Cancel and Save, and only three labels wide: at
-         375px it has 343px to spend, which German's full "Gegenstand löschen"
-         overruns by 9px and drops Save onto a line of its own. That is why the
-         narrow branch shows the bare verb; wrap stays as the last resort for a
-         language longer still. */
+         borderless red every other destructive action in the card uses. The row
+         is Delete, Cancel and Save, and only three labels wide: at 375px it has
+         343px, which German's full "Gegenstand löschen" overruns by 9px and
+         drops Save onto a line of its own. Hence the bare verb on the narrow
+         branch; wrap is the last resort for a language longer still. */
       .actions {
         display: flex;
         align-items: center;
@@ -790,13 +778,12 @@ export class HVItemEditor extends LitElement {
          scrolling — a phone sheet, the card's list, and the expanded view,
          which caps the form at 70dvh. The editor answers that itself rather
          than each host growing a pinned footer of its own.
-         Sticky goes on the wrapping cell rather than on .actions: an element
-         only sticks within its containing block, and .actions' parent is
-         exactly as tall as .actions, so it would have had nowhere to move.
-         The cell's containing block is the form grid, which is tall.
-         The negative side margins and the matching padding bleed the opaque
-         bar out to the form's edges — .grid's 18px side padding would otherwise
-         leave the rows it covers showing in two strips either side of it. */
+         Sticky goes on the wrapping cell, not on .actions: an element sticks
+         only within its containing block, and .actions' parent is exactly as
+         tall as .actions, while the cell's is the tall form grid. The negative
+         side margins and matching padding bleed the opaque bar out to the
+         form's edges, which .grid's 18px side padding would otherwise leave
+         showing in two strips either side of it. */
       .actions-cell {
         position: sticky;
         bottom: -14px;
@@ -1280,12 +1267,11 @@ export class HVItemEditor extends LitElement {
    * The form belongs to an item *id*, not to one `item` object.
    *
    * Every host re-binds `.item` from a fresh lookup on each store broadcast, so
-   * an upload finishing — or anyone editing the same row elsewhere — hands this
-   * component a new object for the item the user is still typing into.
-   * Rebuilding on that would throw away everything typed since the last save,
-   * so the reset is keyed on the id: a different one (including the null→id hop
-   * a create makes the moment it saves) is a different form, and everything
-   * else is a refresh the open form absorbs.
+   * an upload finishing — or anyone editing the same row elsewhere — hands the
+   * form a new object for the item being typed into, and rebuilding on that
+   * throws away everything typed since the last save. Keyed on the id, a
+   * different one (including the null→id hop a create makes when it saves) is a
+   * different form; everything else is a refresh the open form absorbs.
    */
   protected willUpdate() {
     this._urls.configure(this.media?.sign ?? null);
@@ -1822,19 +1808,17 @@ export class HVItemEditor extends LitElement {
   /**
    * The checkout, and the one date that is not part of it.
    *
-   * A due date is half of the checkout — it only means anything while an item
+   * A due date is half of the checkout — it means something only while an item
    * is out, which is why it is disabled otherwise and why `commonFields()`
-   * nulls it on save. The inspection date is unrelated to any of that: it is
-   * when the item is next due for inspection, and it stands whether or not
-   * anyone has borrowed it. Laid out as three equal thirds of a row they read
-   * as three settings of the same kind, so the two boxes below carry the
-   * distinction visually, on both widths.
+   * nulls it on save; the inspection date stands whether or not anyone has
+   * borrowed it. As three equal thirds of a row the fields read as three
+   * settings of one kind, so the two boxes below carry the distinction on both
+   * widths.
    *
-   * The state itself is a button rather than a switch. A switch says "this is
-   * a property of the item, set it either way"; checking something out is an
-   * act, so it matches the detail sheet — same words, same icons, so the two
-   * surfaces cannot teach different things. It still writes
-   * `checkedOut` into the form model rather than firing the WS command: this
+   * The state is a button, not a switch: a switch says "a property of the item,
+   * set it either way", and checking out is an act. Same words and icons as the
+   * detail sheet, so the two surfaces cannot teach different things. It writes
+   * `checkedOut` into the form model rather than firing the WS command — this
    * editor also creates items, which have no id to check out yet.
    */
   private _renderStateFields() {
@@ -1919,15 +1903,12 @@ export class HVItemEditor extends LitElement {
   /**
    * A date that comes round again — "change the HVAC filter every 3 months".
    *
-   * Two controls for one setting: the date is when it next comes round, and the
-   * repeat is optional beside it. Leaving the repeat empty is a one-off, which
-   * is why the count is a blank rather than a 1 — a household setting a single
-   * date should not have to clear a number to get one.
-   *
-   * The pair is written with the rest of the form, not through
-   * `haventory/reminder/set`: one save, one version bump, one conflict to
-   * resolve. The dedicated commands exist for automations, where there is no
-   * form to carry the other fields.
+   * Two controls for one setting: the date is when it next comes round, the
+   * repeat is optional beside it, and an empty repeat is a one-off — which is
+   * why the count is blank rather than 1. The pair is written with the rest of
+   * the form, not through `haventory/reminder/set`: one save, one version bump,
+   * one conflict to resolve. The dedicated commands exist for automations,
+   * which have no form to carry the other fields.
    */
   private _renderReminderFields() {
     const model = this._model;
@@ -1993,20 +1974,19 @@ export class HVItemEditor extends LitElement {
    * Checking out asks for a due date; checking in just happens.
    *
    * The same `hv-checkout-popover` the detail sheet uses — quick offsets, a
-   * date, a "no due date" way out. On a wide screen it anchors under the
-   * button; on a phone it expands inside the box. Confirming only patches the form model; the item is written
-   * when the form is saved, which is what lets it work while creating an item
-   * that has no id to check out yet.
+   * date, a "no due date" way out — anchored under the button on a wide screen
+   * and expanded inside the box on a phone. Confirming patches the form model
+   * only; the item is written on save, which is what lets it work while
+   * creating an item that has no id to check out yet.
    */
   /**
    * The same quick jumps the check-out popover offers, on the one date it does
-   * not own. An inspection interval is the kind of thing you know in weeks or
-   * months rather than as a calendar square, and typing a date three months out
-   * means doing the arithmetic yourself. Pressing an offset writes the date into
-   * the field above, so the two controls are one value with two ways in.
-   *
-   * The custom row only appears once "+X days" is pressed: it is the escape
-   * hatch for an interval the three presets do not cover, not a fourth preset.
+   * not own. An inspection interval is known in weeks or months rather than as
+   * a calendar square, and typing a date three months out means doing the
+   * arithmetic yourself; pressing an offset writes the date into the field
+   * above, so the two controls are one value with two ways in. The custom row
+   * appears only once "+X days" is pressed — the escape hatch for an interval
+   * the three presets do not cover, not a fourth preset.
    */
   private _renderInspectionOffsets(current: string) {
     return html`
@@ -2175,12 +2155,10 @@ export class HVItemEditor extends LitElement {
   /**
    * Why this file cannot be uploaded, or null when it can.
    *
-   * A courtesy check against the caps `haventory/config` reports, so an
-   * 80 MB video is refused instantly instead of after a minute of upload. The
-   * backend re-derives all of it from the file's own bytes and is the only
-   * thing that decides.
-   *
-   * A cap the config does not report is not checked here at all: an older
+   * A courtesy check against the caps `haventory/config` reports, so an 80 MB
+   * video is refused instantly instead of after a minute of upload; the backend
+   * re-derives all of it from the file's own bytes and is the only thing that
+   * decides. A cap the config does not report is not checked at all — an older
    * backend that never mentioned documents still enforces its own limit, and
    * guessing one would refuse a file the server would have taken.
    */
@@ -2360,11 +2338,10 @@ export class HVItemEditor extends LitElement {
    *
    * Buttons rather than a drag handle, matching the organize dialog's status
    * rows: one reordering idiom across the card, and both work from a keyboard
-   * without a second implementation beside the pointer one.
-   *
-   * The star is the cover in both directions — filled and inert on the photo
-   * that already is one, a button on every other. The list row and the detail
-   * header show position 0, so which photo that is has to be visible here.
+   * without a second implementation beside the pointer one. The star is the
+   * cover in both directions — filled and inert on the photo that already is
+   * one, a button on every other — because the list row and the detail header
+   * show position 0.
    */
   private _renderPhotoControls(attachmentId: string, index: number, total: number) {
     const move = (delta: number) => () =>
@@ -2530,11 +2507,10 @@ export class HVItemEditor extends LitElement {
    *
    * This form is the only surface a desktop gets: the detail sheet that also
    * prints the id opens on a card element of 600px or less, and in the full
-   * view only below the 700px viewport query — while automation YAML is
-   * written on a wide screen. Last in the grid, below the fields and above the
-   * actions: it is a fact about the item, not something to fill in.
-   *
-   * The create form has no id yet and says nothing rather than showing a blank.
+   * view only below the 700px viewport query — while automation YAML is written
+   * on a wide screen. Last in the grid, below the fields and above the actions:
+   * it is a fact about the item, not something to fill in. The create form has
+   * no id yet and says nothing rather than showing a blank.
    */
   private _renderIdRow() {
     const id = this.item?.id;
@@ -2659,17 +2635,13 @@ export class HVItemEditor extends LitElement {
    * The documents already attached, and the picker that adds one.
    *
    * Each row carries its own title field because a filename is what a scanner
-   * or a manufacturer chose — `scan_0142.pdf` says nothing about which appliance
-   * it belongs to, and the list is unreadable without one. An empty title falls
-   * back to the filename rather than blanking the row.
-   *
-   * No `capture` on this input: a document comes from the file system, and
-   * pointing the control at the camera would put a photo of a page where the
-   * PDF should be.
-   *
-   * Each row can be opened from here as well as from the detail sheet's read
-   * view, because that sheet is a phone surface — on a desktop this form is the
-   * only place a manual is reachable at all.
+   * or a manufacturer chose — `scan_0142.pdf` says nothing about which
+   * appliance it belongs to — and an empty title falls back to the filename
+   * rather than blanking the row. No `capture` on this input: a document comes
+   * from the file system, and pointing the control at the camera would put a
+   * photo of a page where the PDF should be. Each row opens from here as well
+   * as from the detail sheet's read view, which is a phone surface — on a
+   * desktop this form is the only place a manual is reachable at all.
    */
   private _renderDocuments() {
     const item = this._current;
@@ -2750,10 +2722,10 @@ export class HVItemEditor extends LitElement {
   /**
    * What the upload queue is doing, under the section it is doing it to.
    *
-   * A queue rendered below both pickers put a phone's photo uploads two
-   * sections away from the grid the user is watching them fill, and reported a
-   * refused document under "Photos". One list per kind keeps each report beside
-   * the control that started it.
+   * One list per kind keeps each report beside the control that started it: a
+   * single queue below both pickers puts a phone's photo uploads two sections
+   * away from the grid they are filling, and reports a refused document under
+   * "Photos".
    */
   private _renderUploadList(kind: AttachmentKind) {
     const entries = this._uploads.filter((u) => u.kind === kind);

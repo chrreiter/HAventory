@@ -56,14 +56,12 @@ const DATE_KEYS = {
  * Every filter the backend accepts, in one panel — and the same set as a staged
  * bottom-sheet body on mobile.
  *
- * Two pairs are deliberately kept apart because the backend treats them
- * differently: "Low stock" is a filter (`low_stock_only`) while "Low stock
- * first" is an ordering hint (`low_stock_first`), and tags are one selection
- * with an any/all mode that routes to `tags_any` or `tags_all`.
- *
- * Desktop applies each change immediately. Mobile stages edits locally and
- * reports the live match count on the apply button, so the user sees the
- * consequence before committing.
+ * Two pairs stay apart because the backend treats them differently: "Low stock"
+ * is a filter (`low_stock_only`) while "Low stock first" is an ordering hint
+ * (`low_stock_first`), and tags are one selection with an any/all mode routing
+ * to `tags_any` or `tags_all`. Desktop applies each change immediately; mobile
+ * stages edits and prices the apply button, so the consequence is visible
+ * before it is committed.
  */
 @customElement('hv-filter-panel')
 export class HVFilterPanel extends LitElement {
@@ -180,13 +178,11 @@ export class HVFilterPanel extends LitElement {
         font: inherit;
       }
       /*
-       * The comparison is a button, not a caption: it says which field this row
-       * is about *and* which way the comparison runs, and clicking it flips the
-       * direction.
-       *
-       * It carries its own outline and fill against the field's, which is the
-       * smallest treatment that reads as a control at rest — a hover-only
-       * affordance never arrives on a touch screen at all.
+       * The comparison is a button, not a caption: it says which field the row
+       * is about and which way the comparison runs, and clicking it flips the
+       * direction. Its own outline and fill against the field's is the smallest
+       * treatment that reads as a control at rest — a hover-only affordance
+       * never arrives on a touch screen at all.
        */
       .field .direction {
         white-space: nowrap;
@@ -260,15 +256,13 @@ export class HVFilterPanel extends LitElement {
         font-weight: 500;
       }
       /*
-       * A "Show only" row is a chip in another shape, and carries the chip class
-       * to say so: it holds the same filter the wider panel draws as a chip and
-       * announces the same way, so it takes the chip's outline and on-state
-       * rather than restating those tokens — a row that paints a checkbox while
-       * announcing a toggle describes two widgets. Only what a full-width row
-       * needs on top of a chip lives here.
-       *
-       * Five of these stack under "Show only" in the sheet, and pills each sized
-       * to their own label leave that column with a ragged right edge.
+       * A "Show only" row is a chip in another shape and carries the chip class
+       * to say so: same filter, same announcement, so it takes the chip's
+       * outline and on-state rather than restating those tokens — a row that
+       * paints a checkbox while announcing a toggle describes two widgets. Only
+       * what a full-width row needs on top of a chip lives here: five stack
+       * under "Show only" in the sheet, and pills each sized to their own label
+       * leave that column with a ragged right edge.
        */
       :host([mobile]) .check {
         box-sizing: border-box;
@@ -348,11 +342,9 @@ export class HVFilterPanel extends LitElement {
   @property({ type: Boolean, reflect: true }) mobile = false;
   /**
    * Whole-inventory stat counts, which price both the "Show only" rows and the
-   * status chips.
-   *
-   * Every facet in this panel carries a number, so a user can see what a filter
-   * is worth before applying it. Null until the first `haventory/stats` answer
-   * arrives, and then each tally is drawn only where the payload prices it.
+   * status chips, so a user can see what a filter is worth before applying it.
+   * Null until the first `haventory/stats` answer arrives, and then each tally
+   * is drawn only where the payload prices it.
    */
   @property({ attribute: false }) counts: StatsCounts | null = null;
 
@@ -461,13 +453,12 @@ export class HVFilterPanel extends LitElement {
   /**
    * A labelled on/off filter row.
    *
-   * Its state is `aria-pressed`, not a checkbox role: every filter toggle in the
-   * card announces as a pressed toggle button — the app bars' stat pills, the
-   * sidebar's facet rows, this panel's chips — and the "Show only" facets render
-   * as rows here and as chips on a wider screen, so a single facet would
-   * otherwise change vocabulary with the viewport it is read on. The row is
-   * painted to match: it takes the chip's on state, so what the row draws and
-   * what it announces describe the same widget.
+   * Its state is `aria-pressed`, not a checkbox role: every filter toggle in
+   * the card announces as a pressed toggle button, and the "Show only" facets
+   * render as rows here and as chips on a wider screen, so one facet would
+   * otherwise change vocabulary with the viewport it is read on. The row takes
+   * the chip's on state to match, so what it draws and what it announces are
+   * one widget.
    */
   private _renderCheckbox(
     label: string,
@@ -797,10 +788,9 @@ export class HVFilterPanel extends LitElement {
    * The stored item status, as one single-select chip row.
    *
    * Single-select because the backend filter takes exactly one status, and each
-   * chip carries the tone its household picked. Every chip is priced the same
-   * way, so a user choosing what to filter by can see which statuses are worth
-   * filtering by — a backend too old to price them all leaves the rest bare
-   * rather than guessing.
+   * chip carries the tone its household picked. Every chip is priced, so what a
+   * status is worth is visible before it is picked; a backend too old to price
+   * them all leaves the rest bare rather than guessing.
    */
   private _renderStatusGroup() {
     const f = this.working;
