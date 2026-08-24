@@ -43,11 +43,10 @@ from custom_components.haventory.rate_limit import (
 )
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from custom_components.haventory.ws import RATE_LIMITED_MESSAGE
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, repo_of, runtime_of, setup_entry
+from runtime_helpers import install_runtime, repo_of, runtime_of, setup_entry, ws_hass
 from ws_helpers import RecordingConn, ws_send
 
 
@@ -67,13 +66,6 @@ def clock(monkeypatch) -> _FakeClock:
     fake = _FakeClock()
     monkeypatch.setattr(rate_limit_module, "_monotonic", fake)
     return fake
-
-
-def _make_hass(limiter: RateLimiter | None = None) -> HomeAssistant:
-    hass = HomeAssistant()
-    install_runtime(hass, rate_limiter=limiter)
-    ws_setup(hass)
-    return hass
 
 
 def _config(**overrides: Any) -> RateLimitConfig:
@@ -123,7 +115,7 @@ def test_token_bucket_rejects_non_positive_parameters() -> None:
 
 @pytest.mark.asyncio
 async def test_no_limiter_means_unlimited() -> None:
-    hass = _make_hass(limiter=None)
+    hass = ws_hass()
     conn = RecordingConn()
     for i in range(50):
         res = await ws_send(hass, i + 1, "haventory/ping", conn=conn)
@@ -133,7 +125,7 @@ async def test_no_limiter_means_unlimited() -> None:
 @pytest.mark.asyncio
 async def test_disabled_limiter_means_unlimited(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(enabled=False, commands_burst=1.0))
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
     conn = RecordingConn()
     for i in range(50):
         res = await ws_send(hass, i + 1, "haventory/ping", conn=conn)
@@ -154,7 +146,7 @@ def test_default_config_is_disabled() -> None:
 @pytest.mark.asyncio
 async def test_per_connection_command_limit(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(commands_per_second=1.0, commands_burst=2.0))
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
     conn_a = RecordingConn()
     conn_b = RecordingConn()
 
@@ -180,7 +172,7 @@ async def test_per_connection_command_limit(clock: _FakeClock) -> None:
 @pytest.mark.asyncio
 async def test_global_command_limit(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(global_commands_per_second=1.0, global_commands_burst=3.0))
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
 
     conns = [RecordingConn() for _ in range(4)]
     outcomes = []
@@ -195,7 +187,7 @@ async def test_global_command_limit(clock: _FakeClock) -> None:
 @pytest.mark.asyncio
 async def test_rate_limited_command_does_not_execute(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(commands_burst=1.0))
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
     conn = RecordingConn()
 
     res = await ws_send(hass, 1, "haventory/item/create", conn=conn, name="First")
@@ -215,7 +207,7 @@ async def test_rate_limited_command_does_not_execute(clock: _FakeClock) -> None:
 @pytest.mark.asyncio
 async def test_per_connection_event_limit(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(events_per_second=1.0, events_burst=1.0))
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
     subscriber = RecordingConn()
     sub = await ws_send(hass, 100, "haventory/subscribe", conn=subscriber, topic="items")
     assert sub["success"] is True
@@ -236,7 +228,7 @@ async def test_no_budget_consumed_without_matching_subscribers(clock: _FakeClock
     """Events nobody would receive must not consume the global event budget."""
 
     limiter = RateLimiter(_config(global_events_per_second=1.0, global_events_burst=1.0))
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
 
     # No subscribers at all: nothing is consumed or counted.
     for _ in range(3):
@@ -267,7 +259,7 @@ async def test_one_event_consumes_one_token_across_multiple_subscriptions(
     """Two matching subscriptions on one connection share a single event token."""
 
     limiter = RateLimiter(_config(events_per_second=1.0, events_burst=1.0))
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
     conn = RecordingConn()
     assert (await ws_send(hass, 301, "haventory/subscribe", conn=conn, topic="items"))["success"]
     assert (await ws_send(hass, 302, "haventory/subscribe", conn=conn, topic="items"))["success"]
@@ -285,7 +277,7 @@ async def test_one_event_consumes_one_token_across_multiple_subscriptions(
 @pytest.mark.asyncio
 async def test_global_event_limit_drops_for_all_subscribers(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(global_events_per_second=1.0, global_events_burst=1.0))
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
     sub_a = RecordingConn()
     sub_b = RecordingConn()
     assert (await ws_send(hass, 100, "haventory/subscribe", conn=sub_a, topic="items"))["success"]
@@ -304,7 +296,7 @@ async def test_event_drop_does_not_fail_the_command(clock: _FakeClock) -> None:
     limiter = RateLimiter(
         _config(global_events_per_second=1.0, global_events_burst=1.0, commands_burst=1000.0)
     )
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
     subscriber = RecordingConn()
     actor = RecordingConn()
     assert (await ws_send(hass, 100, "haventory/subscribe", conn=subscriber, topic="items"))[
@@ -329,7 +321,7 @@ async def test_event_drop_does_not_fail_the_command(clock: _FakeClock) -> None:
 @pytest.mark.asyncio
 async def test_health_exposes_rate_limit_counters(clock: _FakeClock) -> None:
     limiter = RateLimiter(_config(commands_burst=1.0))
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
     conn = RecordingConn()
     assert (await ws_send(hass, 1, "haventory/ping", conn=conn))["success"] is True
     assert (await ws_send(hass, 2, "haventory/ping", conn=conn))["success"] is False
@@ -343,7 +335,7 @@ async def test_health_exposes_rate_limit_counters(clock: _FakeClock) -> None:
 
 @pytest.mark.asyncio
 async def test_health_reports_disabled_without_limiter() -> None:
-    hass = _make_hass(limiter=None)
+    hass = ws_hass()
     res = await ws_send(hass, 1, "haventory/health", conn=RecordingConn())
     assert res["success"] is True
     assert res["result"]["rate_limit"] == {
@@ -563,7 +555,7 @@ class _ConnWithSubscriptions(RecordingConn):
 
 @pytest.mark.asyncio
 async def test_close_cleanup_registers_in_conn_subscriptions() -> None:
-    hass = _make_hass()
+    hass = ws_hass()
     conn = _ConnWithSubscriptions()
     res = await ws_send(hass, 200, "haventory/subscribe", conn=conn, topic="items")
     assert res["success"] is True
@@ -582,7 +574,7 @@ async def test_rate_limit_state_cleanup_via_conn_subscriptions(clock: _FakeClock
     """Per-connection bucket state is dropped when real HA closes the conn."""
 
     limiter = RateLimiter(_config())
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
     conn = _ConnWithSubscriptions()
     assert (await ws_send(hass, 1, "haventory/ping", conn=conn))["success"] is True
     assert conn in limiter._conn_states

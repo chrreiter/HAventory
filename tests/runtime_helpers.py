@@ -10,6 +10,10 @@ nor a shape real Home Assistant has.
 * :func:`install_runtime` builds the runtime, attaches it to a stub entry and
   registers that entry. Defaults are an empty repository and a real
   `DomainStore`, which is what almost every test wants.
+* ``ws=True`` also registers the WebSocket commands, which setup does in the
+  same breath; :func:`ws_hass` is the whole opening move — a stub Home
+  Assistant with an entry loaded and the commands registered — for the many
+  files whose every test starts there.
 * ``state=`` is what makes the refusals testable: an entry that is not `LOADED`
   is exactly what a WebSocket command or a `haventory.*` service meets after an
   unload, a disable or a removal, and `loaded_runtime` refuses on it.
@@ -38,6 +42,7 @@ from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.runtime import HAventoryRuntime, find_runtime
 from custom_components.haventory.storage import DomainStore
+from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 
@@ -53,6 +58,7 @@ def install_runtime(  # noqa: PLR0913 - one keyword per runtime field, all optio
     options: dict[str, Any] | None = None,
     state: Any = None,
     entry: Any = None,
+    ws: bool = False,
 ) -> HAventoryRuntime:
     """Register one HAventory entry carrying a runtime, and return the runtime."""
 
@@ -73,7 +79,21 @@ def install_runtime(  # noqa: PLR0913 - one keyword per runtime field, all optio
     entry.runtime_data = runtime
     hass.data.setdefault(DOMAIN, {})
     hass.config_entries.add(entry)
+    if ws:
+        ws_setup(hass)
     return runtime
+
+
+def ws_hass(**runtime_fields: Any) -> HomeAssistant:
+    """A Home Assistant with an entry loaded and the WebSocket commands registered.
+
+    Where every `ws_send` test starts. The keywords are `install_runtime`'s, so
+    a test that needs its own repository, store or limiter names it here.
+    """
+
+    hass = HomeAssistant()
+    install_runtime(hass, ws=True, **runtime_fields)
+    return hass
 
 
 def installed_entry(hass: HomeAssistant) -> Any:

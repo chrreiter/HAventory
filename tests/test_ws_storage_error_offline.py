@@ -25,21 +25,16 @@ import pytest
 from custom_components.haventory.exceptions import StorageError
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, runtime_of
+from runtime_helpers import runtime_of, ws_hass
 from ws_helpers import RecordingConn, ws_send
 
 
 def _make_hass() -> tuple[HomeAssistant, Repository, DomainStore]:
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
-    return hass, repo, store
+    hass = ws_hass(repository=repo)
+    return hass, repo, runtime_of(hass).store
 
 
 def _fail_next_save(monkeypatch: pytest.MonkeyPatch, store: DomainStore) -> None:

@@ -28,19 +28,12 @@ from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, repo_of, runtime_of
+from runtime_helpers import repo_of, runtime_of, ws_hass
 from ws_helpers import RecordingConn, ws_send
 
 WS_LOGGER = "custom_components.haventory.ws"
 SERVICES_LOGGER = "custom_components.haventory.services"
 RATE_LIMIT_LOGGER = "custom_components.haventory.rate_limit"
-
-
-def _make_hass(limiter: RateLimiter | None = None) -> HomeAssistant:
-    hass = HomeAssistant()
-    install_runtime(hass, rate_limiter=limiter)
-    ws_setup(hass)
-    return hass
 
 
 def _records(caplog, logger: str = WS_LOGGER) -> list[logging.LogRecord]:
@@ -60,7 +53,7 @@ def _only(caplog, logger: str = WS_LOGGER) -> logging.LogRecord:
 
 @pytest.mark.asyncio
 async def test_validation_error_logs_warning_without_traceback(caplog) -> None:
-    hass = _make_hass()
+    hass = ws_hass()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
     res = await ws_send(hass, 1, "haventory/item/set_quantity", item_id="any", quantity=-1)
@@ -74,7 +67,7 @@ async def test_validation_error_logs_warning_without_traceback(caplog) -> None:
 
 @pytest.mark.asyncio
 async def test_not_found_logs_warning_without_traceback(caplog) -> None:
-    hass = _make_hass()
+    hass = ws_hass()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
     res = await ws_send(
@@ -92,7 +85,7 @@ async def test_not_found_logs_warning_without_traceback(caplog) -> None:
 async def test_conflict_logs_warning_without_traceback(caplog) -> None:
     """A stale ``expected_version`` is an HTTP-409 equivalent, not a crash."""
 
-    hass = _make_hass()
+    hass = ws_hass()
     created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
 
@@ -125,7 +118,7 @@ async def test_rate_limited_logs_warning_without_traceback(caplog) -> None:
             global_events_burst=1000.0,
         )
     )
-    hass = _make_hass(limiter)
+    hass = ws_hass(rate_limiter=limiter)
     # One connection object across both sends: the limiter keys a bucket per
     # connection identity, so a second object would get a fresh budget.
     conn = RecordingConn()
@@ -152,7 +145,7 @@ async def test_rate_limited_logs_warning_without_traceback(caplog) -> None:
 async def test_storage_error_logs_error_with_traceback(caplog, monkeypatch) -> None:
     """The cause chain is the only record of what actually failed to write."""
 
-    hass = _make_hass()
+    hass = ws_hass()
 
     async def _raise(*_args: Any, **_kwargs: Any) -> None:
         raise StorageError("failed to persist repository")
@@ -173,7 +166,7 @@ async def test_storage_error_logs_error_with_traceback(caplog, monkeypatch) -> N
 async def test_unknown_error_logs_error_with_traceback(caplog, monkeypatch) -> None:
     """A non-domain exception has no vetted message, so the traceback is all there is."""
 
-    hass = _make_hass()
+    hass = ws_hass()
 
     def _boom(*_args: Any, **_kwargs: Any) -> None:
         raise RuntimeError("kaboom")
@@ -270,7 +263,7 @@ async def test_a_retrying_client_leaves_no_tracebacks(caplog) -> None:
 async def test_a_real_storage_failure_still_logs_error_with_traceback(caplog, monkeypatch) -> None:
     """The quieter rule is scoped to the refusal, not to the code it maps to."""
 
-    hass = _make_hass()
+    hass = ws_hass()
 
     async def _raise(*_args: Any, **_kwargs: Any) -> None:
         raise StorageError("failed to persist repository")
@@ -309,7 +302,7 @@ async def test_service_not_loaded_refusal_logs_warning_without_traceback(caplog)
 
 @pytest.mark.asyncio
 async def test_bulk_conflict_logs_warning_without_traceback(caplog) -> None:
-    hass = _make_hass()
+    hass = ws_hass()
     created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
 
@@ -338,7 +331,7 @@ async def test_bulk_conflict_logs_warning_without_traceback(caplog) -> None:
 
 @pytest.mark.asyncio
 async def test_bulk_unexpected_error_logs_error_with_traceback(caplog, monkeypatch) -> None:
-    hass = _make_hass()
+    hass = ws_hass()
     created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
 
@@ -374,7 +367,7 @@ async def test_all_failed_bulk_logs_only_its_per_op_lines(caplog) -> None:
     log is already at its longest.
     """
 
-    hass = _make_hass()
+    hass = ws_hass()
     caplog.clear()
     caplog.set_level(logging.DEBUG, logger=WS_LOGGER)
 
@@ -399,7 +392,7 @@ async def test_all_failed_bulk_logs_only_its_per_op_lines(caplog) -> None:
 async def test_partly_successful_bulk_still_logs_its_summary(caplog) -> None:
     """The summary survives where it still says something: a batch that changed state."""
 
-    hass = _make_hass()
+    hass = ws_hass()
     created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
 
@@ -433,7 +426,7 @@ async def test_partly_successful_bulk_still_logs_its_summary(caplog) -> None:
 
 @pytest.mark.asyncio
 async def test_service_conflict_logs_warning_without_traceback(caplog) -> None:
-    hass = _make_hass()
+    hass = ws_hass()
     repo = repo_of(hass)
     await services_mod.service_item_create(hass, {"name": "Widget"})
     item_id = str(repo.list_items()["items"][0].id)
@@ -456,7 +449,7 @@ async def test_service_conflict_logs_warning_without_traceback(caplog) -> None:
 async def test_service_schema_error_logs_warning_without_traceback(caplog) -> None:
     """``vol.Invalid`` is a validation rejection like any other."""
 
-    hass = _make_hass()
+    hass = ws_hass()
     caplog.set_level(logging.DEBUG, logger=SERVICES_LOGGER)
 
     with pytest.raises(vol.Invalid):
@@ -470,7 +463,7 @@ async def test_service_schema_error_logs_warning_without_traceback(caplog) -> No
 
 @pytest.mark.asyncio
 async def test_service_storage_error_logs_error_with_traceback(caplog, monkeypatch) -> None:
-    hass = _make_hass()
+    hass = ws_hass()
 
     async def _raise(*_args: Any, **_kwargs: Any) -> None:
         raise StorageError("failed to persist repository")
