@@ -917,8 +917,10 @@ export class Store {
   }
 
   // ---------- Data fetchers ----------
-  // Reads go through `run` too: a rate-limited read deserves the same backoff,
-  // and a run of transport failures on any call is what "connection lost" means.
+  // Every command the store sends goes through `run`, reads included: a run of
+  // transport failures on any of them is what "connection lost" means, and one
+  // answer that arrives is what takes that back down. The attachment family is
+  // the exception, and says there why.
   async refreshStats() {
     const counts = await this.run(() => this.ws.stats());
     this.stateObs.set({ statsCounts: counts });
@@ -1195,10 +1197,8 @@ export class Store {
     const key = JSON.stringify({ op: 'list', filter, sort, limit, cursor });
     if (this.inflight.has(key)) return this.inflight.get(key) as Promise<void>;
 
-    const p = this.ws
-      .listItems(filter, sort, limit, cursor)
+    const p = this.run(() => this.ws.listItems(filter, sort, limit, cursor))
       .then((res: ListItemsResult) => {
-        this.noteSuccess();
         const merged = reset ? res.items : mergeUniqueById(this.state.value.items, res.items);
         this.stateObs.set({
           items: merged,
@@ -1209,7 +1209,6 @@ export class Store {
         });
       })
       .catch((err: unknown) => {
-        this.noteFailure(err);
         this.stateObs.set({ loading: false });
         this.pushError(err);
       })
@@ -1228,7 +1227,7 @@ export class Store {
    */
   async countMatching(filters: StoreFilters): Promise<number | null> {
     try {
-      const res = await this.ws.listItems(toWireFilter(filters), filters.sort, 1);
+      const res = await this.run(() => this.ws.listItems(toWireFilter(filters), filters.sort, 1));
       return typeof res.total === 'number' ? res.total : null;
     } catch {
       return null;
@@ -1241,7 +1240,7 @@ export class Store {
    * tag/category merge rewrites need, since selection cannot span unloaded pages.
    */
   async listAllMatching(filter: ItemFilter): Promise<Item[]> {
-    const res = await this.ws.listItems(filter);
+    const res = await this.run(() => this.ws.listItems(filter));
     return res.items;
   }
 
@@ -1538,14 +1537,16 @@ export class Store {
    * the tree, the pickers read the flat list. Neither is pushed: the
    * `locations` topic says a change happened, not what the walk now returns.
    */
-  private async afterLocationChange<T>(call: Promise<T>): Promise<T> {
-    const result = await call;
+  private async afterLocationChange<T>(call: () => Promise<T>): Promise<T> {
+    const result = await this.run(call);
     await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
     return result;
   }
 
   async createLocation(name: string, parentId?: string | null, areaId?: string | null): Promise<Location> {
-    return this.afterLocationChange(this.ws.createLocation(name, parentId ?? null, areaId ?? undefined));
+    return this.afterLocationChange(() =>
+      this.ws.createLocation(name, parentId ?? null, areaId ?? undefined),
+    );
   }
 
   async updateLocation(
@@ -1554,17 +1555,17 @@ export class Store {
     // command takes it, so an edit that also moves the location is one trip.
     changes: { name?: string; areaId?: string | null; newParentId?: string | null },
   ): Promise<Location> {
-    return this.afterLocationChange(this.ws.updateLocation(locationId, changes));
+    return this.afterLocationChange(() => this.ws.updateLocation(locationId, changes));
   }
 
   /** Delete an empty location. Rejects with validation_error when it still has children or items. */
   async deleteLocation(locationId: string): Promise<void> {
-    await this.afterLocationChange(this.ws.deleteLocation(locationId));
+    await this.afterLocationChange(() => this.ws.deleteLocation(locationId));
   }
 
   /** Move a whole subtree under a new parent (null = top level). Descendant paths update live. */
   async moveLocationSubtree(locationId: string, newParentId: string | null): Promise<Location> {
-    const moved = await this.afterLocationChange(
+    const moved = await this.afterLocationChange(() =>
       this.ws.moveLocationSubtree(locationId, newParentId),
     );
     // Denormalized item location_path values changed for the whole subtree.
@@ -1579,8 +1580,8 @@ export class Store {
    * Display order is part of the list, so the whole list is read back rather
    * than patched from the one definition the call answered with.
    */
-  private async afterStatusChange<T>(call: Promise<T>): Promise<T> {
-    const result = await call;
+  private async afterStatusChange<T>(call: () => Promise<T>): Promise<T> {
+    const result = await this.run(call);
     await this.refreshStatuses();
     return result;
   }
@@ -1591,7 +1592,7 @@ export class Store {
     color?: StatusColorValue;
     icon?: string;
   }): Promise<StatusDefinition> {
-    return this.afterStatusChange(this.ws.createStatus(status));
+    return this.afterStatusChange(() => this.ws.createStatus(status));
   }
 
   /** Edit presentation. No item moves, so nothing but the vocabulary refreshes. */
@@ -1599,11 +1600,11 @@ export class Store {
     slug: string,
     changes: { label?: string; color?: StatusColorValue; icon?: string },
   ): Promise<StatusDefinition> {
-    return this.afterStatusChange(this.ws.updateStatus(slug, changes));
+    return this.afterStatusChange(() => this.ws.updateStatus(slug, changes));
   }
 
   async reorderStatuses(slugs: string[]): Promise<StatusDefinition[]> {
-    return this.afterStatusChange(this.ws.reorderStatuses(slugs));
+    return this.afterStatusChange(() => this.ws.reorderStatuses(slugs));
   }
 
   /**
@@ -1618,7 +1619,9 @@ export class Store {
    * broadcast.
    */
   async deleteStatus(slug: string, reassignTo?: string): Promise<number> {
-    const { reassigned } = await this.afterStatusChange(this.ws.deleteStatus(slug, reassignTo));
+    const { reassigned } = await this.afterStatusChange(() =>
+      this.ws.deleteStatus(slug, reassignTo),
+    );
     if (reassigned > 0) await Promise.all([this.listItems(true), this.refreshStats()]);
     return reassigned;
   }
@@ -1721,17 +1724,19 @@ export class Store {
    * backup stays self-consistent.
    */
   async exportDocument(scope: 'all' | 'view' = 'all'): Promise<ExportDocument> {
-    return this.ws.exportDocument(scope === 'view' ? toWireFilter(this.state.value.filters) : undefined);
+    return this.run(() =>
+      this.ws.exportDocument(scope === 'view' ? toWireFilter(this.state.value.filters) : undefined),
+    );
   }
 
   /** Validate + classify an import document without mutating state. */
   async previewImport(document: unknown, policy: ImportPolicy): Promise<ImportPreview> {
-    return this.ws.importPreview(document, policy);
+    return this.run(() => this.ws.importPreview(document, policy));
   }
 
   /** Apply an import document, then reload local caches to reflect the new dataset. */
   async executeImport(document: unknown, policy: ImportPolicy): Promise<ImportSummary> {
-    const summary = await this.ws.importExecute(document, policy);
+    const summary = await this.run(() => this.ws.importExecute(document, policy));
     await this.reloadAll();
     return summary;
   }
@@ -1784,8 +1789,7 @@ export class Store {
 
   async refreshItem(itemId: string) {
     try {
-      const latest = await this.ws.getItem(itemId);
-      this.applyOptimistic(latest);
+      this.applyOptimistic(await this.run(() => this.ws.getItem(itemId)));
     } catch (err) {
       this.pushError(err);
     }
