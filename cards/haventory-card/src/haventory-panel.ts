@@ -97,7 +97,6 @@ export class HAventoryPanel extends LitElement {
         this.requestUpdate();
       });
     }
-    this.surfaces.connect();
     this._syncColorScheme();
   }
 
@@ -107,7 +106,6 @@ export class HAventoryPanel extends LitElement {
       this._storeUnsub();
       this._storeUnsub = undefined;
     }
-    this.surfaces.disconnect();
   }
 
   firstUpdated(): void {

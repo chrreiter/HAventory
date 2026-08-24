@@ -1,5 +1,5 @@
 import { html } from 'lit';
-import type { TemplateResult } from 'lit';
+import type { ReactiveControllerHost, TemplateResult } from 'lit';
 import type { ColumnKey } from './store/columns';
 import { loadColumnPrefs, saveColumnPrefs } from './store/columns';
 import { activeFilterCount, defaultFilters } from './store/store';
@@ -8,7 +8,7 @@ import type { ImportPolicy, ImportPreview, ImportSummary } from './store/types';
 import { t, tn } from './i18n';
 import { discardPrompt } from './ui/discard';
 import type { ConfirmDiscard } from './ui/discard';
-import { NARROW_QUERY } from './ui/responsive';
+import { ViewportNarrow } from './ui/responsive';
 import type { OrganizeTab } from './components/hv-organize-dialog';
 import type { OverflowMenuEntry } from './components/hv-overflow-menu';
 import './components/hv-column-picker';
@@ -17,10 +17,11 @@ import './components/hv-organize-dialog';
 import './components/hv-import-sheet';
 import './components/hv-diagnostics-panel';
 
-/** All that these surfaces need from the element hosting them. */
-interface SurfaceHost {
-  requestUpdate(): void;
-}
+/**
+ * All that these surfaces need from the element hosting them: a redraw, and a
+ * lifecycle for the viewport watcher below to hang on.
+ */
+type SurfaceHost = ReactiveControllerHost;
 
 /** What a confirmation prompt needs to say and do. */
 interface ConfirmSpec {
@@ -85,12 +86,7 @@ export class HostSurfaces {
    * expanding the card does not change it — the measured element is still the
    * card underneath.
    */
-  private narrowQuery: MediaQueryList | null = null;
-  private narrow = false;
-  private readonly onNarrowChange = (e: MediaQueryListEvent) => {
-    this.narrow = e.matches;
-    this.host.requestUpdate();
-  };
+  private readonly viewport: ViewportNarrow;
   private pickerOpen = false;
   private confirmSpec: ConfirmSpec | null = null;
   private organizeOpen = false;
@@ -106,27 +102,7 @@ export class HostSurfaces {
     this.host = host;
     this.getStore = getStore;
     this.hooks = hooks;
-  }
-
-  /**
-   * Start watching the viewport. Hosts call this from `connectedCallback`, and
-   * `disconnect()` from the matching teardown — an instance is a plain object
-   * rather than a reactive controller, so it has no lifecycle of its own, and a
-   * listener left behind would keep waking a detached element.
-   *
-   * `matchMedia` is missing in jsdom unless a test provides one; without it the
-   * dialogs take their desktop form, which is the honest default for a host
-   * that cannot say how wide it is.
-   */
-  connect(): void {
-    this.narrowQuery ??= window.matchMedia?.(NARROW_QUERY) ?? null;
-    if (!this.narrowQuery) return;
-    this.narrow = this.narrowQuery.matches;
-    this.narrowQuery.addEventListener('change', this.onNarrowChange);
-  }
-
-  disconnect(): void {
-    this.narrowQuery?.removeEventListener('change', this.onNarrowChange);
+    this.viewport = new ViewportNarrow(host);
   }
 
   /**
@@ -297,7 +273,7 @@ export class HostSurfaces {
   /** Every dialog these surfaces own. Render once, after the host's main UI. */
   renderSurfaces(): TemplateResult {
     const st = this.getStore()?.state.value ?? null;
-    const mobile = this.narrow;
+    const mobile = this.viewport.narrow;
     return html`
       <hv-column-picker
         data-testid="host-columns"

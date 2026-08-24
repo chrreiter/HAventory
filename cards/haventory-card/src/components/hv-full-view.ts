@@ -29,7 +29,7 @@ import { editorErrorText } from '../ui/editor-error';
 import type { ConfirmDiscard } from '../ui/discard';
 import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
 import type { BannerHooks } from '../ui/banners';
-import { NARROW_QUERY } from '../ui/responsive';
+import { ViewportNarrow } from '../ui/responsive';
 import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
@@ -939,7 +939,7 @@ export class HVFullView extends LitElement {
   /**
    * Home Assistant's own narrow flag, forwarded by the panel host.
    *
-   * Distinct from `_narrow` below, which is this surface's own phone
+   * Distinct from `_viewport` below, which is this surface's own phone
    * breakpoint: HA sets this whenever the sidebar is collapsed, at any width.
    */
   @property({ type: Boolean }) narrow = false;
@@ -1018,8 +1018,14 @@ export class HVFullView extends LitElement {
    * editor's three-column desktop grid in 156px + 78px + 78px, with "Low-stock
    * at" wrapping over its own field. A media query cannot set a property, so
    * the same breakpoint is read here and handed down.
+   *
+   * The phone panel drops its draft when it stops being on a phone, so a staged
+   * set held from before the rotation would have the head row counting filters
+   * the controls under it no longer carry.
    */
-  @state() private _narrow = false;
+  private readonly _viewport = new ViewportNarrow(this, () => {
+    this._stagedFilters = null;
+  });
   /**
    * Which of the app bar's two steps the room calls for, as the classes that
    * carry them — see `barSteps`.
@@ -1078,18 +1084,12 @@ export class HVFullView extends LitElement {
     if (this.store && !this._storeUnsub) {
       this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
-    this._narrowQuery ??= window.matchMedia?.(NARROW_QUERY) ?? null;
-    if (this._narrowQuery) {
-      this._narrow = this._narrowQuery.matches;
-      this._narrowQuery.addEventListener('change', this._onNarrowChange);
-    }
   }
 
   disconnectedCallback(): void {
     super.disconnectedCallback();
     this._storeUnsub?.();
     this._storeUnsub = undefined;
-    this._narrowQuery?.removeEventListener('change', this._onNarrowChange);
     this._barObserver?.disconnect();
     this._barTarget = null;
   }
@@ -1123,15 +1123,6 @@ export class HVFullView extends LitElement {
     const next = barSteps(width);
     if (next !== this._barSteps) this._barSteps = next;
   }
-
-  private _narrowQuery?: MediaQueryList | null;
-  private _onNarrowChange = (e: MediaQueryListEvent) => {
-    this._narrow = e.matches;
-    // The panel drops its draft when it stops being on a phone, so a staged set
-    // held from before the rotation would have the head row counting filters
-    // the controls under it no longer carry.
-    this._stagedFilters = null;
-  };
 
   /** Price a staged (not yet applied) filter set, so the footer can be honest. */
   private _priceStaged = debounce((filters: StoreFilters) => {
@@ -1378,7 +1369,7 @@ export class HVFullView extends LitElement {
    * answers the same tap with the same sheet.
    */
   private _openItem(id: string) {
-    if (this._narrow) {
+    if (this._viewport.narrow) {
       this._detailItemId = id;
       return;
     }
@@ -2094,8 +2085,8 @@ export class HVFullView extends LitElement {
               this._filtersOpen = !this._filtersOpen;
               // The phone panel stages its edits, so its head row and its
               // button both have a number to print from the moment it opens.
-              this._stagedFilters = this._filtersOpen && this._narrow ? filters : null;
-              if (this._filtersOpen && this._narrow) this._priceStaged(filters);
+              this._stagedFilters = this._filtersOpen && this._viewport.narrow ? filters : null;
+              if (this._filtersOpen && this._viewport.narrow) this._priceStaged(filters);
             }}
           >
             ${icon('tune', 16)}${t('hv.card.filters')}
@@ -2105,7 +2096,7 @@ export class HVFullView extends LitElement {
                many for 375px: the picker dropped onto a line of its own under
                the chip. The ⋮ menu offers Columns on both hosts, so nothing is
                lost by leaving it as the only route there at this width. -->
-          ${this._narrow
+          ${this._viewport.narrow
             ? null
             : html`<button
                 class="hv-icon-button"
@@ -2255,7 +2246,7 @@ export class HVFullView extends LitElement {
     const allowsPill = (key: QuickFilterKey) => quickFilterAllowed(this.quickFilters, key);
     // The narrow branch dresses these same controls its own way, on its own
     // breakpoint, so the measured steps stand aside for it.
-    const steps = this._narrow ? '' : this._barSteps;
+    const steps = this._viewport.narrow ? '' : this._barSteps;
     const addLabelClass = steps.includes('tight') ? 'add-label hv-sr-only' : 'add-label';
     // One strip, so the pills are what gives when the bar runs out of room —
     // and no strip at all when nothing is flagged, because an empty one is
@@ -2365,7 +2356,7 @@ export class HVFullView extends LitElement {
             @click=${() => this._leaveEditor('new')}
           >
             ${icon('plus', 16)}<span class=${addLabelClass}
-              >${t(this._narrow ? 'hv.card.addShort' : 'hv.card.addItem')}</span
+              >${t(this._viewport.narrow ? 'hv.card.addShort' : 'hv.card.addItem')}</span
             >
           </button>
           <button
@@ -2419,7 +2410,7 @@ export class HVFullView extends LitElement {
             <div class="panel-holder" id=${FILTER_PANEL_ID} ?hidden=${!this._filtersOpen}>
               ${this._filtersOpen
                 ? html`
-                  ${this._narrow ? this._renderPanelHead(filters) : null}
+                  ${this._viewport.narrow ? this._renderPanelHead(filters) : null}
                   <div class="panel-scroll">
                   <hv-filter-panel
                     .statuses=${this.st?.statuses ?? null}
@@ -2432,7 +2423,7 @@ export class HVFullView extends LitElement {
                     .total=${st?.total ?? null}
                     .grandTotal=${counts?.items_total ?? null}
                     .counts=${counts ?? null}
-                    ?mobile=${this._narrow}
+                    ?mobile=${this._viewport.narrow}
                     @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}
                     @stage=${(e: CustomEvent) => {
                       const staged = (e.detail as { filters: StoreFilters }).filters;
@@ -2447,7 +2438,7 @@ export class HVFullView extends LitElement {
                     @clear-filters=${() => this.store?.clearFilters()}
                   ></hv-filter-panel>
                   </div>
-                  ${this._narrow ? this._renderPanelFoot() : null}
+                  ${this._viewport.narrow ? this._renderPanelFoot() : null}
                 `
                 : null}
             </div>
@@ -2474,7 +2465,7 @@ export class HVFullView extends LitElement {
                     .confirmDiscard=${this.confirmDiscard}
                     .busy=${this._editorBusy}
                     .errorMessage=${this._editorError}
-                    ?mobile=${this._narrow}
+                    ?mobile=${this._viewport.narrow}
                     @save=${this._onEditorSave}
                     @cancel=${() => {
                       this._editing = null;
@@ -2503,7 +2494,7 @@ export class HVFullView extends LitElement {
               .columns=${this.columns}
               .sort=${filters.sort as Sort}
               ?selectable=${this._selecting}
-              ?narrow=${this._narrow}
+              ?narrow=${this._viewport.narrow}
               .selection=${selection}
               @sort-change=${(e: CustomEvent) => this._setFilters({ sort: (e.detail as { sort: Sort }).sort })}
               @near-end=${(e: CustomEvent) =>
@@ -2563,7 +2554,7 @@ export class HVFullView extends LitElement {
         <hv-confirm
           data-testid="bulk-confirm"
           ?open=${this._pendingDelete}
-          ?mobile=${this._narrow}
+          ?mobile=${this._viewport.narrow}
           .heading=${t('hv.fullView.deleteHeading', {
             items: counted(selection.size, 'item'),
           })}
@@ -2580,7 +2571,7 @@ export class HVFullView extends LitElement {
           }}
         ></hv-confirm>
 
-        ${this._narrow
+        ${this._viewport.narrow
           ? html`<hv-detail-sheet
               data-testid="full-detail-sheet"
               .statuses=${st?.statuses ?? null}
@@ -2639,7 +2630,7 @@ export class HVFullView extends LitElement {
         <hv-checkout-popover
           data-testid="full-checkout"
           ?open=${this._checkout !== null}
-          ?touch=${this._narrow}
+          ?touch=${this._viewport.narrow}
           .mode=${this._checkout?.mode ?? 'check-out'}
           .item=${this._checkout ? (st?.items.find((i) => i.id === this._checkout!.itemId) ?? null) : null}
           @check-out=${(e: CustomEvent) => {
@@ -2667,7 +2658,7 @@ export class HVFullView extends LitElement {
         <hv-checkout-popover
           data-testid="full-bulk-checkout"
           ?open=${this._pendingBulkCheckout}
-          ?touch=${this._narrow}
+          ?touch=${this._viewport.narrow}
           .itemName=${counted(selection.size, 'item')}
           @check-out=${(e: CustomEvent) => {
             const { dueDate } = e.detail as { dueDate: string | null };
