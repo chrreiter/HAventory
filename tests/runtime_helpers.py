@@ -23,6 +23,9 @@ nor a shape real Home Assistant has.
   against.
 * :func:`runtime_of` and :func:`repo_of` are the read side, for a test that
   asserts on what setup built.
+* :data:`RETIRED_RATE_LIMIT_OPTIONS` is the options an entry that once enabled
+  the WebSocket rate limiter still carries, for the tests that hold setup and
+  the options flow to ignoring them.
 
 The stubs these lean on are installed by ``tests/conftest.py`` at import time,
 so importing Home Assistant here is safe.
@@ -38,7 +41,6 @@ from custom_components.haventory import (
     async_unload_entry,
 )
 from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.runtime import HAventoryRuntime, find_runtime
 from custom_components.haventory.storage import DomainStore
@@ -46,13 +48,28 @@ from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.core import HomeAssistant
 
+# Written as literals rather than imported: no module defines these names any
+# more, and what an upgraded entry carries is decided by the release that wrote
+# it. The values are the tightest a household could have chosen — one command
+# per connection — so a test using them fails loudly if anything reads them.
+RETIRED_RATE_LIMIT_OPTIONS: dict[str, Any] = {
+    "rate_limit_enabled": True,
+    "rate_limit_commands_per_second": 0.1,
+    "rate_limit_commands_burst": 1.0,
+    "rate_limit_global_commands_per_second": 0.1,
+    "rate_limit_global_commands_burst": 1.0,
+    "rate_limit_events_per_second": 0.1,
+    "rate_limit_events_burst": 1.0,
+    "rate_limit_global_events_per_second": 0.1,
+    "rate_limit_global_events_burst": 1.0,
+}
+
 
 def install_runtime(  # noqa: PLR0913 - one keyword per runtime field, all optional
     hass: HomeAssistant,
     *,
     repository: Repository | None = None,
     store: DomainStore | None = None,
-    rate_limiter: RateLimiter | None = None,
     card_title: str = "HAventory",
     quick_filters: list[str] | None = None,
     options: dict[str, Any] | None = None,
@@ -67,11 +84,6 @@ def install_runtime(  # noqa: PLR0913 - one keyword per runtime field, all optio
         repository=repository if repository is not None else Repository(),
         card_title=card_title,
         quick_filters=quick_filters,
-        rate_limiter=(
-            rate_limiter
-            if rate_limiter is not None
-            else RateLimiter(RateLimitConfig.from_options(options))
-        ),
     )
     if entry is None:
         entry = ConfigEntry(options=dict(options or {}))
@@ -88,7 +100,7 @@ def ws_hass(**runtime_fields: Any) -> HomeAssistant:
     """A Home Assistant with an entry loaded and the WebSocket commands registered.
 
     Where every `ws_send` test starts. The keywords are `install_runtime`'s, so
-    a test that needs its own repository, store or limiter names it here.
+    a test that needs its own repository or store names it here.
     """
 
     hass = HomeAssistant()

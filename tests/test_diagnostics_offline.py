@@ -84,17 +84,11 @@ async def test_the_payload_answers_shape_questions() -> None:
         "low_stock_ids",
         "persist_lock",
         "quick_filters",
-        "rate_limiter",
         "repository",
         "store",
         "subscriptions",
         "todo",
     ]
-    assert payload["runtime"]["rate_limit"] == {
-        "enabled": False,
-        "dropped_commands": 0,
-        "dropped_events": 0,
-    }
 
 
 @pytest.mark.asyncio
@@ -155,7 +149,6 @@ async def test_an_unloaded_entry_still_produces_a_payload() -> None:
     assert payload["storage"]["store_schema_version"] is None
     assert payload["storage"]["key"] == STORAGE_KEY
     assert payload["runtime"]["data_keys"] == []
-    assert payload["runtime"]["rate_limit"] is None
     assert payload["options"] == {}
 
 

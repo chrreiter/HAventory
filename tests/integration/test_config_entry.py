@@ -275,7 +275,6 @@ async def test_the_options_flow_stores_a_pill_choice_the_card_then_reads(
             CONF_SIDEBAR_PANEL_ENABLED: True,
             CONF_QUICK_FILTERS: ["overdue", "low_stock"],
             "todo": {},
-            "rate_limit": {},
         },
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY, result
@@ -305,7 +304,6 @@ async def test_the_options_flow_refuses_a_pill_it_does_not_offer(
                 CONF_SIDEBAR_PANEL_ENABLED: True,
                 CONF_QUICK_FILTERS: ["sideways"],
                 "todo": {},
-                "rate_limit": {},
             },
         )
 

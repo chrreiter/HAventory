@@ -1,6 +1,6 @@
 import { css, html } from 'lit';
 import type { TemplateResult } from 'lit';
-import { t, tn } from '../i18n';
+import { t } from '../i18n';
 import { icon } from './icons';
 import type { Store } from '../store/store';
 import type { StoreState } from '../store/types';
@@ -47,9 +47,9 @@ export interface BannerHooks {
 /**
  * Conditions that make the surface untrustworthy, said out loud.
  *
- * Rate limiting can drop subscription events silently and events carry no
- * sequence number, so a client cannot detect a gap on its own — the honest move
- * is to say it might be stale and offer the re-read.
+ * Events carry no sequence number, so a client that missed one cannot detect
+ * the gap on its own — the honest move is to say the list might be stale and
+ * offer the re-read.
  */
 export function renderDegradedBanners(st: StoreState | null, hooks: BannerHooks): TemplateResult | null {
   const degraded = st?.degraded;
@@ -69,13 +69,8 @@ export function renderDegradedBanners(st: StoreState | null, hooks: BannerHooks)
       </button>
     </hv-banner>`);
   } else if (degraded.liveUpdates !== 'live') {
-    // Ranked above the generic rate-limit warning below: that one says events
-    // *may* have been dropped, this one says there are no events at all.
     const retrying = degraded.liveUpdates === 'retrying';
-    const cause =
-      degraded.liveUpdatesReason === 'unavailable'
-        ? t('hv.banner.liveUpdates.cause.unavailable')
-        : t('hv.banner.liveUpdates.cause.rateLimited');
+    const cause = t('hv.banner.liveUpdates.cause.unavailable');
     banners.push(html`<hv-banner
       kind="warning"
       glyph="clock"
@@ -95,26 +90,6 @@ export function renderDegradedBanners(st: StoreState | null, hooks: BannerHooks)
           >
             ${t('hv.action.refresh')}
           </button>`}
-    </hv-banner>`);
-  } else if (degraded.retrying > 0) {
-    banners.push(html`<hv-banner
-      kind="warning"
-      glyph="clock"
-      heading=${t('hv.banner.retrying.heading')}
-      message=${tn('hv.banner.retrying.message', degraded.retrying)}
-      data-testid="degraded-retrying"
-    ></hv-banner>`);
-  } else if (degraded.rateLimited) {
-    banners.push(html`<hv-banner
-      kind="warning"
-      glyph="clock"
-      heading=${t('hv.banner.rateLimited.heading')}
-      message=${t('hv.banner.rateLimited.message')}
-      data-testid="degraded-rate-limited"
-    >
-      <button slot="actions" class="hv-pill outline" data-testid="degraded-refresh" @click=${hooks.onRefresh}>
-        ${t('hv.action.refresh')}
-      </button>
     </hv-banner>`);
   }
 

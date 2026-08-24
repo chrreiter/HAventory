@@ -275,11 +275,7 @@ export class HostSurfaces {
   private get diagnosticsBadge(): string | null {
     const st = this.getStore()?.state.value ?? null;
     if (!st) return null;
-    const rate = st.healthCache?.rate_limit;
-    const dropped = (rate?.dropped_commands ?? 0) + (rate?.dropped_events ?? 0);
-    if (dropped > 0) return t('hv.surfaces.badge.dropped', { count: dropped });
-    if (st.degraded.connectionLost) return t('hv.surfaces.badge.offline');
-    return null;
+    return st.degraded.connectionLost ? t('hv.surfaces.badge.offline') : null;
   }
 
   /** Every dialog these surfaces own. Render once, after the host's main UI. */

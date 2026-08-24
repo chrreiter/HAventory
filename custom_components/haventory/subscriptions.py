@@ -321,25 +321,7 @@ def broadcast_event(
         if payload:
             event.update(payload)
 
-        # Collect matching deliveries first so budgets are only consumed for
-        # events somebody would actually receive.
-        deliveries = _collect_event_deliveries(hass, topic, payload)
-        if not deliveries:
-            return
-
-        # The limiter is resolved without the loaded check: a broadcast can run
-        # during teardown, while the entry is no longer `LOADED`.
-        runtime = find_runtime(hass)
-        limiter = runtime.rate_limiter if runtime is not None else None
-        if limiter is not None and not limiter.allow_event_broadcast():
-            # Global event budget exhausted: drop this event entirely.
-            return
-
-        for conn, sub_ids in deliveries:
-            # One event delivered to a connection consumes one token,
-            # regardless of how many of its subscriptions match.
-            if limiter is not None and not limiter.allow_event_send(conn):
-                continue
+        for conn, sub_ids in _collect_event_deliveries(hass, topic, payload):
             for sub_id in sub_ids:
                 _send_event_message(conn, sub_id, event)
     except Exception:  # pragma: no cover - defensive
@@ -381,10 +363,7 @@ def notify_backend_unavailable(hass: HomeAssistant) -> None:
     themselves go with the rest of the runtime immediately after.
 
     The one announcement that is not a mutation, so it is written here rather
-    than through a door in `events.py`: nothing changed, no entity repaints, and
-    it ignores the rate limiter. A connection whose event budget happened to be
-    spent would otherwise be the one client left believing its topics are still
-    live.
+    than through a door in `events.py`: nothing changed and no entity repaints.
     """
 
     for conn, subs in list(open_subscriptions(hass).items()):

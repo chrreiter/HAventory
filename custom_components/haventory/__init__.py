@@ -73,7 +73,6 @@ from .const import (
 )
 from .exceptions import CorruptSchemaVersionError, SchemaDowngradeError, StorageError
 from .logs import context_logger
-from .rate_limit import RateLimitConfig, RateLimiter
 from .repository import LoadReport, Repository
 from .runtime import HAventoryConfigEntry, HAventoryRuntime, find_runtime
 from .storage import (
@@ -146,8 +145,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
         # Heading and pill choice served to the card by `haventory/config`.
         card_title=_resolve_card_title(entry),
         quick_filters=_resolve_quick_filters(entry),
-        # WebSocket rate limiting (off by default; configured via the options flow)
-        rate_limiter=RateLimiter(RateLimitConfig.from_options(getattr(entry, "options", None))),
     )
 
     # A load that had to leave rows behind has to reach the file, or the next
@@ -409,14 +406,11 @@ def _resolve_quick_filters(entry: ConfigEntry) -> list[str] | None:
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: HAventoryConfigEntry) -> None:
-    """Apply changed options: card title, pills, sidebar panel, WS rate limiter."""
+    """Apply changed options: card title, pills, sidebar panel, shopping list."""
     runtime = find_runtime(hass)
     if runtime is not None:
         runtime.card_title = _resolve_card_title(entry)
         runtime.quick_filters = _resolve_quick_filters(entry)
-        runtime.rate_limiter = RateLimiter(
-            RateLimitConfig.from_options(getattr(entry, "options", None))
-        )
     # Covers the toggle and a renamed card alike: the sidebar entry carries the
     # card title, and re-registering is how a changed one reaches the sidebar.
     await _async_apply_sidebar_panel(hass, entry)

@@ -5,7 +5,7 @@ An online run is not clean until the server's own log agrees. Offline tests stub
 Home Assistant, so a path that raises only against the real thing stays green in
 the suite and shows up here — and the taxonomy makes a second, quieter promise
 that no test asserts at all: a rejection the caller can fix and resend
-(``validation_error``, ``not_found``, ``conflict``, ``rate_limited``) is logged
+(``validation_error``, ``not_found``, ``conflict``) is logged
 at WARNING, and only ``storage_error`` / ``unknown_error`` — the codes an
 operator has to act on — reach ERROR with a traceback. A support burden hides in
 the difference.
@@ -53,7 +53,7 @@ from pathlib import Path
 
 # Codes the caller can fix and resend. The taxonomy logs these at WARNING; an
 # ERROR carrying one is the finding.
-RECOVERABLE_CODES = ("validation_error", "not_found", "conflict", "rate_limited")
+RECOVERABLE_CODES = ("validation_error", "not_found", "conflict")
 # The exceptions those codes are mapped from, as they appear on a traceback's
 # last line. A traceback ending in one of these is a rejection; a traceback
 # ending in anything else is a fault.

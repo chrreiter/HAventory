@@ -25,12 +25,14 @@ from custom_components.haventory.exceptions import (
 from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
+from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers.storage import Store as HAStore
 
-from runtime_helpers import repo_of, runtime_of, setup_entry
+from runtime_helpers import RETIRED_RATE_LIMIT_OPTIONS, repo_of, runtime_of, setup_entry
+from ws_helpers import RecordingConn, ws_send
 
 
 def _health_records(caplog) -> list[logging.LogRecord]:
@@ -261,6 +263,38 @@ async def test_setup_entry_defaults_card_title_for_older_entries(monkeypatch) ->
 
     await setup_entry(hass, entry)
     assert runtime_of(hass).card_title == DEFAULT_CARD_TITLE
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_ignores_options_no_release_reads_any_more(monkeypatch) -> None:
+    """An entry carrying retired option keys loads, and nothing acts on them.
+
+    Home Assistant keeps whatever the last save wrote, so a household that once
+    turned the WebSocket rate limiter on still has its nine keys in the entry
+    after upgrading. Setup reads the keys it knows by name, so the rest are
+    inert rather than a reason to refuse the entry — and the values, which used
+    to cap one connection at a single command, cap nothing.
+    """
+
+    hass = HomeAssistant()
+    entry = ConfigEntry(options={CONF_CARD_TITLE: "Pantry", **RETIRED_RATE_LIMIT_OPTIONS})
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    await setup_entry(hass, entry)
+    ws_setup(hass)
+
+    assert runtime_of(hass).card_title == "Pantry"
+
+    conn = RecordingConn()
+    for iden in range(1, 5):
+        assert (await ws_send(hass, iden, "haventory/ping", conn=conn))["success"] is True
+
+    await haven_init._async_options_updated(hass, entry)
+    assert (await ws_send(hass, 5, "haventory/ping", conn=conn))["success"] is True
 
 
 @pytest.mark.asyncio

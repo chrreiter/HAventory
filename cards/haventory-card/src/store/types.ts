@@ -338,15 +338,8 @@ export interface DistinctValues {
   custom_field_keys: string[];
 }
 
-/** Rate-limiter state reported by haventory/health (opt-in; disabled by default). */
-export interface RateLimitHealth {
-  enabled: boolean;
-  dropped_commands: number;
-  dropped_events: number;
-}
-
 /**
- * Result of haventory/health: the store's counts and the rate limiter's state.
+ * Result of haventory/health: the store's counts.
  *
  * `healthy` and `issues` are the backend's index self-check, which now runs in
  * its test suite instead of over a household's store: the pair arrives constant
@@ -357,8 +350,6 @@ export interface HealthResult {
   healthy: boolean;
   issues: string[];
   counts: StatsCounts;
-  /** Present on every real backend; optional so older payloads still type-check. */
-  rate_limit?: RateLimitHealth;
 }
 
 /** Result of haventory/version. */
@@ -684,20 +675,14 @@ export interface StoreFilters {
 /**
  * Conditions that make the card quietly untrustworthy, so it can say so.
  *
- * Rate limiting can reject commands *and silently drop subscription events*, and
- * events carry no sequence number, so a card cannot detect a gap on its own. The
- * contract's stated recovery is that the client re-lists on demand — hence the
- * explicit Refresh action these flags drive.
+ * Subscription events carry no sequence number, so a card that misses one
+ * cannot detect the gap on its own. The contract's stated recovery is that the
+ * client re-lists on demand — hence the explicit Refresh action these flags
+ * drive.
  */
 export interface DegradedState {
-  /** A command or a subscribe came back `rate_limited`. */
-  rateLimited: boolean;
   /** The socket closed and stayed closed, or calls keep failing before they reach a server. */
   connectionLost: boolean;
-  /** Commands currently waiting on an automatic retry. */
-  retrying: number;
-  /** Epoch ms of the next scheduled retry, when one is pending. */
-  nextRetryAt: number | null;
   /** True while reloading after an import replaced the dataset. */
   reloading: boolean;
   /** Whether the topic subscriptions are up, being re-opened, or given up on. */
@@ -718,15 +703,12 @@ export interface DegradedState {
 export type LiveUpdateState = 'live' | 'retrying' | 'paused';
 
 /**
- * What stopped live updates — the two cases read the same to the subscription
- * machinery and completely differently to the person reading the banner.
+ * What stopped live updates.
  *
- * `rate_limited`: the limiter refused the subscribe; the backend is there and
- * the data on screen is current as of the last event.
  * `unavailable`: no config entry owns the data — HAventory is reloading, or has
  * been disabled or removed — so every command is being refused too.
  */
-export type LiveUpdatePause = 'rate_limited' | 'unavailable';
+export type LiveUpdatePause = 'unavailable';
 
 export interface StoreState {
   items: Item[];

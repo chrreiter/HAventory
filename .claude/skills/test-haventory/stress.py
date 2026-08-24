@@ -15,7 +15,6 @@ Subcommands (run one at a time; non-destructive first, `restart` last):
   bulkfuzz     adversarial haventory/items/bulk (whole-batch + per-op + dup op_id)
   subteardown  Fix #2: HA-core unsubscribe_events + dedicated unsubscribe teardown
   statsprobe   subscribe stats, mutate on another conn, count broadcast events
-  ratelimit    enable a tight per-conn budget via the options flow, hammer, disable
   bulk [N]     bulk create scale 250->500->1000 (latency curve) + bulk delete (default 1000)
   races        rename->version invalidation, concurrent rename, adjust serialization
   hammer [SECS] background mixed-op storm for the UI-under-load layer (default 60s)
@@ -530,231 +529,6 @@ async def cmd_fuzz() -> None:
     finally:
         await cleanup_prefix(conn)
         await conn.close()
-
-
-# ----------------------------------------------------------------------------- rate limit
-
-RL_DEFAULTS = {
-    "rate_limit_commands_per_second": 20.0,
-    "rate_limit_commands_burst": 60.0,
-    "rate_limit_global_commands_per_second": 100.0,
-    "rate_limit_global_commands_burst": 200.0,
-    "rate_limit_events_per_second": 50.0,
-    "rate_limit_events_burst": 200.0,
-    "rate_limit_global_events_per_second": 500.0,
-    "rate_limit_global_events_burst": 1000.0,
-}
-
-
-async def _http(
-    session: aiohttp.ClientSession, method: str, path: str, body: dict | None = None
-) -> Any:
-    base = os.environ["HA_BASE_URL"].rstrip("/")
-    token = os.environ["HA_TOKEN"]
-    headers = {"Authorization": f"Bearer {token}"}
-    async with session.request(
-        method, base + path, headers=headers, json=body, timeout=aiohttp.ClientTimeout(total=20)
-    ) as resp:
-        text = await resp.text()
-        try:
-            return json.loads(text)
-        except Exception:  # noqa: BLE001
-            return {"_status": resp.status, "_text": text}
-
-
-async def find_entry_id(session: aiohttp.ClientSession) -> str:
-    entries = await _http(session, "GET", "/api/config/config_entries/entry")
-    if isinstance(entries, dict) and "_status" in entries:
-        raise RuntimeError(f"list entries failed: {entries}")
-    for e in entries:
-        if e.get("domain") == "haventory":
-            return e["entry_id"]
-    raise RuntimeError("no haventory config entry found")
-
-
-async def set_rate_limit(
-    session: aiohttp.ClientSession, *, enabled: bool, **overrides: float
-) -> dict:
-    entry_id = await find_entry_id(session)
-    flow = await _http(
-        session,
-        "POST",
-        "/api/config/config_entries/options/flow",
-        {"handler": entry_id, "show_advanced_options": False},
-    )
-    flow_id = flow.get("flow_id")
-    if not flow_id:
-        raise RuntimeError(f"could not start options flow: {flow}")
-
-    # The form groups the rate-limit knobs into a section, so they must be submitted nested
-    # under that section's name rather than flat, and every top-level key is required — a
-    # partial submit is rejected with "required key not provided". HA seeds each field's
-    # `default` (or, for an optional field such as the to-do list entity, its
-    # `suggested_value`) from the entry's current options, so echoing the returned schema
-    # back preserves the settings this layer is not trying to change. The knobs go into
-    # the one section that holds them: the form has other sections, and a key they do not
-    # declare is rejected as "extra keys not allowed". A field with no value is left out
-    # rather than sent as null — the flow reads an absent optional key as "unset".
-    def _value(field: dict[str, Any]) -> Any:
-        suggested = (field.get("description") or {}).get("suggested_value")
-        return field.get("default") if suggested is None else suggested
-
-    user_input: dict[str, Any] = {}
-    for field in flow.get("data_schema", []):
-        if field.get("type") == "expandable":
-            section = {
-                f["name"]: _value(f) for f in field.get("schema", []) if _value(f) is not None
-            }
-            if any(f["name"] == "rate_limit_enabled" for f in field.get("schema", [])):
-                section.update({"rate_limit_enabled": enabled, **RL_DEFAULTS, **overrides})
-            user_input[field["name"]] = section
-        else:
-            user_input[field["name"]] = _value(field)
-
-    res = await _http(
-        session, "POST", f"/api/config/config_entries/options/flow/{flow_id}", user_input
-    )
-    if res.get("errors"):
-        raise RuntimeError(f"options flow rejected the submit: {res['errors']}")
-    return res
-
-
-async def wait_rl_state(want: bool, timeout: float = 30.0) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            c = await connect()
-            try:
-                h = await health(c)
-            finally:
-                await c.close()
-            if h.get("rate_limit", {}).get("enabled") is want:
-                return True
-        except Exception:  # noqa: BLE001
-            pass
-        await asyncio.sleep(1.5)
-    return False
-
-
-async def cmd_ratelimit() -> None:
-    control = await connect()
-    session = aiohttp.ClientSession()
-    try:
-        print("== RATE LIMIT: enable/disable ==")
-        h0 = await health(control)
-        print(f"  baseline rate_limit={h0.get('rate_limit')}")
-        assert h0["rate_limit"]["enabled"] is False, "expected rate limiting OFF at baseline"
-
-        # enable with a tight PER-CONNECTION command budget; keep globals generous
-        print("\n  enabling: per-conn commands 5/s burst 5; globals 1000/2000 ...")
-        res = await set_rate_limit(
-            session,
-            enabled=True,
-            rate_limit_commands_per_second=5.0,
-            rate_limit_commands_burst=5.0,
-            rate_limit_global_commands_per_second=1000.0,
-            rate_limit_global_commands_burst=2000.0,
-        )
-        print(f"  options-flow result type={res.get('type')}")
-        ok = await wait_rl_state(True, 30)
-        print(f"  rate_limit enabled now: {ok} {'PASS' if ok else '**FAIL**'}")
-        # Everything below asserts on enforcement, which is vacuously satisfied when the
-        # limiter never came up — so stop here rather than report a green run.
-        assert ok, "rate limiting did not turn on; enforcement checks below would be vacuous"
-
-        h_pre = await health(control)
-        dropped_pre = h_pre["rate_limit"]["dropped_commands"]
-
-        # hammer one connection well past the burst
-        hammer = await connect()
-        M = 40
-        unique = f"{PREFIX}rl_create_{uuid.uuid4().hex[:8]}"
-        ids: set[int] = set()
-        # exhaust the per-conn bucket FIRST, then attempt the mutation so it is blocked
-        for _ in range(M):
-            ids.add(await hammer.send_no_wait("haventory/ping"))
-        create_id = await hammer.send_no_wait("haventory/item/create", name=unique, quantity=1)
-        ids.add(create_id)
-        frames = await hammer.collect(ids, timeout=30)
-        rate_limited = sum(
-            1
-            for f in frames.values()
-            if not f.get("success") and f.get("error", {}).get("code") == "rate_limited"
-        )
-        succeeded = sum(1 for f in frames.values() if f.get("success"))
-        # envelope shape check on one rate_limited frame
-        sample = next(
-            (
-                f
-                for f in frames.values()
-                if not f.get("success") and f.get("error", {}).get("code") == "rate_limited"
-            ),
-            None,
-        )
-        print(f"\n  hammer {M + 1} commands: succeeded={succeeded} rate_limited={rate_limited}")
-        print(
-            f"  sample rate_limited envelope: {json.dumps(sample.get('error')) if sample else 'NONE'}"
-        )
-
-        # did the rate-limited create actually NOT mutate?
-        create_frame = frames.get(create_id, {})
-        create_blocked = (not create_frame.get("success")) and create_frame.get("error", {}).get(
-            "code"
-        ) == "rate_limited"
-        listed = (await control.call("haventory/item/list", filter={"q": unique}))["result"][
-            "items"
-        ]
-        created_item = next((it for it in listed if it.get("name") == unique), None)
-        if create_blocked:
-            print(
-                f"  rate-limited create left no item: {'PASS' if created_item is None else '**FAIL (item exists!)**'}"
-            )
-        else:
-            print(f"  (create was not blocked; cleaning up) exists={created_item is not None}")
-            if created_item:
-                await control.call("haventory/item/delete", item_id=created_item["id"])
-
-        # drop counter increased while still enabled
-        h_mid = await health(control)
-        dropped_mid = h_mid["rate_limit"]["dropped_commands"]
-        print(
-            f"  dropped_commands {dropped_pre} -> {dropped_mid} (delta {dropped_mid - dropped_pre}) "
-            f"{'PASS' if dropped_mid - dropped_pre >= rate_limited else '**MISMATCH**'}"
-        )
-        await hammer.close()
-
-        # disable and confirm recovery
-        print("\n  disabling ...")
-        res = await set_rate_limit(session, enabled=False)
-        print(f"  options-flow result type={res.get('type')}")
-        ok = await wait_rl_state(False, 30)
-        print(f"  rate_limit disabled now: {ok} {'PASS' if ok else '**FAIL**'}")
-
-        hammer2 = await connect()
-        ids2: set[int] = set()
-        for _ in range(M):
-            ids2.add(await hammer2.send_no_wait("haventory/ping"))
-        frames2 = await hammer2.collect(ids2, timeout=30)
-        rl2 = sum(
-            1
-            for f in frames2.values()
-            if not f.get("success") and f.get("error", {}).get("code") == "rate_limited"
-        )
-        print(
-            f"  post-disable hammer {M} pings: rate_limited={rl2} "
-            f"{'PASS (full recovery)' if rl2 == 0 else '**STILL LIMITED**'}"
-        )
-        await hammer2.close()
-        await assert_counts_agree(control, "ratelimit/after")
-    finally:
-        # ensure rate limiting is left OFF even on failure
-        try:
-            await set_rate_limit(session, enabled=False)
-        except Exception as exc:  # noqa: BLE001
-            print(f"  WARN: could not reset rate limit off: {exc}")
-        await session.close()
-        await cleanup_prefix(control)
-        await control.close()
 
 
 # ----------------------------------------------------------------------------- bulk fuzz
@@ -1523,7 +1297,6 @@ async def cmd_cleanup() -> None:
 COMMANDS = READ_ONLY_COMMANDS | {
     "fuzz",
     "bulkfuzz",
-    "ratelimit",
     "bulk",
     "races",
     "hammer",
@@ -1572,8 +1345,6 @@ def main() -> None:
         asyncio.run(cmd_fuzz())
     elif cmd == "bulkfuzz":
         asyncio.run(cmd_bulkfuzz())
-    elif cmd == "ratelimit":
-        asyncio.run(cmd_ratelimit())
     elif cmd == "bulk":
         target = int(args[1]) if len(args) > 1 else 1000
         asyncio.run(cmd_bulk(target=target))

@@ -161,7 +161,7 @@ describe('WSClient.subscribe when Home Assistant returns a promise', () => {
   });
 
   it('reports a rejected subscribe through onError', async () => {
-    const err = { code: 'rate_limited', message: 'slow down' };
+    const err = { code: 'storage_error', message: 'repository not initialized' };
     const hass = {
       callWS: () => Promise.resolve(undefined),
       connection: { subscribeMessage: () => Promise.reject(err) },

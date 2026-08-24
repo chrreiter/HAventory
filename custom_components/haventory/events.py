@@ -21,11 +21,6 @@ about the same edit.
 - `notify_status_mutation`, for the status vocabulary: the `statuses` topic and
   nothing else, because a label is neither an item nor a count.
 
-Bus events bypass the rate limiter: it budgets WebSocket subscription traffic,
-and these are internal to Home Assistant. The WebSocket half charged here is
-charged exactly as it is when a WebSocket handler broadcasts, because it is the
-same call.
-
 One thing announced here follows no mutation at all: `async_track_day_rollover`
 broadcasts the counts at the instance's local midnight, because five of them are
 derived from today's date and so move on their own.

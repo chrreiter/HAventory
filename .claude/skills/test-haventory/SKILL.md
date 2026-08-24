@@ -1,6 +1,6 @@
 ---
 name: test-haventory
-description: Run every HAventory test surface — offline unit gate (pytest/ruff/mypy), frontend gate (eslint/vitest/tsc/build), the adversarial online stress regimen (fuzz/bulk/races/rate-limit/restart), the live-update browser smoke, and the online WS pytest smokes. Use when asked to test HAventory, run the gate, lint/typecheck, or smoke / stress / load / fuzz / break-it test the running app.
+description: Run every HAventory test surface — offline unit gate (pytest/ruff/mypy), frontend gate (eslint/vitest/tsc/build), the adversarial online stress regimen (fuzz/bulk/races/restart), the live-update browser smoke, and the online WS pytest smokes. Use when asked to test HAventory, run the gate, lint/typecheck, or smoke / stress / load / fuzz / break-it test the running app.
 ---
 
 HAventory has five test surfaces. Two are **offline** (no HA): the backend gate
@@ -130,7 +130,6 @@ $RUN fuzz          # malformed single-mutation inputs; asserts dataset untouched
 $RUN bulkfuzz      # adversarial haventory/items/bulk
 $RUN subteardown   # HA-core unsubscribe_events teardown (the card's path)
 $RUN statsprobe    # stats broadcast: ~1 counts event per mutation
-$RUN ratelimit     # enable a tight per-conn budget, hammer, disable, confirm recovery
 $RUN races         # rename vs. item versions, concurrent rename, adjust serialization
 $RUN bulk 1000     # create 250→500→1000 (latency curve) + delete; ~3½ min on a 2000-item store
 HA_CONTAINER=home-assistant $RUN restart   # DESTRUCTIVE, last
@@ -144,7 +143,6 @@ $RUN cleanup       # sweep any leftover stress_test_ data
 | `bulkfuzz` | whole-batch rejects, per-op errors, duplicate-op_id loss |
 | `subteardown` | `unsubscribe_events` + dedicated unsubscribe both tear down cleanly |
 | `statsprobe` | counts events broadcast on every mutation |
-| `ratelimit` | per-conn token bucket enforced + full recovery on disable |
 | `bulk [N]` | bulk create/delete scale; prints p50/p95/p99 latency curve |
 | `races` | optimistic-concurrency + serialization under concurrent writers |
 | `hammer [SECS]` | background mixed-op storm (drive the UI under load) |
@@ -211,8 +209,6 @@ not re-verified here.
 - **`stress.py restart` needs `HA_CONTAINER`**, and leaves the container restarted
   (disposable). [Windows/Git Bash] it also needs `MSYS_NO_PATHCONV=1`, or Git Bash rewrites
   the `/config/...` docker path.
-- **`ratelimit` rebuilds the limiter on save** (buckets refill, counters zero) — it samples
-  `dropped_commands` before disabling and always resets rate limiting OFF, even on failure.
 - **Expected non-bugs the layers surface — do NOT file as regressions** (tracked as
   GitHub issues): duplicate bulk `op_id` → silent last-wins loss (issue #197); bulk-create
   p50 grows superlinearly (O(N²) persist, issue #200) — a **WARN**, not a failure.

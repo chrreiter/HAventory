@@ -37,7 +37,6 @@ from homeassistant.core import HomeAssistant
 from . import _CARD_BUNDLE_PATH
 from .const import CONF_CARD_TITLE, CONF_TODO_ENTITY_ID, DOMAIN, INTEGRATION_VERSION
 from .models import ITEM_STATUSES
-from .rate_limit import RateLimiter
 from .repository import Repository
 from .runtime import find_runtime
 from .storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
@@ -105,16 +104,6 @@ def _without_household_status_names(counts: dict[str, Any]) -> dict[str, Any]:
     return {**counts, "status_counts": anonymized}
 
 
-def _rate_limit_block(limiter: RateLimiter | None) -> dict[str, Any] | None:
-    if limiter is None:
-        return None
-    return {
-        "enabled": bool(limiter.enabled),
-        "dropped_commands": limiter.dropped_commands,
-        "dropped_events": limiter.dropped_events,
-    }
-
-
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
@@ -151,11 +140,6 @@ async def async_get_config_entry_diagnostics(
             # registrations Home Assistant cannot hand back, which say whether a
             # route or a panel is already in place.
             "shared_keys": sorted(str(key) for key in (hass.data.get(DOMAIN) or {})),
-            "rate_limit": _rate_limit_block(
-                runtime.rate_limiter
-                if runtime is not None and isinstance(runtime.rate_limiter, RateLimiter)
-                else None
-            ),
         },
         "options": async_redact_data(dict(getattr(entry, "options", None) or {}), _REDACT_OPTIONS),
         "frontend_bundle": bundle,

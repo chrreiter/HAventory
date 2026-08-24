@@ -52,17 +52,10 @@ export const de: Record<TranslationKey, string> = {
   'hv.banner.connectionLost.action': 'Neu verbinden',
   'hv.banner.liveUpdates.heading': 'Live-Aktualisierungen pausiert',
   'hv.banner.liveUpdates.cause.unavailable': 'HAventory ist nicht verfügbar',
-  'hv.banner.liveUpdates.cause.rateLimited': 'Ratenbegrenzung aktiv',
   'hv.banner.liveUpdates.retrying':
     ' · {cause}. Es wird automatisch erneut versucht; bis dahin kann diese Liste veraltet sein.',
   'hv.banner.liveUpdates.stalled':
     ' · {cause}. Diese Liste kann veraltet sein, bis du aktualisierst.',
-  'hv.banner.retrying.heading': 'Beschäftigt – wird wiederholt',
-  'hv.banner.retrying.message.one': ' · {count} Änderung in der Warteschlange',
-  'hv.banner.retrying.message.other': ' · {count} Änderungen in der Warteschlange',
-  'hv.banner.rateLimited.heading': 'Ratenbegrenzung aktiv',
-  'hv.banner.rateLimited.message':
-    ' · einige Live-Aktualisierungen wurden möglicherweise verworfen, daher kann diese Liste veraltet sein.',
   'hv.banner.reloading.heading': 'Das Inventar wurde durch einen Import ersetzt',
   'hv.banner.reloading.message': ' · wird neu geladen …',
   'hv.banner.conflict.heading': 'Jemand anderes hat diesen Gegenstand geändert.',
@@ -397,7 +390,6 @@ export const de: Record<TranslationKey, string> = {
   'hv.surfaces.menu.exportView': 'Aktuelle Ansicht exportieren',
   'hv.surfaces.menu.exportViewSub': 'Aktiver Filter · behält Ortspfade',
   'hv.surfaces.menu.import': 'Backup importieren …',
-  'hv.surfaces.badge.dropped': '{count} verworfen',
   'hv.surfaces.badge.offline': 'offline',
   'hv.surfaces.columnsHeading': 'Spalten der vollen Ansicht',
   'hv.surfaces.importCheckFailed': 'Dieses Dokument konnte nicht geprüft werden.',
@@ -533,7 +525,6 @@ export const de: Record<TranslationKey, string> = {
   'hv.bulk.failure.conflict':
     'Konflikt – seit dem Laden von einem anderen Client geändert.',
   'hv.bulk.failure.notFound': 'Nicht gefunden – vor diesem Lauf gelöscht.',
-  'hv.bulk.failure.rateLimited': 'Ratenbegrenzung – versuche es in ein paar Sekunden erneut.',
   'hv.bulk.failure.rejected': 'Abgelehnt – {message}',
   'hv.bulk.failure.storage':
     'Nicht gespeichert – die Integration konnte nicht in den Speicher schreiben.',
@@ -585,13 +576,8 @@ export const de: Record<TranslationKey, string> = {
   'hv.diagnostics.notLive': 'Nicht live',
   'hv.diagnostics.notLiveDetail':
     ' – die Abonnements sind unterbrochen, die Liste ändert sich also nur beim Aktualisieren.',
-  'hv.diagnostics.degraded': 'Eingeschränkt',
-  'hv.diagnostics.degradedDetail':
-    ' – die Ratenbegrenzung greift. Einige Befehle und Live-Aktualisierungen werden verworfen.',
   'hv.diagnostics.noIssues': 'Keine Probleme',
   'hv.diagnostics.noIssuesDetail': ' · live',
-  'hv.diagnostics.commandsRejected': 'Befehle abgelehnt',
-  'hv.diagnostics.eventsDropped': 'Ereignisse verworfen',
   'hv.diagnostics.sinceLastRefresh': 'Seit der letzten Aktualisierung',
   'hv.diagnostics.subscriptions': 'Abonnements',
   'hv.diagnostics.subscriptionsLive': 'Gegenstände · Orte · Statistik – live',
@@ -600,12 +586,8 @@ export const de: Record<TranslationKey, string> = {
   'hv.diagnostics.loadedValue': '{loaded} von {items} · {locations}',
   'hv.diagnostics.unknownItems': '? Gegenstände',
   'hv.diagnostics.unknownLocations': '? Orte',
-  'hv.diagnostics.rateLimiting': 'Ratenbegrenzung',
-  'hv.diagnostics.enabled': 'aktiv',
-  'hv.diagnostics.off': 'aus',
   'hv.diagnostics.integrationVersion': 'Version der Integration',
-  'hv.diagnostics.healthyNote':
-    'Eine gesunde Integration meldet hier nichts. Die Zähler bleiben bei null, solange die Ratenbegrenzung nicht aktiviert ist und greift.',
+  'hv.diagnostics.healthyNote': 'Eine gesunde Integration meldet hier nichts.',
   'hv.diagnostics.copyReport': 'Bericht kopieren',
 
   'hv.import.title': 'Backup importieren',

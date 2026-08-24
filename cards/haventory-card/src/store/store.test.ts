@@ -415,15 +415,11 @@ describe('Store', () => {
     const store = new Store(hass);
     await store.init();
 
-    const health = store.state.value.healthCache;
-    expect(health).toBeTruthy();
-    expect(health?.counts.items_total).toBe(1);
-    expect(health?.rate_limit?.dropped_events).toBe(0);
+    expect(store.state.value.healthCache?.counts.items_total).toBe(1);
 
-    // The limiter starts dropping → refreshHealth picks it up
-    hass.__setHealth({ rate_limit: { enabled: true, dropped_commands: 2, dropped_events: 5 } });
+    await store.createItem({ name: 'B' });
     await store.refreshHealth();
-    expect(store.state.value.healthCache?.rate_limit?.dropped_events).toBe(5);
+    expect(store.state.value.healthCache?.counts.items_total).toBe(2);
   });
 
   it('deleteLocation removes an empty location and refreshes caches', async () => {

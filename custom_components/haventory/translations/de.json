@@ -48,32 +48,6 @@
             "data_description": {
               "todo_entity_id": "Jede To-do-Liste, die dieses Home Assistant kennt, auch eine, die der Haushalt schon gemeinsam nutzt. HAventory rührt immer nur die Zeilen an, die es selbst geschrieben hat – eine Liste, die du für anderes verwendest, kannst du also bedenkenlos wählen."
             }
-          },
-          "rate_limit": {
-            "name": "WebSocket-Ratenbegrenzung",
-            "description": "Begrenzt, wie schnell ein Client HAventory nutzen darf: Befehle über dem Budget werden abgelehnt statt ausgeführt, und überzählige Live-Update-Ereignisse werden verworfen. Standardmäßig aus – normale Kartennutzung kommt nie in die Nähe. Schalte sie ein, wenn etwas mit HAventory spricht, das du nicht ganz unter Kontrolle hast, etwa ein Wandpanel, das dauernd neu verbindet, oder ein Skript in einer Schleife; lass sie bei großen Importen und Belastungstests aus. Was die einzelnen Einstellungen bedeuten und woran du erkennst, ob die Begrenzung greift: {docs_url}",
-            "data": {
-              "rate_limit_enabled": "WebSocket-Ratenbegrenzung aktivieren",
-              "rate_limit_commands_per_second": "Befehle pro Sekunde (ein Client)",
-              "rate_limit_commands_burst": "Befehls-Burst (ein Client)",
-              "rate_limit_global_commands_per_second": "Befehle pro Sekunde (alle Clients)",
-              "rate_limit_global_commands_burst": "Befehls-Burst (alle Clients)",
-              "rate_limit_events_per_second": "Live-Update-Ereignisse pro Sekunde (ein Client)",
-              "rate_limit_events_burst": "Live-Update-Ereignis-Burst (ein Client)",
-              "rate_limit_global_events_per_second": "Live-Update-Ereignisse pro Sekunde (alle Clients)",
-              "rate_limit_global_events_burst": "Live-Update-Ereignis-Burst (alle Clients)"
-            },
-            "data_description": {
-              "rate_limit_enabled": "Solange sie aus ist, wird nichts begrenzt und die Werte darunter werden ignoriert.",
-              "rate_limit_commands_per_second": "Dauerhafte Anfragen, die ein Client senden darf. Standard 20.",
-              "rate_limit_commands_burst": "Anfragen, die ein Client nach einer Ruhephase direkt hintereinander senden darf. Standard 60.",
-              "rate_limit_global_commands_per_second": "Dauerhafte Anfragen über alle Clients zusammen. Standard 100.",
-              "rate_limit_global_commands_burst": "Anfragen, die alle Clients zusammen direkt hintereinander senden dürfen. Standard 200.",
-              "rate_limit_events_per_second": "Dauerhafte Ereignisse, die einem Client gesendet werden dürfen. Standard 50.",
-              "rate_limit_events_burst": "Ereignisse, die einem Client nach einer ruhigen Phase direkt hintereinander gesendet werden dürfen. Standard 200.",
-              "rate_limit_global_events_per_second": "Dauerhafte Ereignisse über alle Clients zusammen. Standard 500.",
-              "rate_limit_global_events_burst": "Ereignisse, die allen Clients zusammen direkt hintereinander gesendet werden dürfen. Standard 1000."
-            }
           }
         }
       }

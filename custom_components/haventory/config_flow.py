@@ -19,28 +19,10 @@ from homeassistant.helpers.selector import (
 from .const import (
     CONF_CARD_TITLE,
     CONF_QUICK_FILTERS,
-    CONF_RATE_LIMIT_COMMANDS_BURST,
-    CONF_RATE_LIMIT_COMMANDS_PER_SECOND,
-    CONF_RATE_LIMIT_ENABLED,
-    CONF_RATE_LIMIT_EVENTS_BURST,
-    CONF_RATE_LIMIT_EVENTS_PER_SECOND,
-    CONF_RATE_LIMIT_GLOBAL_COMMANDS_BURST,
-    CONF_RATE_LIMIT_GLOBAL_COMMANDS_PER_SECOND,
-    CONF_RATE_LIMIT_GLOBAL_EVENTS_BURST,
-    CONF_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND,
     CONF_SIDEBAR_PANEL_ENABLED,
     CONF_TODO_ENTITY_ID,
     DEFAULT_CARD_TITLE,
     DEFAULT_QUICK_FILTERS,
-    DEFAULT_RATE_LIMIT_COMMANDS_BURST,
-    DEFAULT_RATE_LIMIT_COMMANDS_PER_SECOND,
-    DEFAULT_RATE_LIMIT_ENABLED,
-    DEFAULT_RATE_LIMIT_EVENTS_BURST,
-    DEFAULT_RATE_LIMIT_EVENTS_PER_SECOND,
-    DEFAULT_RATE_LIMIT_GLOBAL_COMMANDS_BURST,
-    DEFAULT_RATE_LIMIT_GLOBAL_COMMANDS_PER_SECOND,
-    DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_BURST,
-    DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND,
     DEFAULT_SIDEBAR_PANEL_ENABLED,
     DEFAULT_TODO_ENTITY_ID,
     DOMAIN,
@@ -55,35 +37,15 @@ from .todo_bridge import TODO_DOMAIN, TODO_FEATURE_DELETE_ITEM_NAME
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
 
-# Form-only keys grouping fields into collapsible blocks. Both are presentation
-# devices: `_flatten_options` folds the blocks away again, so the stored options
-# — and everything reading them — stay flat.
-SECTION_RATE_LIMIT = "rate_limit"
+# Form-only key grouping fields into a collapsible block. A presentation device:
+# `_flatten_options` folds the block away again, so the stored options — and
+# everything reading them — stay flat.
 SECTION_TODO = "todo"
 
 # Ordered as the form shows them, and the one list `_flatten_options` folds. A
 # section added to the schema and not to this tuple would be stored nested,
 # where nothing looks for it.
-OPTION_SECTIONS: tuple[str, ...] = (SECTION_TODO, SECTION_RATE_LIMIT)
-
-# Filled into the rate-limit section's `{docs_url}`. Translation strings may not
-# contain URLs (hassfest rejects them), so the link target is supplied as a
-# description placeholder instead. A section description renders as plain text —
-# unlike a step description, markdown in it is shown verbatim and newlines
-# collapse — so it carries the bare URL and stays one paragraph.
-RATE_LIMIT_DOCS_URL = "https://github.com/chrreiter/HAventory/blob/main/docs/rate_limiting.md"
-
-# (option key, default) pairs for the numeric rate-limit tunables.
-_RATE_LIMIT_NUMBER_OPTIONS: tuple[tuple[str, float], ...] = (
-    (CONF_RATE_LIMIT_COMMANDS_PER_SECOND, DEFAULT_RATE_LIMIT_COMMANDS_PER_SECOND),
-    (CONF_RATE_LIMIT_COMMANDS_BURST, DEFAULT_RATE_LIMIT_COMMANDS_BURST),
-    (CONF_RATE_LIMIT_GLOBAL_COMMANDS_PER_SECOND, DEFAULT_RATE_LIMIT_GLOBAL_COMMANDS_PER_SECOND),
-    (CONF_RATE_LIMIT_GLOBAL_COMMANDS_BURST, DEFAULT_RATE_LIMIT_GLOBAL_COMMANDS_BURST),
-    (CONF_RATE_LIMIT_EVENTS_PER_SECOND, DEFAULT_RATE_LIMIT_EVENTS_PER_SECOND),
-    (CONF_RATE_LIMIT_EVENTS_BURST, DEFAULT_RATE_LIMIT_EVENTS_BURST),
-    (CONF_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND, DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_PER_SECOND),
-    (CONF_RATE_LIMIT_GLOBAL_EVENTS_BURST, DEFAULT_RATE_LIMIT_GLOBAL_EVENTS_BURST),
-)
+OPTION_SECTIONS: tuple[str, ...] = (SECTION_TODO,)
 
 
 def clean_card_title(value: Any) -> str:
@@ -185,33 +147,6 @@ def _user_schema() -> vol.Schema:
     )
 
 
-def _rate_limit_schema(current: dict[str, Any]) -> vol.Schema:
-    """Build the rate-limit section's schema, defaulting to the stored options."""
-    fields: dict[Any, Any] = {
-        vol.Required(
-            CONF_RATE_LIMIT_ENABLED,
-            default=bool(current.get(CONF_RATE_LIMIT_ENABLED, DEFAULT_RATE_LIMIT_ENABLED)),
-        ): bool
-    }
-    for key, default in _RATE_LIMIT_NUMBER_OPTIONS:
-        # Bucket capacities below one token would block ALL traffic (a bucket
-        # never holding a whole token can never grant one) — require >= 1.
-        minimum = 1.0 if key.endswith("_burst") else 0.1
-        fields[vol.Required(key, default=float(current.get(key, default)))] = vol.All(
-            vol.Coerce(float), vol.Range(min=minimum)
-        )
-    return vol.Schema(fields)
-
-
-def _rate_limit_is_default(current: dict[str, Any]) -> bool:
-    """Whether every rate-limit option still sits at its shipped default."""
-    if bool(current.get(CONF_RATE_LIMIT_ENABLED, DEFAULT_RATE_LIMIT_ENABLED)):
-        return False
-    return all(
-        float(current.get(key, default)) == default for key, default in _RATE_LIMIT_NUMBER_OPTIONS
-    )
-
-
 def _options_schema(current: dict[str, Any]) -> vol.Schema:
     """Build the options-flow schema, defaulting to the stored options."""
     return vol.Schema(
@@ -220,9 +155,7 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
                 CONF_CARD_TITLE,
                 default=clean_card_title(current.get(CONF_CARD_TITLE, DEFAULT_CARD_TITLE)),
             ): str,
-            # Top level rather than inside the section below: it decides whether
-            # HAventory is visible at all, which is nothing to do with rate
-            # limiting. Entries predating the option have no value and read as on.
+            # Entries predating the option have no value and read as on.
             vol.Required(
                 CONF_SIDEBAR_PANEL_ENABLED,
                 default=bool(
@@ -247,15 +180,6 @@ def _options_schema(current: dict[str, Any]) -> vol.Schema:
                 _todo_schema(current),
                 {"collapsed": not clean_todo_entity_id(current.get(CONF_TODO_ENTITY_ID))},
             ),
-            # Collapsed while the whole block is untouched, so the common case
-            # is a form with one field; a customized limiter opens expanded
-            # rather than hiding the values behind a header. No default on the
-            # marker: the frontend would take it as the section's initial data
-            # and render every field inside it blank, defaults and all.
-            vol.Required(SECTION_RATE_LIMIT): section(
-                _rate_limit_schema(current),
-                {"collapsed": _rate_limit_is_default(current)},
-            ),
         }
     )
 
@@ -271,7 +195,12 @@ def _flatten_options(user_input: dict[str, Any]) -> dict[str, Any]:
 
 
 class HAventoryOptionsFlowHandler(config_entries.OptionsFlow):
-    """Handle HAventory options (card title, sidebar, pills, WS rate limiting)."""
+    """Handle HAventory options (card title, sidebar, pills, shopping list).
+
+    The form is the whole of what an entry's options may hold: `async_create_entry`
+    replaces them wholesale, so a key an older release wrote and this one no longer
+    offers is read by nothing and is gone the next time this form is saved.
+    """
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage the options."""
@@ -289,11 +218,7 @@ class HAventoryOptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=options)
 
         current = dict(getattr(self.config_entry, "options", None) or {})
-        return self.async_show_form(
-            step_id="init",
-            data_schema=_options_schema(current),
-            description_placeholders={"docs_url": RATE_LIMIT_DOCS_URL},
-        )
+        return self.async_show_form(step_id="init", data_schema=_options_schema(current))
 
 
 class HAventoryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]  # HA ConfigFlow domain= kwarg; HA is not installed for mypy

@@ -528,8 +528,6 @@ export function describeFailure(failure: BulkFailure): string {
       return t('hv.bulk.failure.conflict');
     case 'not_found':
       return t('hv.bulk.failure.notFound');
-    case 'rate_limited':
-      return t('hv.bulk.failure.rateLimited');
     case 'validation_error':
       // The backend's own sentence, framed by the card's — the message text
       // itself is not translated, as #190's notes settle.

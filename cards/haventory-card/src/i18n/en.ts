@@ -52,16 +52,9 @@ export const en = {
   'hv.banner.connectionLost.action': 'Reconnect',
   'hv.banner.liveUpdates.heading': 'Live updates paused',
   'hv.banner.liveUpdates.cause.unavailable': 'HAventory is not available',
-  'hv.banner.liveUpdates.cause.rateLimited': 'rate limited',
   'hv.banner.liveUpdates.retrying':
     ' · {cause}. Retrying automatically; this list may be out of date until then.',
   'hv.banner.liveUpdates.stalled': ' · {cause}. This list may be out of date until you refresh.',
-  'hv.banner.retrying.heading': 'Busy — retrying',
-  'hv.banner.retrying.message.one': ' · {count} change queued',
-  'hv.banner.retrying.message.other': ' · {count} changes queued',
-  'hv.banner.rateLimited.heading': 'Rate limited',
-  'hv.banner.rateLimited.message':
-    ' · some live updates may have been dropped, so this list can be out of date.',
   'hv.banner.reloading.heading': 'Inventory was replaced by an import',
   'hv.banner.reloading.message': ' · reloading…',
   // Also what an open editor says about a rejected save — one sentence for one
@@ -424,7 +417,6 @@ export const en = {
   'hv.surfaces.menu.exportView': 'Export current view',
   'hv.surfaces.menu.exportViewSub': 'Active filter · Keeps location paths',
   'hv.surfaces.menu.import': 'Import backup…',
-  'hv.surfaces.badge.dropped': '{count} dropped',
   'hv.surfaces.badge.offline': 'offline',
   'hv.surfaces.columnsHeading': 'Full view columns',
   'hv.surfaces.importCheckFailed': 'Could not check that document.',
@@ -569,7 +561,6 @@ export const en = {
   'hv.bulk.itemFallback': 'Item',
   'hv.bulk.failure.conflict': 'Conflict — changed by another client since you loaded it.',
   'hv.bulk.failure.notFound': 'Not found — deleted before this ran.',
-  'hv.bulk.failure.rateLimited': 'Rate limited — try again in a few seconds.',
   'hv.bulk.failure.rejected': 'Rejected — {message}',
   'hv.bulk.failure.storage': "Couldn't save — the integration failed to write to storage.",
   'hv.bulk.failure.fallback': 'Failed.',
@@ -623,13 +614,8 @@ export const en = {
   'hv.diagnostics.notLive': 'Not live',
   'hv.diagnostics.notLiveDetail':
     ' — subscriptions are down, so the list only changes when you refresh.',
-  'hv.diagnostics.degraded': 'Degraded',
-  'hv.diagnostics.degradedDetail':
-    ' — rate limiting is active. Some commands and live updates are being dropped.',
   'hv.diagnostics.noIssues': 'No issues',
   'hv.diagnostics.noIssuesDetail': ' · live',
-  'hv.diagnostics.commandsRejected': 'Commands rejected',
-  'hv.diagnostics.eventsDropped': 'Events dropped',
   'hv.diagnostics.sinceLastRefresh': 'Since last refresh',
   'hv.diagnostics.subscriptions': 'Subscriptions',
   'hv.diagnostics.subscriptionsLive': 'items · locations · stats — live',
@@ -638,12 +624,8 @@ export const en = {
   'hv.diagnostics.loadedValue': '{loaded} of {items} · {locations}',
   'hv.diagnostics.unknownItems': '? items',
   'hv.diagnostics.unknownLocations': '? locations',
-  'hv.diagnostics.rateLimiting': 'Rate limiting',
-  'hv.diagnostics.enabled': 'enabled',
-  'hv.diagnostics.off': 'off',
   'hv.diagnostics.integrationVersion': 'Integration version',
-  'hv.diagnostics.healthyNote':
-    'A healthy integration reports nothing here. The counters stay at zero unless rate limiting is enabled and tripped.',
+  'hv.diagnostics.healthyNote': 'A healthy integration reports nothing here.',
   'hv.diagnostics.copyReport': 'Copy report',
 
   // hv-import-sheet.

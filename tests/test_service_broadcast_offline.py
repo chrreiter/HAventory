@@ -11,8 +11,6 @@ asserted. What these cover is the fan-out itself:
   once, so folding the broadcast into `events.notify_mutation` did not start
   sending two
 - a batch sends one counts event, not one per row
-- the rate limiter charges the WebSocket half exactly as it did, and charges the
-  bus half nothing
 """
 
 from __future__ import annotations
@@ -21,10 +19,8 @@ from typing import Any
 
 import pytest
 from custom_components.haventory import events as events_mod
-from custom_components.haventory import rate_limit as rate_limit_module
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import EVENT_ITEM_CHANGED
-from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
@@ -34,9 +30,9 @@ from ws_helpers import ITEM_ACTIONS, RecordingConn, ws_send
 _BULK_ROWS = 3
 
 
-def _hass(limiter: RateLimiter | None = None) -> HomeAssistant:
+def _hass() -> HomeAssistant:
     hass = HomeAssistant()
-    install_runtime(hass, rate_limiter=limiter)
+    install_runtime(hass)
     ws_setup(hass)
     events_mod.seed_low_stock_snapshot(hass)
     return hass
@@ -226,47 +222,3 @@ async def test_a_bulk_command_sends_one_counts_event_for_the_batch() -> None:
 
     assert _actions(conn, "items") == ["quantity_changed"] * _BULK_ROWS
     assert _actions(conn, "stats") == ["counts"]
-
-
-@pytest.mark.asyncio
-async def test_the_service_half_is_charged_the_same_event_budget(monkeypatch) -> None:
-    """The WebSocket half spends a token; the bus half spends nothing.
-
-    A service call was free of the event budget only because it emitted no
-    event. Now that it emits one, it costs exactly what the command beside it
-    costs — and the `haventory_item_changed` that goes out with it still costs
-    nothing, because the limiter budgets subscription traffic.
-    """
-
-    monkeypatch.setattr(rate_limit_module, "_monotonic", lambda: 1000.0)
-    limiter = RateLimiter(
-        RateLimitConfig(
-            enabled=True,
-            commands_per_second=1.0,
-            commands_burst=1000.0,
-            global_commands_per_second=1.0,
-            global_commands_burst=1000.0,
-            events_per_second=1.0,
-            # Two tokens: the `items` event and the `stats` event of one mutation.
-            events_burst=2.0,
-            global_events_per_second=1.0,
-            global_events_burst=1000.0,
-        )
-    )
-    hass = _hass(limiter)
-    conn = await _subscribed(hass, "items", "stats")
-
-    await services_mod.service_item_create(hass, {"name": "Torch"})
-    assert _actions(conn, "items") == ["created"]
-    assert _actions(conn, "stats") == ["counts"]
-    assert limiter.dropped_events == 0
-
-    # The budget is spent, so the next service call reaches the bus and not the
-    # wire — a dropped event, never a failed mutation.
-    result = await services_mod.service_item_create(hass, {"name": "Chisel"})
-    assert result["item"]["name"] == "Chisel"
-    assert _actions(conn, "items") == ["created"]
-    dropped_by_a_single_mutation = 2
-    assert limiter.dropped_events == dropped_by_a_single_mutation
-    fired_on_the_bus = 2
-    assert len(hass.bus.events_of(EVENT_ITEM_CHANGED)) == fired_on_the_bus

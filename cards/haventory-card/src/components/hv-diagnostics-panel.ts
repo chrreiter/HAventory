@@ -15,10 +15,10 @@ import type { DegradedState, HealthResult, StatsCounts, VersionInfo } from '../s
 /**
  * Diagnostics.
  *
- * This matters because rate limiting can drop subscription events silently —
- * events carry no sequence number, so a card cannot detect a gap — and the only
- * honest recovery is a manual re-read. The panel says whether that is
- * happening, how much has been dropped, and offers the refresh.
+ * This matters because a missed subscription event is undetectable — events
+ * carry no sequence number — and the only honest recovery is a manual re-read.
+ * The panel says whether live updates are arriving at all, and offers the
+ * refresh.
  */
 @customElement('hv-diagnostics-panel')
 export class HVDiagnosticsPanel extends LitElement {
@@ -232,7 +232,6 @@ export class HVDiagnosticsPanel extends LitElement {
       `HAventory diagnostics`,
       `integration ${this.version?.integration_version ?? 'unknown'} · schema ${this.version?.schema_version ?? '?'}`,
       `counts: ${JSON.stringify(this.counts ?? {})}`,
-      `rate limit: ${JSON.stringify(this.health?.rate_limit ?? {})}`,
       `degraded: ${JSON.stringify(this.degraded ?? {})}`,
       `subscriptions: items=${this.connected?.items ?? false} stats=${this.connected?.stats ?? false}`,
     ].join('\n');
@@ -241,11 +240,7 @@ export class HVDiagnosticsPanel extends LitElement {
   render() {
     if (!this.open) return null;
     const z = this._zBase || 9998;
-    const rate = this.health?.rate_limit;
-    const degraded = this.degraded;
-    const live = !!this.connected?.items && !degraded?.connectionLost;
-    const rateLimited = !!degraded?.rateLimited || !!(rate?.dropped_commands || rate?.dropped_events);
-    const bad = rateLimited || !live;
+    const live = !!this.connected?.items && !this.degraded?.connectionLost;
 
     return html`
       <div class="backdrop" role="presentation" style="z-index:${z}" @click=${this._close}></div>
@@ -259,8 +254,8 @@ export class HVDiagnosticsPanel extends LitElement {
           @keydown=${onEscape(() => this._close())}
         >
           <div class="head">
-            <span style="color: var(--hv-${bad ? 'warn' : 'success'})">
-              ${icon(bad ? 'alert' : 'checkCircle', 20)}
+            <span style="color: var(--hv-${live ? 'success' : 'warn'})">
+              ${icon(live ? 'checkCircle' : 'alert', 20)}
             </span>
             <h2>${t('hv.diagnostics.title')}</h2>
             <button
@@ -276,33 +271,18 @@ export class HVDiagnosticsPanel extends LitElement {
           </div>
 
           <div class="body">
-            <div class="status ${bad ? 'bad' : 'ok'}" data-testid="diagnostics-status">
+            <div class="status ${live ? 'ok' : 'bad'}" data-testid="diagnostics-status">
               <span class="dot"></span>
               <span>
-                ${!live
-                  ? html`<strong>${t('hv.diagnostics.notLive')}</strong
-                      >${t('hv.diagnostics.notLiveDetail')}`
-                  : rateLimited
-                    ? html`<strong>${t('hv.diagnostics.degraded')}</strong
-                        >${t('hv.diagnostics.degradedDetail')}`
-                    : html`<strong>${t('hv.diagnostics.noIssues')}</strong
-                        >${t('hv.diagnostics.noIssuesDetail')}`}
+                ${live
+                  ? html`<strong>${t('hv.diagnostics.noIssues')}</strong
+                      >${t('hv.diagnostics.noIssuesDetail')}`
+                  : html`<strong>${t('hv.diagnostics.notLive')}</strong
+                      >${t('hv.diagnostics.notLiveDetail')}`}
               </span>
             </div>
 
             <div class="tiles">
-              <div class="tile">
-                <div class="value ${rate?.dropped_commands ? 'bad' : ''}" data-testid="diagnostics-dropped-commands">
-                  ${rate?.dropped_commands ?? 0}
-                </div>
-                <div class="label">${t('hv.diagnostics.commandsRejected')}</div>
-              </div>
-              <div class="tile">
-                <div class="value ${rate?.dropped_events ? 'warn' : ''}" data-testid="diagnostics-dropped-events">
-                  ${rate?.dropped_events ?? 0}
-                </div>
-                <div class="label">${t('hv.diagnostics.eventsDropped')}</div>
-              </div>
               <div class="tile">
                 <div class="value" data-testid="diagnostics-since">
                   ${this.lastRefresh ? relativeTime(this.lastRefresh) : '—'}
@@ -333,12 +313,6 @@ export class HVDiagnosticsPanel extends LitElement {
                       : t('hv.diagnostics.unknownLocations'),
                   })}
                 </span>
-              </div>
-              <div class="fact">
-                <span>${t('hv.diagnostics.rateLimiting')}</span>
-                <span class="value"
-                  >${rate?.enabled ? t('hv.diagnostics.enabled') : t('hv.diagnostics.off')}</span
-                >
               </div>
               <div class="fact">
                 <span>${t('hv.diagnostics.integrationVersion')}</span>
