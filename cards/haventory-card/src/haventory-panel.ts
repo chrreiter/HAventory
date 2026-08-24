@@ -1,9 +1,6 @@
-import { LitElement, css, html } from 'lit';
+import { css, html } from 'lit';
 import { property } from 'lit/decorators.js';
-import { setLanguage } from './i18n';
-import type { HassLike } from './store/types';
-import { Store } from './store/store';
-import { resolveColorScheme } from './ui/theme';
+import { StoreHostElement } from './store-host';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import type { QuickFilterKey } from './ui/quick-filters';
 import { defineCardElement } from './register';
@@ -21,12 +18,12 @@ interface PanelInfo {
  *
  * Home Assistant's custom-panel loader creates this element, sets `hass`,
  * `narrow`, `route` and `panel` on it, and gives it the whole content area.
- * It owns the `Store` (the same lifecycle `haventory-card` has) and a
+ * It owns a `Store` on the lifecycle it shares with `haventory-card`, and a
  * `HostSurfaces` instance (the same one `hv-card-shell` holds on the card
  * side), and hands the inventory itself to `hv-full-view` — embedded rather
  * than modal, since a page has nowhere to close to.
  */
-export class HAventoryPanel extends LitElement {
+export class HAventoryPanel extends StoreHostElement {
   static styles = css`
     :host {
       display: block;
@@ -52,10 +49,6 @@ export class HAventoryPanel extends LitElement {
   /** Set on every navigation. Unread — this panel has no sub-routes. */
   @property({ attribute: false }) route?: unknown;
 
-  private store?: Store;
-  private _storeUnsub?: () => void;
-  private _hass?: HassLike;
-
   /**
    * No `onItemDeleted` hook — the embedded view closes its own editor when the
    * item vanishes. No `onBrowse` — the full view here is the page itself, so
@@ -65,64 +58,6 @@ export class HAventoryPanel extends LitElement {
    * `narrow` — that flag is about the sidebar and flips at a tablet width.
    */
   readonly surfaces = new HostSurfaces(this, () => this.store);
-
-  get hass(): HassLike | undefined {
-    return this._hass;
-  }
-
-  set hass(h: HassLike | undefined) {
-    this._hass = h;
-    // Ahead of the store, for the same reason the card does it there.
-    if (setLanguage(h?.language)) this.requestUpdate();
-    if (h && !this.store) {
-      this.store = new Store(h);
-      this._storeUnsub = this.store.state.onChange(() => {
-        this.requestUpdate();
-      });
-      void this.store.init().catch(() => undefined);
-      // The loader sets `hass` after the element is in the DOM, so the first
-      // render can already be behind us — and a plain field carries no
-      // reactivity of its own. Without this the view holds no store until the
-      // first state change happens to arrive.
-      this.requestUpdate();
-    }
-    // A theme switch arrives as a fresh hass object, so this is the hook for it.
-    this._syncColorScheme();
-  }
-
-  connectedCallback(): void {
-    super.connectedCallback();
-    if (this.store && !this._storeUnsub) {
-      this._storeUnsub = this.store.state.onChange(() => {
-        this.requestUpdate();
-      });
-    }
-    this._syncColorScheme();
-  }
-
-  disconnectedCallback(): void {
-    super.disconnectedCallback();
-    if (this._storeUnsub) {
-      this._storeUnsub();
-      this._storeUnsub = undefined;
-    }
-  }
-
-  firstUpdated(): void {
-    this._syncColorScheme();
-  }
-
-  /**
-   * Publish the active Home Assistant theme as `color-scheme` on this host, so
-   * the `light-dark()` design tokens and the browser's native controls follow
-   * the frontend rather than the operating system. Inherited, so it covers
-   * every nested component.
-   */
-  private _syncColorScheme(): void {
-    if (!this.isConnected || typeof getComputedStyle !== 'function') return;
-    const scheme = resolveColorScheme(getComputedStyle(this));
-    if (scheme) this.style.colorScheme = scheme;
-  }
 
   render() {
     return html`

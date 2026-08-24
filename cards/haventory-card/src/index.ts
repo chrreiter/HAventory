@@ -1,9 +1,6 @@
-import { LitElement, css, html } from 'lit';
+import { css, html } from 'lit';
 import { registerCustomCard } from './ha-contract';
-import { setLanguage } from './i18n';
-import type { HassLike } from './store/types';
-import { Store } from './store/store';
-import { resolveColorScheme } from './ui/theme';
+import { StoreHostElement } from './store-host';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { normalizeQuickFilters } from './ui/quick-filters';
 import type { QuickFilterKey } from './ui/quick-filters';
@@ -15,7 +12,7 @@ import './components/hv-card-shell';
 import './haventory-panel';
 import './haventory-card-editor';
 
-export class HAventoryCard extends LitElement {
+export class HAventoryCard extends StoreHostElement {
   static styles = css`
     :host {
       display: block;
@@ -26,10 +23,6 @@ export class HAventoryCard extends LitElement {
   `;
 
   private config?: { title?: string; quickFilters?: QuickFilterKey[] | null };
-
-  private store?: Store;
-  private _storeUnsub?: () => void;
-  private _hass?: HassLike;
 
   /**
    * What the card picker writes into a new dashboard entry.
@@ -89,64 +82,6 @@ export class HAventoryCard extends LitElement {
     min_rows: number;
   } {
     return { columns: 12, rows: 8, min_columns: 6, min_rows: 4 };
-  }
-
-  get hass(): HassLike | undefined {
-    return this._hass;
-  }
-
-  set hass(h: HassLike | undefined) {
-    this._hass = h;
-    // Ahead of the store, so the first render of every surface it feeds is
-    // already in the user's language rather than flashing English first.
-    if (setLanguage(h?.language)) this.requestUpdate();
-    if (h && !this.store) {
-      this.store = new Store(h);
-      this._storeUnsub = this.store.state.onChange(() => {
-        this.requestUpdate();
-      });
-      void this.store.init().catch(() => undefined);
-    }
-    // A theme switch arrives as a fresh hass object, so this is the hook for it.
-    this._syncColorScheme();
-  }
-
-  connectedCallback(): void {
-    super.connectedCallback();
-    // If hass was already set before connectedCallback ran, ensure subscription exists
-    if (this.store && !this._storeUnsub) {
-      this._storeUnsub = this.store.state.onChange(() => {
-        this.requestUpdate();
-      });
-    }
-    this._syncColorScheme();
-  }
-
-  disconnectedCallback(): void {
-    super.disconnectedCallback();
-    if (this._storeUnsub) {
-      this._storeUnsub();
-      this._storeUnsub = undefined;
-    }
-  }
-
-  firstUpdated(): void {
-    this._syncColorScheme();
-  }
-
-  /**
-   * Publish the active Home Assistant theme as `color-scheme` on this host.
-   *
-   * `light-dark()` in the design tokens resolves against it, and the browser
-   * uses it to paint native controls, so both follow HA rather than the OS.
-   * The value is inherited, so setting it here covers every nested component.
-   * When the theme has not painted yet we leave the property alone and the OS
-   * preference keeps deciding.
-   */
-  private _syncColorScheme(): void {
-    if (!this.isConnected || typeof getComputedStyle !== 'function') return;
-    const scheme = resolveColorScheme(getComputedStyle(this));
-    if (scheme) this.style.colorScheme = scheme;
   }
 
   /**
