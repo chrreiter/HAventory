@@ -111,9 +111,6 @@ export class HVListRow extends LitElement {
       .row:hover:not(.touch) {
         background: var(--hv-row-hover);
       }
-      .row.selected {
-        background: var(--hv-row-hover);
-      }
       .names {
         flex: 1;
         min-width: 0;
@@ -400,33 +397,6 @@ export class HVListRow extends LitElement {
         padding: 0 18px;
         font-size: 13.5px;
       }
-      .box {
-        flex: none;
-        display: inline-grid;
-        place-items: center;
-        width: 16px;
-        height: 16px;
-        border-radius: 3px;
-        border: 1.5px solid var(--hv-text-tertiary);
-        background: none;
-        color: #fff;
-        padding: 0;
-      }
-      .box.on {
-        background: var(--hv-primary-dark);
-        border-color: var(--hv-primary-dark);
-      }
-      /* A 16px box is far too small for a thumb. Tapping the row toggles the
-         same selection, so an oversized hit area here can only ever agree with
-         what is underneath it — no visual change needed. */
-      :host([mobile]) .box {
-        position: relative;
-      }
-      :host([mobile]) .box::after {
-        content: '';
-        position: absolute;
-        inset: calc((var(--hv-tap-min, 16px) - 16px) / -2);
-      }
     `,
   ];
 
@@ -434,15 +404,10 @@ export class HVListRow extends LitElement {
   @property({ type: Boolean, reflect: true }) mobile = false;
   /** HA areas, to name the one the item's location resolves to. */
   @property({ attribute: false }) areas: AreaRef[] = [];
-  /** Selection mode: show a checkbox and suppress row navigation. */
-  @property({ type: Boolean }) selectable = false;
-  @property({ type: Boolean }) selected = false;
-  /** Show the optimistic-write "pending" chip. */
-  @property({ type: Boolean }) pending = false;
-  /** Picture access; null means the row shows no thumbnail. */
   /** The status vocabulary from `haventory/config`; the built-ins stand in
    * until it answers. */
   @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
+  /** Picture access; null means the row shows no thumbnail. */
   @property({ attribute: false }) media: MediaBindings | null = null;
 
   private readonly _urls = new MediaUrls(this);
@@ -668,33 +633,15 @@ export class HVListRow extends LitElement {
 
     return html`
       <div
-        class="row ${this.mobile ? 'touch' : ''} ${this.selected ? 'selected' : ''}"
+        class="row ${this.mobile ? 'touch' : ''}"
         role="row"
         tabindex="0"
         aria-label=${t('hv.row.label', { name: item.name })}
         data-testid="list-row"
         data-item-id=${item.id}
         @keydown=${this._onKeydown}
-        @click=${() => {
-          if (this.selectable) this._emit('toggle-select');
-          else this._emit('open-item');
-        }}
+        @click=${() => this._emit('open-item')}
       >
-        ${this.selectable
-          ? html`<button
-              class="box ${this.selected ? 'on' : ''}"
-              role="checkbox"
-              aria-checked=${String(this.selected)}
-              aria-label=${t('hv.row.select', { name: item.name })}
-              data-testid="row-select"
-              @click=${(e: Event) => {
-                e.stopPropagation();
-                this._emit('toggle-select');
-              }}
-            >
-              ${this.selected ? icon('check', 13) : null}
-            </button>`
-          : null}
         ${this._renderThumb()}
         <span class="names">
           <span class="name-line">
@@ -751,9 +698,6 @@ export class HVListRow extends LitElement {
                       >`}
           </span>
         </span>
-        ${this.pending
-          ? html`<span class="hv-chip warning" data-testid="row-pending">${t('hv.row.pending')}</span>`
-          : null}
         ${!this.mobile && low
           ? html`<span class="hv-chip warning" data-testid="row-low" aria-label=${t('hv.term.lowStock')}
               >${t('hv.term.low')}</span
@@ -777,36 +721,34 @@ export class HVListRow extends LitElement {
               ${t('hv.term.inspectionDue')}
             </span>`
           : null}
-        ${this.selectable
-          ? null
-          : html`<span class="hover-actions">
-              <button
-                data-testid="row-edit"
-                aria-label=${t('hv.row.editNamed', { name: item.name })}
-                title=${t('hv.row.editItem')}
-                @click=${(e: Event) => {
-                  e.stopPropagation();
-                  this._emit('edit');
-                }}
-              >
-                ${icon('pencil', 18)}
-              </button>
-              <hv-overflow-menu
-                data-testid="row-menu"
-                label=${t('hv.row.actionsFor', { name: item.name })}
-                .entries=${rowMenuEntries(item)}
-                @click=${(e: Event) => e.stopPropagation()}
-                @select=${(e: CustomEvent) => {
-                  e.stopPropagation();
-                  const { id } = e.detail as { id: string };
-                  // The check-out flow needs somewhere to anchor its popover.
-                  const anchor = (
-                    this.shadowRoot?.querySelector('[data-testid="row-menu"]') as HTMLElement | null
-                  )?.getBoundingClientRect();
-                  this._emit('row-action', { action: id, anchor });
-                }}
-              ></hv-overflow-menu>
-            </span>`}
+        <span class="hover-actions">
+          <button
+            data-testid="row-edit"
+            aria-label=${t('hv.row.editNamed', { name: item.name })}
+            title=${t('hv.row.editItem')}
+            @click=${(e: Event) => {
+              e.stopPropagation();
+              this._emit('edit');
+            }}
+          >
+            ${icon('pencil', 18)}
+          </button>
+          <hv-overflow-menu
+            data-testid="row-menu"
+            label=${t('hv.row.actionsFor', { name: item.name })}
+            .entries=${rowMenuEntries(item)}
+            @click=${(e: Event) => e.stopPropagation()}
+            @select=${(e: CustomEvent) => {
+              e.stopPropagation();
+              const { id } = e.detail as { id: string };
+              // The check-out flow needs somewhere to anchor its popover.
+              const anchor = (
+                this.shadowRoot?.querySelector('[data-testid="row-menu"]') as HTMLElement | null
+              )?.getBoundingClientRect();
+              this._emit('row-action', { action: id, anchor });
+            }}
+          ></hv-overflow-menu>
+        </span>
         ${this._renderStepper()}
       </div>
     `;

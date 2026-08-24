@@ -10,6 +10,12 @@ import type { AreaRef, Item, StatusDefinition } from '../store/types';
 import type { MediaBindings } from '../ui/media';
 import './hv-list-row';
 
+/**
+ * Placeholder rows drawn while the first page is in flight. Enough to fill the
+ * scroller's default cap, so the list does not visibly grow when the real rows
+ * land.
+ */
+const SKELETON_ROWS = 5;
 
 /**
  * The standard card's list: skeletons while loading, a named empty state, rows,
@@ -32,6 +38,7 @@ export class HVList extends LitElement {
       .scroller {
         overflow-y: auto;
         overscroll-behavior: contain;
+        max-height: var(--hv-list-max-height, 420px);
       }
       /*
        * A refetch keeps the rows it already has, so the only thing left to say
@@ -80,9 +87,6 @@ export class HVList extends LitElement {
         color: var(--hv-text-secondary);
         border-top: 1px solid var(--hv-row-divider);
       }
-      :host(:not([fill])) .scroller {
-        max-height: var(--hv-list-max-height, 420px);
-      }
       /*
        * The inline editor renders inside this same scroller and is roughly
        * 720px tall, so the compact cap buried its Save/Cancel row and the
@@ -90,17 +94,8 @@ export class HVList extends LitElement {
        * form — as the design shows — but stays bounded so a long row list
        * cannot run away with the page.
        */
-      :host(:not([fill])[editing]) .scroller {
+      :host([editing]) .scroller {
         max-height: var(--hv-list-editing-max-height, min(80dvh, 760px));
-      }
-      :host([fill]) {
-        display: flex;
-        flex-direction: column;
-        min-height: 0;
-      }
-      :host([fill]) .scroller {
-        flex: 1;
-        min-height: 0;
       }
       .empty {
         display: grid;
@@ -158,7 +153,6 @@ export class HVList extends LitElement {
   ];
 
   @property({ attribute: false }) items: Item[] = [];
-  @property({ type: Boolean, reflect: true }) fill = false;
   @property({ type: Boolean }) mobile = false;
   /** HA areas, forwarded to each row so it can name the item's area. */
   @property({ attribute: false }) areas: AreaRef[] = [];
@@ -167,13 +161,9 @@ export class HVList extends LitElement {
   /** The status vocabulary from `haventory/config`; passed through to each row. */
   @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ type: Boolean }) loading = false;
-  @property({ type: Boolean }) selectable = false;
-  @property({ attribute: false }) selection: Set<string> = new Set();
-  @property({ attribute: false }) pendingIds: Set<string> = new Set();
   @property({ type: String }) emptyKind: EmptyKind = 'no-items';
   /** Location name for the "Nothing in X" empty state. */
   @property({ type: String }) emptyLocationName: string | null = null;
-  @property({ type: Number }) skeletonRows = 5;
   /**
    * Inline editing: the host supplies a template and says which row it belongs
    * to. Passing a callback rather than editor props keeps this component from
@@ -254,7 +244,7 @@ export class HVList extends LitElement {
     if (this.loading && !this.items.length && !editorOpen) {
       return html`<div class="scroller" data-testid="list-skeleton" aria-busy="true">
         ${Array.from(
-          { length: this.skeletonRows },
+          { length: SKELETON_ROWS },
           () => html`<div class="skeleton-row">
             <div class="bar" style="width: 55%"></div>
             <div class="bar short" style="width: 38%"></div>
@@ -295,9 +285,6 @@ export class HVList extends LitElement {
                   .areas=${this.areas}
                   .media=${this.media}
                   ?mobile=${this.mobile}
-                  ?selectable=${this.selectable}
-                  ?selected=${this.selection.has(it.id)}
-                  ?pending=${this.pendingIds.has(it.id)}
                 ></hv-list-row>`,
         )}
       </div>

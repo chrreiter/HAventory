@@ -68,7 +68,6 @@ export const tokens = css`
     --hv-error: var(--error-color, light-dark(#c62828, #ef5350));
     --hv-error-bg: light-dark(#fdecea, rgba(198, 40, 40, 0.14));
     --hv-error-deep: light-dark(#8b1f1a, #ef9a9a);
-    --hv-error-border: light-dark(#e6a9a4, rgba(239, 83, 80, 0.7));
     --hv-error-soft: light-dark(#c62828, #ef9a9a);
 
     /* Success */

@@ -316,8 +316,6 @@ export class HVCardShell extends LitElement {
   /** Required. The shell subscribes to it itself — see `connectedCallback`. */
   @property({ attribute: false }) store!: Store;
   @property({ type: String }) heading = DEFAULT_CARD_TITLE;
-  /** Force a layout instead of measuring; `null` measures. */
-  @property({ attribute: false }) forceMobile: boolean | null = null;
   /**
    * Which quick-filter pills this dashboard offers, or `null` for all of them.
    * Passed on to the full view unchanged — one vocabulary on both surfaces.
@@ -431,7 +429,6 @@ export class HVCardShell extends LitElement {
       this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
       this._searchDraft = this.store.state.value.filters.q;
     }
-    if (changed.has('forceMobile')) this.responsive.setForced(this.forceMobile);
     // Reflect the mode so child selectors and :host([mobile]) rules apply.
     this.toggleAttribute('mobile', this.mobile);
     this._syncPinnedItem();

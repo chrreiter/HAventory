@@ -249,9 +249,9 @@ interface Entry {
  *
  * `get` is synchronous because that is what a template can use: it returns the
  * URL when there is a live one, and otherwise starts the signing request and
- * returns null, asking the host to re-render once the answer lands. `failed`
- * separates "not yet" from "will not" so the caller can draw a placeholder
- * rather than an image element that can only break.
+ * returns null, asking the host to re-render once the answer lands. A signing
+ * that failed is remembered on the entry, so the next render is answered from
+ * it rather than asking again for a URL that is not coming.
  */
 export class MediaUrls {
   private readonly host: MediaHost;
@@ -315,11 +315,6 @@ export class MediaUrls {
     // browser has the image cached and swapping to a placeholder mid-view would
     // be a worse answer than a URL that is briefly stale.
     return entry?.url ?? null;
-  }
-
-  /** True when signing this attachment failed, so no URL is coming. */
-  failed(itemId: string, attachmentId: string, variant?: MediaVariant): boolean {
-    return this.entries.get(urlKey(itemId, attachmentId, variant))?.failed === true;
   }
 
   /**

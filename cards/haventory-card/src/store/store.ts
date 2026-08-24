@@ -400,7 +400,6 @@ export class Store {
       loading: true,
       filters: defaultFilters(),
       selection: new Set<string>(),
-      pendingOps: new Map(),
       errorQueue: [],
       areasCache: null,
       locationTreeCache: null,
@@ -1477,8 +1476,6 @@ export class Store {
 
   // ---------- Optimistic writes ----------
   async createItem(input: ItemCreate) {
-    const opId = `create:${Date.now()}`;
-    this.state.value.pendingOps.set(opId, { kind: 'create' });
     try {
       const created = await this.run(() => this.ws.createItem(input));
       // Insert optimistically already covered by items event; ensure presence
@@ -1486,15 +1483,10 @@ export class Store {
       this.stateObs.set({ items });
     } catch (err) {
       this.pushError(err);
-    } finally {
-      this.state.value.pendingOps.delete(opId);
-      this.stateObs.set({ pendingOps: new Map(this.state.value.pendingOps) });
     }
   }
 
   async updateItem(itemId: string, changes: ItemUpdate, expectedVersion?: number) {
-    const opId = `update:${itemId}:${Date.now()}`;
-    this.state.value.pendingOps.set(opId, { kind: 'update', itemId });
     const before = this.state.value.items.find((i) => i.id === itemId);
     if (before) {
       const optimistic: Item = { ...before, ...changes } as Item;
@@ -1507,15 +1499,10 @@ export class Store {
       // Capture conflict context for actionable retry
       this.pushError(err, { itemId, changes });
       if (before) this.applyOptimistic(before);
-    } finally {
-      this.state.value.pendingOps.delete(opId);
-      this.stateObs.set({ pendingOps: new Map(this.state.value.pendingOps) });
     }
   }
 
   async deleteItem(itemId: string, expectedVersion?: number) {
-    const opId = `delete:${itemId}:${Date.now()}`;
-    this.state.value.pendingOps.set(opId, { kind: 'delete', itemId });
     const before = this.state.value.items.find((i) => i.id === itemId);
     if (before) this.removeById(itemId);
     try {
@@ -1523,9 +1510,6 @@ export class Store {
     } catch (err) {
       this.pushError(err);
       if (before) this.applyOptimistic(before);
-    } finally {
-      this.state.value.pendingOps.delete(opId);
-      this.stateObs.set({ pendingOps: new Map(this.state.value.pendingOps) });
     }
   }
 

@@ -383,7 +383,6 @@ describe('MediaUrls', () => {
     await Promise.resolve();
 
     expect(urls.get('item-1', 'att-1')).toBeNull();
-    expect(urls.failed('item-1', 'att-1')).toBe(true);
     // And it does not keep retrying on every render.
     urls.get('item-1', 'att-1');
     expect(signer.sign).toHaveBeenCalledTimes(1);
@@ -405,15 +404,19 @@ describe('MediaUrls', () => {
     await Promise.resolve();
     await Promise.resolve();
 
+    // The read above found the URL lapsed and asked again, which is the point:
+    // a refresh that failed is not remembered as "no URL is coming" the way a
+    // first signing that failed is.
     expect(urls.get('item-1', 'att-1')).toBe('/first');
-    expect(urls.failed('item-1', 'att-1')).toBe(false);
+    signer.resolve('/second');
+    await Promise.resolve();
+    expect(urls.get('item-1', 'att-1')).toBe('/second');
   });
 
   it('signs nothing at all without a signer', () => {
     const urls = new MediaUrls(host());
 
     expect(urls.get('item-1', 'att-1')).toBeNull();
-    expect(urls.failed('item-1', 'att-1')).toBe(false);
   });
 
   it('reports a reference whose file is gone, so nothing offers a dead link', async () => {

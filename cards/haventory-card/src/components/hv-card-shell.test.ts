@@ -8,6 +8,7 @@ import {
   mountHost,
   q,
   settle,
+  stubElementWidth,
   stubViewport,
 } from '../test.utils';
 import { discardPrompt } from '../ui/discard';
@@ -31,13 +32,26 @@ function loc(id: string, name: string, parentId: string | null = null): Location
   };
 }
 
+// The shell measures its own element, so the two layouts are two widths. A
+// phone is 375px; 1280 is any dashboard column wider than the breakpoint.
+const PHONE_WIDTH = 375;
+const DESKTOP_WIDTH = 1280;
+
+let restoreWidth: (() => void) | null = null;
+
 async function mountShell(opts: { items?: Item[]; locations?: Location[]; mobile?: boolean } = {}) {
-  return mountHost<HVCardShell>(
-    'hv-card-shell',
-    { items: opts.items ?? [], locations: opts.locations ?? [] },
-    { forceMobile: opts.mobile ?? false },
-  );
+  restoreWidth?.();
+  restoreWidth = stubElementWidth(opts.mobile ? PHONE_WIDTH : DESKTOP_WIDTH);
+  return mountHost<HVCardShell>('hv-card-shell', {
+    items: opts.items ?? [],
+    locations: opts.locations ?? [],
+  });
 }
+
+afterEach(() => {
+  restoreWidth?.();
+  restoreWidth = null;
+});
 
 describe('hv-card-shell: header', () => {
   it('shows the configured heading and the live stat badges', async () => {
@@ -534,10 +548,8 @@ describe('hv-card-shell: list and footer', () => {
     // Deliberately not `mountStore`: the skeleton is what shows before the
     // first list resolves, so this store must not be initialised.
     const store = new Store(makeMockHass({ items: [] }), { retryBaseMs: 0 });
-    const { el } = await mountComponent<HVCardShell>('hv-card-shell', {
-      store,
-      forceMobile: false,
-    });
+    restoreWidth = stubElementWidth(DESKTOP_WIDTH);
+    const { el } = await mountComponent<HVCardShell>('hv-card-shell', { store });
 
     const list = q(el, 'hv-list')!;
     expect(list.shadowRoot?.querySelector('[data-testid="list-skeleton"]')).toBeTruthy();

@@ -49,22 +49,6 @@ describe('ResponsiveController', () => {
     expect(host.updates).toBe(2); // mobile → desktop
   });
 
-  it('honours a forced mode and restores measurement when cleared', () => {
-    const host = makeHost();
-    const c = new ResponsiveController(host as never);
-    c.setWidth(900);
-
-    c.setForced(true);
-    expect(c.mobile).toBe(true);
-    expect(host.updates).toBe(1);
-
-    c.setForced(true); // idempotent
-    expect(host.updates).toBe(1);
-
-    c.setForced(null);
-    expect(c.mobile).toBe(false);
-  });
-
   it('accepts a custom breakpoint', () => {
     const host = makeHost();
     const c = new ResponsiveController(host as never, 420);

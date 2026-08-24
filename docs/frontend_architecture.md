@@ -496,7 +496,7 @@ Holds all app state in a small observable (`createObservable`), fetches over `WS
 applies optimistic writes with rollback.
 
 **State** (`StoreState`): `items`, `cursor`, `total`, `loading`, `filters`, `selection`,
-`pendingOps`, `errorQueue`, `areasCache`, `locationTreeCache`, `locationsFlatCache`,
+`errorQueue`, `areasCache`, `locationTreeCache`, `locationsFlatCache`,
 `statsCounts`, `healthCache`, `versionInfo`, `distinctValuesCache`, `connected`, `degraded`.
 
 **Notable methods**
@@ -717,8 +717,9 @@ Things jsdom cannot do, and how the tests handle it:
 
 - **No CSS evaluation in shadow DOM** — tests assert the hook a stylesheet keys off (e.g.
   the reflected `mobile` attribute), never a computed style.
-- **No layout** — `ResponsiveController` is driven through `setWidth()` / `setForced()`
-  rather than a real `ResizeObserver`.
+- **No layout** — `ResponsiveController` is driven by `stubElementWidth()`, a `ResizeObserver`
+  that answers with the width the test names, so the mode is decided the way it is in a
+  browser.
 - **No real drag and drop** — jsdom builds a `DragEvent` with no `DataTransfer` behind it,
   so the editor's file-drop tests carry a plain-object `dataTransfer` and assert the
   routing (which kind each dropped file becomes) rather than the browser's drag machinery.

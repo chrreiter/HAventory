@@ -189,7 +189,6 @@ export const de: Record<TranslationKey, string> = {
   'hv.term.id': 'ID',
   'hv.term.due': 'fällig {date}',
   'hv.term.overdueOn': 'Überfällig · {date}',
-  'hv.term.checkedOutUntil': 'Ausgeliehen · fällig {date}',
   'hv.term.inspectionDueOn': 'Prüfung fällig · {date}',
 
   'hv.card.badge.low': '{count} niedrig',
@@ -220,9 +219,7 @@ export const de: Record<TranslationKey, string> = {
   'hv.list.noLongerMatches': 'Passt nicht mehr zu den aktuellen Filtern',
 
   'hv.row.label': 'Gegenstand {name}',
-  'hv.row.select': '{name} auswählen',
   'hv.row.hasDocument': 'Hat ein Dokument',
-  'hv.row.pending': 'Ausstehend',
   'hv.row.decreaseQuantity': 'Menge verringern',
   'hv.row.increaseQuantity': 'Menge erhöhen',
   'hv.row.editItem': 'Gegenstand bearbeiten',
@@ -408,7 +405,6 @@ export const de: Record<TranslationKey, string> = {
 
   'hv.cardEditor.title': 'Titel',
 
-  'hv.action.apply': 'Anwenden',
   'hv.action.set': 'Setzen',
   'hv.action.done': 'Fertig',
   'hv.action.rename': 'Umbenennen',

@@ -593,21 +593,41 @@ describe('hv-list-row: the phone line’s pieces', () => {
   });
 });
 
-describe('hv-list-row: selection mode', () => {
-  it('swaps row navigation for a checkbox', async () => {
-    const el = await mount({ id: 'item-1' }, { selectable: true });
-    const seen = captured(el, ['open-item', 'toggle-select']);
+/*
+ * Bulk selection lives on the full view's `hv-data-table`, which draws its own
+ * checkbox column. The card's list has one job — open the item — so a row here
+ * navigates on click and draws nothing that would claim otherwise, whatever a
+ * host sets on it.
+ */
+describe('hv-list-row: one job per row', () => {
+  it('opens the item on click and offers the hover actions', async () => {
+    const el = await mount({ id: 'item-1' });
+    const seen = captured(el, ['open-item']);
 
-    expect(q(el, '[data-testid="row-select"]')).toBeTruthy();
-    expect(q(el, '[data-testid="row-edit"]')).toBe(null);
+    expect(q(el, '[data-testid="row-edit"]')).toBeTruthy();
+    expect(q(el, '[data-testid="row-select"]')).toBe(null);
 
     (q(el, '[data-testid="list-row"]') as HTMLElement).click();
-    expect(seen).toEqual(['toggle-select']);
+    expect(seen).toEqual(['open-item']);
   });
 
-  it('reflects the selected state on the checkbox', async () => {
-    const el = await mount({ id: 'item-1' }, { selectable: true, selected: true });
-    expect(q(el, '[data-testid="row-select"]')?.getAttribute('aria-checked')).toBe('true');
+  it('renders no pending chip beside the ones a row does draw', async () => {
+    // The store applies a write to the row and rolls it back on refusal, so
+    // there is no second "in flight" state for a chip to name. The type line
+    // is the other half: a property no host binds draws nothing, and a test
+    // that only looked at the output would not notice one coming back.
+    const el = await mount({
+      id: 'item-1',
+      checked_out: true,
+      quantity: 0,
+      low_stock_threshold: 5,
+    });
+
+    expect(q(el, '[data-testid="row-checked-out"]')).toBeTruthy();
+    expect(q(el, '[data-testid="row-pending"]')).toBe(null);
+
+    const noPendingProp: Extract<keyof HVListRow, 'pending'> extends never ? true : never = true;
+    expect(noPendingProp).toBe(true);
   });
 });
 
