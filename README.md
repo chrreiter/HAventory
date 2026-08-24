@@ -93,8 +93,6 @@ takes effect without a restart:
   is the default.
 - **Quick-filter pills** — which of the six pills (`total`, `low_stock`, `overdue`,
   `inspection_due`, `reminder_due`, `checked_out`) every surface offers.
-- **Rate limiting** — off by default. What the settings mean and when turning them on is
-  worth it: [`docs/rate_limiting.md`](docs/rate_limiting.md).
 
 ## Add the card
 
@@ -210,18 +208,10 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   not a per-user one, which is the same choice Home Assistant's own to-do and shopping
   lists make. The reasoning, and what gating it would cost, is in
   [#479](https://github.com/chrreiter/HAventory/issues/479).
-- **Rate limiting is opt-in and off by default.** Out of the box nothing bounds how fast a
-  client may issue commands or how many subscription events it is sent. Enabling it under
-  Settings → Devices & services → HAventory → **Configure** turns on per-connection and
-  global token buckets: excess commands are rejected with a `rate_limited` error and
-  excess subscription broadcasts are dropped. Dropped broadcasts are silent on the wire —
-  events carry no sequence number, so a missing one cannot be detected by its absence. A
-  limiter tight enough to refuse the card's *subscribe* is not silent, though: the card
-  re-opens the refused round up to four times, waiting out a retry-after hint when the
-  refusal carries one and backing off exponentially when it does not, and once that budget
-  is spent it says **Live updates paused** and offers a Refresh — so a list that has
-  stopped updating never passes for one with nothing to report. What the settings mean, and
-  when turning them on is worth it: [`docs/rate_limiting.md`](docs/rate_limiting.md).
+- **Nothing bounds how fast a client may use the API.** There is no rate limit on commands
+  or on subscription events, so a script in a loop or a wall panel stuck reconnecting is
+  answered as fast as Home Assistant can serve it. What protects a household instead is
+  that the API is reachable only by someone already logged in to Home Assistant.
 - **Import identity is the id, never the name.** The `merge` / `replace` / `skip` policies
   all classify an incoming item or location by its id. Restoring a backup onto entities
   you rebuilt by hand — which carry fresh uuids — therefore duplicates them instead of
@@ -294,7 +284,6 @@ Three messages are worth recognising, all three of which also appear in **Repair
   loaded, the card's configuration keys, YAML-mode dashboards, removing it again.
 - [`docs/automations.md`](docs/automations.md) — the sensors, the events, the calendar,
   reminders and the shopping-list bridge.
-- [`docs/rate_limiting.md`](docs/rate_limiting.md) — what the rate-limit options mean.
 - [`docs/backend_api_contract.md`](docs/backend_api_contract.md) and
   [`docs/data_shapes.md`](docs/data_shapes.md) — the WebSocket API, for anyone writing a
   client.

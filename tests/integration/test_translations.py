@@ -32,13 +32,10 @@ async def test_german_config_and_options_screens_resolve(hass: HomeAssistant) ->
 
     options = await _catalog(hass, "de", "options")
     assert options[f"component.{DOMAIN}.options.step.init.title"] == "HAventory-Optionen"
-    # The rate-limit section's own text, which is nested two levels deeper than
-    # anything else in the document.
-    section = f"component.{DOMAIN}.options.step.init.sections.rate_limit"
-    assert options[f"{section}.name"] == "WebSocket-Ratenbegrenzung"
-    # The docs link arrives as a placeholder the flow fills; the German value
-    # has to still carry it or the sentence loses its link.
-    assert "{docs_url}" in options[f"{section}.description"]
+    # A section's own text, which is nested two levels deeper than anything else
+    # in the document.
+    section = f"component.{DOMAIN}.options.step.init.sections.todo"
+    assert options[f"{section}.name"] == "Einkaufsliste"
 
 
 async def test_german_entities_selectors_and_services_resolve(hass: HomeAssistant) -> None:

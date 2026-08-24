@@ -2,8 +2,8 @@
 
 Home Assistant hands every config entry a `runtime_data` slot: setup fills it,
 Home Assistant clears it on unload, and a typed alias makes every read a checked
-one. HAventory keeps its repository, its store, its rate limiter and the rest of
-its per-entry state there rather than in the shared `hass.data[DOMAIN]` dict.
+one. HAventory keeps its repository, its store and the rest of its per-entry state
+there rather than in the shared `hass.data[DOMAIN]` dict.
 
 **Two lookups, and the difference matters.** `loaded_runtime` refuses unless the
 entry is `LOADED` — it is the client-facing boundary, the thing that makes a
@@ -34,7 +34,6 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .exceptions import NotLoadedError
-from .rate_limit import RateLimiter
 from .repository import Repository
 
 if TYPE_CHECKING:
@@ -83,7 +82,6 @@ class HAventoryRuntime:
     repository: Repository
     card_title: str
     quick_filters: list[str] | None
-    rate_limiter: RateLimiter
     # Serializes every write to the one store file. Per entry, because it guards
     # that entry's store and nothing else.
     persist_lock: asyncio.Lock = field(default_factory=asyncio.Lock)

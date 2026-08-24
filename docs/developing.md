@@ -237,14 +237,6 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
   `haventory.item_create` / `haventory.item_update` services, and import. A store written
   before the field existed is migrated on load (schema v5 backfills `ok`); an export
   without it reads as `ok` too.
-- **WebSocket rate limiting (opt-in, off by default)**: per-connection **and** global
-  token buckets for commands (excess requests get a `rate_limited` error) and for
-  subscription broadcasts (excess events are dropped, never breaking the command).
-  Enable and tune it under Settings → Devices & services → HAventory → **Configure**;
-  `haventory/health` reports drop counters. Leave it disabled for stress testing
-  (`scripts/stress_test.py`). What each setting means and when to enable it:
-  [`docs/rate_limiting.md`](rate_limiting.md); wire-level semantics and defaults:
-  [`backend_api_contract.md`](backend_api_contract.md) → "Rate limiting".
 - **JSON import/export (data safety)** via `haventory/export`, `haventory/import/preview`,
   and `haventory/import/execute`: back up to a versioned document before a breaking update
   and restore afterwards. Preview reports would-be adds/updates/conflicts without touching
@@ -424,11 +416,10 @@ throughout.
   merge / replace / skip, preview add/update/conflict counts per items and locations, then
   import. An invalid document is shown as a list of JSON paths, not one flat message.
 - **Diagnostics and degraded states** — the ⋮ menu carries a Diagnostics panel (counts,
-  rate-limit drop counters, subscription state, copyable report) badged only when
-  something is wrong, plus banners for connection loss, rate limiting and the
-  payload-free reload an import broadcasts. Because subscription events carry no sequence
-  number, a dropped one is undetectable — so the card says the list may be stale and
-  offers an explicit Refresh. The banners are on **every** surface: the card, the expanded
+  subscription state, copyable report) badged only when something is wrong, plus banners
+  for connection loss and the payload-free reload an import broadcasts. Because
+  subscription events carry no sequence number, a dropped one is undetectable — so the
+  card says the list may be stale and offers an explicit Refresh. The banners are on **every** surface: the card, the expanded
   view and the sidebar page, with the same wording and the same recovery actions. A view
   left open when Home Assistant goes away says so on its own, without waiting for you to
   try something first.

@@ -36,7 +36,7 @@ _PACKAGE_DIR = Path(__file__).parent
 # copy, and it has to stay listed for as long as anyone might upgrade across
 # that release. Directories are not swept: an operator's own files can sit
 # inside one, and a directory left empty is inert.
-RETIRED_PATHS: tuple[str, ...] = ("areas.py", "health.py")
+RETIRED_PATHS: tuple[str, ...] = ("areas.py", "health.py", "rate_limit.py")
 
 
 def _target_path(relative_path: str) -> Path | None:

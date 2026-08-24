@@ -27,7 +27,6 @@ Notes:
 - `not_found`: Referenced entity does not exist
 - `conflict`: Version mismatch on optimistic concurrency
 - `storage_error`: Persistence or setup issue, including a command that arrives while no config entry owns the data — see "While no entry is loaded"
-- `rate_limited`: Command rejected by the (opt-in) WebSocket rate limiter — see "Rate limiting"
 - `unknown_error`: Fallback for unexpected exceptions
 
 Guarantees (every `haventory/*` command is wrapped by the same guard):
@@ -68,7 +67,7 @@ Every rejection the API boundary answers is also logged once, with the same stru
 
 | Level | `exc_info` | Codes |
 |---|---|---|
-| WARNING | no traceback | `validation_error`, `not_found`, `conflict`, `rate_limited`, and the `storage_error` raised because no config entry is loaded |
+| WARNING | no traceback | `validation_error`, `not_found`, `conflict`, and the `storage_error` raised because no config entry is loaded |
 | ERROR | traceback | every other `storage_error`, and `unknown_error` |
 
 A traceback earns its place only where it says something the message does not: a genuine `storage_error` wraps a lower-level failure whose cause chain is the only record of what broke, and an `unknown_error` has no vetted message at all.
@@ -79,7 +78,7 @@ The service handlers (`haventory.*`) follow the identical policy; `voluptuous` s
 
 ### While no entry is loaded
 
-Home Assistant has no API for unregistering a WebSocket command, so every `haventory/*` command stays dispatchable until the next restart — whether the config entry is unloaded, disabled, removed, or halfway through a reload. Each of those drops the loaded runtime (repository, store, limiter, subscriptions), and the guard turns that into a refusal:
+Home Assistant has no API for unregistering a WebSocket command, so every `haventory/*` command stays dispatchable until the next restart — whether the config entry is unloaded, disabled, removed, or halfway through a reload. Each of those drops the loaded runtime (repository, store, subscriptions), and the guard turns that into a refusal:
 
 - **Every command** answers `storage_error`, `ping`, `version` and `config` included: they read no inventory, but a half-answering API for a backend that owns nothing is worse than none.
 - **Nothing is written.** A mutation is refused before it reaches the repository, so the store file stops changing the moment the entry goes.
@@ -87,16 +86,6 @@ Home Assistant has no API for unregistering a WebSocket command, so every `haven
 - **The next setup restores everything** — the API and the inventory, which teardown flushes on the way out and setup reads back. Removal keeps the store file too, so re-adding the integration brings the inventory with it (`installing.md` → "Removing HAventory").
 
 Clients cannot tell a reload apart from a removal by code alone. Re-opening the subscriptions on a bounded backoff covers both: a reload is answering again within seconds, and a removal runs the budget out and leaves the client to tell the user.
-
-### Rate limiting
-
-**Off by default.** Enable and tune it in the integration's options flow (Settings → Devices & services → HAventory → Configure); [`rate_limiting.md`](rate_limiting.md) covers the same settings for the person filling in that form. Token buckets (sustained rate + burst) apply per connection **and** globally, separately for commands and for subscription broadcasts:
-
-- Commands: when a budget is exhausted, the command is not executed and the client receives an error envelope with code `rate_limited`, message `"rate limit exceeded; retry later"`, and `data.op`. Retry after a short backoff.
-- Broadcasts: when the global event budget is exhausted the event is dropped for all subscribers; when a connection's event budget is exhausted the event is dropped for that connection only. Event delivery is best-effort — a client that must not miss state re-lists on demand (`item/list`, `location/tree`, `stats`).
-- Observability: `haventory/health` includes `rate_limit: {enabled, dropped_commands, dropped_events}`; drops log a throttled warning server-side. Changing any rate-limit option rebuilds the limiter: all buckets refill and the drop counters reset to 0.
-
-Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100/200 global; events 50/200 per connection, 500/1000 global. Normal Lovelace-card usage stays far below these; bulk imports or stress tooling (`scripts/stress_test.py`) should keep limiting disabled.
 
 ### Utility commands
 
@@ -110,7 +99,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
 - `haventory/config`
   - Request: `{id, type: "haventory/config"}` (no payload)
   - Result: `{card_title: string, quick_filters: string[] | null, statuses: StatusDefinition[], media: MediaConfig}`
-  - `card_title` is the heading set in the integration's options flow (Settings → Devices & services → HAventory → **Configure**), defaulting to `"HAventory"`. Only display settings appear here — rate-limit tunables stay server-side.
+  - `card_title` is the heading set in the integration's options flow (Settings → Devices & services → HAventory → **Configure**), defaulting to `"HAventory"`.
   - `quick_filters` is which quick-filter pills the integration offers, out of `total`, `low_stock`, `overdue`, `inspection_due`, `reminder_due`, `checked_out`, set in the same options flow. `null` means no choice was made and leaves it to the client — a dashboard's own `quick_filters:` first, every pill otherwise — while `[]` is an explicit choice of no pills; the two are never interchangeable. Names the backend does not know are dropped before sending.
   - `statuses` is the status vocabulary in display order (see data shapes). Items store only a slug, so this is where a surface gets the label to render one with.
   - `media` is `{picture_mime_types: string[], max_pictures_per_item: number, manual_mime_types: string[], max_manuals_per_item: number, max_attachment_bytes: number}` — the attachment limits, reported so a picker can refuse a doomed file before uploading it. **Advisory only**: every one of them is re-derived server-side from the file's own bytes. The media *route* is deliberately not here; it is a constant on both sides of the language boundary (`/api/haventory/media/{item_id}/{attachment_id}`), pinned by a test.
@@ -138,8 +127,8 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Read-only: emits no events and does not mutate state.
 
 - `haventory/health`
-  - Result: `{healthy: boolean, issues: string[], counts: <stats shape>, rate_limit: {enabled: boolean, dropped_commands: number, dropped_events: number}}`
-  - `healthy` is always `true` and `issues` is always empty. They carried a set of checks comparing the repository's indexes against the entities they index; every hit named a bug in this integration rather than anything a household had done, so the checks run in the test suite (`tests/repository_invariants.py`) and no longer over a household's store. The two fields keep their place and their types so a client written against them still parses the result. What is worth reading here is `counts` — the same shape `haventory/stats` returns — and `rate_limit`.
+  - Result: `{healthy: boolean, issues: string[], counts: <stats shape>}`
+  - `healthy` is always `true` and `issues` is always empty. They carried a set of checks comparing the repository's indexes against the entities they index; every hit named a bug in this integration rather than anything a household had done, so the checks run in the test suite (`tests/repository_invariants.py`) and no longer over a household's store. The two fields keep their place and their types so a client written against them still parses the result. What is worth reading here is `counts` — the same shape `haventory/stats` returns.
 
 ### Subscriptions and events
 
@@ -167,7 +156,7 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   - Locations topic payloads include `{location: <Location>}` and actions: `created`, `renamed`, `moved`, `deleted`. The `reloaded` action (emitted after `import/execute`) carries **no** `location`.
   - Statuses topic payloads carry `{status: <StatusDefinition>}` for actions `created`, `updated` and `deleted`, and `{statuses: <StatusDefinition[]>}` for `reordered`. The vocabulary is small and changes rarely, so a client may equally re-read `status/list` on any event rather than applying a per-action patch — which is also what keeps it correct across a reorder.
   - Stats topic payload `action: "counts"` with `{counts: <stats shape>}`. Every mutation emits one, and so does the instance's local midnight — the five calendar-derived counts move with the date, and that tick is what lets a card left open overnight agree with the sensors. It is the one event that says nothing was edited, so a client must not read it as a mutation.
-  - The `unavailable` action is sent on **every** topic, once per open subscription, when the config entry serving it tears down — an unload, a disable, a removal, or the first half of a reload. It carries no payload beyond the common fields: it says this subscription has stopped, not that anything in the inventory changed. It is the only event delivered regardless of the rate limiter's event budget, because its loss cannot be recovered by re-listing — a client that never receives it has no reason to re-list at all. Every command is refused with `storage_error` from this point (see "While no entry is loaded"), so a client that re-subscribes should expect to be refused for as long as setup takes and back off rather than give up on the first attempt.
+  - The `unavailable` action is sent on **every** topic, once per open subscription, when the config entry serving it tears down — an unload, a disable, a removal, or the first half of a reload. It carries no payload beyond the common fields: it says this subscription has stopped, not that anything in the inventory changed. Every command is refused with `storage_error` from this point (see "While no entry is loaded"), so a client that re-subscribes should expect to be refused for as long as setup takes and back off rather than give up on the first attempt.
   - When `location_id` filter is provided on subscription:
     - Items: if `include_subtree` (default true) match any item whose `location_path.id_path` contains the filter id; otherwise only direct `location_id` matches.
     - Locations: if `include_subtree` match the location itself or descendants; otherwise only the exact location.
@@ -177,14 +166,12 @@ Defaults when enabled (tokens/second, burst): commands 20/60 per connection, 100
   what the WebSocket command doing the same thing emits — the `items` or `locations` event
   and the `stats` counts — because one call in `events.py` covers both surfaces. So an
   automation mutating the inventory repaints an open card with no interaction, and a
-  subscriber cannot tell which surface a change arrived through. The rate limiter's event
-  budget is charged identically either way, since it is the same broadcast.
+  subscriber cannot tell which surface a change arrived through.
 
 - **An event implies a durable write.** Every mutation command persists the change *before* it broadcasts and before it replies, so any event on any topic says the write behind it reached storage. When the write fails the caller receives `storage_error` and **no event is emitted at all** — subscribers are told nothing rather than told about a change that is not on disk. A client may therefore treat a received event as committed and never has to reconcile it against a `storage_error` another client saw for the same change.
   - The guarantee is about the wire, not about the running repository: a failed write leaves the mutation applied in memory (`import/execute` is the exception — it rolls the dataset back, because a wholesale swap has more to undo than one entity does). Nothing announces that divergence, and it ends at the next restart, which reads back whatever last reached disk.
   - `items/bulk` shares one write across the whole batch, so a failed write costs the batch its `results` map: the command answers `storage_error` and none of its operations broadcast.
-  - The rate limiter can still drop an event that was persisted — see "Rate limiting". The implication runs one way only: an event means a durable write, but a durable write does not guarantee an event.
-  - The midnight `stats/counts` event is the one exception, and it is an exception in the harmless direction: nothing was written because nothing changed, only the day the counts are measured against. It is charged and dropped like any other broadcast, which is why the card re-reads `haventory/stats` on its own day boundary as well.
+  - The midnight `stats/counts` event is the one exception, and it is an exception in the harmless direction: nothing was written because nothing changed, only the day the counts are measured against. The card re-reads `haventory/stats` on its own day boundary as well.
 
 ### Home Assistant bus events
 
@@ -207,8 +194,6 @@ with no WebSocket client at all. Payload shapes: `docs/data_shapes.md`.
   after every mutation. One `entered` on the crossing, nothing while it stays low, one
   `cleared` on restock or deletion. A wholesale `import/execute` diffs the same way rather
   than announcing every row.
-- **The rate limiter does not apply.** It budgets WebSocket subscription traffic; bus events
-  are internal to Home Assistant, on the same reasoning as the `unavailable` notice.
 - **Bus events carry no item body beyond the trigger fields** — no `custom_fields`, no
   `description`. An automation that needs the whole item calls `haventory/item/get`.
 - **Locations fire no bus event** — but most of them still repaint the entities. Two kinds of

@@ -17,8 +17,6 @@ from pathlib import Path
 import pytest
 import voluptuous as vol
 from custom_components.haventory.config_flow import (
-    RATE_LIMIT_DOCS_URL,
-    SECTION_RATE_LIMIT,
     SECTION_TODO,
     HAventoryConfigFlow,
     HAventoryOptionsFlowHandler,
@@ -212,22 +210,6 @@ async def test_sidebar_toggle_offers_and_stores_an_opt_out() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sidebar_toggle_sits_outside_the_rate_limit_section() -> None:
-    """Visibility of the integration has nothing to do with rate limiting.
-
-    Nested in the section, the option would also be folded by `_flatten_options`
-    only as a side effect of that grouping — and hidden behind a collapsed
-    header the moment the limiter is at its defaults.
-    """
-
-    flow = HAventoryOptionsFlowHandler()
-    flow.config_entry = _entry({})
-
-    form = await flow.async_step_init(user_input=None)
-    assert CONF_SIDEBAR_PANEL_ENABLED in _schema_keys(form["data_schema"])
-
-
-@pytest.mark.asyncio
 async def test_the_shopping_list_section_folds_flat_and_defaults_to_off() -> None:
     """The bridge reads one flat `todo_entity_id`; the section is form dressing.
 
@@ -298,7 +280,6 @@ async def test_the_options_form_refuses_a_list_outside_the_todo_domain() -> None
                 CONF_SIDEBAR_PANEL_ENABLED: True,
                 CONF_QUICK_FILTERS: list(QUICK_FILTER_KEYS),
                 SECTION_TODO: {CONF_TODO_ENTITY_ID: "sensor.not_a_list"},
-                SECTION_RATE_LIMIT: {},
             }
         )
 
@@ -386,7 +367,6 @@ async def test_the_options_form_refuses_a_pill_that_is_not_offered() -> None:
                 CONF_SIDEBAR_PANEL_ENABLED: True,
                 CONF_QUICK_FILTERS: ["sideways"],
                 SECTION_TODO: {},
-                SECTION_RATE_LIMIT: {},
             }
         )
 
@@ -407,22 +387,6 @@ async def test_setup_does_not_ask_which_pills(monkeypatch) -> None:
 
     result = await flow.async_step_user(user_input={CONF_CARD_TITLE: "Pantry"})
     assert CONF_QUICK_FILTERS not in result["options"]
-
-
-@pytest.mark.asyncio
-async def test_options_form_fills_the_docs_link() -> None:
-    """The step text links the rate-limit docs through a placeholder.
-
-    Translation strings may not carry URLs — hassfest rejects them — so the
-    link target arrives as `description_placeholders`. Without it the form
-    renders a literal `{docs_url}`.
-    """
-
-    flow = HAventoryOptionsFlowHandler()
-    flow.config_entry = _entry({})
-
-    form = await flow.async_step_init(user_input=None)
-    assert form["description_placeholders"] == {"docs_url": RATE_LIMIT_DOCS_URL}
 
 
 def _translation_files() -> list[Path]:

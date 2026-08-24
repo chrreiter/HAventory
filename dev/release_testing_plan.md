@@ -78,8 +78,8 @@ logger:
 Run `debug` for groups A–H. Before the group-J soak, confirm the debug log volume is
 sane over 24 h; if it is not, drop to `info` for the soak and note that in the results.
 Review logs for accidental PII and for anything at WARNING+ that is **not** a
-contract-defined client-recoverable rejection — `validation_error`, `not_found`, `conflict`
-and `rate_limited` each log exactly one WARNING line, no traceback, by design (item 32); a
+contract-defined client-recoverable rejection — `validation_error`, `not_found` and
+`conflict` each log exactly one WARNING line, no traceback, by design (item 32); a
 traceback from `custom_components.haventory` is always a finding (exit criterion 4).
 
 **2. Objective consistency check.** `haventory/health` (`ws.py`) reports the `counts`
@@ -169,7 +169,6 @@ dependency group — `uv sync --group probes` first.
 | C4 | Restart HA while the card is open | Card reconnects; no error spam; data correct after reconnect | ✅ |
 | C5 | Background the companion app 30+ min, then resume (iOS especially) | Socket re-established; list is current, not stale | ✅ |
 | C6 | Remote access over Nabu Casa / reverse proxy / VPN | Card asset loads over the external URL; subscriptions work; latency is tolerable for quantity adjustments | ✅ |
-| C7 | Enable rate limiting via the options flow, then trip it | The card shows the "Live updates paused" banner, retries the subscribe up to 4 times with backoff, and recovers on its own once the limiter admits it — or pauses visibly with a working Refresh action after the budget is spent (item 1, fixed by #128) | ✅ |
 
 ### D — Lifecycle: restart, update, rollback
 

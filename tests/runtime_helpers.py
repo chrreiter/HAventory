@@ -38,7 +38,6 @@ from custom_components.haventory import (
     async_unload_entry,
 )
 from custom_components.haventory.const import DOMAIN
-from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.runtime import HAventoryRuntime, find_runtime
 from custom_components.haventory.storage import DomainStore
@@ -52,7 +51,6 @@ def install_runtime(  # noqa: PLR0913 - one keyword per runtime field, all optio
     *,
     repository: Repository | None = None,
     store: DomainStore | None = None,
-    rate_limiter: RateLimiter | None = None,
     card_title: str = "HAventory",
     quick_filters: list[str] | None = None,
     options: dict[str, Any] | None = None,
@@ -67,11 +65,6 @@ def install_runtime(  # noqa: PLR0913 - one keyword per runtime field, all optio
         repository=repository if repository is not None else Repository(),
         card_title=card_title,
         quick_filters=quick_filters,
-        rate_limiter=(
-            rate_limiter
-            if rate_limiter is not None
-            else RateLimiter(RateLimitConfig.from_options(options))
-        ),
     )
     if entry is None:
         entry = ConfigEntry(options=dict(options or {}))
@@ -88,7 +81,7 @@ def ws_hass(**runtime_fields: Any) -> HomeAssistant:
     """A Home Assistant with an entry loaded and the WebSocket commands registered.
 
     Where every `ws_send` test starts. The keywords are `install_runtime`'s, so
-    a test that needs its own repository, store or limiter names it here.
+    a test that needs its own repository or store names it here.
     """
 
     hass = HomeAssistant()

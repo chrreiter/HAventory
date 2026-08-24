@@ -50,9 +50,9 @@ class NotLoadedError(StorageError):
 
 
 # Codes an operator has to act on. Everything else in the contract's taxonomy —
-# validation_error, not_found, conflict, rate_limited — is a rejection the
-# caller can recover from by fixing and resending the request, so it must not
-# read as a fault in the Home Assistant log.
+# validation_error, not_found, conflict — is a rejection the caller can recover
+# from by fixing and resending the request, so it must not read as a fault in
+# the Home Assistant log.
 OPERATOR_ACTIONABLE_CODES = frozenset({"storage_error", "unknown_error"})
 
 

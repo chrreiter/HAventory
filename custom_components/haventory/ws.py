@@ -75,7 +75,6 @@ from .models import (
     validate_item_filter,
     validate_sort,
 )
-from .rate_limit import RateLimiter
 from .repository import UNSET, Repository
 from .runtime import Subscription, find_runtime, loaded_runtime
 from .serialization import serialize_item, serialize_location
@@ -104,18 +103,6 @@ def _require_loaded(hass: HomeAssistant) -> None:
     loaded_runtime(hass)
 
 
-def _rate_limiter(hass: HomeAssistant) -> RateLimiter | None:
-    """The configured rate limiter, or None when limiting is off.
-
-    Resolved without the loaded check: the guard charges a command's token
-    before it has asked whether an entry is loaded at all, so a refusal costs
-    the same whichever answer the command was heading for.
-    """
-
-    runtime = find_runtime(hass)
-    return runtime.rate_limiter if runtime is not None else None
-
-
 def _ctx(op: str, **extra: Any) -> dict[str, Any]:
     """Build a structured logging context for WS operations.
 
@@ -131,9 +118,6 @@ def _ctx(op: str, **extra: Any) -> dict[str, Any]:
 # generic: internal details (exception text, stack traces) stay in the server
 # log and never reach the wire.
 UNEXPECTED_ERROR_MESSAGE = "unexpected error; see Home Assistant logs"
-
-# Sent to clients when a command exceeds the configured rate limit.
-RATE_LIMITED_MESSAGE = "rate limit exceeded; retry later"
 
 
 def _error_envelope(
@@ -238,13 +222,6 @@ def ws_guard(
         async def wrapper(
             hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
         ) -> Any:
-            limiter = _rate_limiter(hass)
-            if limiter is not None and not limiter.allow_command(conn):
-                err = _error_envelope(
-                    msg.get("id", 0), "rate_limited", RATE_LIMITED_MESSAGE, _ctx(op)
-                )
-                _send_error(conn, err)
-                return err
             try:
                 _require_loaded(hass)
                 return await func(hass, conn, msg)
@@ -520,17 +497,10 @@ async def ws_health(
     # answer was empty on every install that ever asked; the checks run in the
     # test suite instead, where a disagreement fails a build. The two fields
     # stay in the result, and stay constant, because clients read them.
-    limiter = _rate_limiter(hass)
-    rate_limit = {
-        "enabled": bool(limiter is not None and limiter.enabled),
-        "dropped_commands": limiter.dropped_commands if limiter is not None else 0,
-        "dropped_events": limiter.dropped_events if limiter is not None else 0,
-    }
     result = {
         "healthy": True,
         "issues": [],
         "counts": _repo(hass).get_counts(),
-        "rate_limit": rate_limit,
     }
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 

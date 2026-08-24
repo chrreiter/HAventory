@@ -234,7 +234,7 @@ async def test_health_answers_the_documented_shape() -> None:
     res = await ws_send(hass, 4, "haventory/health")
     assert res["success"] is True
     body = res["result"]
-    assert set(body) == {"healthy", "issues", "counts", "rate_limit"}
+    assert set(body) == {"healthy", "issues", "counts"}
     assert body["healthy"] is True
     assert body["issues"] == []
     assert isinstance(body["counts"], dict)

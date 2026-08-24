@@ -5,9 +5,9 @@ One policy governs every error the API boundary logs:
 - ERROR only where an operator has to act — ``storage_error`` and
   ``unknown_error``.
 - WARNING for contract-defined, client-recoverable rejections —
-  ``validation_error``, ``not_found``, ``conflict``, ``rate_limited``, and the
-  ``storage_error`` a teardown leaves behind, which is a state somebody chose
-  rather than a failure.
+  ``validation_error``, ``not_found``, ``conflict``, and the ``storage_error``
+  a teardown leaves behind, which is a state somebody chose rather than a
+  failure.
 - ``exc_info`` only where a traceback says something the message does not.
 
 The conflict and not-found cases are what the release run checks:
@@ -24,7 +24,6 @@ import pytest
 import voluptuous as vol
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.exceptions import NotLoadedError, StorageError
-from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
@@ -33,7 +32,6 @@ from ws_helpers import RecordingConn, ws_send
 
 WS_LOGGER = "custom_components.haventory.ws"
 SERVICES_LOGGER = "custom_components.haventory.services"
-RATE_LIMIT_LOGGER = "custom_components.haventory.rate_limit"
 
 
 def _records(caplog, logger: str = WS_LOGGER) -> list[logging.LogRecord]:
@@ -99,39 +97,6 @@ async def test_conflict_logs_warning_without_traceback(caplog) -> None:
 
     record = _only(caplog)
     assert record.op == "item_update"
-    assert record.levelno == logging.WARNING
-    assert record.exc_info is None
-
-
-@pytest.mark.asyncio
-async def test_rate_limited_logs_warning_without_traceback(caplog) -> None:
-    limiter = RateLimiter(
-        RateLimitConfig(
-            enabled=True,
-            commands_per_second=1.0,
-            commands_burst=1.0,
-            global_commands_per_second=1.0,
-            global_commands_burst=1000.0,
-            events_per_second=1.0,
-            events_burst=1000.0,
-            global_events_per_second=1.0,
-            global_events_burst=1000.0,
-        )
-    )
-    hass = ws_hass(rate_limiter=limiter)
-    # One connection object across both sends: the limiter keys a bucket per
-    # connection identity, so a second object would get a fresh budget.
-    conn = RecordingConn()
-    caplog.set_level(logging.DEBUG)
-
-    assert (await ws_send(hass, 1, "haventory/ping", conn=conn))["success"] is True
-    res = await ws_send(hass, 2, "haventory/ping", conn=conn)
-    assert res["success"] is False and res["error"]["code"] == "rate_limited"
-
-    # The rejection never reaches the WS error boundary; the limiter owns the
-    # (throttled) log line.
-    assert _records(caplog) == []
-    record = _only(caplog, RATE_LIMIT_LOGGER)
     assert record.levelno == logging.WARNING
     assert record.exc_info is None
 

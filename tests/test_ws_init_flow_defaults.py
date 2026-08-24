@@ -85,17 +85,16 @@ def test_a_section_is_answered_as_a_nested_object() -> None:
     data_schema = [
         {"name": "card_title", "type": "string", "required": True, "default": "HAventory"},
         {
-            "name": "rate_limit",
+            "name": "todo",
             "type": "expandable",
             "schema": [
-                {"name": "enabled", "type": "boolean", "required": True, "default": False},
-                {"name": "burst", "required": True, "default": 10.0},
+                {"name": "todo_entity_id", "type": "string", "required": True, "default": ""},
             ],
         },
     ]
     assert build_user_input(data_schema) == {
         "card_title": "HAventory",
-        "rate_limit": {"enabled": False, "burst": 10.0},
+        "todo": {"todo_entity_id": ""},
     }
 
 

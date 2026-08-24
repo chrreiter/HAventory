@@ -25,7 +25,6 @@ from custom_components.haventory import subscriptions as subs_mod
 from custom_components.haventory import ws as ws_mod
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import NotLoadedError
-from custom_components.haventory.rate_limit import RateLimitConfig, RateLimiter
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
 from homeassistant.config_entries import ConfigEntry
@@ -202,41 +201,6 @@ async def test_unload_drops_live_subscriptions() -> None:
 
     assert conn.messages == []
     assert hass.data[DOMAIN].get("subscriptions") in (None, {})
-
-
-@pytest.mark.asyncio
-async def test_teardown_signal_outranks_the_event_budget() -> None:
-    """A spent event budget must not be what keeps a client believing it is live.
-
-    The limiter exists to throttle inventory chatter; this is the one event whose
-    loss cannot be recovered by re-listing, because the client would never know
-    to.
-    """
-
-    hass = HomeAssistant()
-    entry = await _setup_entry(hass)
-    limiter = RateLimiter(
-        RateLimitConfig(
-            enabled=True,
-            events_per_second=1.0,
-            events_burst=1.0,
-            global_events_per_second=1.0,
-            global_events_burst=1.0,
-        )
-    )
-    runtime_of(hass).rate_limiter = limiter
-    conn = RecordingConn()
-    assert (await ws_send(hass, 5, "haventory/subscribe", conn=conn, topic="items"))["success"]
-
-    # Drain the global budget, then prove an ordinary broadcast is now dropped.
-    assert limiter.allow_event_broadcast() is True
-    conn.messages.clear()
-    subs_mod.broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
-    assert conn.messages == []
-
-    await unload_entry(hass, entry)
-
-    assert [m["event"]["action"] for m in conn.messages] == ["unavailable"]
 
 
 # -----------------------------
