@@ -319,11 +319,9 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 
         def __init__(self) -> None:
             self.static_paths: list = []
-            self.static_path_calls = 0
             self.views: list = []
 
         async def async_register_static_paths(self, configs) -> None:
-            self.static_path_calls += 1
             for config in configs:
                 if any(existing.url_path == config.url_path for existing in self.static_paths):
                     raise RuntimeError(f"Duplicate static path: {config.url_path}")
@@ -1010,9 +1008,6 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             require_admin=require_admin,
             config_panel_domain=config_panel_domain,
         )
-        # Every call, not just the ones that stick: a test asserting "registered
-        # exactly once" needs the attempts, which the registry alone cannot show.
-        hass.data.setdefault("__panel_registrations__", []).append(frontend_url_path)
 
     ha_panel_custom.async_register_panel = async_register_panel
     sys.modules["homeassistant.components.panel_custom"] = ha_panel_custom

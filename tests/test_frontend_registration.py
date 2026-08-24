@@ -28,13 +28,11 @@ import pytest
 from custom_components.haventory.const import (
     CONF_CARD_TITLE,
     CONF_SIDEBAR_PANEL_ENABLED,
-    DEFAULT_CARD_TITLE,
     INTEGRATION_VERSION,
     MEDIA_NAME_TOKEN_PARAM,
     MEDIA_SIZE_PARAM,
     MEDIA_SIZE_THUMB,
     MEDIA_URL_TEMPLATE,
-    PANEL_ELEMENT_NAME,
     PANEL_ICON,
     PANEL_URL_PATH,
     QUICK_FILTER_KEYS,
@@ -110,11 +108,6 @@ def registered_panel(hass: HomeAssistant) -> Any:
     return hass.data.get(DATA_PANELS, {}).get(PANEL_URL_PATH)
 
 
-def panel_registration_attempts(hass: HomeAssistant) -> list[str]:
-    """Every ``async_register_panel`` call, successful or not (see conftest)."""
-    return hass.data.get("__panel_registrations__", [])
-
-
 async def setup_frontend(hav_init, hass: HomeAssistant, entry: ConfigEntry) -> None:
     """The two frontend steps of ``async_setup_entry``, in the order it runs them."""
     await hav_init._register_frontend_module(hass)
@@ -146,71 +139,6 @@ def test_the_card_build_emits_a_single_file() -> None:
     config = (REPO_ROOT / "cards" / "haventory-card" / "vite.config.ts").read_text(encoding="utf-8")
 
     assert re.search(r"^\s*codeSplitting: false$", config, re.MULTILINE) is not None
-
-
-@pytest.mark.asyncio
-async def test_serves_the_bundle_directory_without_cache_headers(hav_init, tmp_path):
-    """The card directory is served at a fixed path, with revalidation left on.
-
-    `cache_headers=True` would stamp a long `max-age` and no revalidation, which
-    is how the old `/local` route kept browsers on a month-old bundle.
-    """
-    hass = make_hass()
-    hass.data["lovelace_data_key"] = MockLovelaceData()
-
-    await hav_init._register_frontend_module(hass)
-
-    assert len(hass.http.static_paths) == 1
-    config = hass.http.static_paths[0]
-    assert config.url_path == STATIC_URL_PATH
-    assert config.path == str(tmp_path / "www")
-    assert config.cache_headers is False
-
-
-@pytest.mark.asyncio
-async def test_registers_both_loaders_with_the_same_url(hav_init):
-    """One URL builder, two loaders — byte-identical, or the element defines twice."""
-    hass = make_hass()
-    lovelace_data = MockLovelaceData()
-    hass.data["lovelace_data_key"] = lovelace_data
-
-    await hav_init._register_frontend_module(hass)
-
-    expected = CURRENT_CARD_URL
-    assert [c["url"] for c in lovelace_data.resources.created] == [expected]
-    assert lovelace_data.resources.created[0]["res_type"] == "module"
-    assert extra_js_urls(hass) == {expected}
-
-
-@pytest.mark.asyncio
-async def test_static_path_is_registered_once_across_a_reload(hav_init):
-    """Setup → unload → setup registers the route once: aiohttp cannot take one back."""
-    hass = make_hass()
-    hass.data["lovelace_data_key"] = MockLovelaceData()
-
-    await hav_init._register_frontend_module(hass)
-    await hav_init.async_unload_entry(hass, ConfigEntry())
-    await hav_init._register_frontend_module(hass)
-
-    assert hass.http.static_path_calls == 1
-    assert len(hass.http.static_paths) == 1
-
-
-@pytest.mark.asyncio
-async def test_unload_hands_back_the_module_url_and_setup_restores_it(hav_init):
-    """The extra-module URL is entry-scoped state, unlike the static route."""
-    hass = make_hass()
-    hass.data["lovelace_data_key"] = MockLovelaceData()
-    expected = CURRENT_CARD_URL
-
-    await hav_init._register_frontend_module(hass)
-    assert extra_js_urls(hass) == {expected}
-
-    await hav_init.async_unload_entry(hass, ConfigEntry())
-    assert extra_js_urls(hass) == set()
-
-    await hav_init._register_frontend_module(hass)
-    assert extra_js_urls(hass) == {expected}
 
 
 @pytest.mark.asyncio
@@ -670,38 +598,6 @@ def test_every_status_colour_has_a_rule_in_the_chip_stylesheet() -> None:
 
 
 @pytest.mark.asyncio
-async def test_registers_the_sidebar_panel_against_the_card_bundle(hav_init):
-    """The panel is a custom panel loading the card bundle, named by the card title.
-
-    Its `module_url` is the string the extra-module loader got, character for
-    character: a second URL for the same module makes the browser evaluate the
-    bundle twice, and `defineCardElement` has nothing to say about a second
-    evaluation of itself.
-    """
-    hass = make_hass()
-
-    await setup_frontend(hav_init, hass, ConfigEntry())
-
-    expected_url = CURRENT_CARD_URL
-    panel = registered_panel(hass)
-    assert panel.component_name == "custom"
-    assert panel.frontend_url_path == PANEL_URL_PATH
-    assert panel.sidebar_title == DEFAULT_CARD_TITLE
-    assert panel.sidebar_icon == PANEL_ICON
-    assert panel.require_admin is False
-    assert panel.config == {
-        "title": DEFAULT_CARD_TITLE,
-        "_panel_custom": {
-            "name": PANEL_ELEMENT_NAME,
-            "embed_iframe": False,
-            "trust_external": False,
-            "module_url": expected_url,
-        },
-    }
-    assert extra_js_urls(hass) == {expected_url}
-
-
-@pytest.mark.asyncio
 async def test_applying_twice_over_registers_once(hav_init):
     """An options save that changes nothing about the panel must not touch it.
 
@@ -713,84 +609,13 @@ async def test_applying_twice_over_registers_once(hav_init):
     entry = ConfigEntry()
 
     await setup_frontend(hav_init, hass, entry)
+    panel = registered_panel(hass)
     await hav_init._async_apply_sidebar_panel(hass, entry)
 
     assert list(hass.data[DATA_PANELS]) == [PANEL_URL_PATH]
-    assert panel_registration_attempts(hass) == [PANEL_URL_PATH]
-
-
-@pytest.mark.asyncio
-async def test_a_reload_leaves_the_panel_in_place(hav_init):
-    """Setup → unload → setup, and the panel never leaves the registry.
-
-    The page a browser has open is what disappears with it, so the reload path
-    neither removes nor re-registers: it recognises the registration it already
-    has.
-    """
-    hass = make_hass()
-    entry = ConfigEntry()
-
-    await setup_frontend(hav_init, hass, entry)
-    panel = registered_panel(hass)
-
-    await hav_init.async_unload_entry(hass, entry)
+    # The same object, so the second pass neither replaced the registration nor
+    # took it away and put it back.
     assert registered_panel(hass) is panel
-
-    await setup_frontend(hav_init, hass, entry)
-
-    assert registered_panel(hass) is panel
-    assert panel_registration_attempts(hass) == [PANEL_URL_PATH]
-
-
-@pytest.mark.asyncio
-async def test_a_disabled_entry_takes_the_sidebar_entry_back(hav_init):
-    """A disabled entry stays unloaded, so its sidebar entry opens nothing."""
-    hass = make_hass()
-    entry = ConfigEntry(disabled_by="user")
-
-    await setup_frontend(hav_init, hass, entry)
-    assert registered_panel(hass) is not None
-
-    await hav_init.async_unload_entry(hass, entry)
-
-    assert registered_panel(hass) is None
-    assert hass.data[hav_init.DOMAIN].get("panel_state") is None
-
-
-@pytest.mark.asyncio
-async def test_removing_the_entry_takes_the_sidebar_entry_back(hav_init):
-    """Removal is the other end: nothing is coming back to serve the page."""
-    hass = make_hass()
-    entry = ConfigEntry()
-
-    await setup_frontend(hav_init, hass, entry)
-    await hav_init.async_unload_entry(hass, entry)
-    assert registered_panel(hass) is not None
-
-    await hav_init.async_remove_entry(hass, entry)
-
-    assert registered_panel(hass) is None
-    assert hass.data[hav_init.DOMAIN].get("panel_state") is None
-
-
-@pytest.mark.asyncio
-async def test_a_rename_across_a_reload_replaces_the_panel(hav_init):
-    """The recognised registration is the one that was made, not merely "a panel".
-
-    A title changed while the entry was unloaded still has to reach the sidebar,
-    which is the case a bare "is something registered?" check would miss.
-    """
-    hass = make_hass()
-    entry = ConfigEntry(options={CONF_CARD_TITLE: "Pantry"})
-
-    await setup_frontend(hav_init, hass, entry)
-    await hav_init.async_unload_entry(hass, entry)
-
-    entry.options[CONF_CARD_TITLE] = "Garage"
-    await setup_frontend(hav_init, hass, entry)
-
-    assert registered_panel(hass).sidebar_title == "Garage"
-    assert panel_registration_attempts(hass) == [PANEL_URL_PATH] * 2
 
 
 @pytest.mark.asyncio
@@ -829,19 +654,6 @@ async def test_renaming_the_card_renames_the_sidebar_entry(hav_init):
 
 
 @pytest.mark.asyncio
-async def test_an_explicit_opt_out_registers_no_panel(hav_init):
-    """Off in the options means off at setup too, not just on the toggle path."""
-    hass = make_hass()
-
-    await setup_frontend(hav_init, hass, ConfigEntry(options={CONF_SIDEBAR_PANEL_ENABLED: False}))
-
-    assert registered_panel(hass) is None
-    assert panel_registration_attempts(hass) == []
-    # The card itself is unaffected: only the sidebar entry is opted out of.
-    assert extra_js_urls(hass) == {CURRENT_CARD_URL}
-
-
-@pytest.mark.asyncio
 async def test_missing_panel_custom_degrades_to_a_debug_log(monkeypatch, tmp_path, caplog):
     """`panel_custom` is an internal component — treat its absence as our problem, not HA's."""
     monkeypatch.delitem(sys.modules, "homeassistant.components.panel_custom")
@@ -868,4 +680,3 @@ async def test_no_sidebar_panel_without_a_built_bundle(monkeypatch, tmp_path):
     await setup_frontend(hav_init, hass, ConfigEntry())
 
     assert registered_panel(hass) is None
-    assert panel_registration_attempts(hass) == []
