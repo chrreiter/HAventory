@@ -1072,62 +1072,65 @@ export class Store {
   // ---------- Attachments ----------
 
   /**
+   * Take the item a call answered with into the list, and hand it back.
+   *
+   * The caller needs that item too: it is one version on, so a form that goes
+   * on holding the copy it had fails its next save with `conflict`.
+   *
+   * Attachment work is the one family that does not go through `run`. Its
+   * failures belong to the file picker that raised them — shown per file, next
+   * to the file that failed — and the upload's own HTTP errors carry no
+   * backend error code, so counting them would read a rejected file as a lost
+   * connection.
+   */
+  private async applyResult(call: Promise<Item>): Promise<Item> {
+    const updated = await call;
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
+  /**
    * Upload one file and attach it to an item.
    *
    * Its own action rather than part of the item save: an 8 MB POST inside a
-   * form submit makes the save look hung. Errors are thrown rather than pushed
-   * onto the error queue — the picker shows them per file, next to the file
-   * that failed, which a global banner cannot do.
+   * form submit makes the save look hung.
    */
-  async uploadAttachment(
+  uploadAttachment(
     itemId: string,
     file: File,
     kind: AttachmentKind = 'picture',
     expectedVersion?: number,
   ): Promise<Item> {
-    const updated = await this.ws.uploadAttachment(itemId, file, kind, expectedVersion);
-    this.applyOptimistic(updated);
-    return updated;
+    return this.applyResult(this.ws.uploadAttachment(itemId, file, kind, expectedVersion));
   }
 
   /** Rename one attachment for display, leaving its filename and bytes alone. */
-  async updateAttachment(
+  updateAttachment(
     itemId: string,
     attachmentId: string,
     title: string,
     expectedVersion?: number,
   ): Promise<Item> {
-    const updated = await this.ws.updateAttachment(itemId, attachmentId, title, expectedVersion);
-    this.applyOptimistic(updated);
-    return updated;
+    return this.applyResult(
+      this.ws.updateAttachment(itemId, attachmentId, title, expectedVersion),
+    );
   }
 
   /** Renumber one kind's attachments; the first id named becomes position 0. */
-  async reorderAttachments(
+  reorderAttachments(
     itemId: string,
     kind: AttachmentKind,
     attachmentIds: string[],
     expectedVersion?: number,
   ): Promise<Item> {
-    const updated = await this.ws.reorderAttachments(
-      itemId,
-      kind,
-      attachmentIds,
-      expectedVersion,
+    return this.applyResult(
+      this.ws.reorderAttachments(itemId, kind, attachmentIds, expectedVersion),
     );
-    this.applyOptimistic(updated);
-    return updated;
   }
 
   /** Detach one file; the backend deletes the bytes with it. */
-  async removeAttachment(
-    itemId: string,
-    attachmentId: string,
-    expectedVersion?: number,
-  ): Promise<Item> {
-    const updated = await this.ws.removeAttachment(itemId, attachmentId, expectedVersion);
-    this.applyOptimistic(updated);
-    return updated;
+  removeAttachment(itemId: string, attachmentId: string, expectedVersion?: number): Promise<Item> {
+    return this.applyResult(this.ws.removeAttachment(itemId, attachmentId, expectedVersion));
   }
 
   /** Sign one attachment's media path so an `<img>` can load it. */
@@ -1406,6 +1409,33 @@ export class Store {
   }
 
   // ---------- Optimistic writes ----------
+  /**
+   * Show a change on the row, send it, and take the server's copy back — or put
+   * the row the way it was when the call is refused.
+   *
+   * `patch` is what the row looks like while the call is in flight, applied to
+   * the row as it stands so a relative change (a delta, a due date that keeps
+   * the old one) has something to count from. Null where the answer cannot be
+   * guessed, which also means there is nothing to roll back. `details` rides
+   * the error entry: a conflict banner offers the edit again and needs both the
+   * row it was refused for and the changes it was refused with.
+   */
+  private async optimisticWrite(
+    itemId: string,
+    patch: ((before: Item) => Partial<Item> | ItemUpdate) | null,
+    call: () => Promise<Item>,
+    details?: { itemId?: string; changes?: ItemUpdate },
+  ): Promise<void> {
+    const before = patch ? this.state.value.items.find((i) => i.id === itemId) : undefined;
+    if (patch && before) this.applyOptimistic({ ...before, ...patch(before) } as Item);
+    try {
+      this.applyOptimistic(await this.run(call));
+    } catch (err) {
+      this.pushError(err, details);
+      if (before) this.applyOptimistic(before);
+    }
+  }
+
   async createItem(input: ItemCreate) {
     try {
       const created = await this.run(() => this.ws.createItem(input));
@@ -1418,19 +1448,12 @@ export class Store {
   }
 
   async updateItem(itemId: string, changes: ItemUpdate, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) {
-      const optimistic: Item = { ...before, ...changes } as Item;
-      this.applyOptimistic(optimistic);
-    }
-    try {
-      const updated = await this.run(() => this.ws.updateItem(itemId, changes, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      // Capture conflict context for actionable retry
-      this.pushError(err, { itemId, changes });
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      () => changes,
+      () => this.ws.updateItem(itemId, changes, expectedVersion),
+      { itemId, changes },
+    );
   }
 
   async deleteItem(itemId: string, expectedVersion?: number) {
@@ -1445,51 +1468,37 @@ export class Store {
   }
 
   async adjustQuantity(itemId: string, delta: number, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, quantity: before.quantity + delta } as Item);
-    try {
-      const updated = await this.run(() => this.ws.adjustQuantity(itemId, delta, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      (before) => ({ quantity: before.quantity + delta }),
+      () => this.ws.adjustQuantity(itemId, delta, expectedVersion),
+    );
   }
 
   async setQuantity(itemId: string, quantity: number, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, quantity } as Item);
-    try {
-      const updated = await this.run(() => this.ws.setQuantity(itemId, quantity, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      () => ({ quantity }),
+      () => this.ws.setQuantity(itemId, quantity, expectedVersion),
+    );
   }
 
   async checkOut(itemId: string, dueDate?: string | null, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, checked_out: true, due_date: dueDate ?? before.due_date } as Item);
-    try {
-      const updated = await this.run(() => this.ws.checkOut(itemId, dueDate, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      // No date named means the item keeps the one it has: the command is
+      // "check this out", not "check this out with no due date".
+      (before) => ({ checked_out: true, due_date: dueDate ?? before.due_date }),
+      () => this.ws.checkOut(itemId, dueDate, expectedVersion),
+    );
   }
 
   async markCheckedIn(itemId: string, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, checked_out: false } as Item);
-    try {
-      const updated = await this.run(() => this.ws.markCheckedIn(itemId, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      () => ({ checked_out: false }),
+      () => this.ws.markCheckedIn(itemId, expectedVersion),
+    );
   }
 
   /**
@@ -1501,41 +1510,42 @@ export class Store {
    * series the anchor exists to keep right.
    */
   async bumpReminder(itemId: string, expectedVersion?: number) {
-    try {
-      this.applyOptimistic(await this.run(() => this.ws.bumpReminder(itemId, expectedVersion)));
-    } catch (err) {
-      this.pushError(err);
-    }
+    await this.optimisticWrite(itemId, null, () => this.ws.bumpReminder(itemId, expectedVersion));
   }
 
   async setLowStockThreshold(itemId: string, threshold: number | null, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, low_stock_threshold: threshold } as Item);
-    try {
-      const updated = await this.run(() => this.ws.setLowStockThreshold(itemId, threshold, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      () => ({ low_stock_threshold: threshold }),
+      () => this.ws.setLowStockThreshold(itemId, threshold, expectedVersion),
+    );
   }
 
   async moveItem(itemId: string, locationId: string | null, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, location_id: locationId } as Item);
-    try {
-      const updated = await this.run(() => this.ws.moveItem(itemId, locationId, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      () => ({ location_id: locationId }),
+      () => this.ws.moveItem(itemId, locationId, expectedVersion),
+    );
+  }
+
+  // ---------- Locations ----------
+  /**
+   * Run a location change and re-read both views of the tree.
+   *
+   * The flat list and the nested tree are the same locations shaped for
+   * different surfaces, and every change moves both — the sidebar's counts ride
+   * the tree, the pickers read the flat list. Neither is pushed: the
+   * `locations` topic says a change happened, not what the walk now returns.
+   */
+  private async afterLocationChange<T>(call: Promise<T>): Promise<T> {
+    const result = await call;
+    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    return result;
   }
 
   async createLocation(name: string, parentId?: string | null, areaId?: string | null): Promise<Location> {
-    const created = await this.ws.createLocation(name, parentId ?? null, areaId ?? undefined);
-    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
-    return created;
+    return this.afterLocationChange(this.ws.createLocation(name, parentId ?? null, areaId ?? undefined));
   }
 
   async updateLocation(
@@ -1544,27 +1554,36 @@ export class Store {
     // command takes it, so an edit that also moves the location is one trip.
     changes: { name?: string; areaId?: string | null; newParentId?: string | null },
   ): Promise<Location> {
-    const updated = await this.ws.updateLocation(locationId, changes);
-    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
-    return updated;
+    return this.afterLocationChange(this.ws.updateLocation(locationId, changes));
   }
 
   /** Delete an empty location. Rejects with validation_error when it still has children or items. */
   async deleteLocation(locationId: string): Promise<void> {
-    await this.ws.deleteLocation(locationId);
-    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    await this.afterLocationChange(this.ws.deleteLocation(locationId));
   }
 
   /** Move a whole subtree under a new parent (null = top level). Descendant paths update live. */
   async moveLocationSubtree(locationId: string, newParentId: string | null): Promise<Location> {
-    const moved = await this.ws.moveLocationSubtree(locationId, newParentId);
-    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    const moved = await this.afterLocationChange(
+      this.ws.moveLocationSubtree(locationId, newParentId),
+    );
     // Denormalized item location_path values changed for the whole subtree.
     await this.listItems(true);
     return moved;
   }
 
   // ---------- Status definitions ----------
+  /**
+   * Run a status change and re-read the vocabulary.
+   *
+   * Display order is part of the list, so the whole list is read back rather
+   * than patched from the one definition the call answered with.
+   */
+  private async afterStatusChange<T>(call: Promise<T>): Promise<T> {
+    const result = await call;
+    await this.refreshStatuses();
+    return result;
+  }
 
   async createStatus(status: {
     slug: string;
@@ -1572,9 +1591,7 @@ export class Store {
     color?: StatusColorValue;
     icon?: string;
   }): Promise<StatusDefinition> {
-    const created = await this.ws.createStatus(status);
-    await this.refreshStatuses();
-    return created;
+    return this.afterStatusChange(this.ws.createStatus(status));
   }
 
   /** Edit presentation. No item moves, so nothing but the vocabulary refreshes. */
@@ -1582,15 +1599,11 @@ export class Store {
     slug: string,
     changes: { label?: string; color?: StatusColorValue; icon?: string },
   ): Promise<StatusDefinition> {
-    const updated = await this.ws.updateStatus(slug, changes);
-    await this.refreshStatuses();
-    return updated;
+    return this.afterStatusChange(this.ws.updateStatus(slug, changes));
   }
 
   async reorderStatuses(slugs: string[]): Promise<StatusDefinition[]> {
-    const ordered = await this.ws.reorderStatuses(slugs);
-    await this.refreshStatuses();
-    return ordered;
+    return this.afterStatusChange(this.ws.reorderStatuses(slugs));
   }
 
   /**
@@ -1605,8 +1618,7 @@ export class Store {
    * broadcast.
    */
   async deleteStatus(slug: string, reassignTo?: string): Promise<number> {
-    const { reassigned } = await this.ws.deleteStatus(slug, reassignTo);
-    await this.refreshStatuses();
+    const { reassigned } = await this.afterStatusChange(this.ws.deleteStatus(slug, reassignTo));
     if (reassigned > 0) await Promise.all([this.listItems(true), this.refreshStats()]);
     return reassigned;
   }
