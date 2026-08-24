@@ -560,12 +560,6 @@ def new_uuid4() -> uuid.UUID:
     return uuid.uuid4()
 
 
-def new_uuid4_str() -> str:
-    """Generate a hyphenated UUID v4 string."""
-
-    return str(new_uuid4())
-
-
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -1362,9 +1356,8 @@ class _ItemWrite:
 
     ``draft`` is what the write starts from and what the rules fill in: the
     field defaults on a create, a copy of the stored item on an update. A cap
-    that refuses *growth* reads the value the item already carries off the same
-    draft, so on a create — where the defaults are empty — it is an absolute
-    cap, and neither path needs a rule of its own.
+    that refuses *growth* reads what the item already carries off that same
+    draft, which on a create is empty — so one rule serves both paths.
     """
 
     draft: Item
@@ -1394,8 +1387,7 @@ def _write_name(write: _ItemWrite) -> None:
 def _write_optional_text(write: _ItemWrite, *, key: str, max_length: int) -> None:
     """One nullable free-text field, held to its cap against what is stored.
 
-    ``key`` names the payload field and the item's attribute, which are the same
-    word for every field written this way.
+    ``key`` names the payload field and the item's attribute alike.
     """
 
     if key not in write.payload:
@@ -1423,9 +1415,9 @@ def _write_status(write: _ItemWrite) -> None:
 def _write_checkout(write: _ItemWrite) -> None:
     """The checkout flag and its due date, holding the pair's rule across both.
 
-    Judged on what the write leaves behind rather than on the keys it carries,
-    so a write that sends the item home without naming the date is refused
-    rather than leaving a due date on an item nobody has out.
+    Judged on what the write leaves behind rather than on the keys it names, so
+    sending the item home without clearing the date is refused rather than
+    leaving a due date on an item nobody has out.
     """
 
     draft = write.draft
@@ -1485,9 +1477,9 @@ def _write_reminder(write: _ItemWrite) -> None:
 def _write_location(write: _ItemWrite) -> None:
     """Place the item, and keep its denormalized path in step with the tree.
 
-    The path is rebuilt on every write rather than only on the one that names a
-    location, so an item whose stored path predates a rename higher up carries
-    the current one from its next edit onwards.
+    The path is rebuilt on every write, not only on one that names a location:
+    an item whose stored path predates a rename higher up carries the current
+    one from its next edit onwards.
     """
 
     draft = write.draft
@@ -1552,12 +1544,11 @@ def _write_custom_fields(write: _ItemWrite) -> None:
 
 
 #: Every item field a client writes, and the rule that writes it. A create and
-#: an update walk this one table in this one order, so each field's type, cap
-#: and binding to its neighbours is written once and refuses the same value with
-#: the same message whichever command carried it. A rule reads the keys it owns
-#: off the payload and leaves the draft as it is when the write names none of
-#: them, which is what makes the same walk serve a full create and a one-field
-#: patch.
+#: an update walk this one table in this one order, so a field's type, cap and
+#: binding to its neighbours is written once and refuses the same value with the
+#: same message whichever command carried it. A rule leaves the draft as it
+#: stands when the write names none of its keys, which is what lets the one walk
+#: serve a full create and a one-field patch.
 _ITEM_FIELD_RULES: Final[tuple[Callable[[_ItemWrite], None], ...]] = (
     _write_name,
     partial(_write_optional_text, key="description", max_length=DESCRIPTION_MAX_LENGTH),
@@ -1582,14 +1573,8 @@ def create_item_from_create(
 ) -> Item:
     """Create a validated Item from an ItemCreate payload.
 
-    Args:
-        payload: Input fields from the client.
-        locations_by_id: Optional map of locations used to validate location_id and
-            construct a denormalized location_path when provided.
-        known_statuses: The live status slugs to validate ``status`` against.
-
-    Returns:
-        A fully-populated Item instance with defaults applied.
+    ``locations_by_id`` is the map ``location_id`` is checked against and the
+    denormalized path is built from; ``known_statuses`` is the live status set.
     """
 
     created_ts = iso_utc_now()

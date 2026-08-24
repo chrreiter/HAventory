@@ -34,7 +34,6 @@ from custom_components.haventory.models import (
     load_attachments,
     load_reminder_interval,
     monotonic_timestamp_after,
-    new_uuid4_str,
     seed_status_definitions,
     serialize_attachment_meta,
     serialize_reminder_interval,
@@ -133,9 +132,9 @@ def test_a_tag_list_is_normalized_and_a_null_clears() -> None:
 @pytest.mark.asyncio
 async def test_denormalized_location_path_generation() -> None:
     # Build a simple 3-level location chain and ensure display/sort paths
-    root_id = new_uuid4_str()
-    mid_id = new_uuid4_str()
-    leaf_id = new_uuid4_str()
+    root_id = str(uuid.uuid4())
+    mid_id = str(uuid.uuid4())
+    leaf_id = str(uuid.uuid4())
     root = _make_location(root_id, "Garage", None)
     mid = _make_location(mid_id, "Shelf A", root_id)
     leaf = _make_location(leaf_id, "Bin 3", mid_id)
@@ -169,8 +168,8 @@ def test_the_chain_walk_ends_on_a_loop_instead_of_following_it() -> None:
     rather than spin in it.
     """
 
-    first_id = new_uuid4_str()
-    second_id = new_uuid4_str()
+    first_id = str(uuid.uuid4())
+    second_id = str(uuid.uuid4())
     by_id = {
         first_id: _make_location(first_id, "First", second_id),
         second_id: _make_location(second_id, "Second", first_id),
@@ -195,8 +194,8 @@ def test_a_chain_that_reaches_no_root_is_refused(parent_id: str | None, message:
     location carries, and a parent the walk has already passed.
     """
 
-    leaf_id = new_uuid4_str()
-    missing_id = new_uuid4_str()
+    leaf_id = str(uuid.uuid4())
+    missing_id = str(uuid.uuid4())
     leaf = _make_location(leaf_id, "Bin 3", missing_id if parent_id is None else leaf_id)
 
     with pytest.raises(ValidationError, match=message):
@@ -206,7 +205,7 @@ def test_a_chain_that_reaches_no_root_is_refused(parent_id: str | None, message:
 @pytest.mark.asyncio
 async def test_invalid_location_reference() -> None:
     # Invalid: location_id unknown → ValidationError
-    fake_id = new_uuid4_str()
+    fake_id = str(uuid.uuid4())
     with pytest.raises(ValidationError):
         create_item_from_create(
             {"name": "Glue", "location_id": fake_id, "checked_out": True, "due_date": "2024-01-02"},
@@ -354,7 +353,7 @@ def test_an_absent_optional_date_is_not_a_refusal() -> None:
 
 def _attachment_doc(**overrides) -> dict:
     doc = {
-        "id": new_uuid4_str(),
+        "id": str(uuid.uuid4()),
         "kind": "picture",
         "filename": "photo.png",
         "mime": "image/png",

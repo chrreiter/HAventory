@@ -18,7 +18,6 @@ from custom_components.haventory.models import (
     build_location_path,
     create_item_from_create,
     filter_items,
-    new_uuid4_str,
     sort_items,
     validate_item_filter,
     validate_sort,
@@ -35,9 +34,9 @@ def _make_location(id: str, name: str, parent_id: str | None) -> Location:
 
 
 def _build_locations() -> tuple[dict[str, Location], Location, Location, Location]:
-    root_id = new_uuid4_str()
-    mid_id = new_uuid4_str()
-    leaf_id = new_uuid4_str()
+    root_id = str(uuid.uuid4())
+    mid_id = str(uuid.uuid4())
+    leaf_id = str(uuid.uuid4())
     root = _make_location(root_id, "Garage", None)
     mid = _make_location(mid_id, "Shelf A", root_id)
     leaf = _make_location(leaf_id, "Bin 3", mid_id)
@@ -201,7 +200,7 @@ async def test_filter_location_id_with_and_without_subtree() -> None:
 
     # Unknown location id → empty result (no error)
     empty = filter_items(
-        [at_root, at_mid, at_leaf], ItemFilter(location_id=new_uuid4_str(), include_subtree=True)
+        [at_root, at_mid, at_leaf], ItemFilter(location_id=str(uuid.uuid4()), include_subtree=True)
     )
     assert empty == []
 
@@ -664,7 +663,7 @@ async def test_filter_location_ids_unions_the_selection() -> None:
 @pytest.mark.asyncio
 async def test_include_subtree_is_one_flag_for_the_whole_location_selection() -> None:
     by_id, _root, mid, leaf = _build_locations()
-    other = _make_location(new_uuid4_str(), "Cellar", None)
+    other = _make_location(str(uuid.uuid4()), "Cellar", None)
     by_id[str(other.id)] = other
     other.path = build_location_path([other])
 
@@ -751,7 +750,7 @@ def test_validate_item_filter_accepts_the_multi_select_keys() -> None:
     declared there — no second list to extend."""
 
     assert {"categories", "location_ids"} <= set(ItemFilter.__annotations__)
-    validate_item_filter({"categories": ["Tools"], "location_ids": [new_uuid4_str()]})
+    validate_item_filter({"categories": ["Tools"], "location_ids": [str(uuid.uuid4())]})
 
 
 # -----------------------------
@@ -771,7 +770,7 @@ def _located(name: str, chain: list[Location]) -> Item:
 @pytest.mark.asyncio
 async def test_sort_by_location_orders_on_the_denormalized_path() -> None:
     by_id, root, mid, leaf = _build_locations()
-    cellar = _make_location(new_uuid4_str(), "Cellar", None)
+    cellar = _make_location(str(uuid.uuid4()), "Cellar", None)
     cellar.path = build_location_path([cellar])
     by_id[str(cellar.id)] = cellar
 
@@ -819,7 +818,7 @@ async def test_unlocated_items_stay_last_behind_a_non_latin_location_name() -> N
     folds to a character well above the "~" the date rule uses.
     """
 
-    accented = _make_location(new_uuid4_str(), "Éclairage", None)
+    accented = _make_location(str(uuid.uuid4()), "Éclairage", None)
     accented.path = build_location_path([accented])
     filed = _located("Filed", [accented])
     loose = create_item_from_create({"name": "Loose"})
