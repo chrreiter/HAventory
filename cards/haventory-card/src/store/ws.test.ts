@@ -88,19 +88,6 @@ describe('WSClient payload shaping', () => {
     expect(hass.sent[0]).toEqual({ type: 'haventory/item/list', filter: { q: 'drill' }, limit: 50 });
   });
 
-  it('sends only the custom-field halves that were provided', async () => {
-    const hass = makeSpyHass();
-    const ws = new WSClient(hass);
-
-    await ws.updateCustomFields('i1', { a: 1 }, undefined);
-    await ws.updateCustomFields('i2', undefined, ['b']);
-
-    expect(hass.sent[0]).toHaveProperty('set', { a: 1 });
-    expect(hass.sent[0]).not.toHaveProperty('unset');
-    expect(hass.sent[1]).toHaveProperty('unset', ['b']);
-    expect(hass.sent[1]).not.toHaveProperty('set');
-  });
-
   it('omits parent_id and area_id on create unless they were passed', async () => {
     // `undefined` means "not asked"; an explicit null means "top level" / "no
     // area", so the two cannot collapse into one check.

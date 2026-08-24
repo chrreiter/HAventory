@@ -21,7 +21,6 @@ import type {
   ListItemsResult,
   Location,
   LocationTreeNode,
-  ScalarValue,
   Sort,
   StatsCounts,
   StatusColorValue,
@@ -40,10 +39,6 @@ export class WSClient {
   }
 
   // ---------- Utility ----------
-  ping(echo?: unknown) {
-    return callWS<{ echo: unknown; ts: string }>(this.hass, { type: 'haventory/ping', echo });
-  }
-
   version() {
     return callWS<VersionInfo>(this.hass, { type: 'haventory/version' });
   }
@@ -153,38 +148,6 @@ export class WSClient {
 
   moveItem(itemId: string, locationId: string | null, expectedVersion?: number) {
     const payload: Record<string, unknown> = { type: 'haventory/item/move', item_id: itemId, location_id: locationId };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
-  }
-
-  /**
-   * Additive tag edit. Preferred over sending the whole `tags` array through
-   * item/update, which loses a concurrent edit made by another client.
-   */
-  addTags(itemId: string, tags: string[], expectedVersion?: number) {
-    const payload: Record<string, unknown> = { type: 'haventory/item/add_tags', item_id: itemId, tags };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
-  }
-
-  removeTags(itemId: string, tags: string[], expectedVersion?: number) {
-    const payload: Record<string, unknown> = { type: 'haventory/item/remove_tags', item_id: itemId, tags };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
-  }
-
-  updateCustomFields(
-    itemId: string,
-    set: Record<string, ScalarValue> | undefined,
-    unset: string[] | undefined,
-    expectedVersion?: number,
-  ) {
-    const payload: Record<string, unknown> = {
-      type: 'haventory/item/update_custom_fields',
-      item_id: itemId,
-    };
-    if (set) payload.set = set;
-    if (unset) payload.unset = unset;
     if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
     return callWS<Item>(this.hass, payload);
   }
@@ -329,10 +292,6 @@ export class WSClient {
     if (parentId !== undefined) msg.parent_id = parentId;
     if (areaId !== undefined) msg.area_id = areaId;
     return callWS<Location>(this.hass, msg);
-  }
-
-  getLocation(locationId: string) {
-    return callWS<Location>(this.hass, { type: 'haventory/location/get', location_id: locationId });
   }
 
   /**

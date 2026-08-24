@@ -394,12 +394,6 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         case 'haventory/location/list': {
           return locations as unknown as T;
         }
-        case 'haventory/location/get': {
-          const locationId = String((msg as any).location_id);
-          const loc = locations.find((l) => l.id === locationId);
-          if (!loc) throw { code: 'not_found', message: 'location not found' };
-          return loc as unknown as T;
-        }
         case 'haventory/location/update': {
           const locationId = String((msg as any).location_id);
           const loc = locations.find((l) => l.id === locationId);
