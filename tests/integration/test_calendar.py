@@ -15,17 +15,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 ENTITY_ID = "calendar.haventory"
-
-
-async def _setup(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
 
 
 async def _create(hass: HomeAssistant, **payload) -> dict:
@@ -38,10 +29,11 @@ async def _create(hass: HomeAssistant, **payload) -> dict:
 
 async def test_the_calendar_takes_the_reserved_entity_id_and_a_constant_unique_id(
     hass: HomeAssistant,
+    setup_entry,
 ) -> None:
     """`calendar.haventory` is the name the repository reserved for this entity."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
 
     registry = er.async_get(hass)
     entity = registry.async_get(ENTITY_ID)
@@ -56,8 +48,8 @@ async def test_the_calendar_takes_the_reserved_entity_id_and_a_constant_unique_i
     assert state.attributes["friendly_name"] == "HAventory"
 
 
-async def test_it_joins_the_same_device_as_the_sensors(hass: HomeAssistant) -> None:
-    entry = await _setup(hass)
+async def test_it_joins_the_same_device_as_the_sensors(hass: HomeAssistant, setup_entry) -> None:
+    entry = await setup_entry()
 
     device_registry = dr.async_get(hass)
     device = device_registry.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
@@ -68,16 +60,18 @@ async def test_it_joins_the_same_device_as_the_sensors(hass: HomeAssistant) -> N
     assert entity.device_id == device.id
 
 
-async def test_an_empty_inventory_reports_no_event(hass: HomeAssistant) -> None:
-    await _setup(hass)
+async def test_an_empty_inventory_reports_no_event(hass: HomeAssistant, setup_entry) -> None:
+    await setup_entry()
 
     assert hass.states.get(ENTITY_ID).state == "off"
 
 
-async def test_async_get_events_projects_both_dated_fields(hass: HomeAssistant) -> None:
+async def test_async_get_events_projects_both_dated_fields(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """The range read a calendar dashboard performs."""
 
-    await _setup(hass)
+    await setup_entry()
     today = dt_util.now().date()
     due = today + timedelta(days=3)
     inspection = today + timedelta(days=5)
@@ -101,7 +95,9 @@ async def test_async_get_events_projects_both_dated_fields(hass: HomeAssistant) 
     assert projected[0]["end"] == (due + timedelta(days=1)).isoformat()
 
 
-async def test_the_summaries_are_written_in_the_servers_language(hass: HomeAssistant) -> None:
+async def test_the_summaries_are_written_in_the_servers_language(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """Both surfaces the text reaches, in German: the event a calendar card
     lists and the `message` attribute a notification automation templates.
 
@@ -110,7 +106,7 @@ async def test_the_summaries_are_written_in_the_servers_language(hass: HomeAssis
     """
 
     hass.config.language = "de"
-    await _setup(hass)
+    await setup_entry()
 
     today = dt_util.now().date()
     await _create(hass, name="Leiter", checked_out=True, due_date=today.isoformat())
@@ -134,7 +130,9 @@ async def test_the_summaries_are_written_in_the_servers_language(hass: HomeAssis
     ]
 
 
-async def test_checking_an_item_out_due_today_turns_the_calendar_on(hass: HomeAssistant) -> None:
+async def test_checking_an_item_out_due_today_turns_the_calendar_on(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """A mutation repaints the entity with no polling and no time travel.
 
     `on` means an event is running now, which for an all-day occurrence means
@@ -142,7 +140,7 @@ async def test_checking_an_item_out_due_today_turns_the_calendar_on(hass: HomeAs
     covers the other half.
     """
 
-    await _setup(hass)
+    await setup_entry()
     assert hass.states.get(ENTITY_ID).state == "off"
 
     item = await _create(hass, name="Ladder")
@@ -165,11 +163,12 @@ async def test_checking_an_item_out_due_today_turns_the_calendar_on(hass: HomeAs
 
 async def test_an_upcoming_date_is_announced_while_the_state_stays_off(
     hass: HomeAssistant,
+    setup_entry,
 ) -> None:
     """Home Assistant's `on` is "happening now", so a future date announces itself
     through the attributes an automation's template reads."""
 
-    await _setup(hass)
+    await setup_entry()
     due = dt_util.now().date() + timedelta(days=2)
 
     item = await _create(hass, name="Ladder")
@@ -187,8 +186,8 @@ async def test_an_upcoming_date_is_announced_while_the_state_stays_off(
     assert state.attributes["start_time"].startswith(due.isoformat())
 
 
-async def test_the_reported_event_is_the_nearest_one(hass: HomeAssistant) -> None:
-    await _setup(hass)
+async def test_the_reported_event_is_the_nearest_one(hass: HomeAssistant, setup_entry) -> None:
+    await setup_entry()
     today = dt_util.now().date()
 
     await _create(hass, name="Boiler", inspection_date=(today + timedelta(days=90)).isoformat())
@@ -197,10 +196,10 @@ async def test_the_reported_event_is_the_nearest_one(hass: HomeAssistant) -> Non
     assert hass.states.get(ENTITY_ID).attributes["message"] == "Smoke alarm inspection"
 
 
-async def test_a_past_date_is_not_reported_as_upcoming(hass: HomeAssistant) -> None:
+async def test_a_past_date_is_not_reported_as_upcoming(hass: HomeAssistant, setup_entry) -> None:
     """Overdue is a count, not a calendar state: the day is gone."""
 
-    await _setup(hass)
+    await setup_entry()
     yesterday = dt_util.now().date() - timedelta(days=1)
 
     await _create(hass, name="Extinguisher", inspection_date=yesterday.isoformat())
@@ -212,8 +211,8 @@ async def test_a_past_date_is_not_reported_as_upcoming(hass: HomeAssistant) -> N
     assert "message" not in state.attributes
 
 
-async def test_unload_removes_the_entity(hass: HomeAssistant) -> None:
-    entry = await _setup(hass)
+async def test_unload_removes_the_entity(hass: HomeAssistant, setup_entry) -> None:
+    entry = await setup_entry()
     assert hass.states.get(ENTITY_ID) is not None
 
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -223,7 +222,9 @@ async def test_unload_removes_the_entity(hass: HomeAssistant) -> None:
     assert state is None or state.state == "unavailable"
 
 
-async def test_a_location_rename_reaches_the_calendar_at_once(hass: HomeAssistant) -> None:
+async def test_a_location_rename_reaches_the_calendar_at_once(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """The event description is the item's stored path, held in a cached state.
 
     Nothing invalidated that state on a rename, so `calendar.haventory` kept
@@ -232,7 +233,7 @@ async def test_a_location_rename_reaches_the_calendar_at_once(hass: HomeAssistan
     attribute to say where the item is.
     """
 
-    await _setup(hass)
+    await setup_entry()
     garage = (
         await hass.services.async_call(
             DOMAIN, "location_create", {"name": "Garage"}, blocking=True, return_response=True

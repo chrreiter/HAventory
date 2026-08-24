@@ -11,12 +11,10 @@ from __future__ import annotations
 import uuid
 from datetime import timedelta
 
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 CALENDAR = "calendar.haventory"
 PLAIN_ITEM_ID = str(uuid.uuid4())
@@ -58,22 +56,14 @@ def _v7_store_data() -> dict:
     }
 
 
-async def _setup(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
-
-
 async def test_a_v7_store_boots_to_the_current_version_with_the_fields_backfilled(
-    hass: HomeAssistant, hass_storage: dict
+    hass: HomeAssistant, hass_storage: dict, setup_entry
 ) -> None:
     """The upgrade an existing install takes, against a real `Store`."""
 
     hass_storage[STORAGE_KEY] = {"version": 1, "key": STORAGE_KEY, "data": _v7_store_data()}
 
-    await _setup(hass)
+    await setup_entry()
 
     persisted = hass_storage[STORAGE_KEY]["data"]
     assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION == REMINDER_SCHEMA_VERSION
@@ -91,11 +81,11 @@ async def test_a_v7_store_boots_to_the_current_version_with_the_fields_backfille
 
 
 async def test_a_reminder_set_over_websocket_survives_a_reload(
-    hass: HomeAssistant, hass_storage: dict, hass_ws_client
+    hass: HomeAssistant, hass_storage: dict, hass_ws_client, setup_entry
 ) -> None:
     """Stored state, not runtime state: it has to come back off disk."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "HVAC filter"})
@@ -123,11 +113,11 @@ async def test_a_reminder_set_over_websocket_survives_a_reload(
 
 
 async def test_a_recurring_reminder_draws_its_next_occurrences_on_the_calendar(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """The story the issue tells, read back through the calendar's own service."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
     anchor = dt_util.now().date() + timedelta(days=1)
 
@@ -163,9 +153,9 @@ async def test_a_recurring_reminder_draws_its_next_occurrences_on_the_calendar(
 
 
 async def test_bumping_moves_the_series_and_the_calendar_with_it(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
     anchor = dt_util.now().date()
 
@@ -197,11 +187,11 @@ async def test_bumping_moves_the_series_and_the_calendar_with_it(
 
 
 async def test_an_interval_with_no_anchor_is_refused_by_the_real_dispatch(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """The offline stub cannot see HA's own schema validation ahead of the handler."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "HVAC filter"})
@@ -222,7 +212,7 @@ async def test_an_interval_with_no_anchor_is_refused_by_the_real_dispatch(
 
 
 async def test_an_evening_bump_west_of_greenwich_keeps_the_calendar_day(
-    hass: HomeAssistant, hass_ws_client, freezer
+    hass: HomeAssistant, hass_ws_client, freezer, setup_entry
 ) -> None:
     """The moment the two day boundaries disagree, pinned.
 
@@ -234,7 +224,7 @@ async def test_an_evening_bump_west_of_greenwich_keeps_the_calendar_day(
     """
 
     await hass.config.async_set_time_zone("America/Los_Angeles")
-    await _setup(hass)
+    await setup_entry()
     # After the client has authenticated: the token the fixture mints is checked
     # against the wall clock, and a frozen one is outside its window.
     client = await hass_ws_client(hass)
@@ -262,7 +252,7 @@ async def test_an_evening_bump_west_of_greenwich_keeps_the_calendar_day(
 
 
 async def test_a_v8_store_gains_an_anchor_for_every_reminder_it_holds(
-    hass: HomeAssistant, hass_storage: dict
+    hass: HomeAssistant, hass_storage: dict, setup_entry
 ) -> None:
     """The upgrade the release before this one leaves behind, through a real `Store`.
 
@@ -280,7 +270,7 @@ async def test_a_v8_store_gains_an_anchor_for_every_reminder_it_holds(
     data["items"][PLAIN_ITEM_ID]["reminder_interval"] = None
     hass_storage[STORAGE_KEY] = {"version": 1, "key": STORAGE_KEY, "data": data}
 
-    await _setup(hass)
+    await setup_entry()
 
     persisted = hass_storage[STORAGE_KEY]["data"]
     assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
@@ -292,7 +282,7 @@ async def test_a_v8_store_gains_an_anchor_for_every_reminder_it_holds(
 
 
 async def test_a_bumped_month_end_series_keeps_its_day_across_a_reload(
-    hass: HomeAssistant, hass_storage: dict, hass_ws_client
+    hass: HomeAssistant, hass_storage: dict, hass_ws_client, setup_entry
 ) -> None:
     """The whole point of the stored anchor, end to end and through a restart.
 
@@ -301,7 +291,7 @@ async def test_a_bumped_month_end_series_keeps_its_day_across_a_reload(
     from what was written.
     """
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Meter reading"})

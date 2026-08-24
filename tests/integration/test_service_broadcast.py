@@ -14,21 +14,12 @@ import asyncio
 
 from custom_components.haventory.const import DOMAIN
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 EVENT_WAIT_SECONDS = 5
 
 # Subscription ids, so an assertion can say which topic a frame arrived on.
 ITEMS_SUB = 10
 STATS_SUB = 11
-
-
-async def _setup(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
 
 
 async def _subscribe(client, sub_id: int, topic: str) -> None:
@@ -59,11 +50,11 @@ async def _drain_events(client, count: int) -> list[dict]:
 
 
 async def test_item_create_service_delivers_items_and_counts(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """#450's acceptance, through the registry that actually dispatches."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
     await _subscribe(client, ITEMS_SUB, "items")
     await _subscribe(client, STATS_SUB, "stats")
@@ -84,11 +75,11 @@ async def test_item_create_service_delivers_items_and_counts(
 
 
 async def test_every_item_service_delivers_one_event_with_its_action(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """Every write path, not just the one the issue happened to name."""
 
-    await _setup(hass)
+    await setup_entry()
     created = await hass.services.async_call(
         DOMAIN, "item_create", {"name": "Widget"}, blocking=True, return_response=True
     )
@@ -115,11 +106,11 @@ async def test_every_item_service_delivers_one_event_with_its_action(
 
 
 async def test_location_services_deliver_locations_events(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """The other half of "a `haventory.*` mutation reaches no subscriber"."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
     await _subscribe(client, 30, "locations")
 

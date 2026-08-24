@@ -12,24 +12,15 @@ import logging
 
 from custom_components.haventory.const import DOMAIN
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-
-async def _setup(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
 
 
 async def test_a_service_mutation_logs_a_greppable_persist_line(
-    hass: HomeAssistant, caplog
+    hass: HomeAssistant, caplog, setup_entry
 ) -> None:
     """`grep persist_complete` on a user's log finds the line, and its timing."""
 
     caplog.set_level(logging.DEBUG, logger="custom_components.haventory.storage")
-    await _setup(hass)
+    await setup_entry()
 
     await hass.services.async_call(DOMAIN, "item_create", {"name": "Torch"}, blocking=True)
     await hass.async_block_till_done()
@@ -45,7 +36,7 @@ async def test_a_service_mutation_logs_a_greppable_persist_line(
 
 
 async def test_a_refusal_logs_the_operation_it_refused(
-    hass: HomeAssistant, hass_ws_client, caplog
+    hass: HomeAssistant, hass_ws_client, caplog, setup_entry
 ) -> None:
     """The other half: a rejection says which command it was, in the message.
 
@@ -54,7 +45,7 @@ async def test_a_refusal_logs_the_operation_it_refused(
     reading the log can see it.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
     caplog.clear()
     caplog.set_level(logging.WARNING, logger="custom_components.haventory.ws")
@@ -70,12 +61,12 @@ async def test_a_refusal_logs_the_operation_it_refused(
 
 
 async def test_the_setup_line_carries_the_numbers_a_boot_is_diagnosed_from(
-    hass: HomeAssistant, caplog
+    hass: HomeAssistant, caplog, setup_entry
 ) -> None:
     """The line an operator reads first after a start-up that looks wrong."""
 
     caplog.set_level(logging.DEBUG, logger="custom_components.haventory")
-    await _setup(hass)
+    await setup_entry()
 
     health = [r.getMessage() for r in caplog.records if "Storage health" in r.getMessage()]
 

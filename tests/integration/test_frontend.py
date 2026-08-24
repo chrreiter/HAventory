@@ -17,7 +17,6 @@ from custom_components.haventory.const import (
     CONF_CARD_TITLE,
     CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
-    DOMAIN,
     PANEL_ELEMENT_NAME,
     PANEL_ICON,
     PANEL_URL_PATH,
@@ -25,7 +24,6 @@ from custom_components.haventory.const import (
 from homeassistant.components import frontend
 from homeassistant.config_entries import ConfigEntryDisabler
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
 CARD_PATH = "/haventory_static/haventory-card.js"
@@ -42,14 +40,6 @@ needs_bundle = pytest.mark.skipif(
     not BUNDLE.is_file(),
     reason="card bundle not built (npm run build in cards/haventory-card)",
 )
-
-
-async def _setup(hass: HomeAssistant, options: dict | None = None) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory", options=options or {})
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
 
 
 def test_the_frontend_wheel_matches_what_this_ha_release_asks_for() -> None:
@@ -69,14 +59,14 @@ def test_the_frontend_wheel_matches_what_this_ha_release_asks_for() -> None:
 
 @needs_bundle
 async def test_bundle_is_served_without_cache_control(
-    hass: HomeAssistant, hass_client_no_auth: ClientSessionGenerator
+    hass: HomeAssistant, hass_client_no_auth: ClientSessionGenerator, setup_entry
 ) -> None:
     """The static route serves the real bytes, and leaves revalidation on.
 
     A `Cache-Control` header here is the old `/local` failure mode: the browser
     keeps a stale card for as long as the header says, whatever the server has.
     """
-    await _setup(hass)
+    await setup_entry()
 
     response = await (await hass_client_no_auth()).get(CARD_PATH)
 
@@ -87,13 +77,13 @@ async def test_bundle_is_served_without_cache_control(
 
 
 @needs_bundle
-async def test_both_loaders_get_the_same_url(hass: HomeAssistant) -> None:
+async def test_both_loaders_get_the_same_url(hass: HomeAssistant, setup_entry) -> None:
     """One URL string, registered twice — the browser module map dedupes it.
 
     Two *different* URLs for the same module evaluate it twice, and the second
     `customElements.define("haventory-card", ...)` throws.
     """
-    await _setup(hass)
+    await setup_entry()
 
     module_urls = hass.data[frontend.DATA_EXTRA_MODULE_URL].urls
     resources = hass.data["lovelace"].resources.async_items()
@@ -106,14 +96,14 @@ async def test_both_loaders_get_the_same_url(hass: HomeAssistant) -> None:
 
 @needs_bundle
 async def test_reload_registers_the_static_route_once(
-    hass: HomeAssistant, hass_client_no_auth: ClientSessionGenerator
+    hass: HomeAssistant, hass_client_no_auth: ClientSessionGenerator, setup_entry
 ) -> None:
     """aiohttp rejects a duplicate route, so a reload must not attempt one.
 
     The failure this guards is not cosmetic: an unguarded second registration
     raises out of `async_setup_entry` and leaves the entry in a retry loop.
     """
-    entry = await _setup(hass)
+    entry = await setup_entry()
 
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
@@ -122,9 +112,9 @@ async def test_reload_registers_the_static_route_once(
 
 
 @needs_bundle
-async def test_unload_hands_back_the_module_url(hass: HomeAssistant) -> None:
+async def test_unload_hands_back_the_module_url(hass: HomeAssistant, setup_entry) -> None:
     """Unload takes the module URL out of the frontend's set; the route stays."""
-    entry = await _setup(hass)
+    entry = await setup_entry()
     assert hass.data[frontend.DATA_EXTRA_MODULE_URL].urls
 
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -134,14 +124,16 @@ async def test_unload_hands_back_the_module_url(hass: HomeAssistant) -> None:
 
 
 @needs_bundle
-async def test_removal_deletes_the_card_resource_and_module_url(hass: HomeAssistant) -> None:
+async def test_removal_deletes_the_card_resource_and_module_url(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """Removal takes both loaders back through the real resource collection.
 
     The offline suite asserts this against a mock collection; only the real
     `ResourceStorageCollection.async_delete_item` proves the id we hand it is
     the one it stores.
     """
-    entry = await _setup(hass)
+    entry = await setup_entry()
     resources = hass.data["lovelace"].resources
     assert [r for r in resources.async_items() if r["url"].startswith(CARD_PATH)]
 
@@ -154,7 +146,7 @@ async def test_removal_deletes_the_card_resource_and_module_url(hass: HomeAssist
 
 @needs_bundle
 async def test_removal_leaves_the_static_route_serving(
-    hass: HomeAssistant, hass_client_no_auth: ClientSessionGenerator
+    hass: HomeAssistant, hass_client_no_auth: ClientSessionGenerator, setup_entry
 ) -> None:
     """aiohttp cannot drop a route, so a re-add must not register a second one.
 
@@ -162,17 +154,19 @@ async def test_removal_leaves_the_static_route_serving(
     losing it turns the next setup into the duplicate registration that leaves
     the entry in a retry loop.
     """
-    entry = await _setup(hass)
+    entry = await setup_entry()
 
     await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
-    await _setup(hass)
+    await setup_entry()
 
     assert (await (await hass_client_no_auth()).get(CARD_PATH)).status == HTTP_OK
 
 
 @needs_bundle
-async def test_the_sidebar_panel_lands_in_the_real_panel_registry(hass: HomeAssistant) -> None:
+async def test_the_sidebar_panel_lands_in_the_real_panel_registry(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """`panel_custom` puts a real `Panel` in `hass.data`, built the way HA builds them.
 
     The offline suite asserts this against a stub of `async_register_panel`;
@@ -185,7 +179,7 @@ async def test_the_sidebar_panel_lands_in_the_real_panel_registry(hass: HomeAssi
     for; a key HA chose for itself is not drift and must not fail the scheduled
     run against a newer core.
     """
-    await _setup(hass)
+    await setup_entry()
 
     panel = hass.data[frontend.DATA_PANELS][PANEL_URL_PATH]
 
@@ -206,7 +200,9 @@ async def test_the_sidebar_panel_lands_in_the_real_panel_registry(hass: HomeAssi
 
 
 @needs_bundle
-async def test_a_reload_leaves_the_same_panel_object_in_place(hass: HomeAssistant) -> None:
+async def test_a_reload_leaves_the_same_panel_object_in_place(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """A browser standing on `/haventory` is sent away the moment the panel goes.
 
     Identity rather than presence: a remove-then-register inside the reload
@@ -214,7 +210,7 @@ async def test_a_reload_leaves_the_same_panel_object_in_place(hass: HomeAssistan
     the panel-update event that moves the browser. Only the real `frontend`
     component has that registry, so the offline suite cannot see this.
     """
-    entry = await _setup(hass)
+    entry = await setup_entry()
     panel = hass.data[frontend.DATA_PANELS][PANEL_URL_PATH]
 
     assert await hass.config_entries.async_reload(entry.entry_id)
@@ -224,13 +220,15 @@ async def test_a_reload_leaves_the_same_panel_object_in_place(hass: HomeAssistan
 
 
 @needs_bundle
-async def test_an_unload_on_its_own_keeps_the_sidebar_panel(hass: HomeAssistant) -> None:
+async def test_an_unload_on_its_own_keeps_the_sidebar_panel(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """The half of a reload the panel has to survive, asserted on its own.
 
     A reload is an unload followed by a setup; if the unload took the panel, the
     setup could only put a new one back and the page would be gone either way.
     """
-    entry = await _setup(hass)
+    entry = await setup_entry()
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
@@ -241,6 +239,7 @@ async def test_an_unload_on_its_own_keeps_the_sidebar_panel(hass: HomeAssistant)
 @needs_bundle
 async def test_a_rename_replaces_the_panel_without_the_overwriting_error(
     hass: HomeAssistant,
+    setup_entry,
 ) -> None:
     """`async_register_built_in_panel` raises on a path already taken.
 
@@ -249,7 +248,7 @@ async def test_a_rename_replaces_the_panel_without_the_overwriting_error(
     listener, the sidebar keeps the old name, and nothing about it reaches the
     user.
     """
-    entry = await _setup(hass)
+    entry = await setup_entry()
 
     hass.config_entries.async_update_entry(entry, options={CONF_CARD_TITLE: "Pantry"})
     await hass.async_block_till_done()
@@ -260,13 +259,15 @@ async def test_a_rename_replaces_the_panel_without_the_overwriting_error(
 
 
 @needs_bundle
-async def test_a_disabled_entry_gives_the_sidebar_panel_back(hass: HomeAssistant) -> None:
+async def test_a_disabled_entry_gives_the_sidebar_panel_back(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """A disabled entry stays unloaded, so its sidebar entry opens nothing.
 
     Home Assistant sets `disabled_by` before it unloads; that ordering is what
     the unload path reads, and it is real-core behaviour a stub cannot vouch for.
     """
-    entry = await _setup(hass)
+    entry = await setup_entry()
 
     assert await hass.config_entries.async_set_disabled_by(entry.entry_id, ConfigEntryDisabler.USER)
     await hass.async_block_till_done()
@@ -275,9 +276,11 @@ async def test_a_disabled_entry_gives_the_sidebar_panel_back(hass: HomeAssistant
 
 
 @needs_bundle
-async def test_removing_the_entry_gives_the_sidebar_panel_back(hass: HomeAssistant) -> None:
+async def test_removing_the_entry_gives_the_sidebar_panel_back(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """The other end: nothing is coming back to serve the page it opens."""
-    entry = await _setup(hass)
+    entry = await setup_entry()
 
     await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
@@ -286,9 +289,9 @@ async def test_removing_the_entry_gives_the_sidebar_panel_back(hass: HomeAssista
 
 
 @needs_bundle
-async def test_an_opted_out_entry_registers_no_panel(hass: HomeAssistant) -> None:
+async def test_an_opted_out_entry_registers_no_panel(hass: HomeAssistant, setup_entry) -> None:
     """The toggle is honoured at setup, and takes nothing else down with it."""
-    await _setup(hass, {CONF_SIDEBAR_PANEL_ENABLED: False})
+    await setup_entry({CONF_SIDEBAR_PANEL_ENABLED: False})
 
     assert PANEL_URL_PATH not in hass.data[frontend.DATA_PANELS]
     assert hass.data[frontend.DATA_EXTRA_MODULE_URL].urls

@@ -21,7 +21,18 @@ collide.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
+from custom_components.haventory.const import DOMAIN
+from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from homeassistant.core import HomeAssistant
+
+    SetupEntry = Callable[..., Awaitable[MockConfigEntry]]
 
 
 @pytest.fixture(autouse=True)
@@ -34,3 +45,27 @@ def _auto_enable_custom_integrations(enable_custom_integrations):
     """
 
     yield
+
+
+@pytest.fixture
+def setup_entry(hass: HomeAssistant) -> SetupEntry:
+    """Bring the integration up from a config entry, as Home Assistant does.
+
+    ``hass.config_entries.async_setup`` rather than ``async_setup_entry``: only
+    the registry path moves the entry through its states, forwards the
+    platforms and lets a later reload or unload address it by ``entry_id``.
+    The returned entry is what those tests need afterwards.
+
+    Setting up is a step inside a test, not a precondition of one, so this is a
+    factory rather than an autouse fixture — several tests fill `hass_storage`,
+    monkeypatch a module or listen on the bus before the entry may load.
+    """
+
+    async def _setup(options: dict | None = None) -> MockConfigEntry:
+        entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory", options=options or {})
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        return entry
+
+    return _setup

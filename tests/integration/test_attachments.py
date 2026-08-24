@@ -34,7 +34,6 @@ from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.core import HomeAssistant
 from PIL import Image, ImageDraw
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.typing import ClientSessionGenerator
 
 # A real, if minimal, PNG: an 8x8 greyscale image. The backend sniffs the
@@ -54,14 +53,6 @@ PDF_BYTES = (
     b"trailer<</Root 1 0 R>>\n"
     b"%%EOF\n"
 )
-
-
-async def _setup(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
 
 
 async def _upload(client, content: bytes = PNG_BYTES, filename: str = "drill.png") -> str:
@@ -211,11 +202,11 @@ async def _attach(
 
 
 async def test_a_real_png_round_trips_through_upload_and_the_view(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """Upload, attach, then GET the same bytes back with an image content type."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -254,7 +245,7 @@ async def test_a_real_png_round_trips_through_upload_and_the_view(
 
 
 async def test_size_thumb_serves_a_real_webp_tile_and_writes_it_once(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """The whole `?size=thumb` path against the real encoder.
 
@@ -265,7 +256,7 @@ async def test_size_thumb_serves_a_real_webp_tile_and_writes_it_once(
     """
 
     photo = _photograph()
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -311,7 +302,7 @@ async def test_size_thumb_serves_a_real_webp_tile_and_writes_it_once(
 
 
 async def test_a_transparent_picture_keeps_its_alpha_through_the_view(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """A logo or a screenshot saved as a transparent PNG keeps its background.
 
@@ -321,7 +312,7 @@ async def test_a_transparent_picture_keeps_its_alpha_through_the_view(
     """
 
     logo = _transparent_logo()
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -348,7 +339,7 @@ async def test_a_transparent_picture_keeps_its_alpha_through_the_view(
 
 
 async def test_a_picture_the_decoder_refuses_serves_the_original(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """Fail open, with a file that really does defeat the decoder.
 
@@ -358,7 +349,7 @@ async def test_a_picture_the_decoder_refuses_serves_the_original(
     still render, and the page is slower rather than broken.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -374,12 +365,12 @@ async def test_a_picture_the_decoder_refuses_serves_the_original(
 
 
 async def test_an_unknown_size_is_refused_rather_than_generated(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """One accepted value: the parameter selects a derived form, it does not let
     a caller ask the server to render whatever size it likes."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -392,11 +383,11 @@ async def test_an_unknown_size_is_refused_rather_than_generated(
 
 
 async def test_a_manual_asked_for_as_a_thumbnail_serves_the_pdf(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """Fail open: there is no tile of a PDF, and the answer is the document."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -414,6 +405,7 @@ async def test_the_upload_handle_is_consumed_off_the_event_loop(
     hass_client: ClientSessionGenerator,
     hass_ws_client,
     upload_teardowns: list[tuple[int, Path]],
+    setup_entry,
 ) -> None:
     """Every byte of the temp directory's teardown is paid by a worker thread.
 
@@ -422,7 +414,7 @@ async def test_the_upload_handle_is_consumed_off_the_event_loop(
     photos, which is the case the feature exists for.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -447,7 +439,7 @@ async def test_the_upload_handle_is_consumed_off_the_event_loop(
 
 
 async def test_a_consumed_handle_cannot_be_used_again(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """The upload is destroyed with the command, so the second call is a 404.
 
@@ -456,7 +448,7 @@ async def test_a_consumed_handle_cannot_be_used_again(
     retry a handle that can never come back.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -483,10 +475,11 @@ async def test_the_media_view_refuses_an_unauthenticated_request(
     hass_client: ClientSessionGenerator,
     hass_client_no_auth: ClientSessionGenerator,
     hass_ws_client,
+    setup_entry,
 ) -> None:
     """An inventory photo is as private as the inventory it belongs to."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -510,11 +503,11 @@ async def test_the_media_view_refuses_an_unauthenticated_request(
 
 
 async def test_an_id_no_metadata_claims_is_a_404(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """The handler resolves files from stored metadata, never from the URL."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -531,10 +524,11 @@ async def test_a_non_image_is_refused_and_leaves_nothing_behind(
     hass_client: ClientSessionGenerator,
     hass_ws_client,
     upload_teardowns: list[tuple[int, Path]],
+    setup_entry,
 ) -> None:
     """SVG carries script and the view serves it from the Home Assistant origin."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -565,9 +559,9 @@ async def test_a_non_image_is_refused_and_leaves_nothing_behind(
 
 
 async def test_deleting_the_item_deletes_its_files(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -599,11 +593,11 @@ async def test_deleting_the_item_deletes_its_files(
 
 
 async def test_a_bulk_delete_deletes_the_item_files(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """The card's bulk bar and the organize dialog delete through `items/bulk`."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -630,11 +624,11 @@ async def test_a_bulk_delete_deletes_the_item_files(
 
 
 async def test_the_item_delete_service_deletes_the_item_files(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """Only this mode dispatches a service: the offline stub has no registry."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -651,7 +645,7 @@ async def test_the_item_delete_service_deletes_the_item_files(
 
 
 async def test_setup_sweeps_a_file_no_metadata_references(
-    hass: HomeAssistant, hass_storage: dict
+    hass: HomeAssistant, hass_storage: dict, setup_entry
 ) -> None:
     """A store restored without its media, or a save that never landed."""
 
@@ -665,13 +659,13 @@ async def test_setup_sweeps_a_file_no_metadata_references(
     orphan.parent.mkdir(parents=True, exist_ok=True)
     orphan.write_bytes(PNG_BYTES)
 
-    await _setup(hass)
+    await setup_entry()
 
     assert not orphan.exists()
 
 
 async def test_setup_sweeps_a_tile_an_earlier_encoder_generation_wrote(
-    hass: HomeAssistant, hass_storage: dict
+    hass: HomeAssistant, hass_storage: dict, setup_entry
 ) -> None:
     """An install upgraded across a change to the encode.
 
@@ -717,7 +711,7 @@ async def test_setup_sweeps_a_tile_an_earlier_encoder_generation_wrote(
     stale = original.with_name(f"{attachment_id}.thumb.webp")
     stale.write_bytes(b"RIFF\x24\x00\x00\x00WEBP\x00\x00\x00\x00")
 
-    await _setup(hass)
+    await setup_entry()
 
     assert not stale.exists()
     assert original.read_bytes() == PNG_BYTES
@@ -728,7 +722,7 @@ async def test_setup_sweeps_a_tile_an_earlier_encoder_generation_wrote(
 
 
 async def test_a_v5_store_boots_to_v6_with_both_backfills(
-    hass: HomeAssistant, hass_storage: dict, hass_ws_client
+    hass: HomeAssistant, hass_storage: dict, hass_ws_client, setup_entry
 ) -> None:
     """One step for the milestone: statuses seeded, attachments backfilled.
 
@@ -749,7 +743,7 @@ async def test_a_v5_store_boots_to_v6_with_both_backfills(
         },
     }
 
-    await _setup(hass)
+    await setup_entry()
 
     persisted = hass_storage[STORAGE_KEY]["data"]
     assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
@@ -770,7 +764,7 @@ async def test_a_v5_store_boots_to_v6_with_both_backfills(
 
 
 async def test_a_pdf_round_trips_as_a_manual_and_can_be_retitled(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """The document half of the same path: kind, sniffed type, and the title.
 
@@ -780,7 +774,7 @@ async def test_a_pdf_round_trips_as_a_manual_and_can_be_retitled(
     a response header no offline test has a transport for.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws, "Dishwasher")
@@ -850,7 +844,7 @@ async def test_a_pdf_round_trips_as_a_manual_and_can_be_retitled(
 
 
 async def test_only_a_name_versioned_url_may_be_cached(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """A retitle rewrites the served name for a URL that did not change.
 
@@ -861,7 +855,7 @@ async def test_only_a_name_versioned_url_may_be_cached(
     signature lives, which is not a window anyone waits out.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -895,11 +889,11 @@ async def test_only_a_name_versioned_url_may_be_cached(
 
 
 async def test_a_pdf_is_refused_as_a_picture(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
     """The allow-list is per kind, so the picture strip cannot fill with PDFs."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)

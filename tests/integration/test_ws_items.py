@@ -7,22 +7,13 @@ validation, dispatch, and the result envelope against the actual HA API.
 
 from __future__ import annotations
 
-from custom_components.haventory.const import DOMAIN
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
-async def _setup(hass: HomeAssistant) -> None:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-
-
-async def test_ws_item_create_get_list(hass: HomeAssistant, hass_ws_client) -> None:
+async def test_ws_item_create_get_list(hass: HomeAssistant, hass_ws_client, setup_entry) -> None:
     """Create an item, then fetch it by id and see it in the list."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     create_id, get_id, list_id = 1, 2, 3
@@ -63,7 +54,9 @@ async def test_ws_item_create_get_list(hass: HomeAssistant, hass_ws_client) -> N
     assert "Screwdriver" in names
 
 
-async def test_ws_rename_keeps_item_versions_valid(hass: HomeAssistant, hass_ws_client) -> None:
+async def test_ws_rename_keeps_item_versions_valid(
+    hass: HomeAssistant, hass_ws_client, setup_entry
+) -> None:
     """A location rename must not spend the client's optimistic-concurrency token.
 
     The rename rewrites the item's derived ``location_path``; a client holding
@@ -72,7 +65,7 @@ async def test_ws_rename_keeps_item_versions_valid(hass: HomeAssistant, hass_ws_
     check wrong without anything failing.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/location/create", "name": "Garage"})
@@ -127,7 +120,7 @@ async def test_ws_rename_keeps_item_versions_valid(hass: HomeAssistant, hass_ws_
 
 
 async def test_ws_subscribe_accepts_area_id_and_refuses_unknown_keys(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """Real HA applies the subscribe schema; the offline stub stores it unapplied.
 
@@ -136,7 +129,7 @@ async def test_ws_subscribe_accepts_area_id_and_refuses_unknown_keys(
     against a real connection.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json(
@@ -158,10 +151,12 @@ async def test_ws_subscribe_accepts_area_id_and_refuses_unknown_keys(
     assert refused["success"] is False, refused
 
 
-async def test_ws_item_get_unknown_returns_error(hass: HomeAssistant, hass_ws_client) -> None:
+async def test_ws_item_get_unknown_returns_error(
+    hass: HomeAssistant, hass_ws_client, setup_entry
+) -> None:
     """Fetching a missing item surfaces a structured error, not a crash."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/get", "item_id": "does-not-exist"})
@@ -170,7 +165,9 @@ async def test_ws_item_get_unknown_returns_error(hass: HomeAssistant, hass_ws_cl
     assert "error" in resp
 
 
-async def test_widened_frames_answer_validation_error(hass: HomeAssistant, hass_ws_client) -> None:
+async def test_widened_frames_answer_validation_error(
+    hass: HomeAssistant, hass_ws_client, setup_entry
+) -> None:
     """The fields typed ``object`` reach the handler and answer through the guard.
 
     Home Assistant refuses a schema mismatch before ``ws_guard`` runs, so a
@@ -179,7 +176,7 @@ async def test_widened_frames_answer_validation_error(hass: HomeAssistant, hass_
     tell the two answers apart.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     frames = [
@@ -205,11 +202,11 @@ async def test_widened_frames_answer_validation_error(hass: HomeAssistant, hass_
 
 
 async def test_item_list_input_hardening_over_the_real_schema(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """Unknown filter keys, unknown sort fields and bad cursors are refused."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Hammer"})
@@ -242,10 +239,12 @@ async def test_item_list_input_hardening_over_the_real_schema(
     assert [i["name"] for i in listed["result"]["items"]] == ["Hammer"]
 
 
-async def test_duplicate_op_ids_reject_the_batch(hass: HomeAssistant, hass_ws_client) -> None:
+async def test_duplicate_op_ids_reject_the_batch(
+    hass: HomeAssistant, hass_ws_client, setup_entry
+) -> None:
     """Results are keyed by op_id, so a repeat has to fail the whole command."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Hammer"})
