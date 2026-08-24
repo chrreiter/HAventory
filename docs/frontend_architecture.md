@@ -496,7 +496,7 @@ Holds all app state in a small observable (`createObservable`), fetches over `WS
 applies optimistic writes with rollback.
 
 **State** (`StoreState`): `items`, `cursor`, `total`, `loading`, `filters`, `selection`,
-`pendingOps`, `errorQueue`, `areasCache`, `locationTreeCache`, `locationsFlatCache`,
+`errorQueue`, `areasCache`, `locationTreeCache`, `locationsFlatCache`,
 `statsCounts`, `healthCache`, `versionInfo`, `distinctValuesCache`, `connected`, `degraded`.
 
 **Notable methods**

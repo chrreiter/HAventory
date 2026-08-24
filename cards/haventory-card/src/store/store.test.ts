@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Store } from './store';
 import { makeMockHass, makeItem } from '../test.utils';
+import type { StoreState } from './types';
 
 /**
  * Let queued microtasks and any zero-delay timers run.
@@ -1014,5 +1015,24 @@ describe('Store', () => {
 
     expect(store.state.value.errorQueue.length).toBeGreaterThan(0);
     expect(store.state.value.items.find((i) => i.id === '1')?.reminder_date).toBe('2026-08-31');
+  });
+
+  /*
+   * An optimistic write shows its result on the row itself and rolls that row
+   * back when the call is refused, so no surface has a second, per-operation
+   * "in flight" state to draw. A register of open writes would therefore be
+   * written on every mutator and read by nobody — the type line is what keeps
+   * it from coming back unnoticed, since a field nothing reads costs no test.
+   */
+  it('keeps no register of writes in flight', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'A' })] });
+    const store = new Store(hass);
+    await store.init();
+
+    await store.updateItem('1', { name: 'B' });
+
+    const noPendingOps: Extract<keyof StoreState, 'pendingOps'> extends never ? true : never = true;
+    expect(noPendingOps).toBe(true);
+    expect(Object.keys(store.state.value)).not.toContain('pendingOps');
   });
 });

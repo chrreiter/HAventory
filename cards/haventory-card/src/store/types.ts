@@ -737,7 +737,6 @@ export interface StoreState {
   loading: boolean;
   filters: StoreFilters;
   selection: Set<string>;
-  pendingOps: Map<string, { kind: string; itemId?: string }>;
   errorQueue: ErrorEntry[];
   areasCache: AreasListResult | null;
   locationTreeCache: LocationTreeNode[] | null;
