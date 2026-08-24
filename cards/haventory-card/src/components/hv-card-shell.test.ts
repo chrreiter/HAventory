@@ -5,7 +5,7 @@ import {
   makeItem,
   makeMockHass,
   mountComponent,
-  mountStore,
+  mountHost,
   q,
   settle,
   stubViewport,
@@ -32,15 +32,11 @@ function loc(id: string, name: string, parentId: string | null = null): Location
 }
 
 async function mountShell(opts: { items?: Item[]; locations?: Location[]; mobile?: boolean } = {}) {
-  const { hass, store } = await mountStore({
-    items: opts.items ?? [],
-    locations: opts.locations ?? [],
-  });
-  const { el, sr } = await mountComponent<HVCardShell>('hv-card-shell', {
-    store,
-    forceMobile: opts.mobile ?? false,
-  });
-  return { el, store, hass, sr };
+  return mountHost<HVCardShell>(
+    'hv-card-shell',
+    { items: opts.items ?? [], locations: opts.locations ?? [] },
+    { forceMobile: opts.mobile ?? false },
+  );
 }
 
 describe('hv-card-shell: header', () => {
