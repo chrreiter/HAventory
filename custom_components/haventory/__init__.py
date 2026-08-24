@@ -82,8 +82,6 @@ from .storage import (
     DomainStore,
     async_backup_store,
     async_persist_immediate,
-    read_schema_version,
-    schema_downgrade_message,
 )
 from .subscriptions import notify_backend_unavailable
 
@@ -219,7 +217,6 @@ async def _async_load_repository(
 
     try:
         payload = await store.async_load()
-        _validate_storage_payload(payload, schema_version=store.schema_version)
         _log_storage_health(payload, schema_version=store.schema_version)
     except SchemaDowngradeError as exc:
         LOGGER.error(
@@ -1164,28 +1161,6 @@ def _corrupt_store_message(report: LoadReport, *, store_key: str) -> str:
         f"Removing and re-adding the integration will not help: it leaves the file "
         f"exactly as it is, so setup stops here again."
     )
-
-
-def _validate_storage_payload(payload: dict[str, Any], *, schema_version: int) -> None:
-    """Validate loaded storage payload shape and version."""
-
-    if not isinstance(payload, dict):
-        raise StorageError("storage payload is not a dict")
-
-    stored_version = read_schema_version(payload, missing=-1)
-    if stored_version > int(schema_version):
-        raise SchemaDowngradeError(
-            schema_downgrade_message(
-                stored_version=stored_version, supported_version=int(schema_version)
-            )
-        )
-    if stored_version != int(schema_version):
-        raise StorageError("storage payload schema_version mismatch")
-
-    items = payload.get("items")
-    locations = payload.get("locations")
-    if not isinstance(items, dict) or not isinstance(locations, dict):
-        raise StorageError("storage payload missing required collections")
 
 
 def _log_storage_health(payload: dict[str, Any], *, schema_version: int) -> None:
