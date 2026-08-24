@@ -9,7 +9,6 @@ import type {
   DistinctValues,
   ExportDocument,
   HassLike,
-  HealthResult,
   ImportPolicy,
   ImportPreview,
   ImportSummary,
@@ -49,10 +48,6 @@ export class WSClient {
 
   stats() {
     return callWS<StatsCounts>(this.hass, { type: 'haventory/stats' });
-  }
-
-  health() {
-    return callWS<HealthResult>(this.hass, { type: 'haventory/health' });
   }
 
   /**

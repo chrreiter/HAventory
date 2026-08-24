@@ -10,7 +10,7 @@ import { relativeTime } from '../ui/relative-time';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
 import { copyText } from '../ui/clipboard';
-import type { DegradedState, HealthResult, StatsCounts, VersionInfo } from '../store/types';
+import type { DegradedState, StatsCounts, VersionInfo } from '../store/types';
 
 /**
  * Diagnostics.
@@ -189,7 +189,6 @@ export class HVDiagnosticsPanel extends LitElement {
   @property({ type: Boolean, reflect: true }) open = false;
   /** Phone viewport: rise from the bottom edge instead of centring. */
   @property({ type: Boolean, reflect: true }) mobile = false;
-  @property({ attribute: false }) health: HealthResult | null = null;
   @property({ attribute: false }) counts: StatsCounts | null = null;
   @property({ attribute: false }) version: VersionInfo | null = null;
   @property({ attribute: false }) degraded: DegradedState | null = null;

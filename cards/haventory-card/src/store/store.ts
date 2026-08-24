@@ -11,7 +11,6 @@ import type {
   DistinctValues,
   ExportDocument,
   HassLike,
-  HealthResult,
   ImportPolicy,
   ImportPreview,
   ImportSummary,
@@ -394,7 +393,6 @@ export class Store {
       locationMatchTotal: null,
       locationsFlatCache: null,
       statsCounts: null,
-      healthCache: null,
       versionInfo: null,
       cardTitle: null,
       quickFilters: null,
@@ -431,7 +429,6 @@ export class Store {
     try {
       await Promise.all([
         this.refreshStats(),
-        this.refreshHealth(),
         this.refreshAreas(),
         this.refreshLocationTree(),
         this.refreshLocationsFlat(),
@@ -925,11 +922,6 @@ export class Store {
   async refreshStats() {
     const counts = await this.run(() => this.ws.stats());
     this.stateObs.set({ statsCounts: counts });
-  }
-
-  async refreshHealth() {
-    const health: HealthResult = await this.run(() => this.ws.health());
-    this.stateObs.set({ healthCache: health });
   }
 
   async refreshAreas() {
@@ -1736,7 +1728,6 @@ export class Store {
   async reloadAll(): Promise<void> {
     await Promise.all([
       this.refreshStats(),
-      this.refreshHealth(),
       this.refreshLocationsFlat(),
       this.refreshLocationTree(),
       this.refreshDistinctValues(),

@@ -40,17 +40,11 @@ export interface MockConfig {
   statuses?: StatusDefinition[];
 }
 
-type HealthPatch = {
-  healthy?: boolean;
-  issues?: string[];
-};
-
 export interface MockHass extends HassLike {
   __emit(topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>): void;
   __setConflict(on: boolean): void;
   __setItems(items: Item[]): void;
   __setLocations(locations: Location[]): void;
-  __setHealth(patch: HealthPatch): void;
   /** Reject the next `n` commands with an arbitrary error (transport by default). */
   __failNext(n: number, err?: unknown): void;
   /** Make every subsequent `haventory/subscribe` reject with `err`. */
@@ -102,7 +96,6 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         { slug: 'missing', label: 'Missing', order: 1, color: 'amber', icon: 'alert' },
         { slug: 'needs_repair', label: 'Needs repair', order: 2, color: 'amber', icon: 'wrench' },
       ];
-  let healthOverride: HealthPatch | null = null;
   let failRemaining = 0;
   let failError: unknown = new Error('connection lost');
   let subscribeError: unknown | null = null;
@@ -211,24 +204,6 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             no_location_count: items.filter((i) => i.location_id == null).length,
           };
           return counts as unknown as T;
-        }
-        case 'haventory/health': {
-          const counts: StatsCounts = {
-            items_total: items.length,
-            low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
-            checked_out_count: items.filter((i) => i.checked_out).length,
-            overdue_count: items.filter((i) => isMockOverdue(i)).length,
-            checked_out_due_count: items.filter((i) => isMockCheckedOutDue(i)).length,
-            inspection_overdue_count: items.filter((i) => isMockInspectionOverdue(i)).length,
-            inspection_due_count: items.filter((i) => isMockInspectionDue(i)).length,
-            locations_total: locations.length,
-            no_location_count: items.filter((i) => i.location_id == null).length,
-          };
-          return {
-            healthy: healthOverride?.healthy ?? true,
-            issues: healthOverride?.issues ?? [],
-            counts,
-          } as unknown as T;
         }
         case 'haventory/version': {
           return { integration_version: '0.0.1', schema_version: 4 } as unknown as T;
@@ -705,9 +680,6 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     __setConflict(on: boolean) { conflictOnUpdate = on; },
     __setItems(it: Item[]) { items = [...it]; },
     __setLocations(locs: Location[]) { locations = [...locs]; },
-    __setHealth(patch: HealthPatch) {
-      healthOverride = { ...(healthOverride ?? {}), ...patch };
-    },
     __failNext(n: number, err?: unknown) {
       failRemaining = n;
       if (err !== undefined) failError = err;

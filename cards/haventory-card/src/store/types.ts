@@ -338,20 +338,6 @@ export interface DistinctValues {
   custom_field_keys: string[];
 }
 
-/**
- * Result of haventory/health: the store's counts.
- *
- * `healthy` and `issues` are the backend's index self-check, which now runs in
- * its test suite instead of over a household's store: the pair arrives constant
- * — `true` and empty — on every build, and nothing here reads it. They stay on
- * the type because the backend still sends them.
- */
-export interface HealthResult {
-  healthy: boolean;
-  issues: string[];
-  counts: StatsCounts;
-}
-
 /** Result of haventory/version. */
 export interface VersionInfo {
   integration_version: string;
@@ -730,7 +716,6 @@ export interface StoreState {
   // Optional flat locations cache to enrich UI (e.g., show area per node in selectors)
   locationsFlatCache: Location[] | null;
   statsCounts: StatsCounts | null;
-  healthCache: HealthResult | null;
   versionInfo: VersionInfo | null;
   /** Heading configured in the integration, or null until it has been read. */
   cardTitle: string | null;

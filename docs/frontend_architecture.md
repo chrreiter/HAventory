@@ -497,7 +497,7 @@ applies optimistic writes with rollback.
 
 **State** (`StoreState`): `items`, `cursor`, `total`, `loading`, `filters`, `selection`,
 `errorQueue`, `areasCache`, `locationTreeCache`, `locationsFlatCache`,
-`statsCounts`, `healthCache`, `versionInfo`, `distinctValuesCache`, `connected`, `degraded`.
+`statsCounts`, `versionInfo`, `distinctValuesCache`, `connected`, `degraded`.
 
 **Notable methods**
 
@@ -681,7 +681,7 @@ Any other key in that record is ignored, so an older or newer payload never brea
 
 ## Data flow
 
-**Startup** — `hass` set → `new Store(hass)` → `init()` warms stats, health, areas, tree,
+**Startup** — `hass` set → `new Store(hass)` → `init()` warms stats, areas, tree,
 flat locations, distinct values and version in parallel → `listItems(true)` → subscribe to
 items / locations / stats, and to HA's `area_registry_updated`.
 
@@ -706,7 +706,7 @@ interactive element carries a testid.
 
 `src/test.utils.ts` provides `makeMockHass()` — an in-memory backend mirroring the WS
 contract, including `items/bulk` with per-op results, a real nested `location/tree` with
-counts, and hooks for the failure paths: `__failNext`, `__failSubscribe`, `__setHealth`,
+counts, and hooks for the failure paths: `__failNext`, `__failSubscribe`,
 `__setItems`, `__setLocations`, plus a `__calls` log. It **throws on an
 unhandled command**, so adding a WS call without extending the mock fails loudly.
 
