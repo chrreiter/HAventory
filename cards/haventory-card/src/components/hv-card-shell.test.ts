@@ -983,6 +983,53 @@ describe('hv-card-shell: adding an item on a phone', () => {
         discardPrompt().confirmLabel,
       );
     });
+
+    // One asker for every form on this host — the inline expander, the phone add
+    // sheet, the detail sheet's form and the expanded view's — so none of them
+    // can grow a second wording or a second dialog.
+    it('hands the same asker to every surface that hosts a form', async () => {
+      const { sr } = await dirtyAddSheet();
+      const asker = (sr.querySelector('hv-item-editor') as HTMLElement & { confirmDiscard: unknown })
+        .confirmDiscard;
+
+      expect(asker).toBeTypeOf('function');
+      for (const testid of ['card-detail-sheet', 'card-full-view']) {
+        const surface = sr.querySelector(`[data-testid="${testid}"]`) as HTMLElement & {
+          confirmDiscard: unknown;
+        };
+        expect(surface.confirmDiscard, testid).toBe(asker);
+      }
+    });
+  });
+});
+
+// The prompt takes focus out of the form to land it on its accept button, so a
+// "no" that left focus behind on `<body>` stranded a keyboard user in a form
+// they had just chosen to stay in.
+describe('hv-card-shell: declining the question puts focus back in the form', () => {
+  it('refocuses the form the answer kept', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Target' })] });
+    const list = sr.querySelector('hv-list') as HTMLElement;
+    const row = list.shadowRoot?.querySelector('hv-list-row') as HTMLElement;
+    (row.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const form = list.shadowRoot?.querySelector('hv-item-editor') as HTMLElement;
+    const name = form.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    name.value = 'Target EDITED';
+    name.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    (form.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+    const guard = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
+    expect(guard.open).toBe(true);
+
+    (guard.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(form.shadowRoot?.activeElement).toBe(name);
+    expect(name.value).toBe('Target EDITED');
   });
 });
 
@@ -1364,7 +1411,7 @@ describe('hv-card-shell: the open editor survives a refetch', () => {
     await settle(el);
     // Typed edits are on the form, so Cancel asks; the pin survives the question
     // and is released by the answer.
-    const guard = editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-discard-confirm"]') as HTMLElement & {
+    const guard = sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & {
       open: boolean;
     };
     expect(guard.open).toBe(true);

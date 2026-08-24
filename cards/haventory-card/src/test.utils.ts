@@ -2,6 +2,7 @@ import type { CSSResult } from 'lit';
 import { vi } from 'vitest';
 
 import { Store } from './store/store';
+import type { ConfirmDiscard } from './ui/discard';
 import { toIsoDate } from './ui/relative-time';
 import type {
   AnyEventPayload,
@@ -1037,6 +1038,42 @@ export function stubElementWidth(width: number): () => void {
   } as unknown as typeof ResizeObserver;
   return () => {
     globalThis.ResizeObserver = original;
+  };
+}
+
+/** A captured discard question, and the two answers a host can give it. */
+export interface DiscardAsker {
+  /** Hand this to a `confirmDiscard` property. */
+  ask: ConfirmDiscard;
+  /** How many times the surface under test has asked. */
+  readonly asked: number;
+  /** Answer the outstanding question; throws when nothing was asked. */
+  answer(which: 'discard' | 'keep'): void;
+}
+
+/**
+ * The host's discard question, captured instead of drawn.
+ *
+ * The dialog belongs to `HostSurfaces`, so a form or a sheet mounted on its own
+ * has no way to put one on screen — what it owes is asking, waiting, and acting
+ * on the answer, which is what this pins. `hv-card-shell`'s own tests are where
+ * the real prompt and its wording are asserted.
+ */
+export function discardAsker(): DiscardAsker {
+  const pending: { onConfirm: () => void; onCancel?: (() => void) | undefined }[] = [];
+  return {
+    ask: (onConfirm, onCancel) => {
+      pending.push({ onConfirm, onCancel });
+    },
+    get asked() {
+      return pending.length;
+    },
+    answer(which) {
+      const question = pending.pop();
+      if (!question) throw new Error('nothing was asked');
+      if (which === 'discard') question.onConfirm();
+      else question.onCancel?.();
+    },
   };
 }
 

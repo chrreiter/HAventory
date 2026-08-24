@@ -26,7 +26,7 @@ import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
 import { editorErrorText } from '../ui/editor-error';
-import { discardPrompt } from '../ui/discard';
+import type { ConfirmDiscard } from '../ui/discard';
 import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
 import type { BannerHooks } from '../ui/banners';
 import { NARROW_QUERY } from '../ui/responsive';
@@ -943,6 +943,15 @@ export class HVFullView extends LitElement {
    * breakpoint: HA sets this whenever the sidebar is collapsed, at any width.
    */
   @property({ type: Boolean }) narrow = false;
+  /**
+   * The host's discard question, for this surface, its form and its sheet.
+   *
+   * This surface leaves an open form for another row, for the create form or by
+   * closing altogether, and the last of those takes the asker down with it — so
+   * the dialog belongs to the host, which is still standing afterwards. Null
+   * leaves the form without a question.
+   */
+  @property({ attribute: false }) confirmDiscard: ConfirmDiscard | null = null;
 
   @state() private _zBase = 0;
   @state() private _filtersOpen = false;
@@ -1051,11 +1060,6 @@ export class HVFullView extends LitElement {
     itemId: string;
     mode: 'check-out' | 'set-due-date';
   } | null = null;
-  /**
-   * Where the surface goes once a discard is confirmed, or null while nothing
-   * is being asked: another row, the create form, or the view closing.
-   */
-  @state() private _pendingDiscard: string | 'new' | 'close' | null = null;
   @state() private _loadingAll = false;
   /** Set while a batch is running so Cancel can stop it between chunks. */
   private _bulkCancelled = false;
@@ -1154,7 +1158,6 @@ export class HVFullView extends LitElement {
         this._editing = null;
         this._detailItemId = null;
         this._editorError = null;
-        this._pendingDiscard = null;
         this._creatingLocation = false;
         this._locationError = null;
         this._selecting = false;
@@ -1261,13 +1264,13 @@ export class HVFullView extends LitElement {
    * the whole surface — asking first if there is typing to lose.
    *
    * The form asks for its own Cancel, ✕ and Escape, but only about closing.
-   * Everything here has somewhere else to be afterwards, so the question is
-   * raised on this side and the destination held until it is answered. Same
-   * wording either way: `ui/discard` owns it.
+   * Everything here has somewhere else to be afterwards, so the destination is
+   * held in the callback until the host's question comes back answered.
    */
   private _leaveEditor(to: string | 'new' | 'close') {
-    if (this._editing !== null && this._editor?.dirty) {
-      this._pendingDiscard = to;
+    const ask = this.confirmDiscard;
+    if (ask && this._editing !== null && this._editor?.dirty) {
+      ask(() => this._applyLeave(to));
       return;
     }
     this._applyLeave(to);
@@ -1335,8 +1338,6 @@ export class HVFullView extends LitElement {
       this._pinnedItem = null;
       this._editing = null;
       this._editorError = null;
-      // Nothing left to discard, so the question — if one was up — is moot.
-      this._pendingDiscard = null;
       return;
     }
     const listed = this.st?.items.find((i) => i.id === editing);
@@ -2470,6 +2471,7 @@ export class HVFullView extends LitElement {
                     .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
                     .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
                     .createLocation=${this._createLocationForEditor}
+                    .confirmDiscard=${this.confirmDiscard}
                     .busy=${this._editorBusy}
                     .errorMessage=${this._editorError}
                     ?mobile=${this._narrow}
@@ -2593,6 +2595,7 @@ export class HVFullView extends LitElement {
               .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
               .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
               .createLocation=${this._createLocationForEditor}
+              .confirmDiscard=${this.confirmDiscard}
               .busy=${this._editorBusy}
               .errorMessage=${this._editorError}
               @cancel=${() => {
@@ -2675,24 +2678,6 @@ export class HVFullView extends LitElement {
             this._pendingBulkCheckout = false;
           }}
         ></hv-checkout-popover>
-
-        <hv-confirm
-          data-testid="full-discard-confirm"
-          ?open=${this._pendingDiscard !== null}
-          ?mobile=${this._narrow}
-          .heading=${discardPrompt().heading}
-          .message=${discardPrompt().message}
-          .confirmLabel=${discardPrompt().confirmLabel}
-          destructive
-          @confirm=${() => {
-            const to = this._pendingDiscard;
-            this._pendingDiscard = null;
-            if (to !== null) this._applyLeave(to);
-          }}
-          @cancel=${() => {
-            this._pendingDiscard = null;
-          }}
-        ></hv-confirm>
     `;
   }
 

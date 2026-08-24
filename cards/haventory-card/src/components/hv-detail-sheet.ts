@@ -22,13 +22,11 @@ import {
   pictures,
 } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
-import { discardPrompt } from '../ui/discard';
+import type { ConfirmDiscard } from '../ui/discard';
 import { COPIED_MS, copyText } from '../ui/clipboard';
-import { ViewportNarrow } from '../ui/responsive';
 import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
-import './hv-confirm';
 import './hv-item-editor';
 import './hv-lightbox';
 import type { HVBottomSheet } from './hv-bottom-sheet';
@@ -453,6 +451,15 @@ export class HVDetailSheet extends LitElement {
   /** Passed straight to the editor: creating a first location from its picker. */
   @property({ attribute: false }) createLocation: ((name: string) => Promise<Location>) | null =
     null;
+  /**
+   * The host's discard question, for this sheet and for the form inside it.
+   *
+   * Both ask it: the form for its own Cancel, this sheet for the Back arrow,
+   * the scrim, a swipe and Escape. The dialog has to outlive the sheet — a
+   * confirmed dismissal takes the sheet down with it — so it belongs to the
+   * host, and null leaves the sheet dismissible without a question.
+   */
+  @property({ attribute: false }) confirmDiscard: ConfirmDiscard | null = null;
   @property({ type: Boolean }) busy = false;
   @property({ type: String }) errorMessage: string | null = null;
 
@@ -470,12 +477,6 @@ export class HVDetailSheet extends LitElement {
   /** Which picture the lightbox was opened on, or null when it is closed. */
   @state() private _lightbox: number | null = null;
   /**
-   * Where the sheet goes once a discard is confirmed, or null while nothing is
-   * being asked. The two answers differ: leaving the form lands on the read
-   * view, dismissing the sheet takes the whole surface down.
-   */
-  @state() private _pendingDiscard: 'read' | 'close' | null = null;
-  /**
    * Whether the id was copied a moment ago. Set only on a copy the browser
    * confirmed — the button is the only feedback there is, so it must not
    * announce a clipboard that still holds something else.
@@ -484,8 +485,6 @@ export class HVDetailSheet extends LitElement {
   private _copiedTimer?: ReturnType<typeof setTimeout>;
 
   private readonly _urls = new MediaUrls(this);
-  /** Window width, for the confirm this sheet raises over itself. */
-  private readonly _viewport = new ViewportNarrow(this);
   /**
    * The item id the sheet is showing. `undefined` until the first update, so
    * that pass settles the view the same way a move to another item does.
@@ -509,7 +508,6 @@ export class HVDetailSheet extends LitElement {
       this._mode = 'read';
       this._checkoutOpen = false;
       this._lightbox = null;
-      this._pendingDiscard = null;
       this._clearCopied();
     }
   }
@@ -587,16 +585,23 @@ export class HVDetailSheet extends LitElement {
    *
    * The sheet answers for the editor it hosts: a host outside cannot see into
    * this shadow root, and the scrim, the swipe and Escape all arrive here
-   * first. `read` is the Back arrow and the form's own cancel — the sheet stays
-   * up on its read view; `close` is a dismissal and takes the sheet with it.
+   * first. `read` is the Back arrow — the sheet stays up on its read view;
+   * `close` is a dismissal and takes the sheet with it. The dialog is the
+   * host's, so a confirmed dismissal is still answerable once this element has
+   * gone.
    */
   private _leaveEdit(to: 'read' | 'close') {
-    if (this.dirty) {
-      this._pendingDiscard = to;
+    const ask = this.confirmDiscard;
+    if (this.dirty && ask) {
+      ask(() => this._applyLeave(to));
       return;
     }
-    if (to === 'read') this._mode = 'read';
-    else this._close();
+    this._applyLeave(to);
+  }
+
+  private _applyLeave(to: 'read' | 'close') {
+    this._mode = 'read';
+    if (to === 'close') this._close();
   }
 
   /**
@@ -995,6 +1000,7 @@ export class HVDetailSheet extends LitElement {
         .tagSuggestions=${this.tagSuggestions}
         .customFieldKeys=${this.customFieldKeys}
         .createLocation=${this.createLocation}
+        .confirmDiscard=${this.confirmDiscard}
         .busy=${this.busy}
         .errorMessage=${this.errorMessage}
         @cancel=${() => {
@@ -1040,31 +1046,7 @@ export class HVDetailSheet extends LitElement {
           e.stopPropagation();
           this._lightbox = null;
         }}
-      ></hv-lightbox>
-
-      <!-- Outside the sheet, and its events stopped here: the host listens for
-           a cancel event on this element to take the sheet down, and an answer
-           of "no, keep my typing" must not read as that. -->
-      <hv-confirm
-        data-testid="sheet-discard-confirm"
-        ?open=${this._pendingDiscard !== null}
-        ?mobile=${this._viewport.narrow}
-        .heading=${discardPrompt().heading}
-        .message=${discardPrompt().message}
-        .confirmLabel=${discardPrompt().confirmLabel}
-        destructive
-        @confirm=${(e: Event) => {
-          e.stopPropagation();
-          const to = this._pendingDiscard;
-          this._pendingDiscard = null;
-          this._mode = 'read';
-          if (to === 'close') this._close();
-        }}
-        @cancel=${(e: Event) => {
-          e.stopPropagation();
-          this._pendingDiscard = null;
-        }}
-      ></hv-confirm>`;
+      ></hv-lightbox>`;
   }
 }
 

@@ -14,8 +14,8 @@ import { t } from '../i18n';
  * after — so a constant here would freeze the English strings into every
  * surface that spreads it.
  *
- * Spread into `HostSurfaces.confirm()` alongside an `onConfirm`, or bound field
- * by field onto an `hv-confirm`.
+ * Spread into `HostSurfaces.confirm()` alongside an `onConfirm`; that is the
+ * one caller, and `HostSurfaces.confirmDiscard` is how a form reaches it.
  */
 export function discardPrompt(): {
   heading: string;
@@ -30,3 +30,15 @@ export function discardPrompt(): {
     destructive: true,
   };
 }
+
+/**
+ * Put the discard question to the user and act on the answer.
+ *
+ * Forms take this as a property instead of owning a dialog: the question has to
+ * survive the surface that raised it — a sheet coming down, a row being
+ * switched away from — so it is asked by the element hosting the form, which is
+ * still there afterwards. `onConfirm` runs on a yes. `onCancel` is for a form
+ * that has to put focus back where the question took it from; a caller with
+ * nowhere to put it omits it.
+ */
+export type ConfirmDiscard = (onConfirm: () => void, onCancel?: () => void) => void;

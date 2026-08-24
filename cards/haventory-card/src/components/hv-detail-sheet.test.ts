@@ -3,6 +3,7 @@ import { setLanguage } from '../i18n';
 import {
   all,
   componentCss,
+  discardAsker,
   makeAttachment,
   makeItem,
   makeManual,
@@ -18,7 +19,6 @@ vi.mock('../ui/clipboard', async (importOriginal) => ({
   copyText: vi.fn(async () => true),
 }));
 import { copyText } from '../ui/clipboard';
-import { discardPrompt } from '../ui/discard';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVDetailSheet } from './hv-detail-sheet';
@@ -486,9 +486,14 @@ describe('hv-detail-sheet: edit view', () => {
 // swipe-down or the Back arrow took the typing with them. The sheet answers for
 // the form it hosts — a host outside cannot see into this shadow root.
 describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
+  let host = discardAsker();
+  beforeEach(() => {
+    host = discardAsker();
+  });
+
   /** Open the edit form and type into it. */
   async function dirtySheet() {
-    const el = await mount({ id: '1', name: 'A' });
+    const el = await mount({ id: '1', name: 'A' }, { confirmDiscard: host.ask });
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
     await settle(el);
     const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
@@ -499,11 +504,6 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     expect(el.dirty).toBe(true);
     return el;
   }
-
-  const guard = (el: HVDetailSheet) =>
-    q(el, '[data-testid="sheet-discard-confirm"]') as HTMLElement & { open: boolean };
-  const press = (el: HVDetailSheet, testid: 'confirm-accept' | 'confirm-cancel') =>
-    (guard(el).shadowRoot?.querySelector(`[data-testid="${testid}"]`) as HTMLButtonElement).click();
 
   /** The three ways out, each landing on the sheet's own cancel path. */
   const dismissals = {
@@ -542,12 +542,12 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     dismissals[how](el);
     await settle(el);
 
-    expect(guard(el).open).toBe(true);
+    expect(host.asked).toBe(1);
     expect(cancels).toBe(0);
     expect(el.open).toBe(true);
     expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
 
-    press(el, 'confirm-accept');
+    host.answer('discard');
     await settle(el);
     expect(cancels).toBe(1);
     expect(el.open).toBe(false);
@@ -558,7 +558,7 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
   // The grip is hidden in edit mode, so the drag is exercised on the read view:
   // clean there, and it must not start asking about nothing.
   it('dismisses a clean read view on a swipe without a question', async () => {
-    const el = await mount({ id: '1', name: 'A' });
+    const el = await mount({ id: '1', name: 'A' }, { confirmDiscard: host.ask });
     let cancels = 0;
     el.addEventListener('cancel', () => {
       cancels += 1;
@@ -567,7 +567,7 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     dismissals.swipe(el);
     await settle(el);
 
-    expect(guard(el).open).toBe(false);
+    expect(host.asked).toBe(0);
     expect(cancels).toBe(1);
     expect(el.open).toBe(false);
   });
@@ -577,31 +577,42 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
 
     (q(el, '[data-testid="sheet-back"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(guard(el).open).toBe(true);
+    expect(host.asked).toBe(1);
     expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
 
-    press(el, 'confirm-accept');
+    host.answer('discard');
     await settle(el);
     // Back lands on the read view; the sheet itself stays up.
     expect(el.open).toBe(true);
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
   });
 
-  it('asks the same question the form asks itself', async () => {
+  // The form inside asks through the same host, so a dismissal and the form's
+  // own Cancel cannot end up as two different questions.
+  it('hands the form the same asker it uses itself', async () => {
     const el = await dirtySheet();
+    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement & {
+      confirmDiscard: unknown;
+    };
+    expect(editor.confirmDiscard).toBe(host.ask);
+  });
+
+  // Declining leaves the sheet exactly where the question found it.
+  it('keeps the form when the question is declined', async () => {
+    const el = await dirtySheet();
+    let cancels = 0;
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
+
     dismissals.scrim(el);
     await settle(el);
+    host.answer('keep');
+    await settle(el);
 
-    const panel = guard(el).shadowRoot as ShadowRoot;
-    expect(panel.querySelector('[data-testid="confirm-dialog"]')?.getAttribute('aria-label')).toBe(
-      discardPrompt().heading,
-    );
-    expect(panel.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
-      discardPrompt().message,
-    );
-    expect(panel.querySelector('[data-testid="confirm-accept"]')?.textContent).toContain(
-      discardPrompt().confirmLabel,
-    );
+    expect(cancels).toBe(0);
+    expect(el.open).toBe(true);
+    expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
   });
 
   // Every cancel in the card is composed, so backing out of the date step must
@@ -626,7 +637,7 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
   });
 
   it('closes a clean form on the scrim without asking', async () => {
-    const el = await mount({ id: '1', name: 'A' });
+    const el = await mount({ id: '1', name: 'A' }, { confirmDiscard: host.ask });
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
     await settle(el);
     let cancels = 0;
@@ -637,7 +648,7 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     dismissals.scrim(el);
     await settle(el);
 
-    expect(guard(el).open).toBe(false);
+    expect(host.asked).toBe(0);
     expect(cancels).toBe(1);
     expect(el.open).toBe(false);
   });

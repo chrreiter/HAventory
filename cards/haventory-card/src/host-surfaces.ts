@@ -6,6 +6,8 @@ import { activeFilterCount, defaultFilters } from './store/store';
 import type { Store } from './store/store';
 import type { ImportPolicy, ImportPreview, ImportSummary } from './store/types';
 import { t, tn } from './i18n';
+import { discardPrompt } from './ui/discard';
+import type { ConfirmDiscard } from './ui/discard';
 import { NARROW_QUERY } from './ui/responsive';
 import type { OrganizeTab } from './components/hv-organize-dialog';
 import type { OverflowMenuEntry } from './components/hv-overflow-menu';
@@ -27,6 +29,8 @@ interface ConfirmSpec {
   confirmLabel?: string;
   destructive?: boolean;
   onConfirm: () => void;
+  /** A declined prompt, for a caller that has to put focus back afterwards. */
+  onCancel?: () => void;
 }
 
 /** The ways a host differs; everything else in these surfaces is identical. */
@@ -174,6 +178,18 @@ export class HostSurfaces {
     this.host.requestUpdate();
   }
 
+  /**
+   * The one place the card asks whether typed edits may be thrown away.
+   *
+   * Every form that can be left with typing in it — the inline expander, the
+   * phone add sheet, the detail sheet's form, the full view's — is handed this
+   * and calls it without knowing which host it is on. A bound field rather than
+   * a method so a host can pass it straight down as a property.
+   */
+  readonly confirmDiscard: ConfirmDiscard = (onConfirm, onCancel) => {
+    this.confirm({ ...discardPrompt(), onConfirm, onCancel });
+  };
+
   /** The delete flow: look the item up, ask, then send version-checked delete. */
   requestDeleteById(itemId: string): void {
     const store = this.getStore();
@@ -310,8 +326,10 @@ export class HostSurfaces {
           this.host.requestUpdate();
         }}
         @cancel=${() => {
+          const declined = this.confirmSpec;
           this.confirmSpec = null;
           this.host.requestUpdate();
+          declined?.onCancel?.();
         }}
       ></hv-confirm>
 

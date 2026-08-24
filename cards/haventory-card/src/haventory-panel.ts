@@ -138,6 +138,7 @@ export class HAventoryPanel extends LitElement {
         .quickFilters=${this._quickFilters()}
         .columns=${this.surfaces.columns}
         .menuEntries=${this.surfaces.menuEntries()}
+        .confirmDiscard=${this.surfaces.confirmDiscard}
         @menu-action=${this._onMenuAction}
         @request-delete=${(e: CustomEvent) =>
           this.surfaces.requestDeleteById((e.detail as { itemId: string }).itemId)}

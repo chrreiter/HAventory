@@ -3,6 +3,7 @@ import './hv-item-editor';
 import {
   all,
   componentCss,
+  discardAsker,
   makeAttachment,
   makeItem,
   makeManual,
@@ -19,7 +20,6 @@ vi.mock('../ui/clipboard', async (importOriginal) => ({
   copyText: vi.fn(async () => true),
 }));
 import { copyText } from '../ui/clipboard';
-import { discardPrompt } from '../ui/discard';
 import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
@@ -1159,7 +1159,8 @@ describe('hv-item-editor: Escape takes back one thing at a time', () => {
   });
 
   it('asks before discarding a form that has been typed into', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const host = discardAsker();
+    const el = await mount(makeItem({ id: '1', name: 'A' }), { confirmDiscard: host.ask });
     const cancels = onCancel(el);
     await type(el, 'editor-name', 'A longer name');
     expect(el.dirty).toBe(true);
@@ -1167,11 +1168,10 @@ describe('hv-item-editor: Escape takes back one thing at a time', () => {
     esc(el);
     await el.updateComplete;
 
-    const guard = await dialog(el, 'editor-discard-confirm');
-    expect(guard.open).toBe(true);
+    expect(host.asked).toBe(1);
     expect(cancels.count).toBe(0);
 
-    (guard.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+    host.answer('discard');
     await el.updateComplete;
     expect(cancels.count).toBe(1);
   });
@@ -1186,49 +1186,49 @@ describe('hv-item-editor: Escape takes back one thing at a time', () => {
 describe('hv-item-editor: every close this form owns asks the same question', () => {
   const paths = ['editor-cancel', 'editor-close'] as const;
 
-  it.each(paths)('%s asks before throwing typed edits away', async (testid) => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
+  /** A dirty form with a host standing by to answer for it. */
+  async function dirtyForm() {
+    const host = discardAsker();
+    const el = await mount(makeItem({ id: '1', name: 'A' }), { confirmDiscard: host.ask });
     let cancels = 0;
     el.addEventListener('cancel', () => {
       cancels += 1;
     });
     await type(el, 'editor-name', 'A longer name');
+    return { el, host, cancels: () => cancels };
+  }
+
+  it.each(paths)('%s asks before throwing typed edits away', async (testid) => {
+    const { el, host, cancels } = await dirtyForm();
 
     (q(el, `[data-testid="${testid}"]`) as HTMLButtonElement).click();
     await el.updateComplete;
 
-    const guard = await dialog(el, 'editor-discard-confirm');
-    expect(guard.open).toBe(true);
-    expect(guard.shadowRoot?.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
-      discardPrompt().message,
-    );
-    expect(cancels).toBe(0);
+    expect(host.asked).toBe(1);
+    expect(cancels()).toBe(0);
 
-    (guard.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+    host.answer('discard');
     await el.updateComplete;
-    expect(cancels).toBe(1);
+    expect(cancels()).toBe(1);
   });
 
   it.each(paths)('%s keeps the typing when the question is declined', async (testid) => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
-    let cancels = 0;
-    el.addEventListener('cancel', () => {
-      cancels += 1;
-    });
-    await type(el, 'editor-name', 'A longer name');
+    const { el, host, cancels } = await dirtyForm();
 
     (q(el, `[data-testid="${testid}"]`) as HTMLButtonElement).click();
     await el.updateComplete;
-    const guard = await dialog(el, 'editor-discard-confirm');
-    (guard.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
+    host.answer('keep');
     await el.updateComplete;
 
-    expect(cancels).toBe(0);
+    expect(cancels()).toBe(0);
     expect((q(el, '[data-testid="editor-name"]') as HTMLInputElement).value).toBe('A longer name');
+    // The question took focus out of the form, so declining it puts focus back.
+    expect(el.shadowRoot?.activeElement).toBe(q(el, '[data-testid="editor-name"]'));
   });
 
   it.each(paths)('%s closes a clean form without asking', async (testid) => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const host = discardAsker();
+    const el = await mount(makeItem({ id: '1', name: 'A' }), { confirmDiscard: host.ask });
     let cancels = 0;
     el.addEventListener('cancel', () => {
       cancels += 1;
@@ -1238,39 +1238,25 @@ describe('hv-item-editor: every close this form owns asks the same question', ()
     await el.updateComplete;
 
     expect(cancels).toBe(1);
-    expect((await dialog(el, 'editor-discard-confirm')).open).toBe(false);
+    expect(host.asked).toBe(0);
   });
 
-  // A host with somewhere to go afterwards asks this instead of firing `cancel`
-  // blind: false means the form has taken the question on itself.
-  it('reports whether a host may tear the form down', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
-    expect(el.requestClose()).toBe(true);
-
-    await type(el, 'editor-name', 'A longer name');
-    expect(el.requestClose()).toBe(false);
-    await el.updateComplete;
-    expect((await dialog(el, 'editor-discard-confirm')).open).toBe(true);
-  });
-
-  // Both dialogs are fixed to the window, so they take their phone form from the
-  // viewport — the form's own `mobile` is the card element's width and would put
-  // a bottom sheet on a desktop monitor whenever the card sat in a narrow column.
-  it.each(['editor-discard-confirm', 'editor-remove-confirm'] as const)(
-    '%s takes its phone form from the viewport, not the card',
-    async (confirmId) => {
-      for (const narrow of [true, false]) {
-        const restore = stubViewport(narrow);
-        try {
-          const el = await mount(makeItem({ id: '1', name: 'A' }), { mobile: !narrow });
-          expect((await dialog(el, confirmId)).hasAttribute('mobile')).toBe(narrow);
-          el.remove();
-        } finally {
-          restore();
-        }
+  // The remove dialog is fixed to the window, so it takes its phone form from
+  // the viewport — the form's own `mobile` is the card element's width and would
+  // put a bottom sheet on a desktop monitor whenever the card sat in a narrow
+  // column.
+  it('editor-remove-confirm takes its phone form from the viewport, not the card', async () => {
+    for (const narrow of [true, false]) {
+      const restore = stubViewport(narrow);
+      try {
+        const el = await mount(makeItem({ id: '1', name: 'A' }), { mobile: !narrow });
+        expect((await dialog(el, 'editor-remove-confirm')).hasAttribute('mobile')).toBe(narrow);
+        el.remove();
+      } finally {
+        restore();
       }
-    },
-  );
+    }
+  });
 });
 
 // The first minute of a fresh install: an item form whose most important field
