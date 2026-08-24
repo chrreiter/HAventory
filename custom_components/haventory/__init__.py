@@ -6,7 +6,6 @@ the core data structures in hass.data.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from pathlib import Path
@@ -18,7 +17,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.loader import async_get_integration
 
 try:
     from homeassistant.components.lovelace import LOVELACE_DATA
@@ -62,6 +60,7 @@ from .const import (
     DEFAULT_CARD_TITLE,
     DEFAULT_SIDEBAR_PANEL_ENABLED,
     DOMAIN,
+    INTEGRATION_VERSION,
     ISSUE_CORRUPT_SCHEMA_VERSION,
     ISSUE_CORRUPT_STORE,
     ISSUE_SCHEMA_DOWNGRADE,
@@ -89,8 +88,6 @@ from .storage import (
 from .subscriptions import notify_backend_unavailable
 
 LOGGER = context_logger(__name__)
-
-_MANIFEST_PATH = Path(__file__).with_name("manifest.json")
 
 # The card bundle ships inside the integration package — the only tree HACS
 # copies for an integration-category repo — and is served from there.
@@ -570,62 +567,21 @@ async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
     await _async_teardown_entry(hass, op="remove", release_panel=True)
 
 
-def _read_manifest_version() -> str:
-    """Parse the version out of the shipped manifest file. Blocks — run it in the executor."""
-    try:
-        manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
-    except OSError, ValueError:
-        return ""
-    raw = manifest.get("version")
-    return raw if isinstance(raw, str) else ""
-
-
-async def _async_manifest_version(hass: HomeAssistant) -> str:
-    """Version this integration declares, or `""` when it cannot be determined.
-
-    Home Assistant parses `manifest.json` when it loads the integration and keeps
-    the result, so the version is already in memory. Reading the file here instead
-    would be blocking I/O on the event loop, which HA's loop protection reports as
-    a warning with a full stack trace on every startup. The executor read is the
-    fallback for the case where the loader has no manifest to hand us.
-    """
-    try:
-        integration = await async_get_integration(hass, DOMAIN)
-        raw = integration.manifest.get("version")
-    except Exception:
-        LOGGER.debug(
-            "Integration manifest unavailable from the loader; reading the file instead",
-            extra={"domain": DOMAIN, "op": "frontend_register"},
-        )
-    else:
-        if isinstance(raw, str) and raw:
-            return raw
-
-    try:
-        return await hass.async_add_executor_job(_read_manifest_version)
-    except Exception:
-        LOGGER.debug(
-            "Could not read the integration manifest; registering the card unversioned",
-            extra={"domain": DOMAIN, "op": "frontend_register", "path": str(_MANIFEST_PATH)},
-        )
-        return ""
-
-
-async def _async_card_url(hass: HomeAssistant) -> str:
+def _card_url() -> str:
     """The one URL both frontend loaders receive, versioned as `?v=`.
 
     The bundle is served without a `Cache-Control` header, so a browser — or the
     companion app's webview, which is harder to clear — falls back to *heuristic*
     freshness and may hold a long-unchanged bundle for days after an update,
     running an old card against a new backend. A version bump is a new URL, which
-    no cache can satisfy. Falls back to the bare path if the version cannot be
-    determined, since a missing cache-buster must not stop the card from loading
-    at all.
+    no cache can satisfy.
+
+    `INTEGRATION_VERSION` is the version `manifest.json` declares — the two are
+    rewritten together by release-please and held equal by
+    `tests/test_release_version_consistency.py` — so the string is the shipped
+    one without asking the loader or the filesystem for it.
     """
-    version = await _async_manifest_version(hass)
-    if not version:
-        return _CARD_URL_PATH
-    return f"{_CARD_URL_PATH}?v={quote(version, safe='')}"
+    return f"{_CARD_URL_PATH}?v={quote(INTEGRATION_VERSION, safe='')}"
 
 
 def _points_at_card(resource_url: Any) -> bool:
@@ -705,7 +661,7 @@ async def _async_register_static_path(hass: HomeAssistant) -> bool:
         # cache_headers=False: no Cache-Control, so the browser revalidates and
         # picks up a rebuild that did not change the version — which is every
         # rebuild during development. The `?v=` on the URL covers the other
-        # direction (see _async_card_url).
+        # direction (see _card_url).
         await register([StaticPathConfig(_STATIC_URL_PATH, str(_WWW_DIR), cache_headers=False)])
     except Exception:
         # ERROR, not WARNING: this return short-circuits both card loaders below,
@@ -878,7 +834,7 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
     title = _resolve_card_title(entry)
     # The exact string both card loaders receive: a second URL for the same
     # module defeats the browser's module map and defines the element twice.
-    url = await _async_card_url(hass)
+    url = _card_url()
     wanted = (title, url)
 
     if bucket.get(_PANEL_STATE_KEY) == wanted:
@@ -1067,14 +1023,14 @@ async def _register_frontend_module(hass: HomeAssistant) -> None:
     if not await _async_register_static_path(hass):
         return
 
-    url = await _async_card_url(hass)
+    url = _card_url()
     _register_extra_js_url(hass, url)
     await _async_register_lovelace_resource(hass, url)
 
 
 async def _unregister_frontend_module(hass: HomeAssistant) -> None:
     """Take back both frontend registrations for the card."""
-    _remove_extra_js_url(hass, await _async_card_url(hass))
+    _remove_extra_js_url(hass, _card_url())
 
     resources = await _async_lovelace_resources(hass, op="frontend_unregister")
     if resources is None:

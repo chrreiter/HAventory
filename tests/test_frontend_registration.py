@@ -20,7 +20,6 @@ import json
 import logging
 import re
 import sys
-import threading
 import types
 from pathlib import Path
 from typing import Any
@@ -30,6 +29,7 @@ from custom_components.haventory.const import (
     CONF_CARD_TITLE,
     CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
+    INTEGRATION_VERSION,
     MEDIA_NAME_TOKEN_PARAM,
     MEDIA_SIZE_PARAM,
     MEDIA_SIZE_THUMB,
@@ -47,19 +47,11 @@ from homeassistant.core import HomeAssistant
 
 STATIC_URL_PATH = "/haventory_static"
 CARD_PATH = f"{STATIC_URL_PATH}/haventory-card.js"
+# What both loaders and the panel receive, cache-buster and all.
+CURRENT_CARD_URL = f"{CARD_PATH}?v={INTEGRATION_VERSION}"
 # Where installs from before the bundle moved into the package loaded it from.
 LEGACY_CARD_PATH = "/local/haventory/haventory-card.js"
 REPO_ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_PATH = REPO_ROOT / "custom_components" / "haventory" / "manifest.json"
-
-# Distinguishes "leave the loader stub at its default (the shipped manifest)" from
-# "register None", which makes the lookup raise the way an absent integration does.
-_NO_OVERRIDE = object()
-
-
-def manifest_version() -> str:
-    """Version the shipped manifest declares, read independently of the module under test."""
-    return str(json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))["version"])
 
 
 def import_haventory(monkeypatch, lovelace_key: str):
@@ -138,21 +130,15 @@ class MockLovelaceData:
         self.resources = MockResourceCollection() if resources is None else resources
 
 
-def make_hass(*, manifest: Any = _NO_OVERRIDE) -> HomeAssistant:
+def make_hass() -> HomeAssistant:
     """Hass stub with the frontend's URL manager in place.
 
     The manager is created by the frontend component's own setup, which nothing
     here runs — so a test that wants the extra-module loader to work has to put
     one there, and one that does not gets the KeyError a bare hass gives.
-
-    `manifest` seeds what the loader hands back for the `haventory` domain: omit it
-    for the shipped manifest, pass a dict to choose the version, pass None to make
-    the lookup fail the way it does for an integration HA has not loaded.
     """
     hass = HomeAssistant()
     hass.data[DATA_EXTRA_MODULE_URL] = UrlManager()
-    if manifest is not _NO_OVERRIDE:
-        hass.data["__integration_manifests__"] = {"haventory": manifest}
     return hass
 
 
@@ -190,23 +176,6 @@ async def setup_frontend(hav_init, hass: HomeAssistant, entry: ConfigEntry) -> N
     """The two frontend steps of ``async_setup_entry``, in the order it runs them."""
     await hav_init._register_frontend_module(hass)
     await hav_init._async_apply_sidebar_panel(hass, entry)
-
-
-def track_manifest_reads(monkeypatch) -> list[int]:
-    """Record the thread of every `Path.read_text` call from here on.
-
-    HA's blocking-call protection flags exactly this call when it happens on the
-    event loop thread, and answers it with a stack trace on every startup.
-    """
-    threads: list[int] = []
-    real_read_text = Path.read_text
-
-    def tracking_read_text(self, *args, **kwargs):
-        threads.append(threading.get_ident())
-        return real_read_text(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "read_text", tracking_read_text)
-    return threads
 
 
 @pytest.fixture
@@ -264,7 +233,7 @@ async def test_registers_both_loaders_with_the_same_url(hav_init):
 
     await hav_init._register_frontend_module(hass)
 
-    expected = f"{CARD_PATH}?v={manifest_version()}"
+    expected = CURRENT_CARD_URL
     assert [c["url"] for c in lovelace_data.resources.created] == [expected]
     assert lovelace_data.resources.created[0]["res_type"] == "module"
     assert extra_js_urls(hass) == {expected}
@@ -289,7 +258,7 @@ async def test_unload_hands_back_the_module_url_and_setup_restores_it(hav_init):
     """The extra-module URL is entry-scoped state, unlike the static route."""
     hass = make_hass()
     hass.data["lovelace_data_key"] = MockLovelaceData()
-    expected = f"{CARD_PATH}?v={manifest_version()}"
+    expected = CURRENT_CARD_URL
 
     await hav_init._register_frontend_module(hass)
     assert extra_js_urls(hass) == {expected}
@@ -364,107 +333,22 @@ async def test_a_failed_static_route_logs_at_error(hav_init, caplog):
 
 
 @pytest.mark.asyncio
-async def test_registered_url_carries_the_manifest_version(monkeypatch, tmp_path):
-    """The `?v=` value comes from the loaded manifest, not from a constant in the code."""
-    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path)
-    hass = make_hass(manifest={"domain": "haventory", "version": "9.9.9"})
-    lovelace_data = MockLovelaceData()
-    hass.data["lovelace_data_key"] = lovelace_data
+async def test_registered_url_carries_the_integration_version(hav_init):
+    """The `?v=` value is the version this build declares.
 
-    await hav_init._register_frontend_module(hass)
-
-    assert [c["url"] for c in lovelace_data.resources.created] == [f"{CARD_PATH}?v=9.9.9"]
-    assert extra_js_urls(hass) == {f"{CARD_PATH}?v=9.9.9"}
-
-
-@pytest.mark.asyncio
-async def test_the_loaded_manifest_is_read_without_touching_the_filesystem(monkeypatch, tmp_path):
-    """The version comes out of memory: no file read at all, on the loop or off it.
-
-    Home Assistant already parsed `manifest.json` when it loaded the integration.
-    Reading it again during `async_setup_entry` runs on the event loop thread,
-    where HA's loop protection answers it with a stack-trace warning on every
-    startup, so the registered URL must not depend on a file read.
+    `INTEGRATION_VERSION` and `manifest.json` are rewritten together by
+    release-please and held equal by `tests/test_release_version_consistency.py`,
+    so the constant is the shipped version and the URL needs no second source
+    for it.
     """
-    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path)
-    hass = make_hass(manifest={"domain": "haventory", "version": "9.9.9"})
-    lovelace_data = MockLovelaceData()
-    hass.data["lovelace_data_key"] = lovelace_data
-    read_threads = track_manifest_reads(monkeypatch)
-
-    await hav_init._register_frontend_module(hass)
-
-    assert [c["url"] for c in lovelace_data.resources.created] == [f"{CARD_PATH}?v=9.9.9"]
-    assert read_threads == []
-    assert hass.executor_jobs == []
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "manifest",
-    [
-        # Domain unknown to the loader, which raises rather than returning.
-        None,
-        # Loaded, but carrying nothing usable as a version.
-        {"domain": "haventory"},
-        {"domain": "haventory", "version": ""},
-        {"domain": "haventory", "version": 9},
-    ],
-)
-async def test_falls_back_to_reading_the_manifest_off_the_loop(monkeypatch, tmp_path, manifest):
-    """No version from the loader => read the file, but in the executor."""
-    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path)
-    manifest_file = tmp_path / "manifest.json"
-    manifest_file.write_text(
-        json.dumps({"domain": "haventory", "version": "8.8.8"}), encoding="utf-8"
-    )
-    monkeypatch.setattr(hav_init, "_MANIFEST_PATH", manifest_file)
-
-    hass = make_hass(manifest=manifest)
-    lovelace_data = MockLovelaceData()
-    hass.data["lovelace_data_key"] = lovelace_data
-    read_threads = track_manifest_reads(monkeypatch)
-
-    await hav_init._register_frontend_module(hass)
-
-    assert [c["url"] for c in lovelace_data.resources.created] == [f"{CARD_PATH}?v=8.8.8"]
-    assert hass.executor_jobs == [hav_init._read_manifest_version]
-    assert read_threads and threading.get_ident() not in read_threads
-
-
-@pytest.mark.asyncio
-async def test_registers_bare_url_when_manifest_version_unavailable(monkeypatch, tmp_path):
-    """Neither source yields a version => unversioned URL, rather than a failed setup."""
-    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path)
-    monkeypatch.setattr(hav_init, "_MANIFEST_PATH", tmp_path / "no-such-manifest.json")
-
-    hass = make_hass(manifest=None)
+    hass = make_hass()
     lovelace_data = MockLovelaceData()
     hass.data["lovelace_data_key"] = lovelace_data
 
     await hav_init._register_frontend_module(hass)
 
-    assert [c["url"] for c in lovelace_data.resources.created] == [CARD_PATH]
-    assert extra_js_urls(hass) == {CARD_PATH}
-
-
-@pytest.mark.asyncio
-async def test_registers_bare_url_when_no_executor_is_available(monkeypatch, tmp_path):
-    """A hass without an executor still registers the card, just without `?v=`."""
-    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path)
-    hass = make_hass(manifest=None)
-    monkeypatch.delattr(HomeAssistant, "async_add_executor_job")
-    lovelace_data = MockLovelaceData()
-    hass.data["lovelace_data_key"] = lovelace_data
-
-    await hav_init._register_frontend_module(hass)
-
-    assert [c["url"] for c in lovelace_data.resources.created] == [CARD_PATH]
+    assert [c["url"] for c in lovelace_data.resources.created] == [CURRENT_CARD_URL]
+    assert extra_js_urls(hass) == {CURRENT_CARD_URL}
 
 
 # --------------------------------------------------------------------------- #
@@ -490,13 +374,13 @@ async def test_migrates_a_legacy_local_resource_in_place(monkeypatch, tmp_path, 
     """
     hav_init = import_haventory(monkeypatch, "lovelace_data_key")
     install_bundle(monkeypatch, hav_init, tmp_path)
-    hass = make_hass(manifest={"domain": "haventory", "version": "9.9.9"})
+    hass = make_hass()
     resources = MockResourceCollection([{"id": "legacy", "url": registered_url, "type": "module"}])
     hass.data["lovelace_data_key"] = MockLovelaceData(resources)
 
     await hav_init._register_frontend_module(hass)
 
-    expected = f"{CARD_PATH}?v=9.9.9"
+    expected = CURRENT_CARD_URL
     assert resources.created == []
     assert resources.updated == [("legacy", {"res_type": "module", "url": expected})]
     assert [i["url"] for i in resources.async_items()] == [expected]
@@ -507,7 +391,7 @@ async def test_migrates_a_legacy_local_resource_in_place(monkeypatch, tmp_path, 
 async def test_reregistration_at_the_same_version_is_idempotent(hav_init):
     """Entry already at the current `?v=` => nothing is created and nothing is written."""
     hass = make_hass()
-    current_url = f"{CARD_PATH}?v={manifest_version()}"
+    current_url = CURRENT_CARD_URL
     resources = MockResourceCollection([{"id": "existing", "url": current_url, "type": "module"}])
     hass.data["lovelace_data_key"] = MockLovelaceData(resources)
 
@@ -538,7 +422,7 @@ async def test_updates_existing_entry_when_the_version_changed(
     """A stale entry for the card is rewritten in place, never duplicated."""
     hav_init = import_haventory(monkeypatch, "lovelace_data_key")
     install_bundle(monkeypatch, hav_init, tmp_path)
-    hass = make_hass(manifest={"domain": "haventory", "version": "9.9.9"})
+    hass = make_hass()
     resources = MockResourceCollection(
         [{"id": "existing", "url": registered_url, "type": "module"}]
     )
@@ -546,7 +430,7 @@ async def test_updates_existing_entry_when_the_version_changed(
 
     await hav_init._register_frontend_module(hass)
 
-    expected = f"{CARD_PATH}?v=9.9.9"
+    expected = CURRENT_CARD_URL
     assert resources.created == []
     assert resources.updated == [("existing", {"res_type": "module", "url": expected})]
     assert [i["url"] for i in resources.async_items()] == [expected]
@@ -562,8 +446,8 @@ async def test_collapses_duplicate_card_resources(monkeypatch, tmp_path):
     """A legacy entry beside a current one is one element definition too many."""
     hav_init = import_haventory(monkeypatch, "lovelace_data_key")
     install_bundle(monkeypatch, hav_init, tmp_path)
-    hass = make_hass(manifest={"domain": "haventory", "version": "9.9.9"})
-    expected = f"{CARD_PATH}?v=9.9.9"
+    hass = make_hass()
+    expected = CURRENT_CARD_URL
     resources = MockResourceCollection(
         [
             {"id": "current", "url": expected, "type": "module"},
@@ -589,7 +473,7 @@ async def test_finds_the_existing_entry_in_an_unloaded_collection(hav_init):
     two resources for one module — the second `customElements.define` throws.
     """
     hass = make_hass()
-    current_url = f"{CARD_PATH}?v={manifest_version()}"
+    current_url = CURRENT_CARD_URL
     resources = MockResourceCollection(
         [{"id": "existing", "url": current_url, "type": "module"}], loaded=False
     )
@@ -632,7 +516,7 @@ async def test_registers_alongside_unrelated_resources(hav_init):
 
     await hav_init._register_frontend_module(hass)
 
-    assert [c["url"] for c in resources.created] == [f"{CARD_PATH}?v={manifest_version()}"]
+    assert [c["url"] for c in resources.created] == [CURRENT_CARD_URL]
     assert resources.updated == []
     assert resources.deleted == []
 
@@ -649,7 +533,7 @@ async def test_yaml_mode_loads_the_card_through_the_module_url(hav_init, registe
     await hav_init._register_frontend_module(hass)
 
     assert resources.async_items() == items
-    assert extra_js_urls(hass) == {f"{CARD_PATH}?v={manifest_version()}"}
+    assert extra_js_urls(hass) == {CURRENT_CARD_URL}
 
 
 @pytest.mark.asyncio
@@ -660,7 +544,7 @@ async def test_registers_the_module_url_when_lovelace_is_not_initialized(hav_ini
     # hass.data["lovelace_data_key"] is NOT set - simulates Lovelace not initialized
     await hav_init._register_frontend_module(hass)
 
-    assert extra_js_urls(hass) == {f"{CARD_PATH}?v={manifest_version()}"}
+    assert extra_js_urls(hass) == {CURRENT_CARD_URL}
 
 
 @pytest.mark.asyncio
@@ -671,7 +555,7 @@ async def test_skips_when_resources_is_none(hav_init):
 
     await hav_init._register_frontend_module(hass)
 
-    assert extra_js_urls(hass) == {f"{CARD_PATH}?v={manifest_version()}"}
+    assert extra_js_urls(hass) == {CURRENT_CARD_URL}
 
 
 # --------------------------------------------------------------------------- #
@@ -694,9 +578,7 @@ async def test_missing_frontend_component_degrades_gracefully(monkeypatch, tmp_p
     await hav_init._register_frontend_module(hass)
     await hav_init.async_unload_entry(hass, ConfigEntry())
 
-    assert [c["url"] for c in lovelace_data.resources.created] == [
-        f"{CARD_PATH}?v={manifest_version()}"
-    ]
+    assert [c["url"] for c in lovelace_data.resources.created] == [CURRENT_CARD_URL]
 
 
 @pytest.mark.asyncio
@@ -710,9 +592,7 @@ async def test_frontend_without_a_url_manager_degrades_gracefully(hav_init):
     await hav_init._register_frontend_module(hass)
     await hav_init.async_unload_entry(hass, ConfigEntry())
 
-    assert [c["url"] for c in lovelace_data.resources.created] == [
-        f"{CARD_PATH}?v={manifest_version()}"
-    ]
+    assert [c["url"] for c in lovelace_data.resources.created] == [CURRENT_CARD_URL]
 
 
 # --------------------------------------------------------------------------- #
@@ -892,7 +772,7 @@ async def test_registers_the_sidebar_panel_against_the_card_bundle(hav_init):
 
     await setup_frontend(hav_init, hass, ConfigEntry())
 
-    expected_url = f"{CARD_PATH}?v={manifest_version()}"
+    expected_url = CURRENT_CARD_URL
     panel = registered_panel(hass)
     assert panel.component_name == "custom"
     assert panel.frontend_url_path == PANEL_URL_PATH
@@ -1048,7 +928,7 @@ async def test_an_explicit_opt_out_registers_no_panel(hav_init):
     assert registered_panel(hass) is None
     assert panel_registration_attempts(hass) == []
     # The card itself is unaffected: only the sidebar entry is opted out of.
-    assert extra_js_urls(hass) == {f"{CARD_PATH}?v={manifest_version()}"}
+    assert extra_js_urls(hass) == {CURRENT_CARD_URL}
 
 
 @pytest.mark.asyncio
