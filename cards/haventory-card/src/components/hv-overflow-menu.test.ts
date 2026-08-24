@@ -26,9 +26,9 @@ describe('hv-overflow-menu', () => {
     expect(el.shadowRoot?.querySelector('[data-testid="overflow-menu"]')).toBe(null);
   });
 
-  // A long hint used to sit beside the label as a non-shrinking sibling: inside
-  // a 250px menu that left "Organize…" a sliver to render in, and an unbreakable
-  // word simply overflowed across the hint.
+  // A long hint beside its label is a non-shrinking sibling: inside a 250px
+  // menu that leaves "Organize…" a sliver to render in, and an unbreakable word
+  // simply overflows across the hint.
   it('stacks a long hint under its label instead of beside it', async () => {
     const el = await mount([
       { id: 'organize', label: 'Organize…', meta: 'Locations · Tags · Categories' },
@@ -138,10 +138,10 @@ describe('hv-overflow-menu: narrow screens', () => {
 });
 
 // A list filtered down to a single row leaves hv-list's scroller shorter than
-// the open menu (#389). Anchoring the popup inside the row put it inside that
-// scroller's clip, where neither opening direction could fit — opening down and
-// flipping up both left a ~6px sliver. The menu is viewport-fixed instead, so
-// no ancestor's overflow can cut it.
+// the open menu. Anchored inside the row, the popup sits inside that scroller's
+// clip, where neither opening direction fits — down and flipped up both leave a
+// sliver. The menu is viewport-fixed instead, so no ancestor's overflow can cut
+// it.
 describe('hv-overflow-menu: escaping ancestor clips', () => {
 
   it('carries live placement coordinates while open', async () => {

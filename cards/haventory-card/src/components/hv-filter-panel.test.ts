@@ -733,8 +733,9 @@ describe('hv-filter-panel: footer and staging', () => {
     expect(el.working.categories).toEqual([]);
   });
 
-  // Clearing used to go straight to the store: the list behind the sheet
-  // reloaded while every control in the sheet kept its old value.
+  // Clearing stages like every other edit in the sheet: sent straight to the
+  // store, the list behind the sheet reloads while every control in the sheet
+  // keeps its old value.
   it('clears the staged draft, not the applied filters', async () => {
     const el = await mount(
       { categories: ['Hardware'], tags: ['metric'], lowStockOnly: true },
@@ -781,8 +782,9 @@ describe('hv-filter-panel: footer and staging', () => {
 
 describe('hv-filter-panel: native control affordances', () => {
 
-  // The drawn chevron used to be a sibling of a select only as wide as its own
-  // text, so clicking the arrow — the obvious target — did nothing at all.
+  // The drawn chevron sits over a select that fills the field: beside a select
+  // only as wide as its own text, clicking the arrow — the obvious target —
+  // does nothing at all.
   it('lets the select own the whole field, chevron included', async () => {
     const el = await mount();
     for (const testid of ['filter-sort-field', 'filter-area']) {
@@ -799,9 +801,9 @@ describe('hv-filter-panel: native control affordances', () => {
 });
 
 describe('hv-filter-panel: changed', () => {
-  // Two bare date inputs side by side are indistinguishable: the only labels
-  // used to be screen-reader-only, so a sighted user could not tell which one
-  // filtered on updated and which on created.
+  // Two bare date inputs side by side are indistinguishable: with the labels
+  // screen-reader-only, a sighted user cannot tell which one filters on updated
+  // and which on created.
   it('labels each date filter visibly, not only for screen readers', async () => {
     const el = await mount();
 

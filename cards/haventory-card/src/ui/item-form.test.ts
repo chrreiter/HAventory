@@ -177,8 +177,8 @@ describe('validateForm', () => {
     expect(validateForm({ ...base(), name: 'A', tags })).toEqual([]);
   });
 
-  // Issue #437: the caps refuse growth past the stored item, never the stored
-  // item itself — so a legacy over-cap item can be saved, including by the
+  // The caps refuse growth past the stored item, never the stored item itself —
+  // so an over-cap item already in the store can be saved, including by the
   // edit that trims some of the excess, and only what an edit adds is capped.
   describe('with a stored item as baseline', () => {
     const legacyDescription = 'd'.repeat(4500);

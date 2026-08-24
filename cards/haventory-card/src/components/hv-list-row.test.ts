@@ -59,8 +59,8 @@ describe('hv-list-row: content', () => {
     expect(q(el, '[data-testid="row-qty"]')?.classList.contains('low')).toBe(true);
   });
 
-  // The stepper used to sit there greyed and check-in was reachable only through
-  // the ⋮ menu, which a wide row hides until the row is hovered.
+  // A greyed stepper leaves check-in reachable only through the ⋮ menu, which a
+  // wide row hides until the row is hovered.
   it('gives a checked-out row the check-in button in the stepper place, at any width', async () => {
     for (const mobile of [false, true]) {
       const el = await mount({ checked_out: true }, { mobile });
@@ -434,8 +434,8 @@ describe('hv-list-row: mobile affordances', () => {
     );
   });
 
-  // Being out used to take the line rather than lead it, so the one row you most
-  // want the shelf of — the borrowed one — was the row that stopped naming it.
+  // Being out leads the line rather than taking it, so the one row you most
+  // want the shelf of — the borrowed one — still names it.
   it('leads a checked-out phone row with the checkout and keeps the location behind it', async () => {
     const el = await mount(
       { checked_out: true, due_date: '2099-07-31', effective_area_id: 'area-workshop', location_path: deepPath },
@@ -483,8 +483,8 @@ describe('hv-list-row: mobile affordances', () => {
     }
   });
 
-  // A passed date used to render exactly like an upcoming one — same wording,
-  // same blue — so the row said nothing about being late.
+  // A passed date drawn like an upcoming one — same wording, same blue — tells
+  // the reader nothing about being late.
   it('says a passed due date is overdue, and colours it that way', async () => {
     const el = await mount({ checked_out: true, due_date: '2000-01-02' }, { mobile: true });
     const secondary = q(el, '[data-testid="row-secondary"]');

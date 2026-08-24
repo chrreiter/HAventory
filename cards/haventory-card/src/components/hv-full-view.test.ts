@@ -109,7 +109,8 @@ describe('hv-full-view: phone-width app bar', () => {
   });
 
   it('keeps Clear selection on screen', async () => {
-    // It measured 380..490 in a 375px viewport before the bar could wrap.
+    // The bar does not wrap, so at 375px only the tighter step keeps it on
+    // screen.
     const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
     el.startSelecting = true;
     el.open = false;
@@ -952,9 +953,9 @@ describe('hv-full-view: sidebar status', () => {
     expect(tallies(sr)).toEqual(['1', '1', '2']);
   });
 
-  // The audit's fixture in miniature: custom slugs used to inherit "everything
-  // that is not missing or needs_repair", so an empty status claimed the whole
-  // inventory and then showed no rows when it was clicked.
+  // Each slug is priced on its own: inheriting "everything that is not missing
+  // or needs_repair" lets an empty status claim the whole inventory and then
+  // show no rows when it is clicked.
   it('prices a household vocabulary per slug, including one nothing carries', async () => {
     const statuses: StatusDefinition[] = [
       { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
@@ -1052,7 +1053,7 @@ describe('hv-full-view: context bar and table', () => {
     await settle(el);
     const crumb = q(sr, '[data-testid="full-breadcrumb"]')?.textContent?.replace(/\s+/g, ' ');
     expect(crumb).toContain('garage › Shelf A');
-    // One item is one item — the crumb used to say "1 items".
+    // One item is one item, not "1 items".
     expect(crumb).toContain('1 item');
   });
 
@@ -1074,9 +1075,9 @@ describe('hv-full-view: context bar and table', () => {
     expect(crumb?.textContent?.replace(/\s+/g, ' ')).toContain('garage › Shelf A');
   });
 
-  // Browsing into a root named after its own room used to write the room twice:
-  // "Kitchen  Kitchen › Pantry". The crumb elides like every other surface that
-  // marks an area, and the pairing stays in the title.
+  // Browsing into a root named after its own room must not write the room
+  // twice — "Kitchen  Kitchen › Pantry". The crumb elides like every other
+  // surface that marks an area, and the pairing stays in the title.
   it('drops the area mark when the crumb already opens with the area name', async () => {
     const kitchen = { ...loc('kitchen', 'Kitchen'), area_id: 'area-kitchen' };
     const pantry: Location = {
@@ -1173,14 +1174,14 @@ describe('hv-full-view: context bar and table', () => {
       expect(button.getAttribute('aria-label')).toBe('Organize');
       button.click();
 
-      // No tab named: Organize opens where it always did, on Locations.
+      // No tab named: Organize opens on its default, Locations.
       expect(seen).toEqual([{ id: 'organize' }]);
       el.remove();
     }
   });
 
-  // The same sentence the card's footer prints — the two used to phrase one
-  // fact two ways, and neither named what it was counting.
+  // The same sentence the card's footer prints: one fact, one phrasing, and it
+  // names what it is counting.
   it('counts loaded rows against the filtered total, in the words the card uses', async () => {
     const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}` }));
     const { el, store, sr } = await mount({ items });
@@ -1241,9 +1242,9 @@ describe('hv-full-view: empty table', () => {
 
   it('waits for the fetch instead of blaming the filters for the gap', async () => {
     // Changing a filter clears the rows and asks for the next page, so between
-    // the two the table has nothing to show and no answer yet. It used to fill
-    // that gap with "No items match these filters" and a Clear all button,
-    // against a filter nothing had been counted for.
+    // the two the table has nothing to show and no answer yet. Filling that gap
+    // with "No items match these filters" and a Clear all button blames a
+    // filter nothing has been counted for.
     const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
     store.setFilters({ q: 'wood' });
     await el.updateComplete;
@@ -2114,8 +2115,8 @@ describe('hv-full-view: selection and bulk actions', () => {
     expect([...store.state.value.selection]).toEqual(['2']);
   });
 
-  // Bulk check-out used to fire on the press with no due date at all, so a
-  // batch could never go overdue while a single row was always asked.
+  // A batch is asked for a due date exactly as a single row is: firing on the
+  // press with no date means a bulk check-out can never go overdue.
   describe('bulk check-out asks for a due date, once', () => {
     async function selectTwoAndCheckOut() {
       const items = [makeItem({ id: '1' }), makeItem({ id: '2' })];

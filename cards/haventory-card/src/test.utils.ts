@@ -890,7 +890,7 @@ function applyMockSort(list: Item[], rawSort: unknown): Item[] {
 const FIXTURE_TS = '2026-01-01T00:00:00.000Z';
 
 /** Counts anonymous fixtures, which the clock cannot number uniquely: two
- * `makeItem()` calls in one millisecond used to share an id. Zero-padded so
+ * `makeItem()` calls in one millisecond would share an id. Zero-padded so
  * lexical order — what the id tie-break compares — follows creation order. */
 let anonymousItems = 0;
 

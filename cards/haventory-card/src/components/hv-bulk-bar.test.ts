@@ -287,7 +287,7 @@ describe('describeFailure', () => {
     expect(describeFailure(failure('a', 'not_found'))).toContain('Nicht gefunden');
     expect(describeFailure(failure('a', 'storage_error'))).toContain('Nicht gespeichert');
     // The backend's own sentence rides through untranslated inside the card's
-    // frame, which is what #190's notes settle for `validation_error`.
+    // frame: for `validation_error` only the frame is a card string.
     expect(describeFailure(failure('a', 'validation_error', 'quantity must be >= 0'))).toBe(
       'Abgelehnt – quantity must be >= 0',
     );

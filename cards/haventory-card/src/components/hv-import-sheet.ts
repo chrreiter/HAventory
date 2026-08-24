@@ -12,12 +12,10 @@ import { copyText } from '../ui/clipboard';
 import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } from '../store/types';
 
 // Every policy decides one thing: what happens to an item the file and the
-// inventory both have — "both have" meaning the same id, never the same name, so
-// an item rebuilt by hand carries a fresh id and is added alongside the file's
-// copy rather than matched to it. Each description names the id as the match key,
-// because "matching" on its own reads as matching by name. None of the policies
-// deletes anything — an item absent from the file is always left alone — so each
-// description says so too, because "Replace" on its own reads like a
+// inventory both have — the same id, never the same name, so an item rebuilt by
+// hand carries a fresh id and is added alongside the file's copy. Each
+// description names the id as the match key and says that nothing is deleted:
+// "matching" alone reads as matching by name, and "Replace" alone reads like a
 // whole-inventory swap.
 /**
  * How many name clashes are listed individually before the block switches to a
@@ -30,9 +28,9 @@ const WARNING_LIST_LIMIT = 5;
  * What the execute button promises to write.
  *
  * It names both kinds because either can be the whole document: a backup
- * restored onto a hand-rebuilt tree writes locations and no items. The
- * breakdown into added and updated is left to the count tables directly above,
- * which carry it for both kinds; repeating it here would need four numbers.
+ * restored onto a hand-rebuilt tree writes locations and no items. Added and
+ * updated are left to the count tables above, which carry both kinds; here they
+ * would take four numbers.
  */
 function importButtonLabel(itemWrites: number, locationWrites: number): string {
   const parts: string[] = [];
@@ -47,10 +45,8 @@ function importButtonLabel(itemWrites: number, locationWrites: number): string {
  * What the completed import did, as one sentence.
  *
  * Every dimension that moved is named and every dimension that did not is
- * dropped, so a locations-only document reports its location updates instead
- * of a row of zeros — the run that motivated this reported "Imported 0 new,
- * updated 0" after doing exactly what its preview promised. An import that
- * changed nothing says so in words rather than in numbers.
+ * dropped, so a locations-only document reports its location updates instead of
+ * a row of zeros. An import that changed nothing says so in words, not numbers.
  */
 export function importSummaryLine(summary: ImportSummary): string {
   const added: string[] = [];
@@ -97,10 +93,10 @@ function policyTitle(id: ImportPolicy): string {
 /**
  * Restore from a backup.
  *
- * The server-side dry run is mandatory and stays that way: nothing is written
- * until the preview has been seen. An invalid document comes back as a
- * structured list of JSON paths rather than counts, so that gets its own state
- * instead of being flattened into "import failed".
+ * The server-side dry run is mandatory: nothing is written until the preview
+ * has been seen. An invalid document comes back as a structured list of JSON
+ * paths rather than counts, so it gets a state of its own instead of being
+ * flattened into "import failed".
  */
 @customElement('hv-import-sheet')
 export class HVImportSheet extends LitElement {

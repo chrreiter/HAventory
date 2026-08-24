@@ -444,8 +444,8 @@ describe('hv-import-sheet: summary', () => {
     expect(el.open).toBe(false);
   });
 
-  // Issue #439: a locations-only document used to complete with every number on
-  // the screen at zero, because the sentence had no slot for location updates.
+  // The result sentence has a slot for location updates, or a locations-only
+  // document completes with every number on the screen at zero.
   it('reports a locations-only import instead of a row of zeros', async () => {
     const s = summary();
     s.items = { total: 0, add: 0, update: 0, conflict: 0, unchanged: 0 };

@@ -242,10 +242,10 @@ function nameWidthOf(contentWidth: number): number {
 }
 
 /**
- * What the sidebar panel at 1920 leaves the table's grid, measured on a real
- * instance: HA's docked sidebar takes 256px and the full view's locations rail
- * another 264, which puts the table's box at 1400 and its content box — inside
- * the row's own 20px padding either side — here.
+ * What the sidebar panel at 1920 leaves the table's grid: HA's docked sidebar
+ * takes 256px and the full view's locations rail another 264, which puts the
+ * table's box at 1400 and its content box — inside the row's own 20px padding
+ * either side — here.
  */
 const PANEL_GRID_AT_1920 = 1360;
 

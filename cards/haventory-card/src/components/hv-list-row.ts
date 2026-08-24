@@ -40,9 +40,8 @@ export function isLowStock(item: Item): boolean {
  * What a row's ⋮ offers, which depends on whether the item is out and whether
  * it has a due date.
  *
- * Shared with the full view's table rows, which used to offer nothing at all —
- * so one list, one set of ids, and the hosts' existing `row-action` handlers
- * answer both surfaces.
+ * Shared with the full view's table rows: one list, one set of ids, and the
+ * hosts' existing `row-action` handlers answer both surfaces.
  */
 export function rowMenuEntries(item: Item): OverflowMenuEntry[] {
   if (item.checked_out) {
@@ -249,7 +248,7 @@ export class HVListRow extends LitElement {
 
          The pill's fill is what separates the area from the path after it: as
          plain text in the same colour and weight, a root location named after
-         its own area printed the word twice with a single space between them and
+         its own area prints the word twice with a single space between them and
          nothing to say which was which. */
       :host([mobile]) .secondary > .area {
         display: flex;
@@ -286,7 +285,7 @@ export class HVListRow extends LitElement {
         color: var(--hv-primary-dark);
       }
       /* A date that has passed is the one thing on this line worth interrupting
-         for — "due Jul 2" in the same blue as "due Aug 24" said nothing — and it
+         for — in the blue an upcoming date takes it reads as neither — and it
          is the same red the table's date cells and the sheet's facts use. The
          line names the date it is talking about, so the colour is left saying
          only that it has gone by. */

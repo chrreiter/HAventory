@@ -773,8 +773,8 @@ export class HVLocationTree extends LitElement {
       data-testid="tree-area-head"
       data-area=${group?.id ?? NO_AREA_KEY}
       @keydown=${(e: KeyboardEvent) => {
-        // The head is a treeitem and, where areas are pickable, the target its
-        // own name button used to be — so it answers the keys a button would.
+        // The head is a treeitem and, where areas are pickable, the thing that
+        // gets picked — so it answers the keys a button would.
         if (e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault();
         if (pickable) this._emit('select-area', { areaId: group.id });

@@ -3,7 +3,7 @@ import type { SortField } from './types';
 
 // Every surface that lets you choose a sort field — the filter panel's select
 // and the full-view table's column headers — opens that field on the direction
-// this table names. It used to be asserted only through the POC search bar.
+// this table names.
 describe('getDefaultOrderFor', () => {
   it('opens a name or a count smallest-first, so A and 0 lead', () => {
     expect(getDefaultOrderFor('name')).toBe('asc');

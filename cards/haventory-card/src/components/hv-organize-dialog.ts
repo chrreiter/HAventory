@@ -71,10 +71,9 @@ const MERGE_TARGET_TREE_ID = 'merge-target-tree-holder';
 /**
  * The three batch rewrites.
  *
- * A kind rather than a label, because every line the rewrite prints — the
- * running count, the "nothing to do" and both finished forms — is a different
- * sentence per language, and only English can build them by appending "d" to
- * the verb.
+ * A kind rather than a label: every line a rewrite prints — the running count,
+ * the "nothing to do", both finished forms — is a different sentence per
+ * language, and only English builds them by appending "d" to the verb.
  */
 type RewriteKind = 'merge' | 'rename' | 'remove';
 
@@ -91,13 +90,12 @@ interface RewriteState {
 /**
  * "Organize".
  *
- * One dialog, four tabs: locations, categories, tags and statuses.
- *
- * Locations edit in place with a guarded delete — a location that still holds
- * items or children gets an inline explanation, never a browser confirm.
- * Categories and tags have no rename or merge endpoint, so those are batch
- * rewrites over every affected item, with the same progress and
- * partial-failure treatment bulk actions get.
+ * One dialog, four tabs: locations, categories, tags and statuses. Locations
+ * edit in place with a guarded delete — a location that still holds items or
+ * children gets an inline explanation, never a browser confirm. Categories and
+ * tags have no rename or merge endpoint, so those are batch rewrites over every
+ * affected item, with the progress and partial-failure treatment bulk actions
+ * get.
  */
 @customElement('hv-organize-dialog')
 export class HVOrganizeDialog extends LitElement {
@@ -109,12 +107,11 @@ export class HVOrganizeDialog extends LitElement {
       :host {
         display: block;
         /*
-         * The vertical padding of every row in this dialog, declared once here
-         * so the four tabs cannot drift apart: the value rows below read it,
-         * and it inherits through the shadow boundary into the
-         * hv-location-tree the Locations tab hosts, which reads the same
-         * property with its own fallback. Nothing outside this dialog declares
-         * it, so the full-view sidebar's tree keeps its own spacing.
+         * The vertical padding of every row in this dialog, declared once so
+         * the four tabs cannot drift apart: the value rows below read it, and
+         * it inherits through the shadow boundary into the hv-location-tree the
+         * Locations tab hosts, which reads it with its own fallback. Nothing
+         * outside declares it, so the sidebar's tree keeps its own spacing.
          */
         --hv-organize-row-pad: 8px;
       }
@@ -816,12 +813,12 @@ export class HVOrganizeDialog extends LitElement {
    * scrolling `.body`: what identifies the one currently open, the element to
    * bring into view, and — for the forms — the field that takes focus.
    *
-   * A guard is `role="alert"`, so it announces itself where it stands and takes
-   * no focus: it is a refusal to act, and pulling the caret out of the list
-   * would answer a tap the household did not make. The editors are forms, and a
-   * form opened from a row leaves the keyboard on that row's button unless its
-   * first field claims the caret. The touch layout's ⋮ sheets are neither: a
-   * menu of what the row can do, which needs showing but claims no field.
+   * A guard is `role="alert"`: it announces where it stands and takes no focus,
+   * because it refuses an action and pulling the caret out of the list would
+   * answer a tap the household did not make. A form opened from a row leaves
+   * the keyboard on that row's button unless its first field claims the caret.
+   * The touch layout's ⋮ sheets are neither — a menu needs showing but claims
+   * no field.
    */
   private get _disclosures(): { testid: string; open: string | null; field?: string }[] {
     const value = this._editingValue;
@@ -848,16 +845,14 @@ export class HVOrganizeDialog extends LitElement {
   /**
    * Bring a disclosure into view as it opens.
    *
-   * Every one of them renders below its trigger inside a pane that scrolls, so
-   * one opened from a row near the bottom lands off-screen and the tap reads as
-   * having done nothing — worst on the two guards, which are what stands
-   * between a tap and a batch of items changing.
-   *
-   * `block: 'nearest'` scrolls only as far as it must, so a disclosure already
-   * on screen does not move under the user, and it names no `behavior`, so
-   * there is no motion to gate on a reduced-motion preference. Keyed on which
-   * disclosure is open rather than on the render, so typing inside an open
-   * editor never moves the pane.
+   * Every one renders below its trigger inside a pane that scrolls, so one
+   * opened from a row near the bottom lands off screen and the tap reads as
+   * having done nothing — worst on the two guards, which stand between a tap
+   * and a batch of items changing. `block: 'nearest'` scrolls only as far as it
+   * must and names no `behavior`, so nothing already on screen moves under the
+   * user and there is no motion to gate on a reduced-motion preference. Keyed
+   * on which disclosure is open rather than on the render, so typing inside an
+   * open editor never moves the pane.
    */
   private _revealDisclosures() {
     if (!this.open) {
@@ -1553,7 +1548,7 @@ export class HVOrganizeDialog extends LitElement {
     const merging = this._mergingLocation ? this._findNode(tree, this._mergingLocation) : null;
     const sheeted = this._sheetLocation ? this._findNode(tree, this._sheetLocation) : null;
     // Counted at every depth and against the filter, exactly as the other two
-    // tabs count their values — this was the only tab that stated no total.
+    // tabs count their values, so all three tabs state a total in one idiom.
     const count = countLocations(tree, this._filter);
     return html`
       <div class="toolbar">
@@ -1904,11 +1899,11 @@ export class HVOrganizeDialog extends LitElement {
   /**
    * Ask before deleting, in one idiom whichever branch it is.
    *
-   * Both branches open the same inline disclosure. The in-use one carries the
+   * Both branches open the same inline disclosure: the in-use one carries the
    * reassign select — the backend refuses a delete that would strand items, and
-   * picking where they go is what turns that refusal into a completed move —
-   * and the unused one carries the question alone. Splitting them across a
-   * disclosure and a modal gave the consequential path the lighter ceremony.
+   * picking where they go turns that refusal into a completed move — and the
+   * unused one carries the question alone. Split across a disclosure and a
+   * modal, the consequential path takes the lighter ceremony.
    */
   private _askDeleteStatus(slug: string) {
     const count = this._statusCount(slug);

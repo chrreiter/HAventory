@@ -369,14 +369,13 @@ export class HVFullView extends LitElement {
        * Above the phone breakpoint — the complement of NARROW_QUERY, whose own
        * block below owns everything at or under it.
        *
-       * The search box has a floor here, or each pill added would come out of
-       * it: with all six showing it collapsed to "Search all 1(" in a 1024px
-       * content area. The bar used to take a second line instead, which read
-       * as a fix until an ordinary laptop hit it — at 1280px in German the ⋮
-       * went down on its own and left a 44px band of empty blue under the
-       * pills. So the row stays whole and two things give before it does: the
-       * pill strip scrolls, and the two steps below trade away what can be
-       * read from an icon.
+       * The search box has a floor here, or every pill added comes out of it
+       * until there is no room left to read the query in. Wrapping onto a
+       * second line is not the alternative: in German at 1280px the ⋮ goes
+       * down on its own and leaves a band of empty blue under the pills. So
+       * the row stays whole and two things give before it does: the pill strip
+       * scrolls, and the two steps below trade away what can be read from an
+       * icon.
        */
       @media (min-width: 701px) {
         .appbar .search {
@@ -463,7 +462,7 @@ export class HVFullView extends LitElement {
         grid-template-columns: 264px 1fr;
         min-height: 0;
       }
-      /* Now reachable from a narrow card, so it can land on a phone-width
+      /* Reachable from a narrow card, so it can land on a phone-width
          viewport: there is no room for a 264px tree beside the table, and the
          app bar's search and filters still cover navigation.
 
@@ -630,8 +629,8 @@ export class HVFullView extends LitElement {
         border: none;
         background: none;
         color: var(--hv-chip-text);
-        /* 2px of padding measured 17px tall, which is a poor target even for a
-           mouse; there is room for this in a 264px column. */
+        /* Tighter padding than this leaves a target too short to hit even with
+           a mouse, and a 264px column has room for it. */
         padding: 4px 10px;
         font: 400 11.5px var(--hv-font);
         min-height: var(--hv-tap-min, auto);
@@ -1629,10 +1628,10 @@ export class HVFullView extends LitElement {
   /**
    * Which way multiple selected tags combine, in the sidebar that selects them.
    *
-   * The sidebar accumulated tags but said nothing about the mode governing them,
-   * so a filter set to "all" in the filter panel silently kept applying to every
-   * tag picked here. Only shown from the second tag on, since that is when any
-   * and all start meaning different things.
+   * The mode is the filter panel's, and it keeps applying to every tag picked
+   * here, so the sidebar has to show it rather than let "all" work unseen. Only
+   * shown from the second tag on, since that is when any and all start meaning
+   * different things.
    */
   private _renderTagsMode(mode: 'any' | 'all') {
     return html`<span class="segmented" role="radiogroup" aria-label=${t('hv.filter.tagMatchMode')}>
