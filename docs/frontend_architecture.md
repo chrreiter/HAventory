@@ -518,8 +518,10 @@ backend's `ItemFilter`, exported so the count probe and "Export current view" se
 what the list is showing. `include_subtree` is always sent explicitly, because the list
 filter defaults it to `false` server-side while subscriptions default it to `true`.
 
-**Degraded state.** Every WS call goes through `run()`, which classifies failures: a
-*string* error code means a server answered and the command was refused — including the
+**Degraded state.** Every WS call goes through `run()`, which classifies failures — the
+attachment family excepted, because an upload's failures are HTTP and belong to the picker
+that raised them. A *string* error code means a server answered and the command was refused
+— including the
 taxonomy's `unknown_error` catch-all, which is a server-side fault, not a transport one.
 Anything else (Home Assistant's numeric transport codes, a thrown `Error`, no code at all)
 never reached a server; those are reported under the card's own `connection_lost` code with
@@ -587,12 +589,13 @@ recovery, so it is a first-class action rather than a hidden one.
 
 A typed wrapper over `hass.callWS` for each `haventory/*` command, plus `subscribe()`, which
 takes `onError` and `onOpen` callbacks so both a refused and an accepted subscribe are
-observable.
+observable. `openSubscription` is the unwrap `subscribe()` and the area-registry watch
+share: Home Assistant answers with the unsubscribe function or a promise of one, and a
+caller that let go before the promise resolved must not be left holding a live subscription.
 
-It is a deliberate 1:1 mirror of the command catalogue in `backend_api_contract.md`,
-omitting only `haventory/cleanup` and `haventory/unsubscribe` (the latter handled by HA's
-own `subscribeMessage`). A few wrappers have no caller in the card today; they complete the
-mirror and are kept on purpose.
+It carries the commands the card sends and no others, so a wrapper here has a caller. The
+catalogue in `backend_api_contract.md` is the whole surface a client may use; this is the
+part of it HAventory's own card asks for.
 
 Two members are not plain `callWS` wrappers. `uploadAttachment` POSTs the bytes to Home
 Assistant core's `/api/file_upload` through `hass.fetchWithAuth` and only then names the
