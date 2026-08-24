@@ -114,7 +114,7 @@ def _payload_with_custom_status() -> dict:
 def test_a_custom_status_survives_load_export_load() -> None:
     """The loader-ordering trap.
 
-    `coerce_item_status` maps an unknown value to "ok". Definitions therefore
+    the tolerant status read maps an unknown value to "ok". Definitions therefore
     have to load before the item loop, or the first restart after the upgrade
     that introduced a custom status silently rewrites every item carrying it.
     """

@@ -17,9 +17,10 @@ from __future__ import annotations
 import re
 import unicodedata
 import uuid
-from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from typing import Any, Final, Literal, NotRequired, TypedDict
 
 from homeassistant.util import dt as dt_util
@@ -377,7 +378,9 @@ class Item:
             name=validate_required_name(data.get("name")),
             description=data.get("description"),
             quantity=int(data.get("quantity", 0)),
-            status=coerce_item_status(data.get("status"), known_statuses=known_statuses),
+            status=validate_item_status(
+                data.get("status"), known_statuses=known_statuses, default=DEFAULT_ITEM_STATUS
+            ),
             checked_out=bool(data.get("checked_out", False)),
             due_date=data.get("due_date"),
             inspection_date=data.get("inspection_date"),
@@ -557,12 +560,6 @@ def new_uuid4() -> uuid.UUID:
     return uuid.uuid4()
 
 
-def new_uuid4_str() -> str:
-    """Generate a hyphenated UUID v4 string."""
-
-    return str(new_uuid4())
-
-
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -661,11 +658,11 @@ def validate_required_name(value: object) -> str:
     return value.strip()
 
 
-def validate_location_name(name: str) -> str:
-    """Validate a location name and return a trimmed value.
+def validate_write_name(name: object) -> str:
+    """Validate a name a client wrote and return a trimmed value.
 
-    The write path's rule: what the load path requires, plus the length cap the
-    load path deliberately does not apply.
+    The write path's rule, for an item and a location alike: what the load path
+    requires, plus the length cap the load path deliberately does not apply.
     """
 
     trimmed = validate_required_name(name)
@@ -918,9 +915,12 @@ def validate_due_date_rules(*, checked_out: bool, due_date: str | None) -> str |
 
 
 def validate_item_status(
-    value: object, *, known_statuses: Collection[str] = ITEM_STATUSES
+    value: object,
+    *,
+    known_statuses: Collection[str] = ITEM_STATUSES,
+    default: ItemStatus | None = None,
 ) -> ItemStatus:
-    """Validate an item status against the live set and return it.
+    """Return ``value`` when it is one of the live statuses, or refuse it.
 
     Status is non-nullable: an item always has one, so ``None`` is rejected the
     same as any other unknown value ("ok" is the way to clear a flagged state).
@@ -928,29 +928,20 @@ def validate_item_status(
     ``known_statuses`` is an explicit parameter rather than module-level mutable
     state: the default keeps every caller that has no repository to ask meaning
     what it has always meant, and nothing global needs resetting between tests.
-    """
 
-    if isinstance(value, str) and value in known_statuses:
-        return value
-    raise ValidationError(f"status must be one of: {', '.join(sorted(known_statuses))}")
-
-
-def coerce_item_status(
-    value: object, *, known_statuses: Collection[str] = ITEM_STATUSES
-) -> ItemStatus:
-    """Return ``value`` when it is a known status, otherwise the default.
-
-    The tolerant twin of :func:`validate_item_status`, for loading persisted
-    payloads: a store written before the field existed (or hand-edited into an
-    unknown value) reads as "ok" rather than failing the whole item. Callers
+    ``default`` is what a load path passes to read a stored payload tolerantly:
+    a store written before the field existed (or hand-edited into an unknown
+    value) reads as that status rather than failing the whole item. A caller
     loading a store MUST pass the definitions that store carries — with the
-    built-ins alone, every custom status would be silently rewritten to "ok" on
-    the first restart after the upgrade that introduced it.
+    built-ins alone, every custom status would be silently rewritten to the
+    default on the first restart after the upgrade that introduced it.
     """
 
     if isinstance(value, str) and value in known_statuses:
         return value
-    return DEFAULT_ITEM_STATUS
+    if default is not None:
+        return default
+    raise ValidationError(f"status must be one of: {', '.join(sorted(known_statuses))}")
 
 
 def validate_status_slug(value: object) -> str:
@@ -1359,14 +1350,219 @@ def validate_quantity(value: object) -> int:
     return value
 
 
-def _validate_item_core_fields(name: str, quantity: int, low_stock_threshold: int | None) -> None:
-    if len(validate_required_name(name)) > NAME_MAX_LENGTH:
-        raise ValidationError(f"name must be at most {NAME_MAX_LENGTH} characters")
-    validate_quantity(quantity)
-    if low_stock_threshold is not None and (
-        not _is_int_not_bool(low_stock_threshold) or low_stock_threshold < 0
-    ):
+@dataclass(frozen=True, slots=True)
+class _ItemWrite:
+    """One item write in progress, as the field rules see it.
+
+    ``draft`` is what the write starts from and what the rules fill in: the
+    field defaults on a create, a copy of the stored item on an update. A cap
+    that refuses *growth* reads what the item already carries off that same
+    draft, which on a create is empty — so one rule serves both paths.
+    """
+
+    draft: Item
+    payload: Mapping[str, Any]
+    creating: bool
+    locations_by_id: dict[str, Location] | None
+    known_statuses: Collection[str]
+
+
+def _write_name(write: _ItemWrite) -> None:
+    """Required on a create; a null on an update leaves the stored name alone.
+
+    The field is non-nullable and the card's editor sends every field it holds,
+    so a null has to read as "this write does not name the name".
+    """
+
+    value = write.payload.get("name")
+    if value is None and not write.creating:
+        return
+    # Type before shape: the command schemas type `name` as `object` so a wrong
+    # type is answered here as `validation_error` rather than by an HA-core
+    # schema rejection, and a `.strip()` on a non-string would leave through
+    # `unknown_error` instead of naming the field.
+    write.draft.name = validate_write_name(value)
+
+
+def _write_optional_text(write: _ItemWrite, *, key: str, max_length: int) -> None:
+    """One nullable free-text field, held to its cap against what is stored.
+
+    ``key`` names the payload field and the item's attribute alike.
+    """
+
+    if key not in write.payload:
+        return
+    value = write.payload[key]
+    _validate_optional_text(value, key, max_length=max_length, previous=getattr(write.draft, key))
+    setattr(write.draft, key, value)
+
+
+def _write_quantity(write: _ItemWrite) -> None:
+    # Type before use, for the same reason `name` is checked before `.strip()`:
+    # the command schema types `quantity` as `object`, and arithmetic over a
+    # non-integer routes to `unknown_error` instead of naming the field.
+    if "quantity" in write.payload:
+        write.draft.quantity = validate_quantity(write.payload["quantity"])
+
+
+def _write_status(write: _ItemWrite) -> None:
+    if "status" in write.payload:
+        write.draft.status = validate_item_status(
+            write.payload["status"], known_statuses=write.known_statuses
+        )
+
+
+def _write_checkout(write: _ItemWrite) -> None:
+    """The checkout flag and its due date, holding the pair's rule across both.
+
+    Judged on what the write leaves behind rather than on the keys it names, so
+    sending the item home without clearing the date is refused rather than
+    leaving a due date on an item nobody has out.
+    """
+
+    draft = write.draft
+    if "checked_out" in write.payload:
+        draft.checked_out = bool(write.payload["checked_out"])
+    if "due_date" in write.payload:
+        draft.due_date = write.payload["due_date"]
+    draft.due_date = validate_due_date_rules(checked_out=draft.checked_out, due_date=draft.due_date)
+
+
+def _write_inspection_date(write: _ItemWrite) -> None:
+    if "inspection_date" in write.payload:
+        write.draft.inspection_date = validate_optional_date(
+            write.payload["inspection_date"], field_name="inspection_date"
+        )
+
+
+def _write_reminder(write: _ItemWrite) -> None:
+    """Apply either half of the reminder, holding the pair's rule across both.
+
+    A write naming only one of the two is validated against the item's other
+    half, so clearing the date of a recurring reminder is refused rather than
+    leaving an interval with nothing to count from.
+
+    Writing a *different* date re-anchors the series on it: the payloads carry
+    no anchor of their own, deliberately, because a household picking a date is
+    saying where the series starts. Re-sending the date the item already carries
+    says nothing, so it must not move the anchor — the card's editor puts every
+    field in every payload, changed or not, and re-anchoring on presence alone
+    would let an ordinary save walk a month-end series off its day one short
+    month at a time. `Repository.bump_reminder` is the one path that moves the
+    date and keeps the anchor, which is what makes a bumped month-end series stay
+    on its own day.
+    """
+
+    payload = write.payload
+    draft = write.draft
+    if "reminder_date" not in payload and "reminder_interval" not in payload:
+        return
+    previous_reminder_date = draft.reminder_date
+    date_value = payload["reminder_date"] if "reminder_date" in payload else draft.reminder_date
+    interval_value = (
+        payload["reminder_interval"] if "reminder_interval" in payload else draft.reminder_interval
+    )
+    draft.reminder_date, draft.reminder_interval = validate_reminder_rules(
+        reminder_date=date_value, reminder_interval=interval_value
+    )
+    if "reminder_date" in payload and draft.reminder_date != previous_reminder_date:
+        draft.reminder_anchor = draft.reminder_date
+    elif draft.reminder_date is None:
+        # The interval was cleared alongside a date that was already absent, or
+        # the pair rule left nothing behind. An anchor without a date names a
+        # series with no next occurrence.
+        draft.reminder_anchor = None
+
+
+def _write_location(write: _ItemWrite) -> None:
+    """Place the item, and keep its denormalized path in step with the tree.
+
+    The path is rebuilt on every write, not only on one that names a location:
+    an item whose stored path predates a rename higher up carries the current
+    one from its next edit onwards.
+    """
+
+    draft = write.draft
+    locations_by_id = write.locations_by_id
+    if "location_id" in write.payload:
+        raw = write.payload["location_id"]
+        location_id: uuid.UUID | None = None
+        if raw is not None:
+            location_id = parse_uuid4(raw, field_name="location_id")
+            if locations_by_id is None or str(location_id) not in locations_by_id:
+                raise ValidationError("location_id must reference an existing location")
+        draft.location_id = location_id
+
+    if draft.location_id is not None and locations_by_id:
+        draft.location_path = build_location_path_from_map(
+            draft.location_id, locations_by_id=locations_by_id
+        )
+    elif draft.location_id is None:
+        draft.location_path = EMPTY_LOCATION_PATH
+
+
+def _write_tags(write: _ItemWrite) -> None:
+    if "tags" in write.payload:
+        write.draft.tags = validate_tags(write.payload["tags"], previous=write.draft.tags)
+
+
+def _write_low_stock_threshold(write: _ItemWrite) -> None:
+    if "low_stock_threshold" not in write.payload:
+        return
+    threshold = write.payload["low_stock_threshold"]
+    if threshold is not None and (not _is_int_not_bool(threshold) or threshold < 0):
         raise ValidationError("low_stock_threshold must be an integer >= 0 or null")
+    write.draft.low_stock_threshold = threshold
+
+
+def _write_custom_fields(write: _ItemWrite) -> None:
+    """Patch the map by key — a create names it whole, an update by halves.
+
+    The key cap bounds the item, not the patch: a two-key patch onto an item
+    already at the limit is what would otherwise walk past it. Judged on the
+    result of the whole write, and only when the write grew the map — so an item
+    that predates the cap can still be edited down.
+    """
+
+    draft = write.draft
+    set_key = "custom_fields" if write.creating else "custom_fields_set"
+    to_set = write.payload.get(set_key)
+    to_unset = require_string_list(
+        write.payload.get("custom_fields_unset"), field_name="custom_fields_unset"
+    )
+    before = len(draft.custom_fields)
+    if to_set is not None:
+        validate_custom_fields(to_set, previous=draft.custom_fields, field_name=set_key)
+        draft.custom_fields = {**draft.custom_fields, **to_set}
+    if to_unset:
+        draft.custom_fields = {
+            k: v for k, v in draft.custom_fields.items() if k not in set(to_unset)
+        }
+    after = len(draft.custom_fields)
+    if after > CUSTOM_FIELDS_MAX_KEYS and after > before:
+        raise ValidationError(f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys")
+
+
+#: Every item field a client writes, and the rule that writes it. A create and
+#: an update walk this one table in this one order, so a field's type, cap and
+#: binding to its neighbours is written once and refuses the same value with the
+#: same message whichever command carried it. A rule leaves the draft as it
+#: stands when the write names none of its keys, which is what lets the one walk
+#: serve a full create and a one-field patch.
+_ITEM_FIELD_RULES: Final[tuple[Callable[[_ItemWrite], None], ...]] = (
+    _write_name,
+    partial(_write_optional_text, key="description", max_length=DESCRIPTION_MAX_LENGTH),
+    _write_quantity,
+    _write_status,
+    _write_checkout,
+    _write_inspection_date,
+    _write_reminder,
+    _write_location,
+    _write_tags,
+    partial(_write_optional_text, key="category", max_length=CATEGORY_MAX_LENGTH),
+    _write_low_stock_threshold,
+    _write_custom_fields,
+)
 
 
 def create_item_from_create(
@@ -1377,236 +1573,27 @@ def create_item_from_create(
 ) -> Item:
     """Create a validated Item from an ItemCreate payload.
 
-    Args:
-        payload: Input fields from the client.
-        locations_by_id: Optional map of locations used to validate location_id and
-            construct a denormalized location_path when provided.
-        known_statuses: The live status slugs to validate ``status`` against.
-
-    Returns:
-        A fully-populated Item instance with defaults applied.
+    ``locations_by_id`` is the map ``location_id`` is checked against and the
+    denormalized path is built from; ``known_statuses`` is the live status set.
     """
-
-    # Type before shape: the command schema types `name` as `object` so a wrong
-    # type answers `validation_error` rather than an HA-core schema rejection,
-    # and `.strip()` on a non-string would reach that route as `unknown_error`.
-    # `validate_required_name` checks the type first for that reason, and
-    # returns the trimmed value this stores.
-    name = validate_required_name(payload.get("name"))
-    description = payload.get("description")
-    # Type before use, for the same reason `name` is checked before `.strip()`:
-    # the command schema types `quantity` as `object`, and arithmetic over a
-    # non-integer routes to `unknown_error` instead of naming the field.
-    quantity = validate_quantity(payload.get("quantity", 1))
-    status = validate_item_status(
-        payload.get("status", DEFAULT_ITEM_STATUS), known_statuses=known_statuses
-    )
-    checked_out = bool(payload.get("checked_out", False))
-    due_date = payload.get("due_date")
-    inspection_date = payload.get("inspection_date")
-    location_id_raw = payload.get("location_id")
-    tags = validate_tags(payload.get("tags"))
-    category = payload.get("category")
-    low_stock_threshold = payload.get("low_stock_threshold")
-    custom_fields = payload.get("custom_fields", {})
-
-    _validate_optional_text(description, "description", max_length=DESCRIPTION_MAX_LENGTH)
-    _validate_optional_text(category, "category", max_length=CATEGORY_MAX_LENGTH)
-    _validate_item_core_fields(name, quantity, low_stock_threshold)
-    validate_custom_fields(custom_fields)
-    normalized_due_date = validate_due_date_rules(checked_out=checked_out, due_date=due_date)
-    normalized_inspection_date = validate_optional_date(
-        inspection_date, field_name="inspection_date"
-    )
-    normalized_reminder_date, reminder_interval = validate_reminder_rules(
-        reminder_date=payload.get("reminder_date"),
-        reminder_interval=payload.get("reminder_interval"),
-    )
-
-    location_id: uuid.UUID | None = None
-    if location_id_raw is not None:
-        location_id = parse_uuid4(location_id_raw, field_name="location_id")
-        if locations_by_id is None or str(location_id) not in locations_by_id:
-            raise ValidationError("location_id must reference an existing location")
 
     created_ts = iso_utc_now()
-    location_path = (
-        build_location_path_from_map(location_id, locations_by_id=locations_by_id)
-        if location_id is not None and locations_by_id
-        else EMPTY_LOCATION_PATH
+    # The draft carries the field defaults, and a rule the payload does not
+    # reach leaves them where they are — so "the value the item already has" is
+    # empty here and every cap is absolute. `name` is the one field with no
+    # usable default, and its rule refuses a payload that omits it.
+    draft = Item(id=new_uuid4(), name="", created_at=created_ts, updated_at=created_ts)
+    write = _ItemWrite(
+        draft=draft,
+        payload=payload,
+        creating=True,
+        locations_by_id=locations_by_id,
+        known_statuses=known_statuses,
     )
+    for rule in _ITEM_FIELD_RULES:
+        rule(write)
 
-    item = Item(
-        id=new_uuid4(),
-        name=name,
-        description=description,
-        quantity=quantity,
-        status=status,
-        checked_out=checked_out,
-        due_date=normalized_due_date,
-        inspection_date=normalized_inspection_date,
-        reminder_date=normalized_reminder_date,
-        # Setting a reminder is saying where its series starts, so the anchor
-        # follows the date. Only a bump moves one without the other.
-        reminder_anchor=normalized_reminder_date,
-        reminder_interval=reminder_interval,
-        location_id=location_id,
-        tags=tags,
-        category=category,
-        low_stock_threshold=low_stock_threshold,
-        custom_fields=custom_fields,
-        created_at=created_ts,
-        updated_at=created_ts,
-        version=1,
-        location_path=location_path,
-    )
-
-    return item
-
-
-def _update_name_and_description(new_item: Item, update: ItemUpdate) -> None:
-    if "name" in update and update["name"] is not None:
-        trimmed = validate_required_name(update["name"])
-        if len(trimmed) > NAME_MAX_LENGTH:
-            raise ValidationError(f"name must be at most {NAME_MAX_LENGTH} characters")
-        new_item.name = trimmed
-    if "description" in update:
-        _validate_optional_text(
-            update["description"],
-            "description",
-            max_length=DESCRIPTION_MAX_LENGTH,
-            previous=new_item.description,
-        )
-        new_item.description = update["description"]
-
-
-def _update_quantity(new_item: Item, update: ItemUpdate) -> None:
-    if "quantity" in update:
-        new_item.quantity = validate_quantity(update["quantity"])
-
-
-def _update_status(new_item: Item, update: ItemUpdate, known_statuses: Collection[str]) -> None:
-    if "status" in update:
-        new_item.status = validate_item_status(update["status"], known_statuses=known_statuses)
-
-
-def _update_checkout_and_due_date(new_item: Item, update: ItemUpdate) -> None:
-    checked_out = new_item.checked_out
-    due_date_val = new_item.due_date
-    if "checked_out" in update:
-        checked_out = bool(update["checked_out"])
-    if "due_date" in update:
-        due_date_val = update["due_date"]
-    new_item.checked_out = checked_out
-    new_item.due_date = validate_due_date_rules(checked_out=checked_out, due_date=due_date_val)
-
-
-def _update_inspection_date(new_item: Item, update: ItemUpdate) -> None:
-    if "inspection_date" in update:
-        new_item.inspection_date = validate_optional_date(
-            update["inspection_date"], field_name="inspection_date"
-        )
-
-
-def _update_reminder(new_item: Item, update: ItemUpdate) -> None:
-    """Apply either half of the reminder, holding the pair's rule across both.
-
-    An update naming only one of the two is validated against the item's stored
-    other half, so clearing the date of a recurring reminder is refused rather
-    than leaving an interval with nothing to count from.
-
-    Writing a *different* date re-anchors the series on it: `ItemUpdate` carries
-    no anchor of its own, deliberately, because a household picking a date is
-    saying where the series starts. Re-sending the date the item already carries
-    says nothing, so it must not move the anchor — the card's editor puts every
-    field in every payload, changed or not, and re-anchoring on presence alone
-    would let an ordinary save walk a month-end series off its day one short
-    month at a time. `Repository.bump_reminder` is the one path that moves the
-    date and keeps the anchor, which is what makes a bumped month-end series stay
-    on its own day.
-    """
-
-    if "reminder_date" not in update and "reminder_interval" not in update:
-        return
-    previous_reminder_date = new_item.reminder_date
-    date_value = update["reminder_date"] if "reminder_date" in update else new_item.reminder_date
-    interval_value = (
-        update["reminder_interval"] if "reminder_interval" in update else new_item.reminder_interval
-    )
-    new_item.reminder_date, new_item.reminder_interval = validate_reminder_rules(
-        reminder_date=date_value, reminder_interval=interval_value
-    )
-    if "reminder_date" in update and new_item.reminder_date != previous_reminder_date:
-        new_item.reminder_anchor = new_item.reminder_date
-    elif new_item.reminder_date is None:
-        # The interval was cleared alongside a date that was already absent, or
-        # the pair rule left nothing behind. An anchor without a date names a
-        # series with no next occurrence.
-        new_item.reminder_anchor = None
-
-
-def _update_location_and_path(
-    new_item: Item, update: ItemUpdate, locations_by_id: dict[str, Location] | None
-) -> None:
-    if "location_id" in update:
-        loc_raw = update["location_id"]
-        loc_id: uuid.UUID | None = None
-        if loc_raw is not None:
-            parsed = parse_uuid4(loc_raw, field_name="location_id")
-            if locations_by_id is None or str(parsed) not in locations_by_id:
-                raise ValidationError("location_id must reference an existing location")
-            loc_id = parsed
-        new_item.location_id = loc_id
-
-    # Recompute location_path if we have a mapping and a location_id
-    if new_item.location_id is not None and locations_by_id:
-        new_item.location_path = build_location_path_from_map(
-            new_item.location_id, locations_by_id=locations_by_id
-        )
-    elif new_item.location_id is None:
-        new_item.location_path = EMPTY_LOCATION_PATH
-
-
-def _update_tags_category_threshold(new_item: Item, update: ItemUpdate) -> None:
-    if "tags" in update:
-        new_item.tags = validate_tags(update.get("tags"), previous=new_item.tags)
-    if "category" in update:
-        _validate_optional_text(
-            update["category"],
-            "category",
-            max_length=CATEGORY_MAX_LENGTH,
-            previous=new_item.category,
-        )
-        new_item.category = update["category"]
-    if "low_stock_threshold" in update:
-        thr = update["low_stock_threshold"]
-        if thr is not None and (not _is_int_not_bool(thr) or thr < 0):
-            raise ValidationError("low_stock_threshold must be an integer >= 0 or null")
-        new_item.low_stock_threshold = thr
-
-
-def _update_custom_fields(new_item: Item, update: ItemUpdate) -> None:
-    to_set = update.get("custom_fields_set")
-    to_unset = require_string_list(
-        update.get("custom_fields_unset"), field_name="custom_fields_unset"
-    )
-    before = len(new_item.custom_fields)
-    if to_set is not None:
-        validate_custom_fields(
-            to_set, previous=new_item.custom_fields, field_name="custom_fields_set"
-        )
-        new_item.custom_fields = {**new_item.custom_fields, **to_set}
-    if to_unset:
-        new_item.custom_fields = {
-            k: v for k, v in new_item.custom_fields.items() if k not in set(to_unset)
-        }
-    # The key cap bounds the item, not the patch: a two-key patch onto an item
-    # already at the limit is what would otherwise walk past it. Judged on the
-    # result of the whole call, and only when the call grew the map — so an item
-    # that predates the cap can still be edited down.
-    after = len(new_item.custom_fields)
-    if after > CUSTOM_FIELDS_MAX_KEYS and after > before:
-        raise ValidationError(f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys")
+    return draft
 
 
 def apply_item_update(
@@ -1619,16 +1606,15 @@ def apply_item_update(
     """Apply an update payload to an Item and return a new updated instance."""
 
     new_item = replace(item)  # shallow copy
-
-    _update_name_and_description(new_item, update)
-    _update_quantity(new_item, update)
-    _update_status(new_item, update, known_statuses)
-    _update_checkout_and_due_date(new_item, update)
-    _update_inspection_date(new_item, update)
-    _update_reminder(new_item, update)
-    _update_location_and_path(new_item, update, locations_by_id)
-    _update_tags_category_threshold(new_item, update)
-    _update_custom_fields(new_item, update)
+    write = _ItemWrite(
+        draft=new_item,
+        payload=update,
+        creating=False,
+        locations_by_id=locations_by_id,
+        known_statuses=known_statuses,
+    )
+    for rule in _ITEM_FIELD_RULES:
+        rule(write)
 
     # Ensure updated_at is strictly monotonic to avoid equality within same second
     new_item.updated_at = monotonic_timestamp_after(item.updated_at)

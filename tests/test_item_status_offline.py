@@ -21,7 +21,6 @@ from custom_components.haventory.models import (
     ItemCreate,
     ItemUpdate,
     apply_item_update,
-    coerce_item_status,
     create_item_from_create,
     filter_items,
     validate_item_status,
@@ -78,14 +77,14 @@ def test_update_without_status_keeps_it() -> None:
     assert updated.status == "needs_repair"
 
 
-def test_validate_and_coerce_helpers() -> None:
+def test_the_strict_and_the_tolerant_read_of_a_status() -> None:
     assert validate_item_status("missing") == "missing"
     with pytest.raises(ValidationError):
         validate_item_status("bogus")
-    assert coerce_item_status("needs_repair") == "needs_repair"
-    assert coerce_item_status(None) == "ok"
-    assert coerce_item_status("bogus") == "ok"
-    assert coerce_item_status(7) == "ok"
+    assert validate_item_status("needs_repair", default=DEFAULT_ITEM_STATUS) == "needs_repair"
+    assert validate_item_status(None, default=DEFAULT_ITEM_STATUS) == "ok"
+    assert validate_item_status("bogus", default=DEFAULT_ITEM_STATUS) == "ok"
+    assert validate_item_status(7, default=DEFAULT_ITEM_STATUS) == "ok"
 
 
 def test_filter_items_by_status() -> None:
@@ -301,12 +300,14 @@ def test_validate_accepts_a_slug_in_the_live_set_and_rejects_one_outside_it() ->
         validate_item_status("missing", known_statuses=live)
 
 
-def test_coerce_keeps_a_custom_slug_and_still_maps_garbage_to_ok() -> None:
+def test_the_tolerant_read_keeps_a_custom_slug_and_still_maps_garbage_to_ok() -> None:
     live = {"ok", "lent_out"}
 
-    assert coerce_item_status("lent_out", known_statuses=live) == "lent_out"
-    assert coerce_item_status("who_knows", known_statuses=live) == DEFAULT_ITEM_STATUS
-    assert coerce_item_status(None, known_statuses=live) == DEFAULT_ITEM_STATUS
+    tolerant = {"known_statuses": live, "default": DEFAULT_ITEM_STATUS}
+
+    assert validate_item_status("lent_out", **tolerant) == "lent_out"
+    assert validate_item_status("who_knows", **tolerant) == DEFAULT_ITEM_STATUS
+    assert validate_item_status(None, **tolerant) == DEFAULT_ITEM_STATUS
 
 
 def test_the_default_set_is_still_the_built_ins() -> None:
