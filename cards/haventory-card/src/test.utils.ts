@@ -1056,6 +1056,32 @@ export function stubViewport(matches: boolean): () => void {
   };
 }
 
+/**
+ * Stand in a `ResizeObserver` that reports one width, and hand back the restore.
+ *
+ * `ResponsiveController` decides the card's mobile mode from the element's own
+ * measured width, and jsdom lays nothing out — its observer would never call
+ * back, leaving every card at the unmeasured default. The stub answers the
+ * moment a target is observed, which is inside `hostConnected`, so the first
+ * render already draws the mode the width implies. Install it before mounting
+ * and call the restore afterwards.
+ */
+export function stubElementWidth(width: number): () => void {
+  const original = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    constructor(private readonly callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      const entry = { target, contentRect: { width } } as unknown as ResizeObserverEntry;
+      this.callback([entry], this as unknown as ResizeObserver);
+    }
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+  return () => {
+    globalThis.ResizeObserver = original;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Component-test harness
 // ---------------------------------------------------------------------------
