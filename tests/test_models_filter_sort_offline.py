@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timedelta
 
 import pytest
 from custom_components.haventory import models
@@ -22,6 +21,8 @@ from custom_components.haventory.models import (
     validate_item_filter,
     validate_sort,
 )
+
+from date_helpers import day_offset
 
 
 def _make_location(id: str, name: str, parent_id: str | None) -> Location:
@@ -285,21 +286,13 @@ async def test_filter_overdue_only() -> None:
     assert filter_items(every, ItemFilter(overdue_only=False)) == every
 
 
-def _utc_day_offset(days: int) -> str:
-    """A UTC calendar date `days` from today, as YYYY-MM-DD."""
-
-    return (datetime.now(UTC).date() + timedelta(days=days)).isoformat()
-
-
 @pytest.mark.asyncio
 async def test_filter_inspection_overdue_only_is_strictly_before_today() -> None:
     """`inspection_overdue_only` keeps items whose next inspection is already past."""
 
-    yesterday = create_item_from_create(
-        {"name": "Yesterday", "inspection_date": _utc_day_offset(-1)}
-    )
-    today = create_item_from_create({"name": "Today", "inspection_date": _utc_day_offset(0)})
-    tomorrow = create_item_from_create({"name": "Tomorrow", "inspection_date": _utc_day_offset(1)})
+    yesterday = create_item_from_create({"name": "Yesterday", "inspection_date": day_offset(-1)})
+    today = create_item_from_create({"name": "Today", "inspection_date": day_offset(0)})
+    tomorrow = create_item_from_create({"name": "Tomorrow", "inspection_date": day_offset(1)})
     undated = create_item_from_create({"name": "Undated"})
     every = [yesterday, today, tomorrow, undated]
 
@@ -315,13 +308,13 @@ async def test_filter_inspection_overdue_only_is_strictly_before_today() -> None
 async def test_filter_inspection_overdue_is_independent_of_checkout() -> None:
     """An inspection is a fact about the item, so the two date filters are separate."""
 
-    shelved = create_item_from_create({"name": "Shelved", "inspection_date": _utc_day_offset(-1)})
+    shelved = create_item_from_create({"name": "Shelved", "inspection_date": day_offset(-1)})
     borrowed = create_item_from_create(
         {
             "name": "Borrowed",
             "checked_out": True,
-            "due_date": _utc_day_offset(-1),
-            "inspection_date": _utc_day_offset(30),
+            "due_date": day_offset(-1),
+            "inspection_date": day_offset(30),
         }
     )
     every = [shelved, borrowed]
@@ -339,13 +332,13 @@ async def test_filter_checked_out_due_only_counts_today() -> None:
     """`checked_out_due_only` is `overdue_only` plus the items due back today."""
 
     late = create_item_from_create(
-        {"name": "Late", "checked_out": True, "due_date": _utc_day_offset(-1)}
+        {"name": "Late", "checked_out": True, "due_date": day_offset(-1)}
     )
     today = create_item_from_create(
-        {"name": "Today", "checked_out": True, "due_date": _utc_day_offset(0)}
+        {"name": "Today", "checked_out": True, "due_date": day_offset(0)}
     )
     tomorrow = create_item_from_create(
-        {"name": "Tomorrow", "checked_out": True, "due_date": _utc_day_offset(1)}
+        {"name": "Tomorrow", "checked_out": True, "due_date": day_offset(1)}
     )
     undated = create_item_from_create({"name": "Out", "checked_out": True})
     home = create_item_from_create({"name": "Home"})
@@ -364,11 +357,9 @@ async def test_filter_checked_out_due_only_counts_today() -> None:
 async def test_filter_inspection_due_only_counts_today() -> None:
     """`inspection_due_only` is `inspection_overdue_only` plus today's inspections."""
 
-    yesterday = create_item_from_create(
-        {"name": "Yesterday", "inspection_date": _utc_day_offset(-1)}
-    )
-    today = create_item_from_create({"name": "Today", "inspection_date": _utc_day_offset(0)})
-    tomorrow = create_item_from_create({"name": "Tomorrow", "inspection_date": _utc_day_offset(1)})
+    yesterday = create_item_from_create({"name": "Yesterday", "inspection_date": day_offset(-1)})
+    today = create_item_from_create({"name": "Today", "inspection_date": day_offset(0)})
+    tomorrow = create_item_from_create({"name": "Tomorrow", "inspection_date": day_offset(1)})
     undated = create_item_from_create({"name": "Undated"})
     every = [yesterday, today, tomorrow, undated]
 
@@ -386,9 +377,9 @@ async def test_the_two_due_filters_ask_about_different_dates() -> None:
     """A due date is about a borrowing; an inspection date is about the item."""
 
     borrowed = create_item_from_create(
-        {"name": "Borrowed", "checked_out": True, "due_date": _utc_day_offset(0)}
+        {"name": "Borrowed", "checked_out": True, "due_date": day_offset(0)}
     )
-    shelved = create_item_from_create({"name": "Shelved", "inspection_date": _utc_day_offset(0)})
+    shelved = create_item_from_create({"name": "Shelved", "inspection_date": day_offset(0)})
     every = [borrowed, shelved]
 
     assert [x.name for x in filter_items(every, ItemFilter(checked_out_due_only=True))] == [

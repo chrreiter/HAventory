@@ -1,5 +1,5 @@
 import './hv-full-view';
-import { componentCss, makeItem, mountComponent, mountStore, q, settle, stubViewport } from '../test.utils';
+import { componentCss, makeItem, mountHost, q, settle, stubViewport } from '../test.utils';
 import { deepActiveElement, deepFocusables } from '../ui/dialog-focus';
 import { discardPrompt } from '../ui/discard';
 import { toIsoDate } from '../ui/relative-time';
@@ -32,16 +32,15 @@ async function mount(
     narrow?: boolean;
   } = {},
 ) {
-  const { hass, store } = await mountStore({
-    items: opts.items ?? [],
-    locations: opts.locations ?? [],
-    areas: opts.areas ?? [],
-    ...(opts.statuses ? { statuses: opts.statuses } : {}),
-  });
-  const { el, sr } = await mountComponent<HVFullView>(
+  return mountHost<HVFullView>(
     'hv-full-view',
     {
-      store,
+      items: opts.items ?? [],
+      locations: opts.locations ?? [],
+      areas: opts.areas ?? [],
+      ...(opts.statuses ? { statuses: opts.statuses } : {}),
+    },
+    {
       columns: ['quantity', 'category'],
       ...(opts.embedded ? { embedded: true } : {}),
       ...(opts.narrow ? { narrow: true } : {}),
@@ -49,7 +48,6 @@ async function mount(
     },
     { renders: 2 },
   );
-  return { el, store, hass, sr };
 }
 
 describe('hv-full-view: phone-width app bar', () => {

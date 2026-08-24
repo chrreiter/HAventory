@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import base64
 import uuid
-from datetime import UTC, datetime, timedelta
 
 import pytest
 from custom_components.haventory.exceptions import ConflictError, NotFoundError, ValidationError
 from custom_components.haventory.models import ItemCreate, ItemFilter, ItemUpdate, Sort
 from custom_components.haventory.repository import CURSOR_MAX_LENGTH, Repository
+
+from date_helpers import day_offset
 
 TOTAL_ITEMS = 3
 BOOKS_TOTAL = 3
@@ -161,12 +162,6 @@ async def test_overdue_count_and_filter_track_check_in() -> None:
     assert repo.list_items(flt=ItemFilter(overdue_only=True))["items"] == []
 
 
-def _utc_day_offset(days: int) -> str:
-    """A UTC calendar date `days` from today, as YYYY-MM-DD."""
-
-    return (datetime.now(UTC).date() + timedelta(days=days)).isoformat()
-
-
 @pytest.mark.asyncio
 async def test_checked_out_due_count_includes_today_where_overdue_does_not() -> None:
     """The two counts differ by exactly the items due back today.
@@ -176,9 +171,9 @@ async def test_checked_out_due_count_includes_today_where_overdue_does_not() -> 
     """
 
     repo = Repository()
-    repo.create_item(ItemCreate(name="Late Drill", checked_out=True, due_date=_utc_day_offset(-1)))
-    repo.create_item(ItemCreate(name="Today Drill", checked_out=True, due_date=_utc_day_offset(0)))
-    repo.create_item(ItemCreate(name="Soon Drill", checked_out=True, due_date=_utc_day_offset(1)))
+    repo.create_item(ItemCreate(name="Late Drill", checked_out=True, due_date=day_offset(-1)))
+    repo.create_item(ItemCreate(name="Today Drill", checked_out=True, due_date=day_offset(0)))
+    repo.create_item(ItemCreate(name="Soon Drill", checked_out=True, due_date=day_offset(1)))
     repo.create_item(ItemCreate(name="Out Drill", checked_out=True))
     repo.create_item(ItemCreate(name="Home Drill"))
 
@@ -200,10 +195,10 @@ async def test_checked_out_due_count_empties_on_check_in() -> None:
 
     repo = Repository()
     late = repo.create_item(
-        ItemCreate(name="Late Drill", checked_out=True, due_date=_utc_day_offset(-2))
+        ItemCreate(name="Late Drill", checked_out=True, due_date=day_offset(-2))
     )
     today = repo.create_item(
-        ItemCreate(name="Today Drill", checked_out=True, due_date=_utc_day_offset(0))
+        ItemCreate(name="Today Drill", checked_out=True, due_date=day_offset(0))
     )
     BOTH_DRILLS = 2
     assert repo.get_counts()["checked_out_due_count"] == BOTH_DRILLS
@@ -224,17 +219,17 @@ async def test_inspection_overdue_count_walks_the_whole_inventory() -> None:
     """`inspection_overdue_count` spans every item, not just the checked-out ones."""
 
     repo = Repository()
-    repo.create_item(ItemCreate(name="Ladder", inspection_date=_utc_day_offset(-1)))
+    repo.create_item(ItemCreate(name="Ladder", inspection_date=day_offset(-1)))
     repo.create_item(
         ItemCreate(
             name="Extinguisher",
             checked_out=True,
-            due_date=_utc_day_offset(7),
-            inspection_date=_utc_day_offset(-30),
+            due_date=day_offset(7),
+            inspection_date=day_offset(-30),
         )
     )
-    repo.create_item(ItemCreate(name="Harness", inspection_date=_utc_day_offset(0)))
-    repo.create_item(ItemCreate(name="Rope", inspection_date=_utc_day_offset(365)))
+    repo.create_item(ItemCreate(name="Harness", inspection_date=day_offset(0)))
+    repo.create_item(ItemCreate(name="Rope", inspection_date=day_offset(365)))
     repo.create_item(ItemCreate(name="Bucket"))
 
     counts = repo.get_counts()
@@ -255,11 +250,11 @@ async def test_inspection_overdue_count_follows_the_stored_date() -> None:
     """Rescheduling or clearing the date moves the item out of the population."""
 
     repo = Repository()
-    ladder = repo.create_item(ItemCreate(name="Ladder", inspection_date=_utc_day_offset(-1)))
+    ladder = repo.create_item(ItemCreate(name="Ladder", inspection_date=day_offset(-1)))
     assert repo.get_counts()["inspection_overdue_count"] == 1
 
     inspected = repo.update_item(
-        ladder.id, ItemUpdate(inspection_date=_utc_day_offset(365)), expected_version=ladder.version
+        ladder.id, ItemUpdate(inspection_date=day_offset(365)), expected_version=ladder.version
     )
     assert repo.get_counts()["inspection_overdue_count"] == 0
 
@@ -279,9 +274,9 @@ async def test_inspection_due_count_includes_today_where_overdue_does_not() -> N
     """
 
     repo = Repository()
-    repo.create_item(ItemCreate(name="Ladder", inspection_date=_utc_day_offset(-1)))
-    repo.create_item(ItemCreate(name="Harness", inspection_date=_utc_day_offset(0)))
-    repo.create_item(ItemCreate(name="Rope", inspection_date=_utc_day_offset(1)))
+    repo.create_item(ItemCreate(name="Ladder", inspection_date=day_offset(-1)))
+    repo.create_item(ItemCreate(name="Harness", inspection_date=day_offset(0)))
+    repo.create_item(ItemCreate(name="Rope", inspection_date=day_offset(1)))
     repo.create_item(ItemCreate(name="Bucket"))
 
     counts = repo.get_counts()
@@ -297,19 +292,19 @@ async def test_inspection_due_count_is_never_below_the_overdue_count() -> None:
     """Rescheduling moves an item between the two counts without inverting them."""
 
     repo = Repository()
-    ladder = repo.create_item(ItemCreate(name="Ladder", inspection_date=_utc_day_offset(-3)))
+    ladder = repo.create_item(ItemCreate(name="Ladder", inspection_date=day_offset(-3)))
     assert repo.get_counts()["inspection_due_count"] == 1
     assert repo.get_counts()["inspection_overdue_count"] == 1
 
     today = repo.update_item(
-        ladder.id, ItemUpdate(inspection_date=_utc_day_offset(0)), expected_version=ladder.version
+        ladder.id, ItemUpdate(inspection_date=day_offset(0)), expected_version=ladder.version
     )
     counts = repo.get_counts()
     assert counts["inspection_due_count"] == 1
     assert counts["inspection_overdue_count"] == 0
 
     later = repo.update_item(
-        today.id, ItemUpdate(inspection_date=_utc_day_offset(30)), expected_version=today.version
+        today.id, ItemUpdate(inspection_date=day_offset(30)), expected_version=today.version
     )
     assert repo.get_counts()["inspection_due_count"] == 0
 

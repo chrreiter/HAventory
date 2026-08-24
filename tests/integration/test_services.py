@@ -27,14 +27,6 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 DUE_DATE = "2030-01-01"
 
 
-async def _setup(hass: HomeAssistant) -> Repository:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return find_runtime(hass).repository
-
-
 async def _call(hass: HomeAssistant, service: str, data: dict) -> None:
     await hass.services.async_call(DOMAIN, service, data, blocking=True)
     await hass.async_block_till_done()
@@ -52,10 +44,10 @@ def _only_item_id(repo: Repository) -> str:
     return str(items[0].id)
 
 
-async def test_all_services_are_registered(hass: HomeAssistant) -> None:
+async def test_all_services_are_registered(hass: HomeAssistant, setup_entry) -> None:
     """Setup registers the full ``haventory.*`` catalog."""
 
-    await _setup(hass)
+    await setup_entry()
 
     assert hass.services.async_services_for_domain(DOMAIN).keys() == {
         "item_create",
@@ -73,7 +65,7 @@ async def test_all_services_are_registered(hass: HomeAssistant) -> None:
     }
 
 
-async def test_every_service_dispatches_its_handler(hass: HomeAssistant) -> None:
+async def test_every_service_dispatches_its_handler(hass: HomeAssistant, setup_entry) -> None:
     """Calling each service through HA runs the handler and mutates the repository.
 
     One walk covers the whole catalog: a location is created, renamed and finally
@@ -82,7 +74,8 @@ async def test_every_service_dispatches_its_handler(hass: HomeAssistant) -> None
     handler to the executor instead of awaiting it.
     """
 
-    repo = await _setup(hass)
+    await setup_entry()
+    repo = find_runtime(hass).repository
 
     await _call(hass, "location_create", {"name": "Garage"})
     location_id = _only_location_id(repo)
@@ -132,11 +125,11 @@ async def test_every_service_dispatches_its_handler(hass: HomeAssistant) -> None
 
 
 async def test_service_call_persists_through_the_store(
-    hass: HomeAssistant, hass_storage: dict
+    hass: HomeAssistant, hass_storage: dict, setup_entry
 ) -> None:
     """A service mutation reaches the HA Store, not just the in-memory repository."""
 
-    await _setup(hass)
+    await setup_entry()
 
     await _call(hass, "item_create", {"name": "Flashlight", "quantity": 2})
 
@@ -144,10 +137,10 @@ async def test_service_call_persists_through_the_store(
     assert any(i["name"] == "Flashlight" for i in persisted["items"].values())
 
 
-async def test_service_call_surfaces_domain_errors(hass: HomeAssistant) -> None:
+async def test_service_call_surfaces_domain_errors(hass: HomeAssistant, setup_entry) -> None:
     """A repository error reaches the caller instead of being swallowed mid-dispatch."""
 
-    await _setup(hass)
+    await setup_entry()
 
     with pytest.raises(NotFoundError):
         await _call(hass, "item_update", {"item_id": "does-not-exist", "name": "Nope"})
@@ -176,10 +169,11 @@ async def test_service_call_after_removal_refuses(hass: HomeAssistant, hass_stor
     assert [i["name"] for i in hass_storage[STORAGE_KEY]["data"]["items"].values()] == ["Torch"]
 
 
-async def test_service_call_rejects_a_bad_payload(hass: HomeAssistant) -> None:
+async def test_service_call_rejects_a_bad_payload(hass: HomeAssistant, setup_entry) -> None:
     """HA validates against the registered schema before the handler runs."""
 
-    repo = await _setup(hass)
+    await setup_entry()
+    repo = find_runtime(hass).repository
 
     # ``item_create`` requires a name; the registered schema rejects the call.
     with pytest.raises(vol.Invalid):
@@ -193,14 +187,17 @@ async def test_service_call_rejects_a_bad_payload(hass: HomeAssistant) -> None:
     assert repo.get_counts()["items_total"] == 0
 
 
-async def test_services_answer_when_the_caller_asks_for_a_response(hass: HomeAssistant) -> None:
+async def test_services_answer_when_the_caller_asks_for_a_response(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """``return_response`` hands back the entity, so a script can chain calls.
 
     ``supports_response`` lives in the real service registry — the offline stub
     has none, so nothing about this classification is observable there.
     """
 
-    repo = await _setup(hass)
+    await setup_entry()
+    repo = find_runtime(hass).repository
 
     created = await hass.services.async_call(
         DOMAIN, "item_create", {"name": "Torch"}, blocking=True, return_response=True
@@ -236,10 +233,13 @@ async def test_services_answer_when_the_caller_asks_for_a_response(hass: HomeAss
     assert moved["item"]["version"] == created["item"]["version"] + 1
 
 
-async def test_a_caller_that_ignores_the_response_still_mutates(hass: HomeAssistant) -> None:
+async def test_a_caller_that_ignores_the_response_still_mutates(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """``OPTIONAL`` means the pre-existing call shape keeps working unchanged."""
 
-    repo = await _setup(hass)
+    await setup_entry()
+    repo = find_runtime(hass).repository
 
     # No `return_response`: HA returns None and the mutation still lands.
     answer = await hass.services.async_call(DOMAIN, "item_create", {"name": "Torch"}, blocking=True)
@@ -249,11 +249,12 @@ async def test_a_caller_that_ignores_the_response_still_mutates(hass: HomeAssist
     assert repo.get_counts()["items_total"] == 1
 
 
-async def test_delete_answers_with_the_body_it_removed(hass: HomeAssistant) -> None:
+async def test_delete_answers_with_the_body_it_removed(hass: HomeAssistant, setup_entry) -> None:
     """The response is the item as it last stood, and the repository is empty after."""
 
     quantity = 3
-    repo = await _setup(hass)
+    await setup_entry()
+    repo = find_runtime(hass).repository
     await _call(hass, "item_create", {"name": "Torch", "quantity": quantity})
     item_id = _only_item_id(repo)
 
@@ -268,7 +269,7 @@ async def test_delete_answers_with_the_body_it_removed(hass: HomeAssistant) -> N
     assert repo.get_counts()["items_total"] == 0
 
 
-async def test_reminders_are_reachable_from_an_automation(hass: HomeAssistant) -> None:
+async def test_reminders_are_reachable_from_an_automation(hass: HomeAssistant, setup_entry) -> None:
     """The whole point of the service surface: a household can act on a reminder.
 
     Reminders shipped WebSocket-only, and no Home Assistant automation can send a
@@ -276,7 +277,7 @@ async def test_reminders_are_reachable_from_an_automation(hass: HomeAssistant) -
     automation-facing feature of the release, was unreachable from an automation.
     """
 
-    await _setup(hass)
+    await setup_entry()
 
     created = await hass.services.async_call(
         DOMAIN,

@@ -14,11 +14,10 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from runtime_helpers import install_runtime, repo_of
+from runtime_helpers import repo_of, ws_hass
 from ws_helpers import ws_send
 
 MONTHLY = {"unit": "months", "count": 3}
@@ -27,20 +26,15 @@ _AFTER_ONE_EDIT = 2
 _EDITED_QUANTITY = 4
 
 
-def _hass() -> HomeAssistant:
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
-    return hass
-
-
 async def _item(hass: HomeAssistant, name: str = "HVAC filter") -> str:
     created = await ws_send(hass, 1, "haventory/item/create", name=name)
     return str(created["result"]["id"])
 
 
 def _today() -> date:
-    return datetime.now(UTC).date()
+    """The day a bump counts from, read off the clock the bump itself reads."""
+
+    return dt_util.now().date()
 
 
 def _freeze(monkeypatch, today: date) -> None:
@@ -52,7 +46,7 @@ def _freeze(monkeypatch, today: date) -> None:
 
 @pytest.mark.asyncio
 async def test_set_stores_the_anchor_and_the_interval() -> None:
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
 
     res = await ws_send(
@@ -76,7 +70,7 @@ async def test_set_stores_the_anchor_and_the_interval() -> None:
 async def test_set_without_an_interval_is_a_one_off() -> None:
     """An omitted interval means no recurrence, not "keep the stored one"."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     await ws_send(
         hass,
@@ -97,7 +91,7 @@ async def test_set_without_an_interval_is_a_one_off() -> None:
 
 @pytest.mark.asyncio
 async def test_clear_removes_both_halves() -> None:
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     await ws_send(
         hass,
@@ -119,7 +113,7 @@ async def test_clear_removes_both_halves() -> None:
 async def test_clear_on_an_item_with_no_reminder_succeeds() -> None:
     """Clearing is idempotent: the end state is what the caller asked for."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
 
     res = await ws_send(hass, 2, "haventory/reminder/clear", item_id=item_id)
@@ -132,7 +126,7 @@ async def test_clear_on_an_item_with_no_reminder_succeeds() -> None:
 async def test_bump_moves_a_due_reminder_on_by_one_interval() -> None:
     """The filter was changed today: the whole series moves with the anchor."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     anchor = _today()
     await ws_send(
@@ -155,7 +149,7 @@ async def test_bump_moves_a_due_reminder_on_by_one_interval() -> None:
 async def test_bump_from_a_long_past_anchor_lands_in_the_future() -> None:
     """A reminder nobody bumped for years does not advance to another past date."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     await ws_send(
         hass,
@@ -173,7 +167,7 @@ async def test_bump_from_a_long_past_anchor_lands_in_the_future() -> None:
 
 @pytest.mark.asyncio
 async def test_bump_refuses_an_item_with_no_reminder() -> None:
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
 
     res = await ws_send(hass, 2, "haventory/reminder/bump", item_id=item_id)
@@ -186,7 +180,7 @@ async def test_bump_refuses_an_item_with_no_reminder() -> None:
 async def test_bump_refuses_a_one_off() -> None:
     """There is no next occurrence to move to, and guessing one would invent a series."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     await ws_send(hass, 2, "haventory/reminder/set", item_id=item_id, reminder_date="2026-09-01")
 
@@ -200,7 +194,7 @@ async def test_bump_refuses_a_one_off() -> None:
 async def test_an_interval_with_no_anchor_is_refused() -> None:
     """Through `item/update`, the one path that can name the interval alone."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
 
     res = await ws_send(
@@ -215,7 +209,7 @@ async def test_an_interval_with_no_anchor_is_refused() -> None:
 async def test_clearing_the_anchor_of_a_recurring_reminder_is_refused() -> None:
     """The stored interval is what the update is validated against."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     await ws_send(
         hass,
@@ -245,7 +239,7 @@ async def test_clearing_the_anchor_of_a_recurring_reminder_is_refused() -> None:
 )
 @pytest.mark.asyncio
 async def test_an_unusable_interval_is_refused(interval: dict) -> None:
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
 
     res = await ws_send(
@@ -265,7 +259,7 @@ async def test_an_unusable_interval_is_refused(interval: dict) -> None:
 async def test_a_stale_expected_version_is_a_conflict() -> None:
     """Reminders take part in the same optimistic concurrency as every edit."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
 
     res = await ws_send(
@@ -289,7 +283,7 @@ async def test_bump_names_a_stored_anchor_it_cannot_read() -> None:
     at the field and at the way out rather than to report a crash.
     """
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     await ws_send(
         hass,
@@ -320,7 +314,7 @@ async def test_a_bump_counts_from_the_household_day_not_the_utc_one(monkeypatch)
     anywhere but UTC, so the zone has to be pinned here.
     """
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     # 18:00 on the 14th in Los Angeles is 02:00 on the 15th in UTC.
     evening_local = datetime(2026, 8, 14, 18, 0, tzinfo=timezone(timedelta(hours=-8)))
@@ -357,7 +351,7 @@ async def test_a_month_end_series_still_lands_on_the_31st_after_a_bump(monkeypat
     on the 30th — and February re-anchored it on the 28th — permanently.
     """
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     _freeze(monkeypatch, date(2026, 8, 15))
     await ws_send(
@@ -390,7 +384,7 @@ async def test_a_bump_through_february_skips_no_occurrence(monkeypatch) -> None:
     reminded in February.
     """
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     _freeze(monkeypatch, date(2027, 1, 20))
     await ws_send(
@@ -415,7 +409,7 @@ async def test_a_bump_through_february_skips_no_occurrence(monkeypatch) -> None:
 async def test_setting_a_date_re_anchors_the_series_on_it() -> None:
     """A household picking a date is saying where the series starts."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     await ws_send(
         hass,
@@ -444,7 +438,7 @@ async def test_setting_a_date_re_anchors_the_series_on_it() -> None:
 async def test_clearing_a_reminder_takes_the_anchor_with_it() -> None:
     """An anchor with no date names a series with no next occurrence."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     await ws_send(
         hass,
@@ -465,7 +459,7 @@ async def test_clearing_a_reminder_takes_the_anchor_with_it() -> None:
 async def test_a_bump_answers_conflict_on_a_stale_version() -> None:
     """It is an ordinary item edit, so it takes the same concurrency check."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     await ws_send(
         hass,
@@ -498,7 +492,7 @@ async def test_an_edit_that_resends_the_same_date_leaves_the_anchor_alone(monkey
     with nothing in the card showing it.
     """
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     _freeze(monkeypatch, date(2026, 1, 15))
     created = await ws_send(
@@ -551,7 +545,7 @@ async def test_the_cards_whole_save_payload_leaves_the_anchor_alone(monkeypatch)
     sends what the editor sends.
     """
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     _freeze(monkeypatch, date(2026, 1, 15))
     await ws_send(
@@ -597,7 +591,7 @@ async def test_the_cards_whole_save_payload_leaves_the_anchor_alone(monkeypatch)
 async def test_an_edit_that_moves_the_date_still_re_anchors() -> None:
     """Picking a new date is still saying where the series starts."""
 
-    hass = _hass()
+    hass = ws_hass()
     item_id = await _item(hass)
     created = await ws_send(
         hass,
@@ -643,7 +637,7 @@ async def _item_with_reminder(hass: HomeAssistant, name: str, date_str: str, msg
 async def test_items_sort_by_reminder_date() -> None:
     """Soonest first ascending, and an item with no reminder sorts last."""
 
-    hass = _hass()
+    hass = ws_hass()
     late = await _item_with_reminder(hass, "Water filter", "2027-03-01", 10)
     soon = await _item_with_reminder(hass, "Smoke detector", "2026-09-01", 20)
     none = await _item(hass, "Hammer")
@@ -660,7 +654,7 @@ async def test_items_sort_by_reminder_date() -> None:
 async def test_reminder_due_only_takes_today_and_leaves_the_future() -> None:
     """Today counts: a reminder names the day it is asking about."""
 
-    hass = _hass()
+    hass = ws_hass()
     today = _today().isoformat()
     past = await _item_with_reminder(hass, "Gutters", "2020-01-01", 10)
     now = await _item_with_reminder(hass, "Smoke detector", today, 20)
@@ -677,7 +671,7 @@ async def test_reminder_due_only_takes_today_and_leaves_the_future() -> None:
 async def test_stats_counts_the_reminders_that_have_come_round() -> None:
     """The count behind the quick-filter pill, on the same inclusive rule."""
 
-    hass = _hass()
+    hass = ws_hass()
     await _item_with_reminder(hass, "Gutters", "2020-01-01", 10)
     await _item_with_reminder(hass, "Smoke detector", _today().isoformat(), 20)
     await _item_with_reminder(hass, "Water filter", "2099-01-01", 30)
@@ -691,7 +685,7 @@ async def test_stats_counts_the_reminders_that_have_come_round() -> None:
 async def test_an_unknown_reminder_sort_field_is_still_refused() -> None:
     """The new key is additive; it does not open the vocabulary up."""
 
-    hass = _hass()
+    hass = ws_hass()
     await _item(hass)
 
     res = await ws_send(

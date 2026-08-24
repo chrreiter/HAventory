@@ -1127,6 +1127,25 @@ export async function mountStore(config: MockConfig = {}): Promise<{
   return { hass, store };
 }
 
+/**
+ * Mount one of the host components over a store of its own.
+ *
+ * `hv-card-shell`, `hv-full-view` and `hv-organize-dialog` each take a `store`
+ * property and are asserted against both halves, so their specs need the store
+ * and the mock hass back alongside the element. The two things a caller varies
+ * are the dataset the store answers with and the host's own properties.
+ */
+export async function mountHost<T extends HTMLElement>(
+  tag: string,
+  config: MockConfig = {},
+  props: Partial<T> = {},
+  options: MountOptions = {},
+): Promise<Mounted<T> & { store: Store; hass: MockHass }> {
+  const { hass, store } = await mountStore(config);
+  const { el, sr } = await mountComponent<T>(tag, { ...props, store }, options);
+  return { el, store, hass, sr };
+}
+
 /** The first match for a selector, from an element's shadow root or from a root itself. */
 export function q<T extends Element = HTMLElement>(
   root: Element | DocumentFragment,

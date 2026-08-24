@@ -39,14 +39,6 @@ from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
-async def _setup(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
-
-
 async def _subscribe(client, sub_id: int, topic: str = "items") -> None:
     """Open one topic subscription and assert the backend accepted it."""
 
@@ -81,7 +73,7 @@ async def test_config_entry_setup_and_unload(hass: HomeAssistant) -> None:
 
 
 async def test_unloaded_entry_leaves_the_ws_api_refusing(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """An entry that owns nothing serves nothing — the reload window, held open.
 
@@ -89,7 +81,7 @@ async def test_unloaded_entry_leaves_the_ws_api_refusing(
     what it meets mid-reload.
     """
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Screwdriver"})
@@ -119,11 +111,11 @@ async def test_unloaded_entry_leaves_the_ws_api_refusing(
 
 
 async def test_disabled_entry_refuses_like_a_removed_one(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """Disabling is the case with no setup coming to end it."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     client = await hass_ws_client(hass)
 
     await hass.config_entries.async_set_disabled_by(entry.entry_id, ConfigEntryDisabler.USER)
@@ -137,7 +129,7 @@ async def test_disabled_entry_refuses_like_a_removed_one(
 
 
 async def test_reload_tells_an_open_subscriber_and_lets_it_re_subscribe(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """The whole loop a dashboard left open goes through, over one connection.
 
@@ -149,7 +141,7 @@ async def test_reload_tells_an_open_subscriber_and_lets_it_re_subscribe(
 
     first_sub, second_sub = 10, 12
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     client = await hass_ws_client(hass)
     await _subscribe(client, first_sub)
 
@@ -188,10 +180,10 @@ async def test_reload_tells_an_open_subscriber_and_lets_it_re_subscribe(
     assert event["event"]["item"]["name"] == "After"
 
 
-async def test_reload_keeps_the_inventory(hass: HomeAssistant, hass_ws_client) -> None:
+async def test_reload_keeps_the_inventory(hass: HomeAssistant, hass_ws_client, setup_entry) -> None:
     """Teardown flushes and setup reads it back, so a reload loses nothing."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     client = await hass_ws_client(hass)
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Hammer"})
     assert (await client.receive_json())["success"] is True
@@ -206,11 +198,11 @@ async def test_reload_keeps_the_inventory(hass: HomeAssistant, hass_ws_client) -
 
 
 async def test_removed_entry_leaves_the_ws_api_refusing(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """A dashboard left open cannot go on reading or writing a removed inventory."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Screwdriver"})
@@ -235,18 +227,18 @@ async def test_removed_entry_leaves_the_ws_api_refusing(
 
 
 async def test_re_adding_a_removed_entry_restores_the_inventory(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """Removal keeps the store file, so adding the integration again brings it back."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     client = await hass_ws_client(hass)
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Screwdriver"})
     assert (await client.receive_json())["success"] is True
 
     await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
-    await _setup(hass)
+    await setup_entry()
 
     await client.send_json({"id": 2, "type": "haventory/item/list"})
     listed = await client.receive_json()
@@ -255,7 +247,7 @@ async def test_re_adding_a_removed_entry_restores_the_inventory(
 
 
 async def test_the_options_flow_stores_a_pill_choice_the_card_then_reads(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """The pill picker is a real selector, and only real HA applies it.
 
@@ -265,7 +257,7 @@ async def test_the_options_flow_stores_a_pill_choice_the_card_then_reads(
     what `haventory/config` then reports to the card.
     """
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/config"})
@@ -297,10 +289,12 @@ async def test_the_options_flow_stores_a_pill_choice_the_card_then_reads(
     assert after["result"]["quick_filters"] == ["low_stock", "overdue"]
 
 
-async def test_the_options_flow_refuses_a_pill_it_does_not_offer(hass: HomeAssistant) -> None:
+async def test_the_options_flow_refuses_a_pill_it_does_not_offer(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """A name outside the five is rejected by the form, not stored and dropped later."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
 
     flow = await hass.config_entries.options.async_init(entry.entry_id)
     with pytest.raises(InvalidData):

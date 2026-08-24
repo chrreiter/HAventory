@@ -13,7 +13,6 @@ Scenarios:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -24,6 +23,7 @@ from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 
+from date_helpers import day_offset
 from runtime_helpers import install_runtime, runtime_of
 from ws_helpers import RecordingConn, ws_send
 
@@ -262,12 +262,6 @@ async def test_location_filters_subtree_and_direct_only() -> None:
     assert "item" not in delivered
 
 
-def _utc_day_offset(days: int) -> str:
-    """A UTC calendar date `days` from today, as YYYY-MM-DD."""
-
-    return (datetime.now(UTC).date() + timedelta(days=days)).isoformat()
-
-
 @pytest.mark.asyncio
 async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
     """`inspection_overdue_only` narrows item events the same way `item/list` does."""
@@ -305,7 +299,7 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
         "haventory/item/create",
         conn=conn,
         name="Ladder",
-        inspection_date=_utc_day_offset(-1),
+        inspection_date=day_offset(-1),
     )
     assert late["success"] is True
     assert item_event_ids() == {SUB_ID_INSPECTION, SUB_ID_EVERYTHING}
@@ -319,7 +313,7 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
         "haventory/item/create",
         conn=conn,
         name="Harness",
-        inspection_date=_utc_day_offset(0),
+        inspection_date=day_offset(0),
     )
     assert due_today["success"] is True
     assert item_event_ids() == {SUB_ID_EVERYTHING}

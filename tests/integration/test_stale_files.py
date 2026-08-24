@@ -20,11 +20,9 @@ from pathlib import Path
 
 import pytest
 from custom_components.haventory import stale_files
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.runtime import find_runtime
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 RETIRED_MODULE = "reminders.py"
 
@@ -39,16 +37,8 @@ def install_dir(tmp_path: Path, monkeypatch) -> Path:
     return directory
 
 
-async def _setup(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
-
-
 async def test_setup_sweeps_a_retired_file_through_the_real_executor(
-    hass: HomeAssistant, install_dir: Path, monkeypatch
+    hass: HomeAssistant, install_dir: Path, monkeypatch, setup_entry
 ) -> None:
     """The upgrade case, end to end: the file is gone and the entry is loaded."""
 
@@ -56,7 +46,7 @@ async def test_setup_sweeps_a_retired_file_through_the_real_executor(
     left_behind = install_dir / RETIRED_MODULE
     left_behind.write_text("LEGACY = True\n", encoding="utf-8")
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
 
     assert entry.state is ConfigEntryState.LOADED
     assert not left_behind.exists()
@@ -65,7 +55,7 @@ async def test_setup_sweeps_a_retired_file_through_the_real_executor(
 
 
 async def test_a_swept_path_that_escapes_the_package_is_refused_on_the_executor(
-    hass: HomeAssistant, install_dir: Path, monkeypatch, caplog
+    hass: HomeAssistant, install_dir: Path, monkeypatch, caplog, setup_entry
 ) -> None:
     """A typo in the list points into the operator's config tree; setup must not follow it."""
 
@@ -73,7 +63,7 @@ async def test_a_swept_path_that_escapes_the_package_is_refused_on_the_executor(
     outside = (install_dir / "../secrets.yaml").resolve()
     outside.write_text("token: secret\n", encoding="utf-8")
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
 
     assert entry.state is ConfigEntryState.LOADED
     assert outside.read_text(encoding="utf-8") == "token: secret\n"

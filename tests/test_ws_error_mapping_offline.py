@@ -25,16 +25,8 @@ from custom_components.haventory.ws import HANDLERS, UNEXPECTED_ERROR_MESSAGE
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, repo_of
+from runtime_helpers import repo_of, ws_hass
 from ws_helpers import RecordingConn, ws_send
-
-
-def _make_hass(*, with_repo: bool = True) -> HomeAssistant:
-    hass = HomeAssistant()
-    if with_repo:
-        install_runtime(hass)
-    ws_setup(hass)
-    return hass
 
 
 def test_every_registered_command_is_guarded() -> None:
@@ -53,7 +45,7 @@ def test_every_registered_command_is_guarded() -> None:
 async def test_unexpected_exception_maps_to_unknown_error_without_leaking(monkeypatch) -> None:
     """Non-domain exceptions -> unknown_error with a generic message only."""
 
-    hass = _make_hass()
+    hass = ws_hass()
 
     def _boom(*_args: Any, **_kwargs: Any) -> dict:
         raise RuntimeError("SECRET-INTERNAL-DETAIL")
@@ -91,7 +83,10 @@ async def test_unexpected_exception_maps_to_unknown_error_without_leaking(monkey
 async def test_repo_dependent_commands_map_missing_repo_to_storage_error(type_: str) -> None:
     """Missing repository surfaces as storage_error, not an escaped exception."""
 
-    hass = _make_hass(with_repo=False)
+    # No runtime: the entry an unloaded, disabled or removed integration leaves.
+    hass = HomeAssistant()
+    ws_setup(hass)
+
     res = await ws_send(hass, 6, type_)
 
     assert res["success"] is False
@@ -100,7 +95,7 @@ async def test_repo_dependent_commands_map_missing_repo_to_storage_error(type_: 
 
 @pytest.mark.asyncio
 async def test_subscribe_bad_topic_maps_to_validation_error() -> None:
-    hass = _make_hass()
+    hass = ws_hass()
     res = await ws_send(hass, 7, "haventory/subscribe", topic="nope")
 
     assert res["success"] is False
@@ -110,7 +105,7 @@ async def test_subscribe_bad_topic_maps_to_validation_error() -> None:
 
 @pytest.mark.asyncio
 async def test_unsubscribe_validates_subscription_id() -> None:
-    hass = _make_hass()
+    hass = ws_hass()
 
     res = await ws_send(hass, 8, "haventory/unsubscribe", subscription="abc")
     assert res["success"] is False
@@ -129,7 +124,7 @@ async def test_unsubscribe_validates_subscription_id() -> None:
 async def test_bulk_malformed_custom_fields_payload_fails_only_that_op() -> None:
     """A payload that would raise TypeError fails per-op as validation_error."""
 
-    hass = _make_hass()
+    hass = ws_hass()
     repo = repo_of(hass)
     item = repo.create_item({"name": "Widget", "quantity": 1})
 
@@ -173,7 +168,7 @@ async def test_bulk_malformed_custom_fields_payload_fails_only_that_op() -> None
 async def test_bulk_payload_field_validation_errors() -> None:
     """Missing/typed-wrong per-op payload fields fail their own op only."""
 
-    hass = _make_hass()
+    hass = ws_hass()
     repo = repo_of(hass)
     item = repo.create_item({"name": "Widget", "quantity": 1})
 
@@ -216,7 +211,7 @@ async def test_bulk_payload_field_validation_errors() -> None:
 async def test_bulk_unexpected_per_op_error_is_contained(monkeypatch) -> None:
     """An unexpected exception in one op yields per-op unknown_error only."""
 
-    hass = _make_hass()
+    hass = ws_hass()
     repo = repo_of(hass)
     item = repo.create_item({"name": "Widget", "quantity": 1})
 
@@ -256,7 +251,7 @@ async def test_bulk_unexpected_per_op_error_is_contained(monkeypatch) -> None:
 async def test_broadcast_failure_does_not_fail_the_command(monkeypatch) -> None:
     """A raising event sender must not turn a successful mutation into an error."""
 
-    hass = _make_hass()
+    hass = ws_hass()
     conn = RecordingConn()
     sub = await ws_send(hass, 100, "haventory/subscribe", conn=conn, topic="items")
     assert sub["success"] is True

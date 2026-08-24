@@ -28,10 +28,8 @@ from custom_components.haventory.models import (
     ItemUpdate,
 )
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.ws import setup as ws_setup
-from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime
+from runtime_helpers import ws_hass
 from ws_helpers import ws_send
 
 # -----------------------------
@@ -103,16 +101,9 @@ def test_low_stock_threshold_rejects_bool() -> None:
 # -----------------------------
 
 
-def _make_hass() -> HomeAssistant:
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
-    return hass
-
-
 @pytest.mark.asyncio
 async def test_ws_create_non_text_category_is_validation_error_no_phantom() -> None:
-    hass = _make_hass()
+    hass = ws_hass()
     res = await ws_send(hass, 1, "haventory/item/create", name="Widget", category=["oops"])
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
@@ -125,7 +116,7 @@ async def test_ws_create_non_text_category_is_validation_error_no_phantom() -> N
 
 @pytest.mark.asyncio
 async def test_ws_set_quantity_bool_is_validation_error() -> None:
-    hass = _make_hass()
+    hass = ws_hass()
     created = await ws_send(hass, 1, "haventory/item/create", name="Widget", quantity=1)
     item_id = created["result"]["id"]
 
@@ -152,7 +143,7 @@ async def test_a_refused_quantity_answers_alike_from_the_command_and_from_bulk()
     get a different one from the one it gets when it sends them singly.
     """
 
-    hass = _make_hass()
+    hass = ws_hass()
     missing = "00000000-0000-4000-8000-000000000000"
 
     single = await ws_send(hass, 1, "haventory/item/set_quantity", item_id=missing, quantity=-1)
@@ -185,7 +176,7 @@ async def test_an_item_id_of_the_wrong_type_names_the_field_on_both_surfaces() -
     author looking for a missing item instead.
     """
 
-    hass = _make_hass()
+    hass = ws_hass()
 
     single = await ws_send(hass, 1, "haventory/item/update", item_id=7, name="X")
     batch = await ws_send(
@@ -233,7 +224,7 @@ async def test_a_collection_field_given_a_bare_string_is_a_validation_error(
     the same code and the caller's own field name whichever command carried it.
     """
 
-    hass = _make_hass()
+    hass = ws_hass()
     created = await ws_send(hass, 1, "haventory/item/create", name="Widget", tags=["alpha"])
     item_id = created["result"]["id"]
 
@@ -269,7 +260,7 @@ async def test_a_reorder_still_refuses_a_list_naming_one_member_twice() -> None:
     normalizing it into a valid permutation would hide it.
     """
 
-    hass = _make_hass()
+    hass = ws_hass()
 
     res = await ws_send(hass, 1, "haventory/status/reorder", slugs=["ok", "ok", "missing"])
 
@@ -338,7 +329,7 @@ def test_create_accepts_at_the_cap_and_refuses_over_it(
 
 @pytest.mark.asyncio
 async def test_ws_create_over_a_cap_is_validation_error_no_phantom() -> None:
-    hass = _make_hass()
+    hass = ws_hass()
     res = await ws_send(
         hass,
         1,

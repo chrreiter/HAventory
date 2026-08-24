@@ -8,24 +8,15 @@ is reproduced — the real-HA counterpart to the offline round-trip unit test.
 
 from __future__ import annotations
 
-from custom_components.haventory.const import DOMAIN
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-
-async def _setup(hass: HomeAssistant) -> None:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
 
 
 async def test_export_then_import_into_emptied_instance(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """Export, empty the instance, import the document, and verify data returns."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
     quantity = 3
 
@@ -90,11 +81,11 @@ async def test_export_then_import_into_emptied_instance(
 
 
 async def test_import_preview_reports_errors_without_mutating(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """A structurally invalid document is reported, not applied."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     bad_document = {
@@ -123,7 +114,7 @@ async def test_import_preview_reports_errors_without_mutating(
 
 
 async def test_import_preview_name_collision_survives_the_wire(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """The warning entry serializes through the real result envelope.
 
@@ -131,7 +122,7 @@ async def test_import_preview_name_collision_survives_the_wire(
     unmodified, so only the real command layer proves the payload survives it.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Hammer"})

@@ -19,7 +19,6 @@ from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     CLIENT_ID,
-    MockConfigEntry,
     async_capture_events,
     async_fire_time_changed,
 )
@@ -28,22 +27,14 @@ LOW_THRESHOLD = 3
 CREATED_QUANTITY = 2
 
 
-async def _setup(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
-
-
 def _data(events: list[Event]) -> list[dict[str, Any]]:
     return [dict(e.data) for e in events]
 
 
-async def test_a_service_call_reaches_a_bus_listener(hass: HomeAssistant) -> None:
+async def test_a_service_call_reaches_a_bus_listener(hass: HomeAssistant, setup_entry) -> None:
     """`hass.bus.async_listen` sees `haventory_item_changed` from a service."""
 
-    await _setup(hass)
+    await setup_entry()
     captured = async_capture_events(hass, EVENT_ITEM_CHANGED)
 
     await hass.services.async_call(
@@ -61,9 +52,9 @@ async def test_a_service_call_reaches_a_bus_listener(hass: HomeAssistant) -> Non
 
 
 async def test_a_websocket_mutation_reaches_a_bus_listener(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
-    await _setup(hass)
+    await setup_entry()
     captured = async_capture_events(hass, EVENT_ITEM_CHANGED)
     client = await hass_ws_client(hass)
 
@@ -74,10 +65,10 @@ async def test_a_websocket_mutation_reaches_a_bus_listener(
     assert [p["action"] for p in _data(captured)] == ["created"]
 
 
-async def test_low_stock_fires_entered_and_cleared(hass: HomeAssistant) -> None:
+async def test_low_stock_fires_entered_and_cleared(hass: HomeAssistant, setup_entry) -> None:
     """The transition an automation triggers on, both ways, from a service call."""
 
-    await _setup(hass)
+    await setup_entry()
     captured = async_capture_events(hass, EVENT_LOW_STOCK)
 
     created = await hass.services.async_call(
@@ -106,7 +97,7 @@ async def test_low_stock_fires_entered_and_cleared(hass: HomeAssistant) -> None:
     assert [p["action"] for p in _data(captured)] == ["entered", "cleared"]
 
 
-async def test_a_real_automation_triggers_on_low_stock(hass: HomeAssistant) -> None:
+async def test_a_real_automation_triggers_on_low_stock(hass: HomeAssistant, setup_entry) -> None:
     """The story #218 promises, through HA's automation engine rather than a listener.
 
     An event trigger with an `action: entered` filter, and a template that reads
@@ -114,7 +105,7 @@ async def test_a_real_automation_triggers_on_low_stock(hass: HomeAssistant) -> N
     not just as a dict this integration happens to fire.
     """
 
-    await _setup(hass)
+    await setup_entry()
     assert await async_setup_component(
         hass,
         "automation",
@@ -162,10 +153,12 @@ async def test_a_real_automation_triggers_on_low_stock(hass: HomeAssistant) -> N
     assert [dict(e.data) for e in fired] == [{"item": "Batteries", "quantity": 1}]
 
 
-async def test_a_restart_re_announces_nothing(hass: HomeAssistant, hass_storage) -> None:
+async def test_a_restart_re_announces_nothing(
+    hass: HomeAssistant, hass_storage, setup_entry
+) -> None:
     """Setting up against a store that already holds low items fires no event."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     await hass.services.async_call(
         DOMAIN,
         "item_create",
@@ -186,7 +179,7 @@ async def test_a_restart_re_announces_nothing(hass: HomeAssistant, hass_storage)
 
 
 async def test_a_status_reassignment_reaches_the_bus_once_per_item(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """A bulk rewrite is still a set of item edits, and each one is announced.
 
@@ -196,7 +189,7 @@ async def test_a_status_reassignment_reaches_the_bus_once_per_item(
     set moved underneath it.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json(
@@ -283,7 +276,7 @@ async def _events_before_a_ping(client: Any, ping_id: int) -> list[dict[str, Any
 
 
 async def test_the_counts_roll_over_at_the_instances_midnight(
-    hass: HomeAssistant, hass_ws_client: Any, hass_admin_user: Any, freezer: Any
+    hass: HomeAssistant, hass_ws_client: Any, hass_admin_user: Any, freezer: Any, setup_entry
 ) -> None:
     """#584: an open subscription hears the day turn, with nothing mutated.
 
@@ -296,7 +289,7 @@ async def test_the_counts_roll_over_at_the_instances_midnight(
     await hass.config.async_set_time_zone(NZ_ZONE)
     freezer.move_to(NZ_LATE_EVENING)
 
-    await _setup(hass)
+    await setup_entry()
     client = await _frozen_clock_client(hass, hass_ws_client, hass_admin_user)
     await _subscribe_stats(client)
 
@@ -328,14 +321,14 @@ async def test_the_counts_roll_over_at_the_instances_midnight(
 
 
 async def test_an_unloaded_entry_announces_no_rollover(
-    hass: HomeAssistant, hass_ws_client: Any, hass_admin_user: Any, freezer: Any
+    hass: HomeAssistant, hass_ws_client: Any, hass_admin_user: Any, freezer: Any, setup_entry
 ) -> None:
     """The tracker goes with the entry, or it broadcasts counts nothing owns."""
 
     await hass.config.async_set_time_zone(NZ_ZONE)
     freezer.move_to(NZ_LATE_EVENING)
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     client = await _frozen_clock_client(hass, hass_ws_client, hass_admin_user)
     await _subscribe_stats(client)
 

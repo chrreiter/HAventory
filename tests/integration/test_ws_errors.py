@@ -15,24 +15,15 @@ either case is asserted here or nowhere.
 
 from __future__ import annotations
 
-from custom_components.haventory.const import DOMAIN
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-
-
-async def _setup(hass: HomeAssistant) -> None:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
 
 
 async def test_the_error_context_reaches_the_client_intact(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """`data` arrives with the request fields the taxonomy promised, not just `op`."""
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/get", "item_id": "does-not-exist"})
@@ -44,7 +35,7 @@ async def test_the_error_context_reaches_the_client_intact(
 
 
 async def test_a_nested_error_payload_survives_the_wire(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """The richest `data` there is: a list of objects, not a flat string map.
 
@@ -53,7 +44,7 @@ async def test_a_nested_error_payload_survives_the_wire(
     nesting on the way out would cost the whole message.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json(
@@ -78,7 +69,7 @@ async def test_a_nested_error_payload_survives_the_wire(
 
 
 async def test_home_assistants_own_refusal_carries_no_data_key(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """The counter-case: `data` is ours, not something every frame arrives with.
 
@@ -88,7 +79,7 @@ async def test_home_assistants_own_refusal_carries_no_data_key(
     to everything.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/get"})
@@ -100,7 +91,7 @@ async def test_home_assistants_own_refusal_carries_no_data_key(
 
 
 async def test_a_reused_frame_id_is_refused_before_the_command_runs(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """Real connections track `last_id`; the offline helpers dispatch each frame alone.
 
@@ -108,7 +99,7 @@ async def test_a_reused_frame_id_is_refused_before_the_command_runs(
     real client gets away with, and a card that did it would find out here.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 7, "type": "haventory/item/create", "name": "First"})
@@ -126,7 +117,7 @@ async def test_a_reused_frame_id_is_refused_before_the_command_runs(
 
 
 async def test_a_command_this_build_does_not_have_is_answered_not_ignored(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """What a newer card meets on an older backend: an answer it can branch on.
 
@@ -134,7 +125,7 @@ async def test_a_command_this_build_does_not_have_is_answered_not_ignored(
     a fine test failure and no description at all of what a client receives.
     """
 
-    await _setup(hass)
+    await setup_entry()
     client = await hass_ws_client(hass)
 
     await client.send_json({"id": 1, "type": "haventory/item/teleport"})

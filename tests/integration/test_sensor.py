@@ -41,14 +41,6 @@ def _local_day_offset(days: int) -> str:
     return (dt_util.now().date() + timedelta(days=days)).isoformat()
 
 
-async def _setup(hass: HomeAssistant) -> MockConfigEntry:
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    return entry
-
-
 def _sensor_entries(hass: HomeAssistant, entry: MockConfigEntry) -> list[er.RegistryEntry]:
     """Only this platform's entities — the entry also owns `calendar.haventory`."""
 
@@ -80,10 +72,10 @@ def _entity_id_for(hass: HomeAssistant, entry: MockConfigEntry, key: str) -> str
     )
 
 
-async def test_every_sensor_lands_on_one_device(hass: HomeAssistant) -> None:
+async def test_every_sensor_lands_on_one_device(hass: HomeAssistant, setup_entry) -> None:
     """One service device, one entity per catalog entry, `unique_id`s scoped to it."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
 
     entries = _sensor_entries(hass, entry)
     assert len(entries) == len(SENSOR_DESCRIPTIONS)
@@ -107,14 +99,16 @@ async def test_every_sensor_lands_on_one_device(hass: HomeAssistant) -> None:
         assert not state.attributes["friendly_name"].endswith("HAventory ")
 
 
-async def test_items_total_moves_on_a_service_call_with_no_polling(hass: HomeAssistant) -> None:
+async def test_items_total_moves_on_a_service_call_with_no_polling(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """`haventory.item_create` repaints the sensor — the path that emitted nothing.
 
     No `async_update_entity`, no time travel: if the push were missing the state
     would still read 0 here.
     """
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     total = _entity_id_for(hass, entry, "items_total")
 
     assert hass.states.get(total).state == "0"
@@ -126,11 +120,11 @@ async def test_items_total_moves_on_a_service_call_with_no_polling(hass: HomeAss
 
 
 async def test_items_total_moves_on_a_websocket_mutation(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """The other write path pushes the same way."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     total = _entity_id_for(hass, entry, "items_total")
     client = await hass_ws_client(hass)
 
@@ -141,8 +135,8 @@ async def test_items_total_moves_on_a_websocket_mutation(
     assert hass.states.get(total).state == "1"
 
 
-async def test_low_stock_sensor_tracks_the_threshold(hass: HomeAssistant) -> None:
-    entry = await _setup(hass)
+async def test_low_stock_sensor_tracks_the_threshold(hass: HomeAssistant, setup_entry) -> None:
+    entry = await setup_entry()
     low = _entity_id_for(hass, entry, "low_stock_count")
 
     created = await hass.services.async_call(
@@ -165,10 +159,10 @@ async def test_low_stock_sensor_tracks_the_threshold(hass: HomeAssistant) -> Non
     assert hass.states.get(low).state == "1"
 
 
-async def test_unload_removes_the_entities(hass: HomeAssistant) -> None:
+async def test_unload_removes_the_entities(hass: HomeAssistant, setup_entry) -> None:
     """An unloaded entry serves nothing, entities included."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     entity_ids = _entity_ids(hass, entry)
     assert entity_ids
 
@@ -181,10 +175,10 @@ async def test_unload_removes_the_entities(hass: HomeAssistant) -> None:
 
 
 @pytest.mark.parametrize("descriptor", SENSOR_DESCRIPTIONS, ids=lambda d: d.key)
-async def test_each_sensor_reports_its_count(hass: HomeAssistant, descriptor) -> None:
+async def test_each_sensor_reports_its_count(hass: HomeAssistant, descriptor, setup_entry) -> None:
     """Every entity reads its own key, so none of them is wired to the wrong one."""
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     repo = find_runtime(hass).repository
 
     entity_id = _entity_id_for(hass, entry, descriptor.key)
@@ -192,14 +186,16 @@ async def test_each_sensor_reports_its_count(hass: HomeAssistant, descriptor) ->
     assert hass.states.get(entity_id).state == str(repo.get_counts()[descriptor.key])
 
 
-async def test_an_item_due_back_today_is_due_and_not_overdue(hass: HomeAssistant) -> None:
+async def test_an_item_due_back_today_is_due_and_not_overdue(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """The two check-out sensors differ by exactly the items due back today.
 
     Driven through `item_check_out`, which is the only way a due date can exist,
     so the count is read off the same path a household uses.
     """
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     due = _entity_id_for(hass, entry, "checked_out_due_count")
     overdue = _entity_id_for(hass, entry, "overdue_count")
 
@@ -241,14 +237,16 @@ async def test_an_item_due_back_today_is_due_and_not_overdue(hass: HomeAssistant
     assert hass.states.get(overdue).state == "0"
 
 
-async def test_an_inspection_due_today_is_due_and_not_overdue(hass: HomeAssistant) -> None:
+async def test_an_inspection_due_today_is_due_and_not_overdue(
+    hass: HomeAssistant, setup_entry
+) -> None:
     """The two inspection sensors differ by exactly the items due today.
 
     `due` includes today and `overdue` does not — the distinction the counts are
     named for, read off the entities a dashboard actually shows.
     """
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     due = _entity_id_for(hass, entry, "inspection_due_count")
     overdue = _entity_id_for(hass, entry, "inspection_overdue_count")
 
@@ -276,7 +274,7 @@ async def test_an_inspection_due_today_is_due_and_not_overdue(hass: HomeAssistan
 
 
 async def test_the_inspection_due_sensor_reads_the_instances_day(
-    hass: HomeAssistant, freezer
+    hass: HomeAssistant, freezer, setup_entry
 ) -> None:
     """The issue's reproduction, east of Greenwich (#568).
 
@@ -289,7 +287,7 @@ async def test_the_inspection_due_sensor_reads_the_instances_day(
     await hass.config.async_set_time_zone(NZ_ZONE)
     freezer.move_to(NZ_EARLY_MORNING)
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     due = _entity_id_for(hass, entry, "inspection_due_count")
 
     await hass.services.async_call(
@@ -302,7 +300,7 @@ async def test_the_inspection_due_sensor_reads_the_instances_day(
 
 
 async def test_the_inspection_due_sensor_rolls_over_at_the_instances_midnight(
-    hass: HomeAssistant, freezer
+    hass: HomeAssistant, freezer, setup_entry
 ) -> None:
     """A date-derived count rewrites on the rollover, with nothing mutated.
 
@@ -316,7 +314,7 @@ async def test_the_inspection_due_sensor_rolls_over_at_the_instances_midnight(
     await hass.config.async_set_time_zone(NZ_ZONE)
     freezer.move_to(NZ_LATE_EVENING)
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     due = _entity_id_for(hass, entry, "inspection_due_count")
 
     await hass.services.async_call(
@@ -333,7 +331,7 @@ async def test_the_inspection_due_sensor_rolls_over_at_the_instances_midnight(
 
 
 async def test_the_location_sensor_moves_on_a_location_mutation(
-    hass: HomeAssistant, hass_ws_client
+    hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
     """A location create touches no item, and the count is still a sensor.
 
@@ -341,7 +339,7 @@ async def test_the_location_sensor_moves_on_a_location_mutation(
     reports the old figure until something happens to edit an item.
     """
 
-    entry = await _setup(hass)
+    entry = await setup_entry()
     locations = _entity_id_for(hass, entry, "locations_total")
     client = await hass_ws_client(hass)
 

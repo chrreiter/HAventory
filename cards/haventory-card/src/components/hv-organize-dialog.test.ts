@@ -1,6 +1,6 @@
 import { setLanguage } from '../i18n';
 import './hv-organize-dialog';
-import { all, componentCss, makeItem, mountComponent, mountStore, q, settle } from '../test.utils';
+import { all, componentCss, makeItem, mountHost, q, settle } from '../test.utils';
 // The clipboard itself is `ui/clipboard`'s own test; what the dialog owes is
 // asking the helper and believing its answer, which needs both answers.
 vi.mock('../ui/clipboard', async (importOriginal) => ({
@@ -44,18 +44,17 @@ async function mount(
     mobile?: boolean;
   } = {},
 ) {
-  const { hass, store } = await mountStore({
-    items: opts.items ?? [],
-    locations: opts.locations ?? [],
-    areas: opts.areas ?? AREAS,
-    ...(opts.statuses ? { statuses: opts.statuses } : {}),
-  });
-  const { el, sr } = await mountComponent<HVOrganizeDialog>(
+  return mountHost<HVOrganizeDialog>(
     'hv-organize-dialog',
-    { store, tab: opts.tab ?? 'locations', mobile: opts.mobile ?? false, open: true },
+    {
+      items: opts.items ?? [],
+      locations: opts.locations ?? [],
+      areas: opts.areas ?? AREAS,
+      ...(opts.statuses ? { statuses: opts.statuses } : {}),
+    },
+    { tab: opts.tab ?? 'locations', mobile: opts.mobile ?? false, open: true },
     { renders: 2 },
   );
-  return { el, store, hass, sr };
 }
 
 /** jsdom lays out no shadow DOM, so geometry is asserted on the stylesheet. */
