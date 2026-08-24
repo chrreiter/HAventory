@@ -498,13 +498,14 @@ describe('hv-item-editor: saving', () => {
     expect(cancels).toBe(1);
   });
 
-  // The hint used to print ⌘↵ on every platform, naming a key a PC keyboard does
-  // not have. jsdom reports no Apple platform, so this is the fallback branch.
+  // The hint names no key the keyboard in front of the user lacks — ⌘↵ on a PC
+  // names nothing. jsdom reports no Apple platform, so this is the fallback
+  // branch.
   it('names the save chord for the keyboard it can actually detect', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     const hint = q(el, '[data-testid="editor-key-hint"]')?.textContent ?? '';
-    // Esc no longer discards: it asks whenever there is typing to lose, exactly
-    // as Cancel and the ✕ do, so the hint stops promising the old outcome.
+    // Esc asks whenever there is typing to lose, exactly as Cancel and the ✕
+    // do, so the hint promises closing and not discarding.
     expect(hint).toContain('Esc closes');
     expect(hint).toContain('Ctrl+Enter saves');
     expect(hint).not.toContain('⌘');
@@ -523,8 +524,8 @@ describe('hv-item-editor: saving', () => {
     expect(saves).toHaveLength(1);
   });
 
-  // The auto margin that holds Cancel and Save against the right edge used to
-  // ride on the hint, so hiding the hint dropped them back beside Delete.
+  // The auto margin that holds Cancel and Save against the right edge rides on
+  // a spacer of its own: on the hint, hiding the hint drops them beside Delete.
   it('keeps Cancel and Save off the left edge once the hint is gone', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }), { mobile: true });
     const kids = [...(q(el, '.actions')?.children ?? [])];
@@ -559,11 +560,10 @@ describe('hv-item-editor: saving', () => {
     }
   });
 
-  // Three buttons in one row, three shapes: measured at a 390px viewport in the
-  // expanded view, Delete was 93x44 with a 1px border and a 999px radius, Cancel
-  // beside it 64x44 borderless with an 8px radius, and Delete's 12.5px/400 text
-  // matched neither. The card's other destructive actions — the detail sheet's
-  // own Delete item, the organize dialog's Delete — are all borderless red.
+  // Three buttons in one row take one shape: a bordered pill beside two
+  // borderless buttons reads as a third. The card's other destructive actions —
+  // the detail sheet's own Delete item, the organize dialog's Delete — are all
+  // borderless red.
   it('styles Delete like every other destructive action in the card', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     expect([...(q(el, '[data-testid="editor-delete"]')?.classList ?? [])]).toEqual([
@@ -1105,8 +1105,8 @@ describe('hv-item-editor: opening', () => {
   });
 });
 
-// Escape-to-close-a-dropdown is muscle memory; here it used to cost the whole
-// form, dropdown and typing together.
+// Escape-to-close-a-dropdown is muscle memory, so one Escape closes the
+// dropdown and not the form and the typing with it.
 describe('hv-item-editor: Escape takes back one thing at a time', () => {
   const esc = (el: HVItemEditor, from?: HTMLElement) =>
     (from ?? (q(el, '[data-testid="item-editor"]') as HTMLElement)).dispatchEvent(
@@ -1880,8 +1880,8 @@ describe('hv-item-editor: opening a document', () => {
 
 /**
  * The state an import onto a fresh machine leaves every picture in — the export
- * carries the metadata and not the bytes. A photo used to get the browser's
- * broken-image glyph here while its manual sibling got the chip.
+ * carries the metadata and not the bytes. A photo whose file is gone gets the
+ * same chip its manual sibling gets, not the browser's broken-image glyph.
  */
 describe('hv-item-editor: a picture whose file is gone', () => {
   afterEach(() => {

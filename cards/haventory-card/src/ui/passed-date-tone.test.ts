@@ -7,8 +7,8 @@ import { componentCss } from '../test.utils';
  * One tone for a date that has passed, wherever the card prints a bare one.
  *
  * The three surfaces each draw the same item — a table cell, a phone row's one
- * line, a fact in the detail sheet — and each used to pick its own colour, so
- * the same passed date read as red in one column and amber in the next. Beside
+ * line, a fact in the detail sheet — and one tone across all three keeps the
+ * same passed date from reading red in one column and amber in the next. Beside
  * a word ("Overdue", "Inspection due") a second hue reinforces something the
  * text has already said; on a bare date it *is* the message, and a two-hue
  * vocabulary there claims a ranking of urgency the card never explains.

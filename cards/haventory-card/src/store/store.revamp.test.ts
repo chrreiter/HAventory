@@ -1398,7 +1398,7 @@ describe('Store: import reload signalling', () => {
 /**
  * The number under the list has to survive a row nobody in this browser asked
  * for. `total` comes off the last `item/list` reply and the event path patches
- * `items`, so with a filter on, the two used to drift apart and the footer read
+ * `items`, so with a filter on the two can drift apart and the footer read
  * "Showing 1 of 0 matching items".
  */
 describe('Store: the filtered total after an event-inserted row', () => {

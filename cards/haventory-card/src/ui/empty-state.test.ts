@@ -17,8 +17,8 @@ function state(patch: { connectionLost?: boolean; loading?: boolean; filters?: P
 
 describe('emptyStateCopy', () => {
   it('always offers a way out', () => {
-    // The expanded view's table used to answer "No items match these filters."
-    // with nothing to press, on the one surface where over-filtering is easiest.
+    // "No items match these filters." with nothing to press is not an answer,
+    // least of all on the surface where over-filtering is easiest.
     for (const kind of ANSWERS) {
       expect(emptyStateCopy(kind).offers.length, kind).toBeGreaterThan(0);
     }

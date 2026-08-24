@@ -753,8 +753,8 @@ describe('Store', () => {
     expect(sent[sent.length - 1].filter).toBeDefined();
   });
 
-  // The same asymmetry the other way round: a lone location filter used to
-  // leave the tree bare while the facet lists beside it carried a pair.
+  // The same asymmetry the other way round: a lone location filter must not
+  // leave the tree bare while the facet lists beside it carry a pair.
   it('prices the tree when the only filter is the one it drops', async () => {
     const hass = makeMockHass({
       items: [makeItem({ id: '1', location_id: 'garage' })],
@@ -811,7 +811,7 @@ describe('Store', () => {
     }
   });
 
-  // Issue #440: not every facet refetch is debounced — an item event lands
+  // Not every facet refetch is debounced — an item event lands
   // beside a filter change — so two can be in flight at once, and the response
   // that lands last is not the one that was issued last. The newest request is
   // the only one allowed to assign.

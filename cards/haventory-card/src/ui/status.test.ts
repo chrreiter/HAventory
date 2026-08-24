@@ -165,7 +165,7 @@ describe('ui/status: pricing a slug', () => {
     };
     expect(statusCount(counts, 'ok')).toBe(856);
     expect(statusCount(counts, 'lent_out')).toBe(100);
-    // The one the old derivation reported as 998.
+    // A zero in the map is a zero, not the total minus the slugs beside it.
     expect(statusCount(counts, 'in_transit')).toBe(0);
   });
 

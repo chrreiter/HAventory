@@ -376,9 +376,9 @@ describe('haventory-panel: the shared dialog surfaces', () => {
     expect(dialog(sr, 'host-diagnostics').open).toBe(true);
   });
 
-  // The panel used to hold its own `matchMedia` subscription and hand the answer
-  // to the dialogs; it now shares the one the surfaces keep, so the page and the
-  // card agree at a single width without either owning the query.
+  // The panel shares the one `matchMedia` subscription the surfaces keep rather
+  // than holding its own, so the page and the card agree at a single width
+  // without either owning the query.
   it('hands every dialog the phone form on a phone viewport', async () => {
     const restore = stubViewport(true);
     try {

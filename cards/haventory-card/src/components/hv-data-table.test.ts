@@ -406,10 +406,10 @@ describe('hv-data-table: the checked-out chip names an overdue loan', () => {
 });
 
 // Both chips are unshrinkable, so on a row carrying both they take 138px of the
-// 250px name track and leave 112px of name — about sixteen characters, measured
-// on a real instance at the table's floor width and again at 390px, where the
-// same cell is pinned. Dropping one is what buys the name back; which one to
-// drop is the choice the phone row already makes on its single line.
+// 250px name track and leave 112px of name — about sixteen characters, at the
+// table's floor width and at 390px alike, where the same cell is pinned.
+// Dropping one is what buys the name back; which one to drop is the choice the
+// phone row already makes on its single line.
 describe('hv-data-table: the name cell picks one chip', () => {
   const bothWays = { quantity: 1, low_stock_threshold: 5 };
 
@@ -648,8 +648,8 @@ describe('hv-data-table: sorting', () => {
 });
 
 describe('hv-data-table: inspection column', () => {
-  // The header used to read "Inspected", past tense, over a date the rest of
-  // the card treats as the next one due.
+  // The column holds the next inspection due, not the last one done, and heads
+  // itself the way the rest of the card names that date.
   it('heads the column with the date it holds', async () => {
     const el = await mount([{ id: '1' }], { columns: ['inspection_date'] });
     expect(q(el, '[data-field="inspection_date"]')?.textContent?.trim()).toBe('Next inspection');

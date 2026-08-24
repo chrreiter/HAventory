@@ -832,10 +832,9 @@ describe('hv-card-shell: narrow header', () => {
     expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
   });
 
-  // Checked-out used to be desktop-only, on the theory that a phone had no room
-  // for a third badge. It does, now that the badges have a row to themselves —
-  // and that row is a filter toggle a phone user could not otherwise reach
-  // without opening the filter sheet.
+  // The badges have a row of their own, so a phone has room for a third — and
+  // that row is a filter toggle a phone user cannot otherwise reach without
+  // opening the filter sheet.
   it('badges checked-out on a phone too, and wraps if the row runs out', async () => {
     const { sr } = await mountShell({ items: [makeItem({ id: '1', checked_out: true })], mobile: true });
     const badge = sr.querySelector('[data-testid="badge-out"]');
@@ -1269,10 +1268,10 @@ describe('hv-card-shell: inline editing', () => {
 });
 
 // Typing in the search box, toggling a filter and changing the sort all run
-// through `Store.setFilters`. It used to blank the item list, which sent
-// `hv-list` into its skeleton branch and replaced the scroller the open form
-// lives in — the element was rebuilt from the stored item and everything typed
-// into it was gone, while the form still looked open.
+// through `Store.setFilters`, and none of them may blank the item list: that
+// sends `hv-list` into its skeleton branch and replaces the scroller the open
+// form lives in, so the form is rebuilt from the stored item and everything
+// typed into it is gone while it still looks open.
 describe('hv-card-shell: the open editor survives a refetch', () => {
   const list = (sr: ShadowRoot) => sr.querySelector('hv-list') as HTMLElement;
   const editor = (sr: ShadowRoot) =>
@@ -1713,7 +1712,7 @@ describe('hv-card-shell: full view', () => {
   it('keeps the expand toggle on a narrow card, where only "select items" led there', async () => {
     // "mobile" means the *card* is narrow, not the screen: a narrow card in a
     // wide dashboard is exactly when the full view is worth opening, and the
-    // only route to it used to be the overflow menu's "Select items".
+    // expand toggle is the route there, since the footer link is desktop-only.
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
     expect(sr.querySelector('[data-testid="open-full-view"]'), 'footer link stays desktop-only').toBe(null);
 
@@ -1821,10 +1820,10 @@ describe('hv-card-shell: full view', () => {
 });
 
 // A dialog is `position: fixed`, so it is laid out against the window and not
-// against the card that opened it. Feeding it the card's measured width put the
-// organize dialog in its full-bleed phone page on a desktop monitor, from every
+// against the card that opened it. Fed the card's measured width, the organize
+// dialog takes its full-bleed phone page on a desktop monitor from every
 // surface — a card in a dashboard column is 300–500px wide, and expanding it
-// changed nothing because the measured element was still the card underneath.
+// changes nothing, because the measured element is still the card underneath.
 describe('hv-card-shell: host dialogs follow the viewport, not the card', () => {
   const HOSTED = ['host-columns', 'host-confirm', 'host-organize', 'host-import', 'host-diagnostics'];
 

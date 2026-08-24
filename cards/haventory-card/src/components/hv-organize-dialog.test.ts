@@ -603,9 +603,9 @@ describe('hv-organize-dialog: locations', () => {
     expect(store.state.value.locationsFlatCache).toHaveLength(0);
   });
 
-  // A location row used to be the odd one out: its name did nothing and its
-  // count was a muted number at the far edge, while a category row's count was
-  // the way into the items.
+  // Every row in this dialog opens the items behind it the same way, so a
+  // location row is not the odd one out: a name that does nothing beside a
+  // category row whose count is the way in.
   it('opens the items behind a location from its name or its count', async () => {
     const items = [makeItem({ id: '1', location_id: 'shelf-a' })];
     for (const testid of ['tree-row', 'tree-count']) {
@@ -1150,9 +1150,9 @@ describe('hv-organize-dialog: statuses', () => {
     });
   });
 
-  // One question, one idiom, whichever branch it is: the unused status used to
-  // get a modal and the in-use one an inline disclosure, so the consequential
-  // path carried the lighter ceremony.
+  // One question, one idiom, whichever branch it is: a modal for the unused
+  // status beside an inline disclosure for the in-use one puts the lighter
+  // ceremony on the consequential path.
   it('asks in the same disclosure when nothing carries the status', async () => {
     const { el, sr } = await mount({ tab: 'statuses' });
 
@@ -1167,7 +1167,7 @@ describe('hv-organize-dialog: statuses', () => {
     expect(guard?.querySelector('[data-testid="status-reassign"]')).toBe(null);
     // ...and the action says what it does rather than promising a reassign.
     expect(q(sr, '[data-testid="status-guard-confirm"]')?.textContent?.trim()).toBe('Delete');
-    // The modal it used to raise is gone from the component entirely.
+    // No modal branch anywhere in the component: both go through the disclosure.
     expect(q(sr, '[data-testid="organize-status-confirm"]')).toBe(null);
   });
 
@@ -1596,8 +1596,8 @@ describe('hv-organize-dialog: disclosures come into view', () => {
   });
 
   // On a phone the ⋮ sheet replaces the row's separate buttons, so it is the
-  // only way into edit, merge and delete. DOM-measured at 390px: opened from
-  // the bottom row it stood 216px tall with 16px of it on screen.
+  // only way into edit, merge and delete — and opened from a row near the
+  // bottom it stands almost entirely off screen unless it is scrolled to.
   it('brings the location ⋮ sheet into view', async () => {
     const { el, sr } = await mount({ items, locations, mobile: true });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;

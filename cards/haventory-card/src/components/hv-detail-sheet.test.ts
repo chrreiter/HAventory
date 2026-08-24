@@ -261,8 +261,8 @@ describe('hv-detail-sheet: read view', () => {
     expect(facts.find((f) => f.dataset.key === 'inspection')?.textContent).toContain('Not set');
   });
 
-  // The row used to read "Last inspected" while the editor's field called the
-  // same value an inspection date — two readings of one stored date.
+  // The stored date is the next inspection due, and the row names it the way
+  // the editor's field does — one value, one reading.
   it('names the inspection fact for the date it holds', async () => {
     const el = await mount({ inspection_date: '2099-03-04' });
     const fact = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'inspection');
@@ -284,9 +284,9 @@ describe('hv-detail-sheet: read view', () => {
     }
   });
 
-  // The sheet used to mark the smaller thing and leave the bigger one plain: an
-  // amber Next inspection fact directly under a Due fact in ordinary black, on
-  // an item whose chip above already said "Overdue".
+  // Marking the inspection fact and leaving Due plain marks the smaller thing:
+  // an amber Next inspection directly under a Due fact in ordinary black, on an
+  // item whose chip above already says "Overdue".
   it('marks a Due date that has passed, the way the inspection fact beneath it is marked', async () => {
     const el = await mount({ checked_out: true, due_date: '2020-01-01' });
     const due = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'due');
@@ -604,8 +604,8 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     );
   });
 
-  // Every cancel in the card is composed. Backing out of the date step used to
-  // reach the host as "the sheet closed" and took the item down with it.
+  // Every cancel in the card is composed, so backing out of the date step must
+  // not reach the host as "the sheet closed" and take the item down with it.
   it('keeps the sheet up when the check-out date step is backed out of', async () => {
     const el = await mount({ id: '1', name: 'A' });
     let cancels = 0;
@@ -1086,7 +1086,7 @@ describe('hv-detail-sheet: documents', () => {
 
     const open = all(el, '[data-testid="sheet-document-open"]')[0] as HTMLAnchorElement;
     // Versioned by the served name, so a retitle cannot be answered from the
-    // browser's cache with the filename this document used to carry.
+    // browser's cache with the filename the document carried before it.
     expect(open.getAttribute('href')).toBe(
       `/api/haventory/media/i-1/m-1?${MEDIA_NAME_TOKEN_PARAM}=${attachmentNameToken(docs()[0])}&authSig=test`,
     );
