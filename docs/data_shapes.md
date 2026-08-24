@@ -217,6 +217,8 @@ rewritten in full on every mutation, so base64 content would multiply every save
   the config directory so HA backups carry them, and outside both the integration package
   (which HACS replaces on upgrade) and `<config>/www` (which is `/local`, unauthenticated).
   They are served only through the authenticated view; see `backend_api_contract.md`.
+  An item's directory is removed once its last file is deleted; one that still holds
+  anything — a file you put there yourself — is kept.
 - Caps: 10 pictures and 10 manuals per item, 8 MB per file. `haventory/config` reports all
   of them so a picker can refuse early.
 - A picture also has a **row tile**: `?size=thumb` on the media route serves a 256px WebP

@@ -593,6 +593,9 @@ async def test_deleting_the_item_deletes_its_files(
     assert deleted["success"] is True, deleted
 
     assert not path.exists()
+    # The file was the last one in it, so the item's directory goes too.
+    assert not path.parent.exists()
+    assert media.media_root(hass).is_dir()
 
 
 async def test_a_bulk_delete_deletes_the_item_files(
