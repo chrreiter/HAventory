@@ -1948,7 +1948,7 @@ class Repository:
         # and is gone, and the item `version` field — which is persisted — is
         # what optimistic concurrency runs on.
 
-        # Statuses BEFORE the item loop, or ``coerce_item_status`` would see
+        # Statuses BEFORE the item loop, or the tolerant status read would see
         # only the built-ins and rewrite every item on a custom status to "ok"
         # — silently, on the first restart after the upgrade that added it. An
         # absent or unreadable section means the built-ins, which is what a

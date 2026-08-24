@@ -378,7 +378,9 @@ class Item:
             name=validate_required_name(data.get("name")),
             description=data.get("description"),
             quantity=int(data.get("quantity", 0)),
-            status=coerce_item_status(data.get("status"), known_statuses=known_statuses),
+            status=validate_item_status(
+                data.get("status"), known_statuses=known_statuses, default=DEFAULT_ITEM_STATUS
+            ),
             checked_out=bool(data.get("checked_out", False)),
             due_date=data.get("due_date"),
             inspection_date=data.get("inspection_date"),
@@ -919,9 +921,12 @@ def validate_due_date_rules(*, checked_out: bool, due_date: str | None) -> str |
 
 
 def validate_item_status(
-    value: object, *, known_statuses: Collection[str] = ITEM_STATUSES
+    value: object,
+    *,
+    known_statuses: Collection[str] = ITEM_STATUSES,
+    default: ItemStatus | None = None,
 ) -> ItemStatus:
-    """Validate an item status against the live set and return it.
+    """Return ``value`` when it is one of the live statuses, or refuse it.
 
     Status is non-nullable: an item always has one, so ``None`` is rejected the
     same as any other unknown value ("ok" is the way to clear a flagged state).
@@ -929,29 +934,20 @@ def validate_item_status(
     ``known_statuses`` is an explicit parameter rather than module-level mutable
     state: the default keeps every caller that has no repository to ask meaning
     what it has always meant, and nothing global needs resetting between tests.
-    """
 
-    if isinstance(value, str) and value in known_statuses:
-        return value
-    raise ValidationError(f"status must be one of: {', '.join(sorted(known_statuses))}")
-
-
-def coerce_item_status(
-    value: object, *, known_statuses: Collection[str] = ITEM_STATUSES
-) -> ItemStatus:
-    """Return ``value`` when it is a known status, otherwise the default.
-
-    The tolerant twin of :func:`validate_item_status`, for loading persisted
-    payloads: a store written before the field existed (or hand-edited into an
-    unknown value) reads as "ok" rather than failing the whole item. Callers
+    ``default`` is what a load path passes to read a stored payload tolerantly:
+    a store written before the field existed (or hand-edited into an unknown
+    value) reads as that status rather than failing the whole item. A caller
     loading a store MUST pass the definitions that store carries — with the
-    built-ins alone, every custom status would be silently rewritten to "ok" on
-    the first restart after the upgrade that introduced it.
+    built-ins alone, every custom status would be silently rewritten to the
+    default on the first restart after the upgrade that introduced it.
     """
 
     if isinstance(value, str) and value in known_statuses:
         return value
-    return DEFAULT_ITEM_STATUS
+    if default is not None:
+        return default
+    raise ValidationError(f"status must be one of: {', '.join(sorted(known_statuses))}")
 
 
 def validate_status_slug(value: object) -> str:
