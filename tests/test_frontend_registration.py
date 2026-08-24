@@ -45,6 +45,8 @@ from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, DATA_PANELS
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from lovelace_helpers import MockResourceCollection, MockYamlResourceCollection
+
 STATIC_URL_PATH = "/haventory_static"
 CARD_PATH = f"{STATIC_URL_PATH}/haventory-card.js"
 # What both loaders and the panel receive, cache-buster and all.
@@ -62,63 +64,6 @@ def import_haventory(monkeypatch, lovelace_key: str):
     monkeypatch.setitem(sys.modules, "homeassistant.components.lovelace", lovelace_module)
     sys.modules.pop("custom_components.haventory", None)
     return importlib.import_module("custom_components.haventory")
-
-
-class MockResourceCollection:
-    """Mock Lovelace resource collection in storage mode (create/update/delete).
-
-    Mirrors where the real collection loads storage and where it does not:
-    `async_items` reports nothing until something loads it, while each mutation
-    method loads first — so a caller that reads before writing has to say so.
-    """
-
-    def __init__(self, items: list[dict[str, Any]] | None = None, *, loaded: bool = True):
-        self.loaded = loaded
-        self._items: list[dict[str, Any]] = list(items or [])
-        self.created: list[dict[str, Any]] = []
-        self.updated: list[tuple[str, dict[str, Any]]] = []
-        self.deleted: list[str] = []
-
-    def async_items(self) -> list[dict[str, Any]]:
-        return self._items if self.loaded else []
-
-    async def async_load(self):
-        self.loaded = True
-
-    async def async_create_item(self, data: dict[str, Any]) -> dict[str, Any]:
-        self.loaded = True
-        self.created.append(data)
-        item = {"id": f"created_{len(self.created)}", **data}
-        self._items.append(item)
-        return item
-
-    async def async_update_item(self, item_id: str, updates: dict[str, Any]) -> dict[str, Any]:
-        self.loaded = True
-        for item in self._items:
-            if item.get("id") == item_id:
-                item.update(updates)
-                self.updated.append((item_id, updates))
-                return item
-        raise KeyError(item_id)
-
-    async def async_delete_item(self, item_id: str) -> None:
-        self.loaded = True
-        self.deleted.append(item_id)
-        self._items = [item for item in self._items if item.get("id") != item_id]
-
-
-class MockYamlResourceCollection:
-    """Lovelace resources in YAML mode: readable, with no mutation API."""
-
-    def __init__(self, items: list[dict[str, Any]] | None = None):
-        self.loaded = True
-        self._items: list[dict[str, Any]] = list(items or [])
-
-    def async_items(self) -> list[dict[str, Any]]:
-        return self._items
-
-    async def async_load(self):
-        pass
 
 
 class MockLovelaceData:

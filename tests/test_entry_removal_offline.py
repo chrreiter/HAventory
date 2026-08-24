@@ -19,49 +19,12 @@ from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from lovelace_helpers import MockResourceCollection, MockYamlResourceCollection
+
 CARD_URL = "/haventory_static/haventory-card.js"
 LOVELACE_KEY = "lovelace_data_key"
 # The versioned URL setup would have registered.
 CURRENT_CARD_URL = f"{CARD_URL}?v={INTEGRATION_VERSION}"
-
-
-class MockResourceCollection:
-    """Storage-mode Lovelace resource collection.
-
-    Mirrors the real collection where the caller has to get it right: `stored` is
-    the backing store, `async_items` sees only what a load has pulled into
-    memory, and `async_delete_item` pulls it in itself.
-    """
-
-    def __init__(self, items: list[dict[str, Any]] | None = None, *, loaded: bool = True) -> None:
-        self.loaded = loaded
-        self.stored: list[dict[str, Any]] = list(items or [])
-        self.deleted: list[str] = []
-
-    def async_items(self) -> list[dict[str, Any]]:
-        return self.stored if self.loaded else []
-
-    async def async_load(self) -> None:
-        self.loaded = True
-
-    async def async_delete_item(self, item_id: str) -> None:
-        self.loaded = True
-        self.deleted.append(item_id)
-        self.stored = [item for item in self.stored if item.get("id") != item_id]
-
-
-class MockYamlResourceCollection:
-    """YAML-mode collection: readable, with no mutation API."""
-
-    def __init__(self, items: list[dict[str, Any]] | None = None) -> None:
-        self.loaded = True
-        self.stored: list[dict[str, Any]] = list(items or [])
-
-    def async_items(self) -> list[dict[str, Any]]:
-        return self.stored
-
-    async def async_load(self) -> None:
-        pass
 
 
 def _import_with_lovelace(monkeypatch):
