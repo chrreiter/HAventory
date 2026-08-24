@@ -323,6 +323,60 @@ export interface StoreOptions {
   retryBaseMs?: number;
 }
 
+/**
+ * A deferred call that can only ever have one fire outstanding.
+ *
+ * Every waiting the store does is this shape: a burst of events must ask once,
+ * a retry must be droppable, and a disposed store must fire none of them. The
+ * handle is held here rather than beside each caller so `dispose` cannot cancel
+ * three of four and leave the fourth running against a store nobody holds.
+ */
+class Coalesced {
+  private handle: ReturnType<typeof setTimeout> | null = null;
+
+  /** True while a fire is booked — a grace period that must not be restarted. */
+  get pending(): boolean {
+    return this.handle !== null;
+  }
+
+  /** Book `run`, dropping any fire already booked. */
+  schedule(delayMs: number, run: () => void): void {
+    this.cancel();
+    this.handle = setTimeout(() => {
+      this.handle = null;
+      run();
+    }, delayMs);
+  }
+
+  cancel(): void {
+    if (this.handle === null) return;
+    clearTimeout(this.handle);
+    this.handle = null;
+  }
+}
+
+/**
+ * Which request of its kind is the newest.
+ *
+ * Two reads of the same thing can be in flight against different filters, and
+ * the answer that lands last is not the answer to the question asked last — so
+ * each caller claims a turn and drops its answer when the turn has passed.
+ */
+class Latest {
+  private seq = 0;
+
+  /** Take the newest turn; the token reads false once another has taken one. */
+  claim(): () => boolean {
+    const seq = ++this.seq;
+    return () => seq === this.seq;
+  }
+
+  /** End every outstanding turn without starting one. */
+  invalidate(): void {
+    this.seq += 1;
+  }
+}
+
 export class Store {
   private ws: WSClient;
   private stateObs: ReturnType<typeof createObservable<StoreState>>;
@@ -338,37 +392,38 @@ export class Store {
   private areaRegistryUnsub: Unsubscribe | null = null;
   private retryBaseMs: number;
   private consecutiveTransportFailures = 0;
-  private treeRefreshHandle: ReturnType<typeof setTimeout> | null = null;
-  private facetRefreshHandle: ReturnType<typeof setTimeout> | null = null;
-  private areasRefreshHandle: ReturnType<typeof setTimeout> | null = null;
-  private totalRefreshHandle: ReturnType<typeof setTimeout> | null = null;
-  /** Identifies the newest facet-tally request, so a superseded one cannot land. */
-  private distinctRefreshSeq = 0;
-  /** Identifies the newest tree refetch, for the same reason. */
-  private treeRefreshSeq = 0;
-  /** Identifies the newest filtered-total recount, for the same reason. */
-  private totalRefreshSeq = 0;
-  /** Identifies the newest subscribe round, so a superseded one stops reporting. */
-  private subscribeRound = 0;
+  /** The deferred work: every one of these is cancelled by `dispose`. */
+  private readonly treeRefresh = new Coalesced();
+  private readonly facetRefresh = new Coalesced();
+  private readonly areasRefresh = new Coalesced();
+  private readonly totalRefresh = new Coalesced();
+  private readonly subscribeRetry = new Coalesced();
+  private readonly areaRegistryRetry = new Coalesced();
+  /** Counts down the grace period on a closed socket; idle while it is open. */
+  private readonly connectionLostGrace = new Coalesced();
+  /** Which facet-tally request is the newest, so a superseded one cannot land. */
+  private readonly latestFacetTally = new Latest();
+  /** Which tree refetch is the newest, for the same reason. */
+  private readonly latestTree = new Latest();
+  /** Which filtered-total recount is the newest, for the same reason. */
+  private readonly latestTotal = new Latest();
+  /** Which subscribe round is the newest, so a superseded one stops reporting. */
+  private readonly latestSubscribeRound = new Latest();
+  /** Which area-registry watch is the newest, so a superseded one stops reporting. */
+  private readonly latestAreaWatch = new Latest();
   /** Subscribes in the current round that have not resolved or been refused yet. */
   private subscribePending = 0;
   /** First refusal seen in the current round, if any. */
   private subscribeRefusal: { err: unknown } | null = null;
   /** Automatic re-subscribes already spent on the current outage. */
   private subscribeAttempt = 0;
-  private subscribeRetryHandle: ReturnType<typeof setTimeout> | null = null;
   /** Re-opens of the area-registry watch already spent on the current refusal. */
   private areaRegistryAttempt = 0;
-  private areaRegistryRetryHandle: ReturnType<typeof setTimeout> | null = null;
-  /** Identifies the newest area-registry watch, so a superseded one stops reporting. */
-  private areaRegistryGeneration = 0;
   /** Detaches the connection-lifecycle listeners; null while none is attached. */
   private connectionReadyUnsub: Unsubscribe | null = null;
   private connectionLostUnsub: Unsubscribe | null = null;
   /** Detaches the day clock the counts are re-read on; null while none is attached. */
   private dayChangeUnsub: Unsubscribe | null = null;
-  /** Counts down the grace period on a closed socket; null while it is open. */
-  private connectionLostHandle: ReturnType<typeof setTimeout> | null = null;
   /** Last untouched `distinct_values` result, so drafts can be re-merged. */
   private serverDistinct: DistinctValues | null = null;
   /** Whether the last `distinct_values` answer was priced against a filter. */
@@ -480,7 +535,7 @@ export class Store {
     this.connectionReadyUnsub?.();
     this.connectionLostUnsub?.();
     this.connectionReadyUnsub = this.ws.onConnectionReady(() => {
-      this.cancelConnectionLostGrace();
+      this.connectionLostGrace.cancel();
       this.noteSuccess();
       this.scheduleAreasRefresh();
     });
@@ -489,17 +544,12 @@ export class Store {
 
   /** Declare the connection lost unless it comes back inside the grace period. */
   private startConnectionLostGrace() {
-    if (this.connectionLostHandle !== null) return;
-    this.connectionLostHandle = setTimeout(() => {
-      this.connectionLostHandle = null;
-      this.setDegraded({ connectionLost: true });
-    }, CONNECTION_LOST_GRACE_MS);
-  }
-
-  private cancelConnectionLostGrace() {
-    if (this.connectionLostHandle === null) return;
-    clearTimeout(this.connectionLostHandle);
-    this.connectionLostHandle = null;
+    // A second `disconnected` inside the window is the same outage, and
+    // restarting the countdown would postpone the banner indefinitely.
+    if (this.connectionLostGrace.pending) return;
+    this.connectionLostGrace.schedule(CONNECTION_LOST_GRACE_MS, () =>
+      this.setDegraded({ connectionLost: true }),
+    );
   }
 
   /**
@@ -512,7 +562,7 @@ export class Store {
    * and the list is small, so the event only triggers a refetch.
    */
   private watchAreaRegistry(resetRetryBudget = true) {
-    this.cancelAreaRegistryRetry();
+    this.areaRegistryRetry.cancel();
     if (resetRetryBudget) this.areaRegistryAttempt = 0;
     // A re-open spans a window in which the registry could have moved with
     // nothing listening to say so, so the cache is re-read on the way back. The
@@ -520,14 +570,14 @@ export class Store {
     const catchUp = this.areaRegistryAttempt > 0;
     // A refusal can arrive after this watch has been replaced or the store
     // disposed, and HA's own subscribe carries no cancellation of its own.
-    const generation = ++this.areaRegistryGeneration;
+    const current = this.latestAreaWatch.claim();
     if (this.areaRegistryUnsub) this.areaRegistryUnsub();
     this.areaRegistryUnsub = this.ws.subscribeAreaRegistry(() => this.scheduleAreasRefresh(), {
       onOpen: () => {
-        if (catchUp && generation === this.areaRegistryGeneration) this.scheduleAreasRefresh();
+        if (catchUp && current()) this.scheduleAreasRefresh();
       },
       onError: (err) => {
-        if (generation === this.areaRegistryGeneration) this.onAreaRegistryRefused(err);
+        if (current()) this.onAreaRegistryRefused(err);
       },
     });
   }
@@ -545,26 +595,12 @@ export class Store {
     if (this.areaRegistryAttempt >= AREA_REGISTRY_RETRY_ATTEMPTS) return;
     const delay = subscribeRetryDelayMs(err, this.areaRegistryAttempt, this.retryBaseMs);
     this.areaRegistryAttempt += 1;
-    this.cancelAreaRegistryRetry();
-    this.areaRegistryRetryHandle = setTimeout(() => {
-      this.areaRegistryRetryHandle = null;
-      this.watchAreaRegistry(false);
-    }, delay);
-  }
-
-  private cancelAreaRegistryRetry() {
-    if (this.areaRegistryRetryHandle === null) return;
-    clearTimeout(this.areaRegistryRetryHandle);
-    this.areaRegistryRetryHandle = null;
+    this.areaRegistryRetry.schedule(delay, () => this.watchAreaRegistry(false));
   }
 
   /** Coalesce area refetches: editing a handful of areas fires one event each. */
   private scheduleAreasRefresh(delayMs = 250) {
-    if (this.areasRefreshHandle !== null) clearTimeout(this.areasRefreshHandle);
-    this.areasRefreshHandle = setTimeout(() => {
-      this.areasRefreshHandle = null;
-      void this.refreshAreas().catch(() => undefined);
-    }, delayMs);
+    this.areasRefresh.schedule(delayMs, () => void this.refreshAreas().catch(() => undefined));
   }
 
   /** (Re)open the topic subscriptions, starting the retry budget over. */
@@ -581,9 +617,9 @@ export class Store {
    * newest round has been accepted.
    */
   private openSubscriptions(resetRetryBudget: boolean) {
-    this.cancelSubscribeRetry();
+    this.subscribeRetry.cancel();
     if (resetRetryBudget) this.subscribeAttempt = 0;
-    const round = ++this.subscribeRound;
+    const round = this.latestSubscribeRound.claim();
     this.subscribePending = SUBSCRIBE_TOPIC_COUNT;
     this.subscribeRefusal = null;
     const onOpen = () => this.onSubscribeSettled(round, null);
@@ -646,8 +682,8 @@ export class Store {
   }
 
   /** Fold one subscribe outcome into its round, and act once the round is complete. */
-  private onSubscribeSettled(round: number, refusal: { err: unknown } | null) {
-    if (round !== this.subscribeRound) return; // a newer round has taken over
+  private onSubscribeSettled(round: () => boolean, refusal: { err: unknown } | null) {
+    if (!round()) return; // a newer round has taken over
     if (refusal && !this.subscribeRefusal) this.subscribeRefusal = refusal;
     if (this.subscribePending > 0) this.subscribePending -= 1;
     if (this.subscribePending > 0) return;
@@ -718,17 +754,7 @@ export class Store {
       liveUpdatesReason: reason,
       nextLiveRetryAt: Date.now() + delay,
     });
-    this.cancelSubscribeRetry();
-    this.subscribeRetryHandle = setTimeout(() => {
-      this.subscribeRetryHandle = null;
-      this.openSubscriptions(false);
-    }, delay);
-  }
-
-  private cancelSubscribeRetry() {
-    if (this.subscribeRetryHandle === null) return;
-    clearTimeout(this.subscribeRetryHandle);
-    this.subscribeRetryHandle = null;
+    this.subscribeRetry.schedule(delay, () => this.openSubscriptions(false));
   }
 
   /** Tear down the four subscriptions and any pending tree refresh. */
@@ -747,32 +773,21 @@ export class Store {
     // listeners above do.
     this.dayChangeUnsub?.();
     this.dayChangeUnsub = null;
-    this.cancelConnectionLostGrace();
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
     this.areaRegistryUnsub = null;
     this.connectionReadyUnsub = null;
     this.connectionLostUnsub = null;
-    // Nothing is listening after this, so a queued re-subscribe must not fire.
-    this.subscribeRound += 1;
-    this.areaRegistryGeneration += 1;
-    this.cancelSubscribeRetry();
-    this.cancelAreaRegistryRetry();
-    if (this.treeRefreshHandle !== null) {
-      clearTimeout(this.treeRefreshHandle);
-      this.treeRefreshHandle = null;
-    }
-    if (this.totalRefreshHandle !== null) {
-      clearTimeout(this.totalRefreshHandle);
-      this.totalRefreshHandle = null;
-    }
-    if (this.facetRefreshHandle !== null) {
-      clearTimeout(this.facetRefreshHandle);
-      this.facetRefreshHandle = null;
-    }
-    if (this.areasRefreshHandle !== null) {
-      clearTimeout(this.areasRefreshHandle);
-      this.areasRefreshHandle = null;
-    }
+    // Nothing is listening after this, so a subscribe still in flight must not
+    // report and nothing already booked may fire.
+    this.latestSubscribeRound.invalidate();
+    this.latestAreaWatch.invalidate();
+    this.connectionLostGrace.cancel();
+    this.subscribeRetry.cancel();
+    this.areaRegistryRetry.cancel();
+    this.treeRefresh.cancel();
+    this.totalRefresh.cancel();
+    this.facetRefresh.cancel();
+    this.areasRefresh.cancel();
     this.stateObs.set({ connected: { items: false, stats: false } });
   }
 
@@ -851,22 +866,18 @@ export class Store {
    * same reason.
    */
   private scheduleTotalRefresh(delayMs = 250) {
-    if (this.totalRefreshHandle !== null) clearTimeout(this.totalRefreshHandle);
-    this.totalRefreshHandle = setTimeout(() => {
-      this.totalRefreshHandle = null;
-      void this.refreshTotal().catch(() => undefined);
-    }, delayMs);
+    this.totalRefresh.schedule(delayMs, () => void this.refreshTotal().catch(() => undefined));
   }
 
   private async refreshTotal(): Promise<void> {
-    const seq = ++this.totalRefreshSeq;
+    const current = this.latestTotal.claim();
     const filters = this.state.value.filters;
     const asked = JSON.stringify(toWireFilter(filters));
     const total = await this.countMatching(filters);
     // A newer recount has taken over, the filter moved under this one — in
     // which case `listItems` has already answered for the new one — or the
     // count failed and left nothing to apply.
-    if (seq !== this.totalRefreshSeq || total === null) return;
+    if (!current() || total === null) return;
     if (JSON.stringify(toWireFilter(this.state.value.filters)) !== asked) return;
     this.stateObs.set({ total });
   }
@@ -876,11 +887,7 @@ export class Store {
    * so a burst of item events (a bulk move, an import) must not fire one per event.
    */
   private scheduleTreeRefresh(delayMs = 250) {
-    if (this.treeRefreshHandle !== null) clearTimeout(this.treeRefreshHandle);
-    this.treeRefreshHandle = setTimeout(() => {
-      this.treeRefreshHandle = null;
-      void this.refreshLocationTree().catch(() => undefined);
-    }, delayMs);
+    this.treeRefresh.schedule(delayMs, () => void this.refreshLocationTree().catch(() => undefined));
   }
 
   /**
@@ -889,11 +896,7 @@ export class Store {
    * every category and tag again.
    */
   private scheduleFacetRefresh(delayMs = 250) {
-    if (this.facetRefreshHandle !== null) clearTimeout(this.facetRefreshHandle);
-    this.facetRefreshHandle = setTimeout(() => {
-      this.facetRefreshHandle = null;
-      void this.refreshDistinctValues().catch(() => undefined);
-    }, delayMs);
+    this.facetRefresh.schedule(delayMs, () => void this.refreshDistinctValues().catch(() => undefined));
   }
 
   private onStatsEvent(evt: AnyEventPayload) {
@@ -947,11 +950,9 @@ export class Store {
   /** Refresh distinct categories/tags with counts (source for autocomplete). */
   async refreshDistinctValues() {
     // Not every caller is debounced — item events land beside filter changes —
-    // so two of these can be in flight against different filters, and run()'s
-    // retries mean the response that lands last is not the one issued last.
-    // The tallies must price the newest filter, so a superseded response is
-    // dropped rather than assigned.
-    const seq = ++this.distinctRefreshSeq;
+    // so two of these can be in flight against different filters, and the
+    // tallies must price the newest one.
+    const current = this.latestFacetTally.claim();
     const counting = this.facetCountFilters();
     // Priced whenever *anything* is narrowing the list, including a filter this
     // measurement then drops. Gating on what survives the drop is what left a
@@ -963,7 +964,7 @@ export class Store {
     const distinct = (await this.run(() =>
       this.ws.distinctValues(filtered ? toWireFilter(counting) : undefined),
     )) as DistinctValues;
-    if (seq !== this.distinctRefreshSeq) return;
+    if (!current()) return;
     this.serverDistinct = distinct;
     this.serverDistinctPriced = filtered;
     // A draft the backend now knows about is no longer a draft.
@@ -1160,21 +1161,21 @@ export class Store {
     // Superseded responses are dropped, the way refreshDistinctValues drops
     // them: the per-location counts ride the tree, so a stale answer would
     // stick an older filter's numbers on the sidebar just the same.
-    const seq = ++this.treeRefreshSeq;
+    const current = this.latestTree.claim();
     const counting = this.locationCountFilters();
     // Same rule as the facet tallies, and the same reason: a lone location
     // filter would otherwise leave this list bare while the two beside it read
     // a pair.
     const filtered = activeFilterCount(this.state.value.filters) > 0;
     const tree = await this.run(() => this.ws.getLocationTree(filtered ? toWireFilter(counting) : undefined));
-    if (seq !== this.treeRefreshSeq) return;
+    if (!current()) return;
     // Sorted once here so every consumer — sidebar, pickers, organize dialog —
     // sees the same order; the API returns nodes in insertion order.
     this.stateObs.set({ locationTreeCache: sortLocationTree((tree ?? []) as LocationTreeNode[]) });
     // The tree covers filed items only, so the whole-inventory match count comes
     // separately; "No location" is then the remainder, with no third query.
     const matchTotal = filtered ? await this.countMatching(counting) : null;
-    if (seq !== this.treeRefreshSeq) return;
+    if (!current()) return;
     this.stateObs.set({ locationMatchTotal: matchTotal });
   }
 
@@ -1335,16 +1336,13 @@ export class Store {
 
   // ---------- Degraded / retry plumbing ----------
   private setDegraded(patch: Partial<DegradedState>) {
-    const next = { ...this.state.value.degraded, ...patch };
     const cur = this.state.value.degraded;
-    const same =
-      cur.connectionLost === next.connectionLost &&
-      cur.reloading === next.reloading &&
-      cur.liveUpdates === next.liveUpdates &&
-      cur.liveUpdatesReason === next.liveUpdatesReason &&
-      cur.nextLiveRetryAt === next.nextLiveRetryAt;
-    if (same) return;
-    this.stateObs.set({ degraded: next });
+    // A patch that names only values already held publishes nothing: every
+    // subscriber re-renders on any notify, and the retry ladder sets the same
+    // state repeatedly while it waits.
+    const keys = Object.keys(patch) as (keyof DegradedState)[];
+    if (keys.every((key) => cur[key] === patch[key])) return;
+    this.stateObs.set({ degraded: { ...cur, ...patch } });
   }
 
   /** Any successful round trip proves the socket is alive. */
@@ -1400,7 +1398,7 @@ export class Store {
   async refreshAll(): Promise<void> {
     this.consecutiveTransportFailures = 0;
     // The calls below re-answer the question the grace period was waiting on.
-    this.cancelConnectionLostGrace();
+    this.connectionLostGrace.cancel();
     this.setDegraded({ ...NO_DEGRADATION });
     await this.reloadAll();
     // Re-establish subscriptions in case one of them was refused earlier.
