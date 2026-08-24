@@ -357,7 +357,6 @@ export class HostSurfaces {
         data-testid="host-diagnostics"
         ?open=${this.diagnosticsOpen}
         ?mobile=${mobile}
-        .health=${st?.healthCache ?? null}
         .counts=${st?.statsCounts ?? null}
         .version=${st?.versionInfo ?? null}
         .degraded=${st?.degraded ?? null}

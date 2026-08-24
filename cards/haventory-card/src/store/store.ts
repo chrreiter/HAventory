@@ -11,7 +11,6 @@ import type {
   DistinctValues,
   ExportDocument,
   HassLike,
-  HealthResult,
   ImportPolicy,
   ImportPreview,
   ImportSummary,
@@ -324,6 +323,60 @@ export interface StoreOptions {
   retryBaseMs?: number;
 }
 
+/**
+ * A deferred call that can only ever have one fire outstanding.
+ *
+ * Every waiting the store does is this shape: a burst of events must ask once,
+ * a retry must be droppable, and a disposed store must fire none of them. The
+ * handle is held here rather than beside each caller so `dispose` cannot cancel
+ * three of four and leave the fourth running against a store nobody holds.
+ */
+class Coalesced {
+  private handle: ReturnType<typeof setTimeout> | null = null;
+
+  /** True while a fire is booked — a grace period that must not be restarted. */
+  get pending(): boolean {
+    return this.handle !== null;
+  }
+
+  /** Book `run`, dropping any fire already booked. */
+  schedule(delayMs: number, run: () => void): void {
+    this.cancel();
+    this.handle = setTimeout(() => {
+      this.handle = null;
+      run();
+    }, delayMs);
+  }
+
+  cancel(): void {
+    if (this.handle === null) return;
+    clearTimeout(this.handle);
+    this.handle = null;
+  }
+}
+
+/**
+ * Which request of its kind is the newest.
+ *
+ * Two reads of the same thing can be in flight against different filters, and
+ * the answer that lands last is not the answer to the question asked last — so
+ * each caller claims a turn and drops its answer when the turn has passed.
+ */
+class Latest {
+  private seq = 0;
+
+  /** Take the newest turn; the token reads false once another has taken one. */
+  claim(): () => boolean {
+    const seq = ++this.seq;
+    return () => seq === this.seq;
+  }
+
+  /** End every outstanding turn without starting one. */
+  invalidate(): void {
+    this.seq += 1;
+  }
+}
+
 export class Store {
   private ws: WSClient;
   private stateObs: ReturnType<typeof createObservable<StoreState>>;
@@ -339,37 +392,38 @@ export class Store {
   private areaRegistryUnsub: Unsubscribe | null = null;
   private retryBaseMs: number;
   private consecutiveTransportFailures = 0;
-  private treeRefreshHandle: ReturnType<typeof setTimeout> | null = null;
-  private facetRefreshHandle: ReturnType<typeof setTimeout> | null = null;
-  private areasRefreshHandle: ReturnType<typeof setTimeout> | null = null;
-  private totalRefreshHandle: ReturnType<typeof setTimeout> | null = null;
-  /** Identifies the newest facet-tally request, so a superseded one cannot land. */
-  private distinctRefreshSeq = 0;
-  /** Identifies the newest tree refetch, for the same reason. */
-  private treeRefreshSeq = 0;
-  /** Identifies the newest filtered-total recount, for the same reason. */
-  private totalRefreshSeq = 0;
-  /** Identifies the newest subscribe round, so a superseded one stops reporting. */
-  private subscribeRound = 0;
+  /** The deferred work: every one of these is cancelled by `dispose`. */
+  private readonly treeRefresh = new Coalesced();
+  private readonly facetRefresh = new Coalesced();
+  private readonly areasRefresh = new Coalesced();
+  private readonly totalRefresh = new Coalesced();
+  private readonly subscribeRetry = new Coalesced();
+  private readonly areaRegistryRetry = new Coalesced();
+  /** Counts down the grace period on a closed socket; idle while it is open. */
+  private readonly connectionLostGrace = new Coalesced();
+  /** Which facet-tally request is the newest, so a superseded one cannot land. */
+  private readonly latestFacetTally = new Latest();
+  /** Which tree refetch is the newest, for the same reason. */
+  private readonly latestTree = new Latest();
+  /** Which filtered-total recount is the newest, for the same reason. */
+  private readonly latestTotal = new Latest();
+  /** Which subscribe round is the newest, so a superseded one stops reporting. */
+  private readonly latestSubscribeRound = new Latest();
+  /** Which area-registry watch is the newest, so a superseded one stops reporting. */
+  private readonly latestAreaWatch = new Latest();
   /** Subscribes in the current round that have not resolved or been refused yet. */
   private subscribePending = 0;
   /** First refusal seen in the current round, if any. */
   private subscribeRefusal: { err: unknown } | null = null;
   /** Automatic re-subscribes already spent on the current outage. */
   private subscribeAttempt = 0;
-  private subscribeRetryHandle: ReturnType<typeof setTimeout> | null = null;
   /** Re-opens of the area-registry watch already spent on the current refusal. */
   private areaRegistryAttempt = 0;
-  private areaRegistryRetryHandle: ReturnType<typeof setTimeout> | null = null;
-  /** Identifies the newest area-registry watch, so a superseded one stops reporting. */
-  private areaRegistryGeneration = 0;
   /** Detaches the connection-lifecycle listeners; null while none is attached. */
   private connectionReadyUnsub: Unsubscribe | null = null;
   private connectionLostUnsub: Unsubscribe | null = null;
   /** Detaches the day clock the counts are re-read on; null while none is attached. */
   private dayChangeUnsub: Unsubscribe | null = null;
-  /** Counts down the grace period on a closed socket; null while it is open. */
-  private connectionLostHandle: ReturnType<typeof setTimeout> | null = null;
   /** Last untouched `distinct_values` result, so drafts can be re-merged. */
   private serverDistinct: DistinctValues | null = null;
   /** Whether the last `distinct_values` answer was priced against a filter. */
@@ -394,7 +448,6 @@ export class Store {
       locationMatchTotal: null,
       locationsFlatCache: null,
       statsCounts: null,
-      healthCache: null,
       versionInfo: null,
       cardTitle: null,
       quickFilters: null,
@@ -431,7 +484,6 @@ export class Store {
     try {
       await Promise.all([
         this.refreshStats(),
-        this.refreshHealth(),
         this.refreshAreas(),
         this.refreshLocationTree(),
         this.refreshLocationsFlat(),
@@ -483,7 +535,7 @@ export class Store {
     this.connectionReadyUnsub?.();
     this.connectionLostUnsub?.();
     this.connectionReadyUnsub = this.ws.onConnectionReady(() => {
-      this.cancelConnectionLostGrace();
+      this.connectionLostGrace.cancel();
       this.noteSuccess();
       this.scheduleAreasRefresh();
     });
@@ -492,17 +544,12 @@ export class Store {
 
   /** Declare the connection lost unless it comes back inside the grace period. */
   private startConnectionLostGrace() {
-    if (this.connectionLostHandle !== null) return;
-    this.connectionLostHandle = setTimeout(() => {
-      this.connectionLostHandle = null;
-      this.setDegraded({ connectionLost: true });
-    }, CONNECTION_LOST_GRACE_MS);
-  }
-
-  private cancelConnectionLostGrace() {
-    if (this.connectionLostHandle === null) return;
-    clearTimeout(this.connectionLostHandle);
-    this.connectionLostHandle = null;
+    // A second `disconnected` inside the window is the same outage, and
+    // restarting the countdown would postpone the banner indefinitely.
+    if (this.connectionLostGrace.pending) return;
+    this.connectionLostGrace.schedule(CONNECTION_LOST_GRACE_MS, () =>
+      this.setDegraded({ connectionLost: true }),
+    );
   }
 
   /**
@@ -515,7 +562,7 @@ export class Store {
    * and the list is small, so the event only triggers a refetch.
    */
   private watchAreaRegistry(resetRetryBudget = true) {
-    this.cancelAreaRegistryRetry();
+    this.areaRegistryRetry.cancel();
     if (resetRetryBudget) this.areaRegistryAttempt = 0;
     // A re-open spans a window in which the registry could have moved with
     // nothing listening to say so, so the cache is re-read on the way back. The
@@ -523,14 +570,14 @@ export class Store {
     const catchUp = this.areaRegistryAttempt > 0;
     // A refusal can arrive after this watch has been replaced or the store
     // disposed, and HA's own subscribe carries no cancellation of its own.
-    const generation = ++this.areaRegistryGeneration;
+    const current = this.latestAreaWatch.claim();
     if (this.areaRegistryUnsub) this.areaRegistryUnsub();
     this.areaRegistryUnsub = this.ws.subscribeAreaRegistry(() => this.scheduleAreasRefresh(), {
       onOpen: () => {
-        if (catchUp && generation === this.areaRegistryGeneration) this.scheduleAreasRefresh();
+        if (catchUp && current()) this.scheduleAreasRefresh();
       },
       onError: (err) => {
-        if (generation === this.areaRegistryGeneration) this.onAreaRegistryRefused(err);
+        if (current()) this.onAreaRegistryRefused(err);
       },
     });
   }
@@ -548,26 +595,12 @@ export class Store {
     if (this.areaRegistryAttempt >= AREA_REGISTRY_RETRY_ATTEMPTS) return;
     const delay = subscribeRetryDelayMs(err, this.areaRegistryAttempt, this.retryBaseMs);
     this.areaRegistryAttempt += 1;
-    this.cancelAreaRegistryRetry();
-    this.areaRegistryRetryHandle = setTimeout(() => {
-      this.areaRegistryRetryHandle = null;
-      this.watchAreaRegistry(false);
-    }, delay);
-  }
-
-  private cancelAreaRegistryRetry() {
-    if (this.areaRegistryRetryHandle === null) return;
-    clearTimeout(this.areaRegistryRetryHandle);
-    this.areaRegistryRetryHandle = null;
+    this.areaRegistryRetry.schedule(delay, () => this.watchAreaRegistry(false));
   }
 
   /** Coalesce area refetches: editing a handful of areas fires one event each. */
   private scheduleAreasRefresh(delayMs = 250) {
-    if (this.areasRefreshHandle !== null) clearTimeout(this.areasRefreshHandle);
-    this.areasRefreshHandle = setTimeout(() => {
-      this.areasRefreshHandle = null;
-      void this.refreshAreas().catch(() => undefined);
-    }, delayMs);
+    this.areasRefresh.schedule(delayMs, () => void this.refreshAreas().catch(() => undefined));
   }
 
   /** (Re)open the topic subscriptions, starting the retry budget over. */
@@ -584,9 +617,9 @@ export class Store {
    * newest round has been accepted.
    */
   private openSubscriptions(resetRetryBudget: boolean) {
-    this.cancelSubscribeRetry();
+    this.subscribeRetry.cancel();
     if (resetRetryBudget) this.subscribeAttempt = 0;
-    const round = ++this.subscribeRound;
+    const round = this.latestSubscribeRound.claim();
     this.subscribePending = SUBSCRIBE_TOPIC_COUNT;
     this.subscribeRefusal = null;
     const onOpen = () => this.onSubscribeSettled(round, null);
@@ -649,8 +682,8 @@ export class Store {
   }
 
   /** Fold one subscribe outcome into its round, and act once the round is complete. */
-  private onSubscribeSettled(round: number, refusal: { err: unknown } | null) {
-    if (round !== this.subscribeRound) return; // a newer round has taken over
+  private onSubscribeSettled(round: () => boolean, refusal: { err: unknown } | null) {
+    if (!round()) return; // a newer round has taken over
     if (refusal && !this.subscribeRefusal) this.subscribeRefusal = refusal;
     if (this.subscribePending > 0) this.subscribePending -= 1;
     if (this.subscribePending > 0) return;
@@ -721,17 +754,7 @@ export class Store {
       liveUpdatesReason: reason,
       nextLiveRetryAt: Date.now() + delay,
     });
-    this.cancelSubscribeRetry();
-    this.subscribeRetryHandle = setTimeout(() => {
-      this.subscribeRetryHandle = null;
-      this.openSubscriptions(false);
-    }, delay);
-  }
-
-  private cancelSubscribeRetry() {
-    if (this.subscribeRetryHandle === null) return;
-    clearTimeout(this.subscribeRetryHandle);
-    this.subscribeRetryHandle = null;
+    this.subscribeRetry.schedule(delay, () => this.openSubscriptions(false));
   }
 
   /** Tear down the four subscriptions and any pending tree refresh. */
@@ -750,32 +773,21 @@ export class Store {
     // listeners above do.
     this.dayChangeUnsub?.();
     this.dayChangeUnsub = null;
-    this.cancelConnectionLostGrace();
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
     this.areaRegistryUnsub = null;
     this.connectionReadyUnsub = null;
     this.connectionLostUnsub = null;
-    // Nothing is listening after this, so a queued re-subscribe must not fire.
-    this.subscribeRound += 1;
-    this.areaRegistryGeneration += 1;
-    this.cancelSubscribeRetry();
-    this.cancelAreaRegistryRetry();
-    if (this.treeRefreshHandle !== null) {
-      clearTimeout(this.treeRefreshHandle);
-      this.treeRefreshHandle = null;
-    }
-    if (this.totalRefreshHandle !== null) {
-      clearTimeout(this.totalRefreshHandle);
-      this.totalRefreshHandle = null;
-    }
-    if (this.facetRefreshHandle !== null) {
-      clearTimeout(this.facetRefreshHandle);
-      this.facetRefreshHandle = null;
-    }
-    if (this.areasRefreshHandle !== null) {
-      clearTimeout(this.areasRefreshHandle);
-      this.areasRefreshHandle = null;
-    }
+    // Nothing is listening after this, so a subscribe still in flight must not
+    // report and nothing already booked may fire.
+    this.latestSubscribeRound.invalidate();
+    this.latestAreaWatch.invalidate();
+    this.connectionLostGrace.cancel();
+    this.subscribeRetry.cancel();
+    this.areaRegistryRetry.cancel();
+    this.treeRefresh.cancel();
+    this.totalRefresh.cancel();
+    this.facetRefresh.cancel();
+    this.areasRefresh.cancel();
     this.stateObs.set({ connected: { items: false, stats: false } });
   }
 
@@ -854,22 +866,18 @@ export class Store {
    * same reason.
    */
   private scheduleTotalRefresh(delayMs = 250) {
-    if (this.totalRefreshHandle !== null) clearTimeout(this.totalRefreshHandle);
-    this.totalRefreshHandle = setTimeout(() => {
-      this.totalRefreshHandle = null;
-      void this.refreshTotal().catch(() => undefined);
-    }, delayMs);
+    this.totalRefresh.schedule(delayMs, () => void this.refreshTotal().catch(() => undefined));
   }
 
   private async refreshTotal(): Promise<void> {
-    const seq = ++this.totalRefreshSeq;
+    const current = this.latestTotal.claim();
     const filters = this.state.value.filters;
     const asked = JSON.stringify(toWireFilter(filters));
     const total = await this.countMatching(filters);
     // A newer recount has taken over, the filter moved under this one — in
     // which case `listItems` has already answered for the new one — or the
     // count failed and left nothing to apply.
-    if (seq !== this.totalRefreshSeq || total === null) return;
+    if (!current() || total === null) return;
     if (JSON.stringify(toWireFilter(this.state.value.filters)) !== asked) return;
     this.stateObs.set({ total });
   }
@@ -879,11 +887,7 @@ export class Store {
    * so a burst of item events (a bulk move, an import) must not fire one per event.
    */
   private scheduleTreeRefresh(delayMs = 250) {
-    if (this.treeRefreshHandle !== null) clearTimeout(this.treeRefreshHandle);
-    this.treeRefreshHandle = setTimeout(() => {
-      this.treeRefreshHandle = null;
-      void this.refreshLocationTree().catch(() => undefined);
-    }, delayMs);
+    this.treeRefresh.schedule(delayMs, () => void this.refreshLocationTree().catch(() => undefined));
   }
 
   /**
@@ -892,11 +896,7 @@ export class Store {
    * every category and tag again.
    */
   private scheduleFacetRefresh(delayMs = 250) {
-    if (this.facetRefreshHandle !== null) clearTimeout(this.facetRefreshHandle);
-    this.facetRefreshHandle = setTimeout(() => {
-      this.facetRefreshHandle = null;
-      void this.refreshDistinctValues().catch(() => undefined);
-    }, delayMs);
+    this.facetRefresh.schedule(delayMs, () => void this.refreshDistinctValues().catch(() => undefined));
   }
 
   private onStatsEvent(evt: AnyEventPayload) {
@@ -920,16 +920,13 @@ export class Store {
   }
 
   // ---------- Data fetchers ----------
-  // Reads go through `run` too: a rate-limited read deserves the same backoff,
-  // and a run of transport failures on any call is what "connection lost" means.
+  // Every command the store sends goes through `run`, reads included: a run of
+  // transport failures on any of them is what "connection lost" means, and one
+  // answer that arrives is what takes that back down. The attachment family is
+  // the exception, and says there why.
   async refreshStats() {
     const counts = await this.run(() => this.ws.stats());
     this.stateObs.set({ statsCounts: counts });
-  }
-
-  async refreshHealth() {
-    const health: HealthResult = await this.run(() => this.ws.health());
-    this.stateObs.set({ healthCache: health });
   }
 
   async refreshAreas() {
@@ -953,11 +950,9 @@ export class Store {
   /** Refresh distinct categories/tags with counts (source for autocomplete). */
   async refreshDistinctValues() {
     // Not every caller is debounced — item events land beside filter changes —
-    // so two of these can be in flight against different filters, and run()'s
-    // retries mean the response that lands last is not the one issued last.
-    // The tallies must price the newest filter, so a superseded response is
-    // dropped rather than assigned.
-    const seq = ++this.distinctRefreshSeq;
+    // so two of these can be in flight against different filters, and the
+    // tallies must price the newest one.
+    const current = this.latestFacetTally.claim();
     const counting = this.facetCountFilters();
     // Priced whenever *anything* is narrowing the list, including a filter this
     // measurement then drops. Gating on what survives the drop is what left a
@@ -969,7 +964,7 @@ export class Store {
     const distinct = (await this.run(() =>
       this.ws.distinctValues(filtered ? toWireFilter(counting) : undefined),
     )) as DistinctValues;
-    if (seq !== this.distinctRefreshSeq) return;
+    if (!current()) return;
     this.serverDistinct = distinct;
     this.serverDistinctPriced = filtered;
     // A draft the backend now knows about is no longer a draft.
@@ -1080,62 +1075,65 @@ export class Store {
   // ---------- Attachments ----------
 
   /**
+   * Take the item a call answered with into the list, and hand it back.
+   *
+   * The caller needs that item too: it is one version on, so a form that goes
+   * on holding the copy it had fails its next save with `conflict`.
+   *
+   * Attachment work is the one family that does not go through `run`. Its
+   * failures belong to the file picker that raised them — shown per file, next
+   * to the file that failed — and the upload's own HTTP errors carry no
+   * backend error code, so counting them would read a rejected file as a lost
+   * connection.
+   */
+  private async applyResult(call: Promise<Item>): Promise<Item> {
+    const updated = await call;
+    this.applyOptimistic(updated);
+    return updated;
+  }
+
+  /**
    * Upload one file and attach it to an item.
    *
    * Its own action rather than part of the item save: an 8 MB POST inside a
-   * form submit makes the save look hung. Errors are thrown rather than pushed
-   * onto the error queue — the picker shows them per file, next to the file
-   * that failed, which a global banner cannot do.
+   * form submit makes the save look hung.
    */
-  async uploadAttachment(
+  uploadAttachment(
     itemId: string,
     file: File,
     kind: AttachmentKind = 'picture',
     expectedVersion?: number,
   ): Promise<Item> {
-    const updated = await this.ws.uploadAttachment(itemId, file, kind, expectedVersion);
-    this.applyOptimistic(updated);
-    return updated;
+    return this.applyResult(this.ws.uploadAttachment(itemId, file, kind, expectedVersion));
   }
 
   /** Rename one attachment for display, leaving its filename and bytes alone. */
-  async updateAttachment(
+  updateAttachment(
     itemId: string,
     attachmentId: string,
     title: string,
     expectedVersion?: number,
   ): Promise<Item> {
-    const updated = await this.ws.updateAttachment(itemId, attachmentId, title, expectedVersion);
-    this.applyOptimistic(updated);
-    return updated;
+    return this.applyResult(
+      this.ws.updateAttachment(itemId, attachmentId, title, expectedVersion),
+    );
   }
 
   /** Renumber one kind's attachments; the first id named becomes position 0. */
-  async reorderAttachments(
+  reorderAttachments(
     itemId: string,
     kind: AttachmentKind,
     attachmentIds: string[],
     expectedVersion?: number,
   ): Promise<Item> {
-    const updated = await this.ws.reorderAttachments(
-      itemId,
-      kind,
-      attachmentIds,
-      expectedVersion,
+    return this.applyResult(
+      this.ws.reorderAttachments(itemId, kind, attachmentIds, expectedVersion),
     );
-    this.applyOptimistic(updated);
-    return updated;
   }
 
   /** Detach one file; the backend deletes the bytes with it. */
-  async removeAttachment(
-    itemId: string,
-    attachmentId: string,
-    expectedVersion?: number,
-  ): Promise<Item> {
-    const updated = await this.ws.removeAttachment(itemId, attachmentId, expectedVersion);
-    this.applyOptimistic(updated);
-    return updated;
+  removeAttachment(itemId: string, attachmentId: string, expectedVersion?: number): Promise<Item> {
+    return this.applyResult(this.ws.removeAttachment(itemId, attachmentId, expectedVersion));
   }
 
   /** Sign one attachment's media path so an `<img>` can load it. */
@@ -1163,21 +1161,21 @@ export class Store {
     // Superseded responses are dropped, the way refreshDistinctValues drops
     // them: the per-location counts ride the tree, so a stale answer would
     // stick an older filter's numbers on the sidebar just the same.
-    const seq = ++this.treeRefreshSeq;
+    const current = this.latestTree.claim();
     const counting = this.locationCountFilters();
     // Same rule as the facet tallies, and the same reason: a lone location
     // filter would otherwise leave this list bare while the two beside it read
     // a pair.
     const filtered = activeFilterCount(this.state.value.filters) > 0;
     const tree = await this.run(() => this.ws.getLocationTree(filtered ? toWireFilter(counting) : undefined));
-    if (seq !== this.treeRefreshSeq) return;
+    if (!current()) return;
     // Sorted once here so every consumer — sidebar, pickers, organize dialog —
     // sees the same order; the API returns nodes in insertion order.
     this.stateObs.set({ locationTreeCache: sortLocationTree((tree ?? []) as LocationTreeNode[]) });
     // The tree covers filed items only, so the whole-inventory match count comes
     // separately; "No location" is then the remainder, with no third query.
     const matchTotal = filtered ? await this.countMatching(counting) : null;
-    if (seq !== this.treeRefreshSeq) return;
+    if (!current()) return;
     this.stateObs.set({ locationMatchTotal: matchTotal });
   }
 
@@ -1200,10 +1198,8 @@ export class Store {
     const key = JSON.stringify({ op: 'list', filter, sort, limit, cursor });
     if (this.inflight.has(key)) return this.inflight.get(key) as Promise<void>;
 
-    const p = this.ws
-      .listItems(filter, sort, limit, cursor)
+    const p = this.run(() => this.ws.listItems(filter, sort, limit, cursor))
       .then((res: ListItemsResult) => {
-        this.noteSuccess();
         const merged = reset ? res.items : mergeUniqueById(this.state.value.items, res.items);
         this.stateObs.set({
           items: merged,
@@ -1214,7 +1210,6 @@ export class Store {
         });
       })
       .catch((err: unknown) => {
-        this.noteFailure(err);
         this.stateObs.set({ loading: false });
         this.pushError(err);
       })
@@ -1233,7 +1228,7 @@ export class Store {
    */
   async countMatching(filters: StoreFilters): Promise<number | null> {
     try {
-      const res = await this.ws.listItems(toWireFilter(filters), filters.sort, 1);
+      const res = await this.run(() => this.ws.listItems(toWireFilter(filters), filters.sort, 1));
       return typeof res.total === 'number' ? res.total : null;
     } catch {
       return null;
@@ -1246,7 +1241,7 @@ export class Store {
    * tag/category merge rewrites need, since selection cannot span unloaded pages.
    */
   async listAllMatching(filter: ItemFilter): Promise<Item[]> {
-    const res = await this.ws.listItems(filter);
+    const res = await this.run(() => this.ws.listItems(filter));
     return res.items;
   }
 
@@ -1341,16 +1336,13 @@ export class Store {
 
   // ---------- Degraded / retry plumbing ----------
   private setDegraded(patch: Partial<DegradedState>) {
-    const next = { ...this.state.value.degraded, ...patch };
     const cur = this.state.value.degraded;
-    const same =
-      cur.connectionLost === next.connectionLost &&
-      cur.reloading === next.reloading &&
-      cur.liveUpdates === next.liveUpdates &&
-      cur.liveUpdatesReason === next.liveUpdatesReason &&
-      cur.nextLiveRetryAt === next.nextLiveRetryAt;
-    if (same) return;
-    this.stateObs.set({ degraded: next });
+    // A patch that names only values already held publishes nothing: every
+    // subscriber re-renders on any notify, and the retry ladder sets the same
+    // state repeatedly while it waits.
+    const keys = Object.keys(patch) as (keyof DegradedState)[];
+    if (keys.every((key) => cur[key] === patch[key])) return;
+    this.stateObs.set({ degraded: { ...cur, ...patch } });
   }
 
   /** Any successful round trip proves the socket is alive. */
@@ -1406,7 +1398,7 @@ export class Store {
   async refreshAll(): Promise<void> {
     this.consecutiveTransportFailures = 0;
     // The calls below re-answer the question the grace period was waiting on.
-    this.cancelConnectionLostGrace();
+    this.connectionLostGrace.cancel();
     this.setDegraded({ ...NO_DEGRADATION });
     await this.reloadAll();
     // Re-establish subscriptions in case one of them was refused earlier.
@@ -1414,6 +1406,33 @@ export class Store {
   }
 
   // ---------- Optimistic writes ----------
+  /**
+   * Show a change on the row, send it, and take the server's copy back — or put
+   * the row the way it was when the call is refused.
+   *
+   * `patch` is what the row looks like while the call is in flight, applied to
+   * the row as it stands so a relative change (a delta, a due date that keeps
+   * the old one) has something to count from. Null where the answer cannot be
+   * guessed, which also means there is nothing to roll back. `details` rides
+   * the error entry: a conflict banner offers the edit again and needs both the
+   * row it was refused for and the changes it was refused with.
+   */
+  private async optimisticWrite(
+    itemId: string,
+    patch: ((before: Item) => Partial<Item> | ItemUpdate) | null,
+    call: () => Promise<Item>,
+    details?: { itemId?: string; changes?: ItemUpdate },
+  ): Promise<void> {
+    const before = patch ? this.state.value.items.find((i) => i.id === itemId) : undefined;
+    if (patch && before) this.applyOptimistic({ ...before, ...patch(before) } as Item);
+    try {
+      this.applyOptimistic(await this.run(call));
+    } catch (err) {
+      this.pushError(err, details);
+      if (before) this.applyOptimistic(before);
+    }
+  }
+
   async createItem(input: ItemCreate) {
     try {
       const created = await this.run(() => this.ws.createItem(input));
@@ -1426,19 +1445,12 @@ export class Store {
   }
 
   async updateItem(itemId: string, changes: ItemUpdate, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) {
-      const optimistic: Item = { ...before, ...changes } as Item;
-      this.applyOptimistic(optimistic);
-    }
-    try {
-      const updated = await this.run(() => this.ws.updateItem(itemId, changes, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      // Capture conflict context for actionable retry
-      this.pushError(err, { itemId, changes });
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      () => changes,
+      () => this.ws.updateItem(itemId, changes, expectedVersion),
+      { itemId, changes },
+    );
   }
 
   async deleteItem(itemId: string, expectedVersion?: number) {
@@ -1453,51 +1465,37 @@ export class Store {
   }
 
   async adjustQuantity(itemId: string, delta: number, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, quantity: before.quantity + delta } as Item);
-    try {
-      const updated = await this.run(() => this.ws.adjustQuantity(itemId, delta, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      (before) => ({ quantity: before.quantity + delta }),
+      () => this.ws.adjustQuantity(itemId, delta, expectedVersion),
+    );
   }
 
   async setQuantity(itemId: string, quantity: number, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, quantity } as Item);
-    try {
-      const updated = await this.run(() => this.ws.setQuantity(itemId, quantity, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      () => ({ quantity }),
+      () => this.ws.setQuantity(itemId, quantity, expectedVersion),
+    );
   }
 
   async checkOut(itemId: string, dueDate?: string | null, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, checked_out: true, due_date: dueDate ?? before.due_date } as Item);
-    try {
-      const updated = await this.run(() => this.ws.checkOut(itemId, dueDate, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      // No date named means the item keeps the one it has: the command is
+      // "check this out", not "check this out with no due date".
+      (before) => ({ checked_out: true, due_date: dueDate ?? before.due_date }),
+      () => this.ws.checkOut(itemId, dueDate, expectedVersion),
+    );
   }
 
   async markCheckedIn(itemId: string, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, checked_out: false } as Item);
-    try {
-      const updated = await this.run(() => this.ws.markCheckedIn(itemId, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      () => ({ checked_out: false }),
+      () => this.ws.markCheckedIn(itemId, expectedVersion),
+    );
   }
 
   /**
@@ -1509,41 +1507,44 @@ export class Store {
    * series the anchor exists to keep right.
    */
   async bumpReminder(itemId: string, expectedVersion?: number) {
-    try {
-      this.applyOptimistic(await this.run(() => this.ws.bumpReminder(itemId, expectedVersion)));
-    } catch (err) {
-      this.pushError(err);
-    }
+    await this.optimisticWrite(itemId, null, () => this.ws.bumpReminder(itemId, expectedVersion));
   }
 
   async setLowStockThreshold(itemId: string, threshold: number | null, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, low_stock_threshold: threshold } as Item);
-    try {
-      const updated = await this.run(() => this.ws.setLowStockThreshold(itemId, threshold, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      () => ({ low_stock_threshold: threshold }),
+      () => this.ws.setLowStockThreshold(itemId, threshold, expectedVersion),
+    );
   }
 
   async moveItem(itemId: string, locationId: string | null, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.applyOptimistic({ ...before, location_id: locationId } as Item);
-    try {
-      const updated = await this.run(() => this.ws.moveItem(itemId, locationId, expectedVersion));
-      this.applyOptimistic(updated);
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    await this.optimisticWrite(
+      itemId,
+      () => ({ location_id: locationId }),
+      () => this.ws.moveItem(itemId, locationId, expectedVersion),
+    );
+  }
+
+  // ---------- Locations ----------
+  /**
+   * Run a location change and re-read both views of the tree.
+   *
+   * The flat list and the nested tree are the same locations shaped for
+   * different surfaces, and every change moves both — the sidebar's counts ride
+   * the tree, the pickers read the flat list. Neither is pushed: the
+   * `locations` topic says a change happened, not what the walk now returns.
+   */
+  private async afterLocationChange<T>(call: () => Promise<T>): Promise<T> {
+    const result = await this.run(call);
+    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    return result;
   }
 
   async createLocation(name: string, parentId?: string | null, areaId?: string | null): Promise<Location> {
-    const created = await this.ws.createLocation(name, parentId ?? null, areaId ?? undefined);
-    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
-    return created;
+    return this.afterLocationChange(() =>
+      this.ws.createLocation(name, parentId ?? null, areaId ?? undefined),
+    );
   }
 
   async updateLocation(
@@ -1552,27 +1553,36 @@ export class Store {
     // command takes it, so an edit that also moves the location is one trip.
     changes: { name?: string; areaId?: string | null; newParentId?: string | null },
   ): Promise<Location> {
-    const updated = await this.ws.updateLocation(locationId, changes);
-    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
-    return updated;
+    return this.afterLocationChange(() => this.ws.updateLocation(locationId, changes));
   }
 
   /** Delete an empty location. Rejects with validation_error when it still has children or items. */
   async deleteLocation(locationId: string): Promise<void> {
-    await this.ws.deleteLocation(locationId);
-    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    await this.afterLocationChange(() => this.ws.deleteLocation(locationId));
   }
 
   /** Move a whole subtree under a new parent (null = top level). Descendant paths update live. */
   async moveLocationSubtree(locationId: string, newParentId: string | null): Promise<Location> {
-    const moved = await this.ws.moveLocationSubtree(locationId, newParentId);
-    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    const moved = await this.afterLocationChange(() =>
+      this.ws.moveLocationSubtree(locationId, newParentId),
+    );
     // Denormalized item location_path values changed for the whole subtree.
     await this.listItems(true);
     return moved;
   }
 
   // ---------- Status definitions ----------
+  /**
+   * Run a status change and re-read the vocabulary.
+   *
+   * Display order is part of the list, so the whole list is read back rather
+   * than patched from the one definition the call answered with.
+   */
+  private async afterStatusChange<T>(call: () => Promise<T>): Promise<T> {
+    const result = await this.run(call);
+    await this.refreshStatuses();
+    return result;
+  }
 
   async createStatus(status: {
     slug: string;
@@ -1580,9 +1590,7 @@ export class Store {
     color?: StatusColorValue;
     icon?: string;
   }): Promise<StatusDefinition> {
-    const created = await this.ws.createStatus(status);
-    await this.refreshStatuses();
-    return created;
+    return this.afterStatusChange(() => this.ws.createStatus(status));
   }
 
   /** Edit presentation. No item moves, so nothing but the vocabulary refreshes. */
@@ -1590,15 +1598,11 @@ export class Store {
     slug: string,
     changes: { label?: string; color?: StatusColorValue; icon?: string },
   ): Promise<StatusDefinition> {
-    const updated = await this.ws.updateStatus(slug, changes);
-    await this.refreshStatuses();
-    return updated;
+    return this.afterStatusChange(() => this.ws.updateStatus(slug, changes));
   }
 
   async reorderStatuses(slugs: string[]): Promise<StatusDefinition[]> {
-    const ordered = await this.ws.reorderStatuses(slugs);
-    await this.refreshStatuses();
-    return ordered;
+    return this.afterStatusChange(() => this.ws.reorderStatuses(slugs));
   }
 
   /**
@@ -1613,8 +1617,9 @@ export class Store {
    * broadcast.
    */
   async deleteStatus(slug: string, reassignTo?: string): Promise<number> {
-    const { reassigned } = await this.ws.deleteStatus(slug, reassignTo);
-    await this.refreshStatuses();
+    const { reassigned } = await this.afterStatusChange(() =>
+      this.ws.deleteStatus(slug, reassignTo),
+    );
     if (reassigned > 0) await Promise.all([this.listItems(true), this.refreshStats()]);
     return reassigned;
   }
@@ -1717,17 +1722,19 @@ export class Store {
    * backup stays self-consistent.
    */
   async exportDocument(scope: 'all' | 'view' = 'all'): Promise<ExportDocument> {
-    return this.ws.exportDocument(scope === 'view' ? toWireFilter(this.state.value.filters) : undefined);
+    return this.run(() =>
+      this.ws.exportDocument(scope === 'view' ? toWireFilter(this.state.value.filters) : undefined),
+    );
   }
 
   /** Validate + classify an import document without mutating state. */
   async previewImport(document: unknown, policy: ImportPolicy): Promise<ImportPreview> {
-    return this.ws.importPreview(document, policy);
+    return this.run(() => this.ws.importPreview(document, policy));
   }
 
   /** Apply an import document, then reload local caches to reflect the new dataset. */
   async executeImport(document: unknown, policy: ImportPolicy): Promise<ImportSummary> {
-    const summary = await this.ws.importExecute(document, policy);
+    const summary = await this.run(() => this.ws.importExecute(document, policy));
     await this.reloadAll();
     return summary;
   }
@@ -1736,7 +1743,6 @@ export class Store {
   async reloadAll(): Promise<void> {
     await Promise.all([
       this.refreshStats(),
-      this.refreshHealth(),
       this.refreshLocationsFlat(),
       this.refreshLocationTree(),
       this.refreshDistinctValues(),
@@ -1781,8 +1787,7 @@ export class Store {
 
   async refreshItem(itemId: string) {
     try {
-      const latest = await this.ws.getItem(itemId);
-      this.applyOptimistic(latest);
+      this.applyOptimistic(await this.run(() => this.ws.getItem(itemId)));
     } catch (err) {
       this.pushError(err);
     }

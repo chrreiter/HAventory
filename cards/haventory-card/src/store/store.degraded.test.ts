@@ -259,7 +259,7 @@ describe('subscribeRetryDelayMs', () => {
     await store.adjustQuantity('1', 1);
     await store.adjustQuantity('1', 1);
     await store.refreshStats().catch(() => undefined);
-    await store.refreshHealth().catch(() => undefined);
+    await store.refreshVersion().catch(() => undefined);
 
     expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['connection_lost']);
     expect(store.state.value.degraded.connectionLost).toBe(true);
@@ -454,7 +454,7 @@ describe('Store: a card built while the backend cannot answer', () => {
       // Exactly the loads `init` starts in parallel, so the refusal window
       // closes with it and the recovery that follows is answered normally. The
       // empty-list assertion below is what catches this count going stale.
-      hass.__failNext(8, REFUSED);
+      hass.__failNext(7, REFUSED);
       // The subscribe is refused the same way the commands were: a restarting
       // instance has no `haventory/subscribe` registered yet either.
       hass.__failSubscribeNext(4, REFUSED);

@@ -9,7 +9,6 @@ import type {
   DistinctValues,
   ExportDocument,
   HassLike,
-  HealthResult,
   ImportPolicy,
   ImportPreview,
   ImportSummary,
@@ -49,10 +48,6 @@ export class WSClient {
 
   stats() {
     return callWS<StatsCounts>(this.hass, { type: 'haventory/stats' });
-  }
-
-  health() {
-    return callWS<HealthResult>(this.hass, { type: 'haventory/health' });
   }
 
   /**
@@ -405,6 +400,58 @@ export class WSClient {
   }
 
   // ---------- Subscriptions ----------
+  /**
+   * Open one subscription, whichever way Home Assistant answers.
+   *
+   * HA hands back either the unsubscribe function or a promise of one,
+   * depending on how far its connection has got, and the promise can still be
+   * refused — which is the only notice that live updates never started, since
+   * no event will arrive to hint at it.
+   *
+   * The closure this returns is the caller's handle in both cases: called
+   * before the promise resolves it records the intent, and the resolution
+   * unsubscribes immediately rather than leaving a subscription nobody holds.
+   */
+  private openSubscription(
+    msg: Record<string, unknown>,
+    onEvent: (event: AnyEventPayload) => void,
+    opts?: { onOpen?: () => void; onError?: (err: unknown) => void },
+  ): Unsubscribe {
+    const unsubOrPromise = subscribeMessage(this.hass, onEvent, msg);
+
+    if (typeof unsubOrPromise === 'function') {
+      opts?.onOpen?.();
+      return unsubOrPromise as unknown as Unsubscribe;
+    }
+
+    let resolvedUnsub: Unsubscribe | null = null;
+    let cancelRequested = false;
+    // The rejection handler is `then`'s second argument rather than a trailing
+    // `catch`, so a throw from `onOpen` cannot be misread as a refused subscribe.
+    Promise.resolve(unsubOrPromise).then(
+      (fn) => {
+        resolvedUnsub = fn as Unsubscribe;
+        if (cancelRequested) {
+          // Nobody is holding this any more, so a throwing unsubscribe has
+          // nothing left to report to.
+          try {
+            resolvedUnsub();
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+        opts?.onOpen?.();
+      },
+      (err: unknown) => opts?.onError?.(err),
+    );
+
+    return () => {
+      if (resolvedUnsub) resolvedUnsub();
+      else cancelRequested = true;
+    };
+  }
+
   subscribe(
     topic: 'items' | 'locations' | 'stats' | 'statuses',
     cb: (payload: AnyEventPayload) => void,
@@ -438,49 +485,20 @@ export class WSClient {
     if (opts && 'area_id' in opts) msg.area_id = opts.area_id ?? null;
     if (opts && 'include_subtree' in opts) msg.include_subtree = !!opts.include_subtree;
 
-    const unsubOrPromise = subscribeMessage(this.hass, (event) => {
-      // Home Assistant's `subscribeMessage` delivers the *inner* event payload
-      // (the `event` field of the `{id, type:'event', event}` wire frame) to the
-      // callback — NOT the whole envelope. Guard only against a nullish payload.
-      if (!event) return;
-      cb(event as AnyEventPayload);
-    }, msg);
-
-    // Home Assistant may return either an unsubscribe function or a Promise<unsubscribe>.
-    if (typeof unsubOrPromise === 'function') {
-      opts?.onOpen?.();
-      return unsubOrPromise as unknown as Unsubscribe;
-    }
-
-    // Handle Promise<Unsubscribe> with early-cancel support.
-    let resolvedUnsub: Unsubscribe | null = null;
-    let cancelRequested = false;
-    // The rejection handler is `then`'s second argument rather than a trailing
-    // `catch`, so a throw from `onOpen` cannot be misread as a refused subscribe.
-    Promise.resolve(unsubOrPromise).then(
-      (fn) => {
-        resolvedUnsub = fn as Unsubscribe;
-        if (cancelRequested && resolvedUnsub) {
-          try { resolvedUnsub(); } catch { /* ignore */ }
-          return;
-        }
-        opts?.onOpen?.();
+    // A rejected subscribe means no live updates at all, so `onError` is what
+    // lets the card retry, go degraded and offer a manual refresh instead of
+    // quietly showing stale data.
+    return this.openSubscription(
+      msg,
+      (event) => {
+        // Home Assistant's `subscribeMessage` delivers the *inner* event payload
+        // (the `event` field of the `{id, type:'event', event}` wire frame) to the
+        // callback — NOT the whole envelope. Guard only against a nullish payload.
+        if (!event) return;
+        cb(event);
       },
-      (err: unknown) => {
-        // A rejected subscribe means no live updates at all. Report it so the
-        // card can retry, go degraded and offer a manual refresh instead of
-        // quietly showing stale data.
-        opts?.onError?.(err);
-      },
+      opts,
     );
-
-    return () => {
-      if (resolvedUnsub) {
-        resolvedUnsub();
-      } else {
-        cancelRequested = true;
-      }
-    };
   }
 
   /**
@@ -542,36 +560,10 @@ export class WSClient {
     cb: () => void,
     opts?: { onOpen?: () => void; onError?: (err: unknown) => void },
   ): Unsubscribe {
-    const unsubOrPromise = subscribeMessage(this.hass, () => cb(), {
-      type: 'subscribe_events',
-      event_type: 'area_registry_updated',
-    });
-
-    if (typeof unsubOrPromise === 'function') {
-      opts?.onOpen?.();
-      return unsubOrPromise as unknown as Unsubscribe;
-    }
-
-    let resolvedUnsub: Unsubscribe | null = null;
-    let cancelRequested = false;
-    Promise.resolve(unsubOrPromise).then(
-      (fn) => {
-        resolvedUnsub = fn as Unsubscribe;
-        if (cancelRequested) {
-          resolvedUnsub();
-          return;
-        }
-        opts?.onOpen?.();
-      },
-      (err: unknown) => opts?.onError?.(err),
+    return this.openSubscription(
+      { type: 'subscribe_events', event_type: 'area_registry_updated' },
+      () => cb(),
+      opts,
     );
-
-    return () => {
-      if (resolvedUnsub) {
-        resolvedUnsub();
-      } else {
-        cancelRequested = true;
-      }
-    };
   }
 }

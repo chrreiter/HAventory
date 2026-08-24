@@ -1,6 +1,6 @@
 import './hv-diagnostics-panel';
 import type { HVDiagnosticsPanel } from './hv-diagnostics-panel';
-import type { DegradedState, HealthResult, StatsCounts } from '../store/types';
+import type { DegradedState, StatsCounts } from '../store/types';
 import { mountComponent, q, settle } from '../test.utils';
 // The clipboard itself is `ui/clipboard`'s own test; what this panel owes is
 // asking the helper and believing its answer, which needs both answers.
@@ -18,15 +18,6 @@ const counts: StatsCounts = {
   no_location_count: 3,
 };
 
-function health(patch: Partial<HealthResult> = {}): HealthResult {
-  return {
-    healthy: true,
-    issues: [],
-    counts,
-    ...patch,
-  };
-}
-
 const NO_DEGRADATION: DegradedState = {
   connectionLost: false,
   reloading: false,
@@ -38,7 +29,6 @@ const NO_DEGRADATION: DegradedState = {
 async function mount(props: Partial<HVDiagnosticsPanel> = {}) {
   const { el } = await mountComponent<HVDiagnosticsPanel>('hv-diagnostics-panel', {
     open: true,
-    health: health(),
     counts,
     version: { integration_version: '0.0.1', schema_version: 4 },
     degraded: { ...NO_DEGRADATION },
