@@ -213,7 +213,6 @@ export const en = {
   'hv.term.id': 'ID',
   'hv.term.due': 'due {date}',
   'hv.term.overdueOn': 'Overdue · {date}',
-  'hv.term.checkedOutUntil': 'Checked out · due {date}',
   'hv.term.inspectionDueOn': 'Inspection due · {date}',
 
   // hv-card-shell — the card's own header, search row and sheets.
@@ -435,7 +434,6 @@ export const en = {
   'hv.cardEditor.title': 'Title',
 
   // Shared, added by the second component batch.
-  'hv.action.apply': 'Apply',
   'hv.action.set': 'Set',
   'hv.action.done': 'Done',
   'hv.action.rename': 'Rename',
