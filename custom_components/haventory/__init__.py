@@ -80,7 +80,6 @@ from .storage import (
     CURRENT_SCHEMA_VERSION,
     STORAGE_KEY,
     DomainStore,
-    async_backup_store,
     async_persist_immediate,
 )
 from .subscriptions import notify_backend_unavailable
@@ -153,7 +152,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
 
     # A load that had to leave rows behind has to reach the file, or the next
     # restart meets the same rows and refuses all over again.
-    await _async_settle_lossy_load(hass, store, repository)
+    await _async_settle_lossy_load(hass, repository)
 
     # Whatever the previous boot left in Settings → Repairs described a store this
     # one just read, so none of it is true any more.
@@ -294,9 +293,7 @@ async def _async_load_repository(
     return repository
 
 
-async def _async_settle_lossy_load(
-    hass: HomeAssistant, store: DomainStore, repository: Repository
-) -> None:
+async def _async_settle_lossy_load(hass: HomeAssistant, repository: Repository) -> None:
     """Write the store back the way it was just read, when rows had to be dropped.
 
     A lossy load leaves the unreadable rows on disk, so the refusal and its card
@@ -304,32 +301,12 @@ async def _async_settle_lossy_load(
     repair would hold only until the household restarts Home Assistant, and the
     copy it took would be the only sign it ever ran.
 
-    A copy is taken here as well as in the repair flow, so no path can write the
-    readable remainder over the file while the rows it left out exist nowhere. It
-    is the same raw copy under the same key: the store has not changed since the
-    flow took its own, so the second write is the same bytes.
+    The rows this overwrites are in that copy: a load reaches here only with the
+    lossy-load option set, and `repairs.py` sets it after its own raw copy of the
+    store succeeded and withdraws the offer when it does not.
     """
 
     if not repository.last_load_report.has_corruption:
-        return
-
-    try:
-        copied = await async_backup_store(hass, source_key=store.key)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.exception(
-            "Failed to copy the HAventory store aside after loading it with unreadable rows",
-            extra={"domain": DOMAIN, "op": "settle_lossy_load"},
-        )
-        copied = False
-    if not copied:
-        # Leaving the file as it is keeps the rows recoverable, at the price of
-        # meeting the same refusal on the next restart. The alternative writes
-        # the only copy of them away.
-        LOGGER.error(
-            "Loaded a store with unreadable rows but could not copy it aside, so it "
-            "was left as it is; the same rows will stop the next start-up",
-            extra={"domain": DOMAIN, "op": "settle_lossy_load"},
-        )
         return
 
     await async_persist_immediate(hass)
