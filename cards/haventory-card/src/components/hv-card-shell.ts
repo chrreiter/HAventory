@@ -13,7 +13,6 @@ import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
 import { editorErrorText } from '../ui/editor-error';
-import { discardPrompt } from '../ui/discard';
 import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
 import type { BannerHooks } from '../ui/banners';
 import { HostSurfaces } from '../host-surfaces';
@@ -584,12 +583,9 @@ export class HVCardShell extends LitElement {
   private _startEdit(next: string | 'new' | null) {
     if (this._editing === next) return;
     if (this._editing !== null && this._editor?.dirty) {
-      this.surfaces.confirm({
-        ...discardPrompt(),
-        onConfirm: () => {
-          this._editorError = null;
-          this._editing = next;
-        },
+      this.surfaces.confirmDiscard(() => {
+        this._editorError = null;
+        this._editing = next;
       });
       return;
     }
@@ -667,6 +663,7 @@ export class HVCardShell extends LitElement {
       .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
       .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
       .createLocation=${this._createLocationForEditor}
+      .confirmDiscard=${this.surfaces.confirmDiscard}
       ?mobile=${this.mobile}
       .busy=${this._editorBusy}
       .errorMessage=${this._editorError}
@@ -1027,6 +1024,7 @@ export class HVCardShell extends LitElement {
         .columns=${this.surfaces.columns}
         .quickFilters=${this.quickFilters}
         .menuEntries=${this.surfaces.menuEntries()}
+        .confirmDiscard=${this.surfaces.confirmDiscard}
         ?startSelecting=${this._startSelecting}
         @close=${() => {
           this._fullViewOpen = false;
@@ -1125,6 +1123,7 @@ export class HVCardShell extends LitElement {
             .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
             .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
             .createLocation=${this._createLocationForEditor}
+            .confirmDiscard=${this.surfaces.confirmDiscard}
             .busy=${this._editorBusy}
             .errorMessage=${this._editorError}
             @cancel=${() => {

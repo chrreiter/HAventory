@@ -16,7 +16,7 @@ import {
 import { onDayChange } from '../ui/day-clock';
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
-import { discardPrompt } from '../ui/discard';
+import type { ConfirmDiscard } from '../ui/discard';
 import { COPIED_MS, copyText } from '../ui/clipboard';
 import { ViewportNarrow } from '../ui/responsive';
 import { nextZBase } from '../utils/zindex';
@@ -1172,6 +1172,17 @@ export class HVItemEditor extends LitElement {
   @property({ attribute: false }) createLocation: ((name: string) => Promise<Location>) | null =
     null;
 
+  /**
+   * How this form asks before its own Cancel, ✕ or Escape throws typing away.
+   *
+   * The dialog belongs to the host, not to the form: the same question is asked
+   * when a host switches rows or takes a sheet down, and one asker means one
+   * wording and one prompt on screen however the user left. Null closes without
+   * asking — every host in this card passes one, and a form that could not be
+   * left at all would be worse than one that closes quietly.
+   */
+  @property({ attribute: false }) confirmDiscard: ConfirmDiscard | null = null;
+
   @state() private _model: ItemFormModel = formFromItem(null);
   @state() private _errors: FieldError[] = [];
   @state() private _showErrors = false;
@@ -1215,8 +1226,6 @@ export class HVItemEditor extends LitElement {
   @state() private _dropTarget: AttachmentKind | null = null;
   /** Which photo the lightbox was opened on, or null when it is closed. */
   @state() private _lightbox: number | null = null;
-  /** Escape on a dirty form asks before it throws the typing away. */
-  @state() private _confirmDiscard = false;
   /**
    * Whether the item's id was copied a moment ago. Set only on a copy the
    * browser confirmed — the button is the only feedback there is, so it must
@@ -1287,7 +1296,6 @@ export class HVItemEditor extends LitElement {
       this._uploads = [];
       this._uploaded = null;
       this._confirmRemove = null;
-      this._confirmDiscard = false;
       this._lightbox = null;
       this._locationError = null;
       this._createdLocations = [];
@@ -1344,23 +1352,22 @@ export class HVItemEditor extends LitElement {
   };
 
   /**
-   * Ask the form to close, and say whether the caller may tear it down now.
+   * Every close this form owns: Cancel, the ✕, and Escape with nothing over it.
    *
-   * `false` means the form has raised the discard question itself: the caller
-   * does nothing further and waits for the `cancel` event a confirmed discard
-   * sends, which is the same event Cancel sends on a clean form. A host with
-   * somewhere else to go afterwards — another row, a whole surface closing —
-   * asks its own copy of the question instead, from `ui/discard`.
+   * A clean form goes at once. A dirty one hands the question to the host and
+   * waits: `cancel` is sent only once the answer is yes, and it is the same
+   * event either way, so a host closes the form on one signal however it went.
    */
-  requestClose(): boolean {
-    if (!this.dirty) return true;
-    this._confirmDiscard = true;
-    return false;
-  }
-
-  /** Every close this form owns: Cancel, the ✕, and Escape with nothing over it. */
   private _requestCancel = () => {
-    if (this.requestClose()) this._cancel();
+    const ask = this.confirmDiscard;
+    if (!this.dirty || !ask) {
+      this._cancel();
+      return;
+    }
+    ask(
+      () => this._cancel(),
+      () => this._refocus(),
+    );
   };
 
   /**
@@ -2977,14 +2984,14 @@ export class HVItemEditor extends LitElement {
         }}
       ></hv-lightbox>
 
-      <!-- Outside the form's own keydown scope, and their events stopped here:
-           a host listens for the cancel event on this editor to close it, and a
+      <!-- Outside the form's own keydown scope, and its events stopped here: a
+           host listens for the cancel event on this editor to close it, and a
            dialog saying "no, keep the photo" must not read as "close the
            form".
 
            The mobile flag below is the viewport, not this form's own mobile
-           property: both dialogs are fixed to the window, so the card's width
-           says nothing about the room they have. -->
+           property: the dialog is fixed to the window, so the card's width says
+           nothing about the room it has. -->
       <hv-confirm
         data-testid="editor-remove-confirm"
         ?open=${this._confirmRemove !== null}
@@ -3002,26 +3009,6 @@ export class HVItemEditor extends LitElement {
         @cancel=${(e: Event) => {
           e.stopPropagation();
           this._confirmRemove = null;
-          this._refocus();
-        }}
-      ></hv-confirm>
-
-      <hv-confirm
-        data-testid="editor-discard-confirm"
-        ?open=${this._confirmDiscard}
-        ?mobile=${this._viewport.narrow}
-        .heading=${discardPrompt().heading}
-        .message=${discardPrompt().message}
-        .confirmLabel=${discardPrompt().confirmLabel}
-        destructive
-        @confirm=${(e: Event) => {
-          e.stopPropagation();
-          this._confirmDiscard = false;
-          this._cancel();
-        }}
-        @cancel=${(e: Event) => {
-          e.stopPropagation();
-          this._confirmDiscard = false;
           this._refocus();
         }}
       ></hv-confirm>

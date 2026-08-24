@@ -639,13 +639,17 @@ Any other key in that record is ignored, so an older or newer payload never brea
   expanded view's 70dvh cap), so Save and Cancel land below the fold on all three. The
   editor solves that once; no host grows a pinned footer of its own. The bar bleeds past
   `.grid`'s side padding so its opaque background reaches the form's edges.
-- **No path discards typed edits without asking.** Cancel, the ✕ and Escape are the form's
-  own, so `hv-item-editor` answers for them itself and hosts do not repeat the check; a host
-  with somewhere to go afterwards — another row, a sheet coming down, the expanded view
-  closing — calls `requestClose()` or asks its own copy. Either way the wording comes from
-  `ui/discard`, so the same decision never reads as two different questions. The phone sheets
-  are part of this: `hv-bottom-sheet` reports a scrim tap or a swipe-down and leaves the
-  closing to its host, which is what lets `hv-detail-sheet` answer for the form inside it.
+- **No path discards typed edits without asking, and one place asks.** Cancel, the ✕ and
+  Escape are the form's own; a row switch, a sheet coming down and the expanded view closing
+  belong to the surface around it. All of them call `confirmDiscard` — a
+  `(onConfirm, onCancel?)` callback (`ui/discard`) handed down from `HostSurfaces`, which is
+  the only thing that names the wording and the only thing that puts a dialog on screen. The
+  question has to outlive its asker (a confirmed dismissal takes the sheet down with it), and
+  a form with no dialog of its own cannot ask twice in two wordings. `hv-item-editor`,
+  `hv-detail-sheet` and `hv-full-view` each take the callback as a property and pass it on to
+  the form they host. The phone sheets are part of this: `hv-bottom-sheet` reports a scrim tap
+  or a swipe-down and leaves the closing to its host, which is what lets `hv-detail-sheet`
+  answer for the form inside it.
 - **An attachment whose file is gone is a state, not an error.** Metadata outlives bytes —
   a JSON export carries the references and not the files, and a backup that took `.storage`
   without the config directory's `haventory/` tree leaves every attachment on every item

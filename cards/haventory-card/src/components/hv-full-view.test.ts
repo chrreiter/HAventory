@@ -1,7 +1,6 @@
 import './hv-full-view';
-import { componentCss, makeItem, mountHost, q, settle, stubViewport } from '../test.utils';
+import { componentCss, discardAsker, makeItem, mountHost, q, settle, stubViewport } from '../test.utils';
 import { deepActiveElement, deepFocusables } from '../ui/dialog-focus';
-import { discardPrompt } from '../ui/discard';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVFullView } from './hv-full-view';
 import type { Item, Location, StatusDefinition } from '../store/types';
@@ -22,6 +21,11 @@ function loc(id: string, name: string, parentId: string | null = null): Location
   };
 }
 
+/**
+ * Every mount stands a host beside the surface, the way the card and the panel
+ * do: the discard dialog is the host's, and a surface mounted without one would
+ * answer its own question by not asking it.
+ */
 async function mount(
   opts: {
     items?: Item[];
@@ -32,7 +36,8 @@ async function mount(
     narrow?: boolean;
   } = {},
 ) {
-  return mountHost<HVFullView>(
+  const host = discardAsker();
+  const mounted = await mountHost<HVFullView>(
     'hv-full-view',
     {
       items: opts.items ?? [],
@@ -42,12 +47,14 @@ async function mount(
     },
     {
       columns: ['quantity', 'category'],
+      confirmDiscard: host.ask,
       ...(opts.embedded ? { embedded: true } : {}),
       ...(opts.narrow ? { narrow: true } : {}),
       open: true,
     },
     { renders: 2 },
   );
+  return { ...mounted, host };
 }
 
 describe('hv-full-view: phone-width app bar', () => {
@@ -1422,7 +1429,7 @@ describe('hv-full-view: editing', () => {
     });
 
     it('drops the error again when the next edit opens', async () => {
-      const { el, store, sr } = await mount({
+      const { el, store, sr, host } = await mount({
         items: [makeItem({ id: '1', name: 'Old' }), makeItem({ id: '2', name: 'Other' })],
       });
       store['ws'].updateItem = async () => {
@@ -1442,9 +1449,8 @@ describe('hv-full-view: editing', () => {
       await settle(el);
       // The refused save left the typed name in the form, so the switch asks
       // before it takes it away.
-      const guard = q(sr, '[data-testid="full-discard-confirm"]') as HTMLElement & { open: boolean };
-      expect(guard.open).toBe(true);
-      (guard.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+      expect(host.asked).toBe(1);
+      host.answer('discard');
       await settle(el);
 
       expect(q(sr, '[data-testid="full-editor"]')?.shadowRoot?.textContent).toContain('Other — editing');
@@ -1492,10 +1498,6 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
     return mounted;
   }
 
-  const guard = (sr: ShadowRoot) =>
-    q(sr, '[data-testid="full-discard-confirm"]') as HTMLElement & { open: boolean };
-  const answer = (sr: ShadowRoot, which: 'confirm-accept' | 'confirm-cancel') =>
-    (guard(sr).shadowRoot?.querySelector(`[data-testid="${which}"]`) as HTMLButtonElement).click();
   const editorName = (sr: ShadowRoot) =>
     (
       (q(sr, '[data-testid="full-editor"]') as HTMLElement | null)?.shadowRoot?.querySelector(
@@ -1526,7 +1528,7 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
   it.each(Object.keys(leave) as (keyof typeof leave)[])(
     '%s asks first and changes nothing until it is answered',
     async (how) => {
-      const { el, sr } = await dirtyEditor(two());
+      const { el, sr, host } = await dirtyEditor(two());
       let closes = 0;
       el.addEventListener('close', () => {
         closes += 1;
@@ -1535,7 +1537,7 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
       leave[how](sr);
       await settle(el);
 
-      expect(guard(sr).open).toBe(true);
+      expect(host.asked).toBe(1);
       expect(closes).toBe(0);
       expect(el.open).toBe(true);
       expect(editorName(sr)).toBe('Typed but unsaved');
@@ -1545,11 +1547,11 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
 
 
   it('opens the other row once the discard is confirmed', async () => {
-    const { el, sr } = await dirtyEditor(two());
+    const { el, sr, host } = await dirtyEditor(two());
 
     leave['row switch'](sr);
     await settle(el);
-    answer(sr, 'confirm-accept');
+    host.answer('discard');
     await settle(el);
 
     expect(q(sr, '[data-testid="full-editor"]')?.shadowRoot?.textContent).toContain('Second — editing');
@@ -1559,7 +1561,7 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
   it.each(['backdrop', 'escape', 'close'] as const)(
     'closes the view once %s is confirmed',
     async (how) => {
-      const { el, sr } = await dirtyEditor(two());
+      const { el, sr, host } = await dirtyEditor(two());
       let closes = 0;
       el.addEventListener('close', () => {
         closes += 1;
@@ -1567,7 +1569,7 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
 
       leave[how](sr);
       await settle(el);
-      answer(sr, 'confirm-accept');
+      host.answer('discard');
       await settle(el);
 
       expect(closes).toBe(1);
@@ -1576,7 +1578,7 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
   );
 
   it('leaves a clean form without a word', async () => {
-    const { el, sr } = await mount({ items: two() });
+    const { el, sr, host } = await mount({ items: two() });
     const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
     (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1584,14 +1586,14 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
     leave['row switch'](sr);
     await settle(el);
 
-    expect(guard(sr).open).toBe(false);
+    expect(host.asked).toBe(0);
     expect(editorName(sr)).toBe('Second');
   });
 
   // The panel has no backdrop, no Escape and no close button, but it switches
   // rows in the same table.
   it('asks on a row switch in the embedded panel too', async () => {
-    const { el, sr } = await mount({ items: two(), embedded: true });
+    const { el, sr, host } = await mount({ items: two(), embedded: true });
     const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
     (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1605,25 +1607,28 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
     leave['row switch'](sr);
     await settle(el);
 
-    expect(guard(sr).open).toBe(true);
+    expect(host.asked).toBe(1);
     expect(editorName(sr)).toBe('Typed but unsaved');
   });
 
-  it('asks the same question the form asks itself', async () => {
-    const { el, sr } = await dirtyEditor(two());
+  // The form inside asks through the same host, so this surface's ways out and
+  // the form's own Cancel cannot become two different questions.
+  it('hands the form the same asker it uses itself', async () => {
+    const { sr, host } = await dirtyEditor(two());
+    const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement & { confirmDiscard: unknown };
+    expect(editor.confirmDiscard).toBe(host.ask);
+  });
+
+  it('keeps the form when the question is declined', async () => {
+    const { el, sr, host } = await dirtyEditor(two());
+
     leave.backdrop(sr);
     await settle(el);
+    host.answer('keep');
+    await settle(el);
 
-    const panel = guard(sr).shadowRoot as ShadowRoot;
-    expect(panel.querySelector('[data-testid="confirm-dialog"]')?.getAttribute('aria-label')).toBe(
-      discardPrompt().heading,
-    );
-    expect(panel.querySelector('[data-testid="confirm-message"]')?.textContent).toContain(
-      discardPrompt().message,
-    );
-    expect(panel.querySelector('[data-testid="confirm-accept"]')?.textContent).toContain(
-      discardPrompt().confirmLabel,
-    );
+    expect(el.open).toBe(true);
+    expect(editorName(sr)).toBe('Typed but unsaved');
   });
 });
 
@@ -2505,7 +2510,7 @@ describe('hv-full-view: table row actions', () => {
   });
 
   it('opens the form from the menu, through the same dirty guard as a row click', async () => {
-    const { el, sr } = await mount({
+    const { el, sr, host } = await mount({
       items: [makeItem({ id: '1', name: 'First' }), makeItem({ id: '2', name: 'Second' })],
     });
     const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
@@ -2521,9 +2526,7 @@ describe('hv-full-view: table row actions', () => {
     pick(sr, 'edit', 1);
     await settle(el);
 
-    expect((q(sr, '[data-testid="full-discard-confirm"]') as HTMLElement & { open: boolean }).open).toBe(
-      true,
-    );
+    expect(host.asked).toBe(1);
   });
 });
 
