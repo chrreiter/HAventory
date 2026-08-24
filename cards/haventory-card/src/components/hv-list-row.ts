@@ -404,10 +404,10 @@ export class HVListRow extends LitElement {
   @property({ type: Boolean, reflect: true }) mobile = false;
   /** HA areas, to name the one the item's location resolves to. */
   @property({ attribute: false }) areas: AreaRef[] = [];
-  /** Picture access; null means the row shows no thumbnail. */
   /** The status vocabulary from `haventory/config`; the built-ins stand in
    * until it answers. */
   @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
+  /** Picture access; null means the row shows no thumbnail. */
   @property({ attribute: false }) media: MediaBindings | null = null;
 
   private readonly _urls = new MediaUrls(this);
