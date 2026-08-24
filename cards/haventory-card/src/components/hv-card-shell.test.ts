@@ -776,6 +776,21 @@ describe('hv-card-shell: banners', () => {
     expect(sr.querySelector('[data-testid="banner-entry"]')).toBe(null);
   });
 
+  it('renders a code it does not know as the ordinary failure', async () => {
+    // A HACS update serves the new bundle from disk while the old backend is
+    // still running, so one `rate_limited` can still reach this card before the
+    // restart. It has no branch for it, and must not swallow it either.
+    const { el, store, sr } = await mountShell({ items: [] });
+    store['pushError']({ code: 'rate_limited', message: 'rate limit exceeded; retry later' });
+    await settle(el);
+
+    const entry = sr.querySelector('[data-testid="banner-entry"]') as HTMLElement;
+    expect(entry.dataset.code).toBe('rate_limited');
+    expect(entry.shadowRoot?.textContent).toContain('rate limit exceeded; retry later');
+    // Nothing about it reads as a state of the card itself.
+    expect(sr.querySelector('[data-testid="degraded-banners"]')).toBe(null);
+  });
+
   it('renders a plain error without the conflict actions', async () => {
     const { el, store, sr } = await mountShell({ items: [] });
     store['pushError']({ code: 'storage_error', message: 'disk full' });
