@@ -247,9 +247,7 @@ export const en = {
 
   // hv-list-row.
   'hv.row.label': 'Item {name}',
-  'hv.row.select': 'Select {name}',
   'hv.row.hasDocument': 'Has a document',
-  'hv.row.pending': 'Pending',
   'hv.row.decreaseQuantity': 'Decrease quantity',
   'hv.row.increaseQuantity': 'Increase quantity',
   'hv.row.editItem': 'Edit item',
