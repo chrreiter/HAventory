@@ -23,16 +23,12 @@ function health(patch: Partial<HealthResult> = {}): HealthResult {
     healthy: true,
     issues: [],
     counts,
-    rate_limit: { enabled: false, dropped_commands: 0, dropped_events: 0 },
     ...patch,
   };
 }
 
 const NO_DEGRADATION: DegradedState = {
-  rateLimited: false,
   connectionLost: false,
-  retrying: 0,
-  nextRetryAt: null,
   reloading: false,
   liveUpdates: 'live',
   liveUpdatesReason: null,
@@ -62,30 +58,12 @@ describe('hv-diagnostics-panel: healthy', () => {
     expect(status.textContent).toContain('live');
   });
 
-  it('shows the counters at zero and where the data came from', async () => {
+  it('shows where the data came from', async () => {
     const el = await mount();
-    expect(q(el, '[data-testid="diagnostics-dropped-commands"]')?.textContent?.trim()).toBe('0');
-    expect(q(el, '[data-testid="diagnostics-dropped-events"]')?.textContent?.trim()).toBe('0');
     expect(q(el, '[data-testid="diagnostics-loaded"]')?.textContent?.replace(/\s+/g, ' ')).toContain(
       '50 of 250 items · 13 locations',
     );
     expect(q(el, '[data-testid="diagnostics-version"]')?.textContent?.trim()).toBe('0.0.1');
-  });
-});
-
-describe('hv-diagnostics-panel: rate limiting', () => {
-  it('names it, and shows how much has been dropped', async () => {
-    const el = await mount({
-      health: health({ rate_limit: { enabled: true, dropped_commands: 7, dropped_events: 23 } }),
-      degraded: { ...NO_DEGRADATION, rateLimited: true },
-    });
-
-    const status = q(el, '[data-testid="diagnostics-status"]') as HTMLElement;
-    expect(status.classList.contains('bad')).toBe(true);
-    expect(status.textContent).toContain('Degraded');
-    expect(status.textContent).toContain('rate limiting is active');
-    expect(q(el, '[data-testid="diagnostics-dropped-commands"]')?.textContent?.trim()).toBe('7');
-    expect(q(el, '[data-testid="diagnostics-dropped-events"]')?.textContent?.trim()).toBe('23');
   });
 });
 
@@ -118,11 +96,9 @@ describe('hv-diagnostics-panel: actions', () => {
   });
 
   it('builds a copyable report covering everything on screen', async () => {
-    const el = await mount({
-      health: health({ rate_limit: { enabled: true, dropped_commands: 7, dropped_events: 23 } }),
-    });
+    const el = await mount();
     expect(el.report).toContain('integration 0.0.1');
-    expect(el.report).toContain('"dropped_commands":7');
+    expect(el.report).toContain('"items_total":250');
     expect(el.report).toContain('subscriptions: items=true');
   });
 

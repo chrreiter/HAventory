@@ -1972,22 +1972,11 @@ describe('hv-card-shell: degraded states', () => {
     expect(store.state.value.degraded.connectionLost).toBe(false);
   });
 
-  it('warns that rate limiting may have left the list stale', async () => {
-    const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1', quantity: 1 })] });
-    hass.__rateLimitNext(1);
-    await store.adjustQuantity('1', 1);
-    await settle(el);
-
-    expect(banner(sr, 'degraded-rate-limited')).toBeTruthy();
-    expect(banner(sr, 'degraded-rate-limited')?.shadowRoot?.textContent).toContain(
-      'some live updates may have been dropped',
-    );
-  });
 
   it('says live updates are paused while a refused subscribe is being retried', async () => {
     const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     // One round refused, so the store is mid-backoff when the card renders.
-    hass.__failSubscribeNext(3, { code: 'rate_limited', message: 'rate limit exceeded; retry later' });
+    hass.__failSubscribeNext(3, { code: 'storage_error', message: 'repository not initialized' });
     store.subscribeTopics();
     await el.updateComplete;
     await Promise.resolve();
@@ -2010,9 +1999,9 @@ describe('hv-card-shell: degraded states', () => {
 
   it('offers a refresh once the automatic retries are spent', async () => {
     const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
-    hass.__failSubscribe({ code: 'rate_limited', message: 'rate limit exceeded; retry later' });
+    hass.__failSubscribe({ code: 'storage_error', message: 'repository not initialized' });
     store.subscribeTopics();
-    for (let i = 0; i < 12; i++) await settle(el);
+    for (let i = 0; i < 20; i++) await settle(el);
 
     expect(store.state.value.degraded.liveUpdates).toBe('paused');
     const paused = banner(sr, 'degraded-live-updates');
@@ -2027,10 +2016,7 @@ describe('hv-card-shell: degraded states', () => {
     expect(banner(sr, 'degraded-live-updates')).toBe(null);
   });
 
-  it('blames the backend, not a limiter, when HAventory itself went away', async () => {
-    // The two pauses look identical to the subscription machinery and nothing
-    // alike to the person reading the banner: one means events may be dropped,
-    // the other that there is no backend to send them.
+  it('names the backend when HAventory itself went away', async () => {
     const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     hass.__failSubscribe({ code: 'storage_error', message: 'repository not initialized' });
     hass.__emit('items', 'unavailable', {});
@@ -2039,7 +2025,6 @@ describe('hv-card-shell: degraded states', () => {
     expect(store.state.value.degraded.liveUpdates).toBe('paused');
     const paused = banner(sr, 'degraded-live-updates');
     expect(paused?.shadowRoot?.textContent).toContain('HAventory is not available');
-    expect(paused?.shadowRoot?.textContent).not.toContain('rate limited');
   });
 
   it('announces a wholesale reload after an import', async () => {
@@ -2068,15 +2053,16 @@ describe('hv-card-shell: diagnostics and import', () => {
     const { el, hass, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     let menu = await openMenu(el, sr);
     expect((menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLElement).textContent).not.toContain(
-      'dropped',
+      'offline',
     );
 
-    hass.__setHealth({ rate_limit: { enabled: true, dropped_commands: 7, dropped_events: 23 } });
-    await store.refreshHealth();
+    hass.__failNext(2, new Error('socket closed'));
+    await store.refreshStats().catch(() => undefined);
+    await store.refreshStats().catch(() => undefined);
     await settle(el);
     menu = await openMenu(el, sr);
     expect((menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLElement).textContent).toContain(
-      '30 dropped',
+      'offline',
     );
   });
 

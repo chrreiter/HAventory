@@ -518,8 +518,7 @@ backend's `ItemFilter`, exported so the count probe and "Export current view" se
 what the list is showing. `include_subtree` is always sent explicitly, because the list
 filter defaults it to `false` server-side while subscriptions default it to `true`.
 
-**Rate limiting and degraded state.** Every WS call goes through `run()`, which retries a
-`rate_limited` rejection with backoff before surfacing it, and classifies failures: a
+**Degraded state.** Every WS call goes through `run()`, which classifies failures: a
 *string* error code means a server answered and the command was refused — including the
 taxonomy's `unknown_error` catch-all, which is a server-side fault, not a transport one.
 Anything else (Home Assistant's numeric transport codes, a thrown `Error`, no code at all)
@@ -538,20 +537,20 @@ it takes the banner back down.
 
 A *rejected subscribe* kills live updates outright — no event will ever arrive to hint at
 it — so it is handled separately. The four topics — items, stats, locations and statuses —
-are opened as one **round**, because the
-limiter bills each subscribe separately and can admit `items` while refusing `stats`; live
+are opened as one **round**, because each
+subscribe is answered on its own and one can be accepted while the next is refused; live
 updates only count as restored once every subscribe in the newest round is accepted, which
-`WSClient.subscribe`'s `onOpen` reports. A round refused with `rate_limited` is re-opened
-automatically up to four times, waiting the envelope's retry-after hint when it carries one
-(`retry_after_ms`, or `retry_after` in seconds, read from `data`, `context` or the top level
-and clamped to 30 s) and otherwise backing off exponentially. `degraded.liveUpdates` tracks
-this as `'live' | 'retrying' | 'paused'`, with `degraded.nextLiveRetryAt` for the scheduled
-attempt; every surface renders it as a non-blocking banner that clears itself when a retry
-gets back in. A round refused with `storage_error` or `unknown_command` is re-opened on the
-same backoff but a larger budget, because both say the backend is not there *yet* rather
-than broken: the first is what a config entry mid-reload answers, the second is Home
-Assistant's answer for a command type nobody has registered, which is what a restarting
-instance serves until the integration finishes setting up. Landing one of those re-reads the
+`WSClient.subscribe`'s `onOpen` reports. A round refused with `storage_error` or
+`unknown_command` is re-opened automatically on a bounded budget, waiting the envelope's
+retry-after hint when it carries one (`retry_after_ms`, or `retry_after` in seconds, read
+from `data`, `context` or the top level and clamped to 30 s) and otherwise backing off
+exponentially: both codes say the backend is not there *yet* rather than broken — the first
+is what a config entry mid-reload answers, the second is Home Assistant's answer for a
+command type nobody has registered, which is what a restarting instance serves until the
+integration finishes setting up. `degraded.liveUpdates` tracks this as
+`'live' | 'retrying' | 'paused'`, with `degraded.nextLiveRetryAt` for the scheduled attempt;
+every surface renders it as a non-blocking banner that clears itself when a retry gets back
+in. Landing one of those re-reads the
 inventory, since every event in the gap went to a subscription that no longer existed. Once
 the budget is spent the state goes `'paused'`, the refusal reaches the error queue once, and
 the banner's Refresh (i.e. `refreshAll()`) is the way back. Any other refusal is an outage:
@@ -576,15 +575,13 @@ fired late or not at all.
 
 The counts have two paths and want both: the backend broadcasts `stats/counts` at the
 *instance's* midnight, which is the one that keeps the pills agreeing with the sensors, and
-the store's own read covers that event being dropped by the rate limiter or served by a
-backend too old to send it. The rows follow the *browser's* midnight, which is the day their
+the store's own read covers that event being served by a backend too old to send it. The rows follow the *browser's* midnight, which is the day their
 chips are compared against; the two are one instant in the ordinary case, and the zone split
 is the follow-up #579 named.
 
-**Why the card offers a manual Refresh.** Subscription events carry no sequence number, and
-the rate limiter can drop them silently, so a client cannot detect a gap.
-Re-listing on demand is the documented recovery, so it is a first-class action rather than
-a hidden one.
+**Why the card offers a manual Refresh.** Subscription events carry no sequence number, so
+a client that missed one cannot detect the gap. Re-listing on demand is the documented
+recovery, so it is a first-class action rather than a hidden one.
 
 ### `WSClient`
 
@@ -709,8 +706,8 @@ interactive element carries a testid.
 
 `src/test.utils.ts` provides `makeMockHass()` — an in-memory backend mirroring the WS
 contract, including `items/bulk` with per-op results, a real nested `location/tree` with
-counts, and hooks for the failure paths: `__rateLimitNext`, `__failNext`, `__failSubscribe`,
-`__setHealth`, `__setItems`, `__setLocations`, plus a `__calls` log. It **throws on an
+counts, and hooks for the failure paths: `__failNext`, `__failSubscribe`, `__setHealth`,
+`__setItems`, `__setLocations`, plus a `__calls` log. It **throws on an
 unhandled command**, so adding a WS call without extending the mock fails loudly.
 
 Things jsdom cannot do, and how the tests handle it:

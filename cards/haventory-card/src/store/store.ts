@@ -87,24 +87,15 @@ const CONNECTION_LOST_THRESHOLD = 2;
  */
 const CONNECTION_LOST_GRACE_MS = 4_500;
 
-/** Attempts (including the first) for a command rejected with `rate_limited`. */
-const RATE_LIMIT_ATTEMPTS = 4;
-
 /**
- * Automatic re-subscribes after a `rate_limited` refusal, before the card gives
- * up and waits for the user. Bounded because a limiter tight enough to refuse
- * every attempt will not be talked round by a card that keeps knocking.
- */
-const SUBSCRIBE_RETRY_ATTEMPTS = 4;
-
-/**
- * Re-subscribes allowed while the backend reports itself unavailable.
+ * Re-subscribes allowed while the backend reports itself unavailable, before the
+ * card gives up and waits for the user.
  *
- * Larger than the rate-limited budget because it is spent on a different bet: a
- * config-entry reload refuses for as long as setup takes, and giving up inside
- * that window would leave a card that only ever needed to wait stuck asking for
- * a manual refresh. Still bounded — a disabled or removed integration is not
- * coming back on its own, and the banner has to stop promising otherwise.
+ * Generous, because a config-entry reload refuses for as long as setup takes and
+ * giving up inside that window would leave a card that only ever needed to wait
+ * stuck asking for a manual refresh. Still bounded — a disabled or removed
+ * integration is not coming back on its own, and the banner has to stop
+ * promising otherwise.
  */
 const SUBSCRIBE_UNAVAILABLE_ATTEMPTS = 7;
 
@@ -142,10 +133,7 @@ const BACKEND_UNAVAILABLE_ACTION = 'unavailable';
 const REMOVED_ID_MEMORY = 200;
 
 const NO_DEGRADATION: DegradedState = {
-  rateLimited: false,
   connectionLost: false,
-  retrying: 0,
-  nextRetryAt: null,
   reloading: false,
   liveUpdates: 'live',
   liveUpdatesReason: null,
@@ -332,7 +320,7 @@ export function createObservable<T extends object>(initial: T): Observable<T> & 
 }
 
 export interface StoreOptions {
-  /** Base backoff for `rate_limited` retries; set to 0 in tests. */
+  /** Base backoff for the re-subscribe ladder; set to 0 in tests. */
   retryBaseMs?: number;
 }
 
@@ -466,10 +454,10 @@ export class Store {
    *
    * The pills are backend figures, and the backend broadcasts them at the
    * instance's own midnight — that event is the primary path and it lands
-   * first. This is the backstop: the rate limiter may drop it, and an older
-   * backend does not send it at all, either of which leaves the pills on
-   * yesterday's numbers until the next edit while the rows beside them have
-   * already rolled over. One read a day costs nothing.
+   * first. This is the backstop: an older backend does not send that event at
+   * all, which leaves the pills on yesterday's numbers until the next edit
+   * while the rows beside them have already rolled over. One read a day costs
+   * nothing.
    */
   private watchDayChange() {
     this.dayChangeUnsub?.();
@@ -591,10 +579,10 @@ export class Store {
   /**
    * Open the four topic subscriptions as one round.
    *
-   * The round, not the individual topic, is the unit of health: the rate limiter
-   * bills each subscribe separately, so it can let `items` through and refuse
-   * `stats` a moment later. Live updates only count as restored once every
-   * subscribe in the newest round has been accepted.
+   * The round, not the individual topic, is the unit of health: each subscribe
+   * is answered on its own, so one can be accepted and the next refused a moment
+   * later. Live updates only count as restored once every subscribe in the
+   * newest round has been accepted.
    */
   private openSubscriptions(resetRetryBudget: boolean) {
     this.cancelSubscribeRetry();
@@ -687,15 +675,14 @@ export class Store {
    * A refused subscribe means live updates are gone, silently — no event will
    * ever arrive to hint at it.
    *
-   * Three refusals are worth waiting out. `rate_limited` is the expected one and
-   * the contract's guidance is to retry later; `storage_error` is what a backend
-   * with no config entry answers, which a reload clears on its own; and
+   * Two refusals are worth waiting out. `storage_error` is what a backend with
+   * no config entry answers, which a reload clears on its own; and
    * `unknown_command` is Home Assistant's own answer for a command type nobody
    * has registered, which for `haventory/subscribe` means the integration has
    * not been set up yet. A restarting instance serves the frontend — and the
    * Lovelace view it rebuilds on reconnect — before it gets that far, so a card
-   * refused this way is early rather than broken. All three back off and say the
-   * card is retrying instead of dropping an error on a user who has done nothing
+   * refused this way is early rather than broken. Both back off and say the card
+   * is retrying instead of dropping an error on a user who has done nothing
    * wrong. Once the budget is spent it stops, reports the refusal and leaves the
    * manual refresh as the way back. Any other refusal is an outage and is
    * reported at once.
@@ -705,11 +692,7 @@ export class Store {
 
     const code = errorCode(err);
     const reason: LiveUpdatePause | null =
-      code === 'rate_limited'
-        ? 'rate_limited'
-        : code === 'storage_error' || code === 'unknown_command'
-          ? 'unavailable'
-          : null;
+      code === 'storage_error' || code === 'unknown_command' ? 'unavailable' : null;
     if (reason === null) {
       this.setDegraded({
         connectionLost: true,
@@ -721,14 +704,7 @@ export class Store {
       return;
     }
 
-    // Sticky, and set here rather than alongside the pause: it says events may
-    // have been dropped, which stays true for the rest of the session however
-    // the subscriptions end up.
-    if (reason === 'rate_limited') this.setDegraded({ rateLimited: true });
-
-    const budget =
-      reason === 'unavailable' ? SUBSCRIBE_UNAVAILABLE_ATTEMPTS : SUBSCRIBE_RETRY_ATTEMPTS;
-    if (this.subscribeAttempt >= budget) {
+    if (this.subscribeAttempt >= SUBSCRIBE_UNAVAILABLE_ATTEMPTS) {
       this.setDegraded({ liveUpdates: 'paused', liveUpdatesReason: reason, nextLiveRetryAt: null });
       this.pushError(err);
       return;
@@ -1369,10 +1345,7 @@ export class Store {
     const next = { ...this.state.value.degraded, ...patch };
     const cur = this.state.value.degraded;
     const same =
-      cur.rateLimited === next.rateLimited &&
       cur.connectionLost === next.connectionLost &&
-      cur.retrying === next.retrying &&
-      cur.nextRetryAt === next.nextRetryAt &&
       cur.reloading === next.reloading &&
       cur.liveUpdates === next.liveUpdates &&
       cur.liveUpdatesReason === next.liveUpdatesReason &&
@@ -1396,12 +1369,7 @@ export class Store {
    * as a server that accepts the connection and stops answering on it.
    */
   private noteFailure(err: unknown) {
-    const code = errorCode(err);
-    if (code === 'rate_limited') {
-      this.setDegraded({ rateLimited: true });
-      return;
-    }
-    if (code !== TRANSPORT_ERROR_CODE) {
+    if (errorCode(err) !== TRANSPORT_ERROR_CODE) {
       this.consecutiveTransportFailures = 0;
       return;
     }
@@ -1411,50 +1379,21 @@ export class Store {
     }
   }
 
-  private sleep(ms: number): Promise<void> {
-    if (ms <= 0) return Promise.resolve();
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
   /**
-   * Run a command, retrying with backoff while the backend says `rate_limited`.
+   * Run a command and grade the outcome.
    *
-   * Rate limiting is opt-in but real, and the contract's guidance is to retry
-   * later — so the card absorbs it rather than surfacing a scary error on the
-   * first refusal. The banner shows the wait; if every attempt is refused the
-   * error propagates and the caller reports it as usual.
+   * Every call goes through here so one place decides what a success and a
+   * failure say about the connection; the caller sees the answer, or the error,
+   * exactly as the socket gave it.
    */
   private async run<T>(fn: () => Promise<T>): Promise<T> {
-    for (let attempt = 0; ; attempt++) {
-      try {
-        const out = await fn();
-        this.noteSuccess();
-        if (attempt > 0) {
-          this.setDegraded({
-            retrying: Math.max(0, this.state.value.degraded.retrying - 1),
-            nextRetryAt: null,
-          });
-        }
-        return out;
-      } catch (err) {
-        this.noteFailure(err);
-        const retriable = errorCode(err) === 'rate_limited' && attempt < RATE_LIMIT_ATTEMPTS - 1;
-        if (!retriable) {
-          if (attempt > 0) {
-            this.setDegraded({
-              retrying: Math.max(0, this.state.value.degraded.retrying - 1),
-              nextRetryAt: null,
-            });
-          }
-          throw err;
-        }
-        const delay = this.retryBaseMs * 2 ** attempt;
-        this.setDegraded({
-          retrying: attempt === 0 ? this.state.value.degraded.retrying + 1 : this.state.value.degraded.retrying,
-          nextRetryAt: Date.now() + delay,
-        });
-        await this.sleep(delay);
-      }
+    try {
+      const out = await fn();
+      this.noteSuccess();
+      return out;
+    } catch (err) {
+      this.noteFailure(err);
+      throw err;
     }
   }
 
@@ -1758,8 +1697,8 @@ export class Store {
           }
         }
       } catch (err) {
-        // The whole call failed (envelope validation, rate limiting after every
-        // retry, transport). Attribute it to each op in the chunk.
+        // The whole call failed (envelope validation, transport). Attribute it
+        // to each op in the chunk.
         const error = {
           code: errorCode(err),
           message: String((err as { message?: unknown } | undefined)?.message ?? t('hv.store.batchFailed')),

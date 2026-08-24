@@ -10,8 +10,7 @@ import { makeMockHass, makeItem } from '../test.utils';
  *
  * What is under test is the backstop, not the primary path: the backend
  * broadcasts the counts at the instance's own midnight, and this is what covers
- * that event being dropped by the rate limiter or never sent by an older
- * backend.
+ * that event never being sent by an older backend.
  */
 const TOMORROW = '2026-08-23';
 

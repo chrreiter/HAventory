@@ -210,7 +210,7 @@ describe('hv-bulk-bar: per-operation result', () => {
       result: {
         label: 'Move',
         succeeded: 39,
-        failed: [failure('a', 'conflict'), failure('b', 'rate_limited')],
+        failed: [failure('a', 'conflict'), failure('b', 'storage_error')],
       },
     });
 
@@ -221,7 +221,7 @@ describe('hv-bulk-bar: per-operation result', () => {
     expect(failures[0]).toContain('Multimeter');
     expect(failures[0]).toContain('Conflict');
     expect(failures[1]).toContain('Hex Key Set');
-    expect(failures[1]).toContain('Rate limited');
+    expect(failures[1]).toContain('failed to write to storage');
   });
 
   it('agrees with a single failure, irregular verb and all', async () => {
@@ -273,7 +273,6 @@ describe('describeFailure', () => {
   it('translates each backend error class into something actionable', () => {
     expect(describeFailure(failure('a', 'conflict'))).toContain('changed by another client');
     expect(describeFailure(failure('a', 'not_found'))).toContain('deleted before this ran');
-    expect(describeFailure(failure('a', 'rate_limited'))).toContain('try again in a few seconds');
     expect(describeFailure(failure('a', 'storage_error'))).toContain('failed to write to storage');
     expect(describeFailure(failure('a', 'validation_error', 'quantity must be >= 0'))).toContain(
       'quantity must be >= 0',
@@ -286,7 +285,6 @@ describe('describeFailure', () => {
     setLanguage('de');
     expect(describeFailure(failure('a', 'conflict'))).toContain('Konflikt');
     expect(describeFailure(failure('a', 'not_found'))).toContain('Nicht gefunden');
-    expect(describeFailure(failure('a', 'rate_limited'))).toContain('Ratenbegrenzung');
     expect(describeFailure(failure('a', 'storage_error'))).toContain('Nicht gespeichert');
     // The backend's own sentence rides through untranslated inside the card's
     // frame, which is what #190's notes settle for `validation_error`.

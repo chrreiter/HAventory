@@ -29,7 +29,6 @@ function loc(id: string, name: string, parentId: string | null = null): Location
 /** Stores under test never wait on real backoff. */
 const fast = { retryBaseMs: 0 };
 
-const RATE_LIMITED = { code: 'rate_limited', message: 'rate limit exceeded; retry later' };
 
 /** Let queued microtasks and any zero-delay timers run. */
 async function flush(rounds = 1): Promise<void> {
@@ -403,171 +402,6 @@ describe('Store: bulk operations', () => {
   });
 });
 
-describe('Store: rate limiting and degraded state', () => {
-  it('absorbs a rate_limited command by retrying', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', quantity: 5 })] });
-    const store = new Store(hass, fast);
-    await store.init();
-
-    hass.__rateLimitNext(2);
-    await store.adjustQuantity('1', 1);
-
-    // Third attempt succeeded, so no error reached the user.
-    expect(store.state.value.errorQueue).toEqual([]);
-    expect(store.state.value.items[0].quantity).toBe(6);
-    // ...but the card knows it is being throttled.
-    expect(store.state.value.degraded.rateLimited).toBe(true);
-  });
-
-  it('gives up and reports after exhausting the retries', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', quantity: 5 })] });
-    const store = new Store(hass, fast);
-    await store.init();
-
-    hass.__rateLimitNext(99);
-    await store.adjustQuantity('1', 1);
-
-    expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['rate_limited']);
-    // Optimistic value rolled back.
-    expect(store.state.value.items[0].quantity).toBe(5);
-  });
-
-  it('goes degraded when the subscription itself is refused', async () => {
-    const hass = makeMockHass({ items: [] });
-    hass.__failSubscribe({ code: 'rate_limited', message: 'rate limit exceeded; retry later' });
-    const store = new Store(hass, fast);
-
-    await store.init();
-    await settleSubscribes();
-
-    // Live updates are gone; the card must stop claiming it is connected.
-    expect(store.state.value.degraded.rateLimited).toBe(true);
-    expect(store.state.value.connected.items).toBe(false);
-    // ...and it says so as a state the UI can render, not just a log line.
-    expect(store.state.value.degraded.liveUpdates).toBe('retrying');
-  });
-
-  it('retries a rate-limited subscribe and goes live again', async () => {
-    const hass = makeMockHass({ items: [] });
-    // One whole round refused — four topics — then the limiter lets us back in.
-    hass.__failSubscribeNext(3, RATE_LIMITED);
-    const store = new Store(hass, fast);
-
-    await store.init();
-    await settleSubscribes();
-    expect(store.state.value.degraded.liveUpdates).toBe('retrying');
-    expect(store.state.value.degraded.nextLiveRetryAt).not.toBeNull();
-
-    await flush(3);
-
-    // The indicator is cleared by the retry succeeding, not by the user acting.
-    expect(store.state.value.degraded.liveUpdates).toBe('live');
-    expect(store.state.value.degraded.nextLiveRetryAt).toBeNull();
-    expect(store.state.value.connected.items).toBe(true);
-    expect(store.state.value.errorQueue).toEqual([]);
-    // Two rounds of four, so the retry really did re-open every topic...
-    expect(hass.__subscribeCalls).toHaveLength(8);
-    // ...and events flow again, which is the whole point of retrying.
-    hass.__emit('items', 'created', { item: makeItem({ id: '9' }) });
-    expect(store.state.value.items.map((i) => i.id)).toContain('9');
-  });
-
-  it('gives up after a bounded number of retries and surfaces the pause', async () => {
-    const hass = makeMockHass({ items: [] });
-    hass.__failSubscribe(RATE_LIMITED);
-    const store = new Store(hass, fast);
-
-    await store.init();
-    await flush(12);
-
-    expect(store.state.value.degraded.liveUpdates).toBe('paused');
-    expect(store.state.value.degraded.rateLimited).toBe(true);
-    // Nothing further is scheduled: only the user can restart this.
-    expect(store.state.value.degraded.nextLiveRetryAt).toBeNull();
-    expect(store.state.value.connected.items).toBe(false);
-    // The refusal reaches the user exactly once — when retrying is over, not on
-    // every attempt.
-    expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['rate_limited']);
-    // The first round plus four retries, four topics each. The cap is the point:
-    // a card that kept knocking would be indistinguishable from the load that
-    // tripped the limiter.
-    expect(hass.__subscribeCalls).toHaveLength(20);
-
-    // The budget stays spent until something restarts it.
-    await flush(6);
-    expect(hass.__subscribeCalls).toHaveLength(20);
-  });
-
-  it('clears the paused indicator when a manual refresh gets back in', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    hass.__failSubscribe(RATE_LIMITED);
-    const store = new Store(hass, fast);
-    await store.init();
-    await flush(12);
-    expect(store.state.value.degraded.liveUpdates).toBe('paused');
-
-    hass.__failSubscribe(null);
-    await store.refreshAll();
-    await flush();
-
-    expect(store.state.value.degraded.liveUpdates).toBe('live');
-    expect(store.state.value.degraded.rateLimited).toBe(false);
-    expect(store.state.value.connected.items).toBe(true);
-    hass.__emit('items', 'created', { item: makeItem({ id: '2' }) });
-    expect(store.state.value.items.map((i) => i.id)).toContain('2');
-  });
-
-  it('waits out the retry-after hint the envelope carries', async () => {
-    // `nextLiveRetryAt` is `Date.now() + delay` and the retry itself rides
-    // `setTimeout`, so both have to move on one clock for the wait to be exact
-    // instead of a race against the scheduler. `settleSubscribes()` keeps
-    // working across the switch — it is pure microtasks, which fake timers
-    // leave alone.
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-    try {
-      const hass = makeMockHass({ items: [] });
-      hass.__failSubscribeNext(3, { ...RATE_LIMITED, data: { op: 'subscribe', retry_after_ms: 40 } });
-      const store = new Store(hass, fast);
-
-      await store.init();
-      await settleSubscribes();
-
-      // The hint wins over the store's own (zero, in tests) backoff.
-      const wait = (store.state.value.degraded.nextLiveRetryAt ?? 0) - Date.now();
-      expect(wait).toBe(40);
-      expect(store.state.value.degraded.liveUpdates).toBe('retrying');
-
-      // Not retried before the hint elapses...
-      await vi.advanceTimersByTimeAsync(39);
-      expect(hass.__subscribeCalls).toHaveLength(4);
-
-      // ...and retried on the very millisecond it does.
-      await vi.advanceTimersByTimeAsync(1);
-      await settleSubscribes();
-      expect(hass.__subscribeCalls).toHaveLength(8);
-      expect(store.state.value.degraded.liveUpdates).toBe('live');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('reports a non-rate-limit subscribe refusal instead of retrying it', async () => {
-    // Only `rate_limited` says "try again later"; anything else is an outage the
-    // user needs to see, and quietly re-knocking would hide it.
-    const hass = makeMockHass({ items: [] });
-    hass.__failSubscribe({ code: 'unknown_error', message: 'unexpected error; see Home Assistant logs' });
-    const store = new Store(hass, fast);
-
-    await store.init();
-    await flush(3);
-
-    expect(store.state.value.degraded.connectionLost).toBe(true);
-    expect(store.state.value.degraded.liveUpdates).toBe('paused');
-    expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['unknown_error']);
-    expect(hass.__subscribeCalls).toHaveLength(4);
-  });
-});
-
 describe('Store: the backend going away and coming back', () => {
   const UNAVAILABLE = { code: 'storage_error', message: 'repository not initialized; run integration setup' };
 
@@ -610,8 +444,6 @@ describe('Store: the backend going away and coming back', () => {
     await settleSubscribes();
     expect(store.state.value.degraded.liveUpdates).toBe('retrying');
     expect(store.state.value.degraded.liveUpdatesReason).toBe('unavailable');
-    // Not rate limiting — the banner must not blame a limiter that is off.
-    expect(store.state.value.degraded.rateLimited).toBe(false);
 
     await flush(6);
 
@@ -695,15 +527,15 @@ describe('Store: the backend going away and coming back', () => {
 
 describe('subscribeRetryDelayMs', () => {
   it('prefers the envelope hint over the backoff, in either unit', () => {
-    expect(subscribeRetryDelayMs({ code: 'rate_limited', data: { retry_after_ms: 250 } }, 0, 400)).toBe(250);
+    expect(subscribeRetryDelayMs({ data: { retry_after_ms: 250 } }, 0, 400)).toBe(250);
     // Seconds, the HTTP Retry-After convention.
-    expect(subscribeRetryDelayMs({ code: 'rate_limited', data: { retry_after: 2 } }, 0, 400)).toBe(2000);
+    expect(subscribeRetryDelayMs({ data: { retry_after: 2 } }, 0, 400)).toBe(2000);
     // The card's own error entries name the bag `context`.
-    expect(subscribeRetryDelayMs({ code: 'rate_limited', context: { retry_after_ms: 30 } }, 3, 400)).toBe(30);
+    expect(subscribeRetryDelayMs({ context: { retry_after_ms: 30 } }, 3, 400)).toBe(30);
   });
 
   it('backs off exponentially when the envelope carries no hint', () => {
-    const delays = [0, 1, 2, 3].map((attempt) => subscribeRetryDelayMs({ code: 'rate_limited' }, attempt, 400));
+    const delays = [0, 1, 2, 3].map((attempt) => subscribeRetryDelayMs({}, attempt, 400));
     expect(delays).toEqual([400, 800, 1600, 3200]);
   });
 
@@ -754,7 +586,6 @@ describe('subscribeRetryDelayMs', () => {
 
     await store.refreshAll();
     expect(store.state.value.degraded.connectionLost).toBe(false);
-    expect(store.state.value.degraded.rateLimited).toBe(false);
   });
 
   it('does not count the taxonomy catch-all toward an outage', async () => {
@@ -814,34 +645,6 @@ describe('subscribeRetryDelayMs', () => {
     hass.__failNext(1, new Error('socket closed'));
     await store.adjustQuantity('1', 1);
     expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['connection_lost']);
-  });
-
-  it('counts the queued retries and schedules the next one', async () => {
-    // Nothing renders `nextRetryAt` today, so only this pins the backoff
-    // arithmetic and the retry counter to their observable behaviour. The
-    // counter only rises inside the retry window, so sample it from the
-    // subscription rather than racing the awaits.
-    const hass = makeMockHass({ items: [makeItem({ id: '1', quantity: 5 })] });
-    const store = new Store(hass, { retryBaseMs: 5 });
-    await store.init();
-
-    const retrying: number[] = [];
-    const scheduled: (number | null)[] = [];
-    const off = store.state.onChange(() => {
-      retrying.push(store.state.value.degraded.retrying);
-      scheduled.push(store.state.value.degraded.nextRetryAt);
-    });
-
-    hass.__rateLimitNext(1);
-    await store.adjustQuantity('1', 1);
-    off();
-
-    // One refusal, so exactly one retry was queued and a wait was published...
-    expect(Math.max(...retrying)).toBe(1);
-    expect(scheduled.some((t) => typeof t === 'number')).toBe(true);
-    // ...and both are cleared once the call finally settles.
-    expect(store.state.value.degraded.retrying).toBe(0);
-    expect(store.state.value.degraded.nextRetryAt).toBeNull();
   });
 });
 
@@ -981,7 +784,7 @@ describe('Store: HA area registry watch', () => {
             return hass.connection.subscribeMessage(cb as never, msg);
           }
           attempts += 1;
-          if (attempts <= refusals) return Promise.reject({ code: 'rate_limited' });
+          if (attempts <= refusals) return Promise.reject({ code: 'unknown_error' });
           return hass.connection.subscribeMessage(cb as never, msg);
         },
       },
@@ -1134,7 +937,6 @@ describe('Store: HA area registry watch', () => {
       // Silent: a refused area watch costs freshness, not function, so it
       // raises no banner and queues no error for the user to dismiss.
       expect(store.state.value.errorQueue).toEqual([]);
-      expect(store.state.value.degraded.rateLimited).toBe(false);
       expect(store.state.value.degraded.liveUpdates).toBe('live');
       expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
     } finally {
@@ -1457,17 +1259,11 @@ describe('Store: location tree and diagnostics data', () => {
     expect(hass.__calls.filter((c) => c === 'haventory/location/tree').length).toBe(before);
   });
 
-  it('caches the rate-limit block and the integration version for diagnostics', async () => {
+  it('caches the integration version for diagnostics', async () => {
     const hass = makeMockHass({ items: [] });
-    hass.__setHealth({ rate_limit: { enabled: true, dropped_commands: 7, dropped_events: 23 } });
     const store = new Store(hass, fast);
     await store.init();
 
-    expect(store.state.value.healthCache?.rate_limit).toEqual({
-      enabled: true,
-      dropped_commands: 7,
-      dropped_events: 23,
-    });
     expect(store.state.value.versionInfo?.integration_version).toBe('0.0.1');
   });
 

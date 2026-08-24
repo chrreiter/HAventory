@@ -43,7 +43,6 @@ export interface MockConfig {
 type HealthPatch = {
   healthy?: boolean;
   issues?: string[];
-  rate_limit?: { enabled: boolean; dropped_commands: number; dropped_events: number };
 };
 
 export interface MockHass extends HassLike {
@@ -52,8 +51,6 @@ export interface MockHass extends HassLike {
   __setItems(items: Item[]): void;
   __setLocations(locations: Location[]): void;
   __setHealth(patch: HealthPatch): void;
-  /** Reject the next `n` commands with `rate_limited`, then behave normally. */
-  __rateLimitNext(n: number): void;
   /** Reject the next `n` commands with an arbitrary error (transport by default). */
   __failNext(n: number, err?: unknown): void;
   /** Make every subsequent `haventory/subscribe` reject with `err`. */
@@ -106,7 +103,6 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         { slug: 'needs_repair', label: 'Needs repair', order: 2, color: 'amber', icon: 'wrench' },
       ];
   let healthOverride: HealthPatch | null = null;
-  let rateLimitRemaining = 0;
   let failRemaining = 0;
   let failError: unknown = new Error('connection lost');
   let subscribeError: unknown | null = null;
@@ -141,10 +137,6 @@ export function makeMockHass(initial?: MockConfig): MockHass {
       const type = String(msg.type || '');
       calls.push(type);
       messages.push({ ...msg });
-      if (rateLimitRemaining > 0) {
-        rateLimitRemaining -= 1;
-        throw { code: 'rate_limited', message: 'rate limit exceeded; retry later' };
-      }
       if (failRemaining > 0) {
         failRemaining -= 1;
         throw failError;
@@ -236,11 +228,6 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             healthy: healthOverride?.healthy ?? true,
             issues: healthOverride?.issues ?? [],
             counts,
-            rate_limit: healthOverride?.rate_limit ?? {
-              enabled: false,
-              dropped_commands: 0,
-              dropped_events: 0,
-            },
           } as unknown as T;
         }
         case 'haventory/version': {
@@ -664,8 +651,8 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     connection: {
       subscribeMessage(cb: SubCb, msg: Record<string, unknown>) {
         // Home Assistant's own event bus, not a `haventory/subscribe` topic:
-        // core events are neither billed by the rate limiter nor part of a
-        // subscribe round, so they stay out of `__subscribeCalls` too.
+        // core events are not part of a subscribe round, so they stay out of
+        // `__subscribeCalls` too.
         if (String(msg.type || '') === 'subscribe_events') {
           const eventType = String((msg as any).event_type || '');
           haEventSubs[eventType] ||= [];
@@ -727,7 +714,6 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     __setHealth(patch: HealthPatch) {
       healthOverride = { ...(healthOverride ?? {}), ...patch };
     },
-    __rateLimitNext(n: number) { rateLimitRemaining = n; },
     __failNext(n: number, err?: unknown) {
       failRemaining = n;
       if (err !== undefined) failError = err;

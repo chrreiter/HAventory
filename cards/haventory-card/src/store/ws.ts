@@ -456,8 +456,8 @@ export class WSClient {
       area_id?: string | null;
       include_subtree?: boolean;
       /**
-       * Called when the backend rejects the subscribe — most importantly with
-       * `rate_limited`, which otherwise kills live updates silently.
+       * Called when the backend rejects the subscribe, which otherwise kills
+       * live updates silently.
        */
       onError?: (err: unknown) => void;
       /**
