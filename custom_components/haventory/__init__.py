@@ -97,12 +97,6 @@ _CARD_BUNDLE_PATH = _WWW_DIR / _CARD_FILENAME
 _STATIC_URL_PATH = "/haventory_static"
 _CARD_URL_PATH = f"{_STATIC_URL_PATH}/{_CARD_FILENAME}"
 
-# Installs predating the move loaded the card from a copy in the config `www/`
-# tree. That copy goes away with the integration, so such an entry is ours to
-# rewrite rather than somebody else's resource to leave alone.
-_LEGACY_CARD_URL_PATH = "/local/haventory/haventory-card.js"
-_CARD_URL_PATHS = frozenset({_CARD_URL_PATH, _LEGACY_CARD_URL_PATH})
-
 # hass.data[DOMAIN] keys that outlive a config entry: the static route cannot be
 # unregistered, and the module URL has to be removed as the exact string it was
 # registered under.
@@ -590,13 +584,11 @@ def _points_at_card(resource_url: Any) -> bool:
     Compare paths, not whole URLs: a resource carries a cache-busting `?v=`
     query, and matching the full string would treat a versioned entry as
     somebody else's resource and register a second one for the same module — the
-    card then loads twice and the second `customElements.define` throws. The
-    legacy `/local` path counts as ours for the same reason: an install that
-    predates the move must end up with one entry, not two.
+    card then loads twice and the second `customElements.define` throws.
     """
     if not isinstance(resource_url, str):
         return False
-    return urlsplit(resource_url).path in _CARD_URL_PATHS
+    return urlsplit(resource_url).path == _CARD_URL_PATH
 
 
 async def _async_lovelace_resources(hass: HomeAssistant, *, op: str) -> Any:

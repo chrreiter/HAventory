@@ -49,8 +49,6 @@ STATIC_URL_PATH = "/haventory_static"
 CARD_PATH = f"{STATIC_URL_PATH}/haventory-card.js"
 # What both loaders and the panel receive, cache-buster and all.
 CURRENT_CARD_URL = f"{CARD_PATH}?v={INTEGRATION_VERSION}"
-# Where installs from before the bundle moved into the package loaded it from.
-LEGACY_CARD_PATH = "/local/haventory/haventory-card.js"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -357,37 +355,6 @@ async def test_registered_url_carries_the_integration_version(hav_init):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "registered_url",
-    [
-        LEGACY_CARD_PATH,
-        f"{LEGACY_CARD_PATH}?v=0.0.1",
-        f"{LEGACY_CARD_PATH}?v=38b725595b78",
-    ],
-)
-async def test_migrates_a_legacy_local_resource_in_place(monkeypatch, tmp_path, registered_url):
-    """An install predating the move ends up with one entry, on the new URL.
-
-    A second entry alongside the legacy one would load the card module twice and
-    the second `customElements.define` would throw; the legacy one left alone
-    would 404 once the copy under the config `www/` tree is gone.
-    """
-    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path)
-    hass = make_hass()
-    resources = MockResourceCollection([{"id": "legacy", "url": registered_url, "type": "module"}])
-    hass.data["lovelace_data_key"] = MockLovelaceData(resources)
-
-    await hav_init._register_frontend_module(hass)
-
-    expected = CURRENT_CARD_URL
-    assert resources.created == []
-    assert resources.updated == [("legacy", {"res_type": "module", "url": expected})]
-    assert [i["url"] for i in resources.async_items()] == [expected]
-    assert extra_js_urls(hass) == {expected}
-
-
-@pytest.mark.asyncio
 async def test_reregistration_at_the_same_version_is_idempotent(hav_init):
     """Entry already at the current `?v=` => nothing is created and nothing is written."""
     hass = make_hass()
@@ -442,16 +409,14 @@ async def test_updates_existing_entry_when_the_version_changed(
 
 
 @pytest.mark.asyncio
-async def test_collapses_duplicate_card_resources(monkeypatch, tmp_path):
-    """A legacy entry beside a current one is one element definition too many."""
-    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path)
+async def test_collapses_duplicate_card_resources(hav_init):
+    """A second entry for the card is one element definition too many."""
     hass = make_hass()
     expected = CURRENT_CARD_URL
     resources = MockResourceCollection(
         [
             {"id": "current", "url": expected, "type": "module"},
-            {"id": "legacy", "url": LEGACY_CARD_PATH, "type": "module"},
+            {"id": "stale", "url": f"{CARD_PATH}?v=0.0.1", "type": "module"},
         ]
     )
     hass.data["lovelace_data_key"] = MockLovelaceData(resources)
@@ -459,7 +424,7 @@ async def test_collapses_duplicate_card_resources(monkeypatch, tmp_path):
     await hav_init._register_frontend_module(hass)
 
     assert resources.created == []
-    assert resources.deleted == ["legacy"]
+    assert resources.deleted == ["stale"]
     assert [i["url"] for i in resources.async_items()] == [expected]
 
 
@@ -522,7 +487,7 @@ async def test_registers_alongside_unrelated_resources(hav_init):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("registered_url", [None, LEGACY_CARD_PATH, f"{CARD_PATH}?v=0.0.0"])
+@pytest.mark.parametrize("registered_url", [None, f"{CARD_PATH}?v=0.0.0"])
 async def test_yaml_mode_loads_the_card_through_the_module_url(hav_init, registered_url):
     """YAML resources are read-only — which is exactly what the extra-module URL is for."""
     hass = make_hass()
