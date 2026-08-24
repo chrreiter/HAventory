@@ -33,6 +33,8 @@ from custom_components.haventory.const import (
 )
 from homeassistant.config_entries import ConfigEntry
 
+from runtime_helpers import RETIRED_RATE_LIMIT_OPTIONS
+
 
 def _entry(options: dict) -> ConfigEntry:
     return ConfigEntry(options=options)
@@ -246,6 +248,33 @@ async def test_a_cleared_shopping_list_stores_the_empty_string() -> None:
 
     result = await flow.async_step_init(user_input={CONF_CARD_TITLE: "Pantry", SECTION_TODO: {}})
     assert result["data"][CONF_TODO_ENTITY_ID] == DEFAULT_TODO_ENTITY_ID
+
+
+@pytest.mark.asyncio
+async def test_the_next_save_drops_options_the_form_no_longer_offers() -> None:
+    """An upgraded entry's retired keys survive until this form is saved once.
+
+    `async_create_entry` replaces the stored options with what the form
+    submitted, so a key nothing offers cannot come back — and until then it is
+    read by nothing. Opening the form over them must also not fail: the values
+    are prefill candidates for fields that no longer exist.
+    """
+
+    flow = HAventoryOptionsFlowHandler()
+    flow.config_entry = _entry({CONF_CARD_TITLE: "Pantry", **RETIRED_RATE_LIMIT_OPTIONS})
+
+    form = await flow.async_step_init(user_input=None)
+    assert not [key for key in _schema_keys(form["data_schema"]) if key.startswith("rate_limit")]
+
+    result = await flow.async_step_init(
+        user_input={
+            CONF_CARD_TITLE: "Pantry",
+            CONF_SIDEBAR_PANEL_ENABLED: True,
+            CONF_QUICK_FILTERS: list(QUICK_FILTER_KEYS),
+            SECTION_TODO: {},
+        }
+    )
+    assert not [key for key in result["data"] if key.startswith("rate_limit")]
 
 
 @pytest.mark.asyncio
