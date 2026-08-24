@@ -530,7 +530,7 @@ export function describeFailure(failure: BulkFailure): string {
       return t('hv.bulk.failure.notFound');
     case 'validation_error':
       // The backend's own sentence, framed by the card's — the message text
-      // itself is not translated, as #190's notes settle.
+      // itself is not translated.
       return t('hv.bulk.failure.rejected', { message });
     case 'storage_error':
       return t('hv.bulk.failure.storage');

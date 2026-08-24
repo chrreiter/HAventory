@@ -12,11 +12,10 @@ import '../components/hv-banner';
  * The two stacks that say something is wrong: what the connection is doing, and
  * what the last operations came back with.
  *
- * Both were the card's alone. On the expanded view and the sidebar panel — the
- * surfaces that fill the screen, so the card's copy is not behind them — a lost
- * connection, paused live updates and a refused operation all showed nothing at
- * all. They render from here now, so the three surfaces cannot disagree about
- * what a failure looks like or what can be done about it.
+ * All three surfaces render them from here, so they cannot disagree about what
+ * a failure looks like or what can be done about it. The expanded view and the
+ * sidebar panel need their own: each fills the screen, so the card's copy is
+ * not behind them to be read.
  *
  * A rejected *save* is the one failure this stack is not the primary voice for:
  * the sentence inside the open form is, because that is where the user's text

@@ -153,10 +153,9 @@ export class HVItemEditor extends LitElement {
          * The form's small print, at one size. Labels are 11px (the shared
          * hv-label recipe and the photo picker's caption); everything this
          * form declares as a note about a field — hints, sizes, errors, the
-         * upload queue — reads at this one instead of the 11.5/12/12.5px band
-         * they used to spread across. The custom-fields tally is the one piece
-         * of small print here that is not this form's to size: it is the same
-         * facet count the sidebar shows, priced once in the shared sheet.
+         * upload queue — reads at this one. The custom-fields tally is the one
+         * piece of small print here that is not this form's to size: it is the
+         * same facet count the sidebar shows, priced once in the shared sheet.
          */
         --hv-editor-note: 12px;
         background: var(--hv-row-hover);

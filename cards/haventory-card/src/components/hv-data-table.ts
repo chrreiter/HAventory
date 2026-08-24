@@ -71,11 +71,10 @@ export class HVDataTable extends LitElement {
            Sideways because the column template has a hard minimum — about
            1366px for the default set, 1414px with the selection column — and a
            grid whose tracks do not fit overflows its own box rather than
-           shrinking. With overflow visible that spilled content was simply
-           clipped by the shell: at 375px the rows measured clientWidth 634
-           against scrollWidth 854, and the Tags, Due and Updated columns could
-           not be reached by any gesture. Scrolling keeps whichever columns the
-           user chose rather than quietly dropping them on small screens.
+           shrinking. With overflow visible the shell clips what spills, and on
+           a phone the rightmost columns cannot be reached by any gesture.
+           Scrolling keeps whichever columns the user chose rather than quietly
+           dropping them on small screens.
 
            Vertically here rather than on the row group, because a sticky cell
            resolves its offsets against the nearest scroll container: with the

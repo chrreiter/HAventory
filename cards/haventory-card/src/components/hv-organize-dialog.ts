@@ -1553,7 +1553,7 @@ export class HVOrganizeDialog extends LitElement {
     const merging = this._mergingLocation ? this._findNode(tree, this._mergingLocation) : null;
     const sheeted = this._sheetLocation ? this._findNode(tree, this._sheetLocation) : null;
     // Counted at every depth and against the filter, exactly as the other two
-    // tabs count their values — this was the only tab that stated no total.
+    // tabs count their values, so all three tabs state a total in one idiom.
     const count = countLocations(tree, this._filter);
     return html`
       <div class="toolbar">

@@ -75,11 +75,11 @@ export class HostSurfaces {
    * The phone predicate for every dialog here, measured against the viewport.
    *
    * Not the card's width: these are `position: fixed`, so they are laid out
-   * against the window whatever the card measures. The card side used to hand
-   * its own measurement in, which put the organize dialog in its full-bleed
-   * phone page whenever the card sat in a normal dashboard column — on a
-   * desktop monitor, from a card, from the expanded view and unchanged by
-   * expanding, because the measured element was still the card underneath.
+   * against the window whatever the card measures. Handed the card's own
+   * measurement, the organize dialog takes its full-bleed phone page on a
+   * desktop monitor whenever the card sits in a normal dashboard column, and
+   * expanding the card does not change it — the measured element is still the
+   * card underneath.
    */
   private narrowQuery: MediaQueryList | null = null;
   private narrow = false;

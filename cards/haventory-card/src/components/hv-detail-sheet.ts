@@ -1004,10 +1004,10 @@ export class HVDetailSheet extends LitElement {
           this._mode = 'read';
         }}
         @delete-item=${(e: Event) => {
-          // The form has a Delete of its own, and this sheet is the only host
-          // that never forwarded it — so the button sat there doing nothing.
-          // Re-emitted as `request-delete`, the same event the read view's
-          // Delete sends, so the host confirms it exactly once either way.
+          // The form has a Delete of its own, and this sheet has to forward it
+          // or the button does nothing. Re-emitted as `request-delete`, the
+          // same event the read view's Delete sends, so the host confirms it
+          // exactly once either way.
           e.stopPropagation();
           this._emit('request-delete');
         }}

@@ -169,9 +169,8 @@ export class HVOverflowMenu extends LitElement {
         color: var(--hv-text-tertiary);
       }
 
-      /* A trigger-anchored 250px dropdown is a desktop shape. At 375px it
-         covered most of the list it was supposed to be acting on and "Export
-         current view" wrapped onto two lines, while the rest of the card
+      /* A trigger-anchored 250px dropdown is a desktop shape: at phone width it
+         covers most of the list it is acting on, and the rest of the card
          answers exactly this need with a bottom sheet. The menu becomes one
          here — the inset overrides the measured coordinates.
 

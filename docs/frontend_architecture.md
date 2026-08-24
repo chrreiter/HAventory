@@ -210,22 +210,22 @@ Two questions, two answers, and they are not interchangeable:
   overlay is laid out against the window, so the card's width says nothing about the room it
   has.
 
-Each split bit once. `hv-item-editor` and `hv-filter-panel` are property-driven but are also
-children of `hv-full-view`, which never set the property — so at 375px the expanded view drew
-the editor's three-column desktop grid in 156px + 78px + 78px; `hv-full-view` now reads the
-viewport query and hands the property down. Note what came with it: `hv-filter-panel` in
-`mobile` mode *stages* its edits and drops its own footer, expecting the host to provide one,
-so the expanded view also grew the commit row the card's filter sheet has: a head row above
-the panel — the heading, how many filters are staged, and Clear all — and a footer of Cancel
-and "Show N items". Three controls on one row is one too many for a 375px screen in German,
-which is why the head row exists on both surfaces rather than only on the card's. For the
-same reason the phone toolbar drops its column-picker button and leaves the ⋮ menu's
-Columns entry as the route there.
+The two signals meet in the children of a fixed overlay. `hv-item-editor` and
+`hv-filter-panel` are property-driven but also children of `hv-full-view`, so that surface
+reads the viewport query and hands the property down — left unset, the expanded view draws
+the editor's three-column desktop grid on a phone. What comes with the property:
+`hv-filter-panel` in `mobile` mode *stages* its edits and drops its own footer, expecting the
+host to provide one, so the expanded view carries the commit row the card's filter sheet has —
+a head row above the panel (the heading, how many filters are staged, and Clear all) and a
+footer of Cancel and "Show N items". Three controls on one row is one too many for a 375px
+screen in German, which is why the head row exists on both surfaces rather than only on the
+card's. For the same reason the phone toolbar drops its column-picker button and leaves the ⋮
+menu's Columns entry as the route there.
 
-In the other direction, `HostSurfaces` was fed the card's measurement, so the
-organize dialog took its full-bleed phone page on a desktop monitor whenever the card sat in
-a normal column — and expanding the card changed nothing, because the measured element was
-still the card underneath.
+In the other direction, `HostSurfaces` reads the viewport itself rather than taking the
+card's measurement. Fed the card's width, the organize dialog takes its full-bleed phone page
+on a desktop monitor whenever the card sits in a normal column, and expanding the card does
+not change it — the measured element is still the card underneath.
 
 On a phone viewport the four smaller dialogs — column picker, confirm, import, diagnostics —
 rise from the bottom edge like every other phone surface, through the shared

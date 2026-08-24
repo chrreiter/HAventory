@@ -37,11 +37,9 @@ export class HVDiagnosticsPanel extends LitElement {
       /*
        * The single implicit track of a centring grid is auto-sized, and an
        * auto track takes the width its item asks for — 470px — however narrow
-       * the container is. The panel's own max-width: 100% then resolved
-       * against that 470px track and never clamped, so on a 390px screen the
-       * dialog stayed 470 wide: the third tile, the fact values and the Close
-       * button all hung off the right edge, unreachable (the wrap measured
-       * scrollWidth 494 against clientWidth 390).
+       * the container is. The panel's own max-width: 100% resolves against
+       * that track and never clamps, so on a phone the dialog stays 470 wide
+       * and its right edge hangs off the screen, out of reach.
        *
        * A minmax(0, 1fr) track is the container's width instead, which is what
        * gives the percentage something to bite on. Rows get the same treatment

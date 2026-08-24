@@ -7,15 +7,12 @@ import type { StoreFilters } from '../store/types';
 /**
  * The ways a list of items can have no rows, and what to say about each.
  *
- * The card's list said it properly — a headline, a line of explanation and
- * something to press ("No items match these filters" + Clear all). The expanded
- * view's table, reached from the same card and holding the same items, answered
- * with one bare sentence and no way out: "No items match these filters." with a
- * full stop and nothing to click. That is the surface with a sidebar, an app-bar
- * search and a filter panel — the one where you are most likely to filter
- * yourself down to nothing and least able to see which control did it.
- *
- * Both now render from here, so the wording cannot drift again.
+ * Every empty list gets a headline, a line of explanation and something to
+ * press, and the card's list and the expanded view's table render both from
+ * here so the wording cannot drift apart. The expanded view needs it most: with
+ * a sidebar, an app-bar search and a filter panel, that is where you are most
+ * likely to filter yourself down to nothing and least able to see which control
+ * did it.
  *
  * The card's punctuation convention, of which this is the busiest example:
  * headlines, hints and short empty lines are captions and take no terminal full

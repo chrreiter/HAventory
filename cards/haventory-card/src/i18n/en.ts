@@ -139,9 +139,8 @@ export const en = {
   // ui/keyboard — the save chord, on a keyboard without a Command key.
   'hv.shortcut.ctrlEnter': 'Ctrl+Enter',
 
-  // Three counted sentences whose components are translated in a later batch;
-  // they land here because `ui/plural` no longer derives an English plural for
-  // anyone, and these were its last three callers outside `src/ui`.
+  // Counted sentences that belong to no one component group. `ui/plural`
+  // derives no English plural, so both forms are written out.
   'hv.bulk.result.failed.one': '{count} failed and was left unchanged.',
   'hv.bulk.result.failed.other': '{count} failed and were left unchanged.',
   'hv.fullView.checkedOutWarning.one': '{count} of them is checked out',
@@ -425,7 +424,7 @@ export const en = {
   // haventory-card-editor — the one field Home Assistant's card editor shows.
   'hv.cardEditor.title': 'Title',
 
-  // Shared, added by the second component batch.
+  // Shared — the verbs and terms more than one component reads.
   'hv.action.set': 'Set',
   'hv.action.done': 'Done',
   'hv.action.rename': 'Rename',

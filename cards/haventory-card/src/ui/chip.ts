@@ -285,8 +285,8 @@ export const chip = css`
    * vertical-align: middle puts an inline box on the parent's baseline plus
    * half its x-height, which is the middle of lowercase text and not the middle
    * of the line. Beside a path with capitals and digits in it that leaves the
-   * chip sitting low — measured at 1.4px against 13.5px text, and it does not
-   * shrink as the chip does, because the offset is a property of the text.
+   * chip sitting low, and the offset does not shrink as the chip does, because
+   * it is a property of the text.
    *
    * The elision has to move onto the text with it: text-overflow has no
    * effect on a flex container, so a path left on the row itself would hard-cut
