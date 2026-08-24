@@ -626,10 +626,8 @@ uv run python .claude/skills/run-haventory/lifecycle_probe.py all --yes
 ```
 
 `resources` sets the Lovelace resource to each shape a restart can find — hand-pinned
-`?v=<hash>`, stale `?v=<old version>`, bare URL, plus the two legacy
-`/local/haventory/haventory-card.js` shapes an install predating the integration-served
-bundle carries — restarts, and asserts one entry survives **under the original resource
-id**; a second entry would load the card module twice and the second
+`?v=<hash>`, stale `?v=<old version>`, bare URL, a URL carrying a second query parameter
+— restarts, and asserts one entry survives **under the original resource id**; a second entry would load the card module twice and the second
 `customElements.define` would throw. `downgrade` writes a higher `schema_version`
 into the store and asserts the entry lands in `setup_error` (not `setup_retry` — retrying
 cannot teach this build a newer schema) with the payload untouched. `entry` removes the

@@ -51,8 +51,7 @@ _MAX_REPORTED_VERSION_CHARS: Final[int] = 60
 
 
 # Every top-level collection the stored payload carries, in one place because
-# three call sites have to agree about the set: `_empty_payload`, `async_load`'s
-# backfill, and `async_save`'s.
+# every payload this module hands out or writes has to agree about the set.
 #
 # The load path is wider than the save path by construction — `async_load` keeps
 # whatever the file holds, while a save writes exactly what
@@ -61,6 +60,30 @@ _MAX_REPORTED_VERSION_CHARS: Final[int] = 60
 # the first save afterwards, with nothing logged. `tests/test_storage_offline.py`
 # pins `export_state()` to this tuple so that mistake fails a test instead.
 STORE_COLLECTIONS: Final[tuple[str, ...]] = ("items", "locations", "statuses")
+
+# The collections `Repository.from_state` walks by key. A stored value of another
+# type there is corruption the load path names rather than crashes on; the rest
+# of `STORE_COLLECTIONS` is checked by the repository as it reads each row.
+_REQUIRED_COLLECTIONS: Final[tuple[str, ...]] = ("items", "locations")
+
+
+def _normalized(payload: Mapping[str, Any], *, schema_version: int) -> dict[str, Any]:
+    """A copy of ``payload`` carrying every collection, defaulting the absent ones.
+
+    What the payload holds wins, extra keys included: a store written by a build
+    that knew a key this one does not has to survive the trip, and be handed back
+    unchanged.
+
+    The copy is one level deep on purpose. The collections underneath are handed
+    over, not duplicated — the save path's caller builds them fresh on every call
+    and keeps no reference, and a deep copy of a thousand items measured longer
+    than building the payload and encoding it put together.
+    """
+
+    normalized: dict[str, Any] = {"schema_version": schema_version}
+    normalized.update({name: {} for name in STORE_COLLECTIONS})
+    normalized.update(payload)
+    return normalized
 
 
 def _empty_payload() -> dict[str, Any]:
@@ -71,27 +94,14 @@ def _empty_payload() -> dict[str, Any]:
     an absent ``statuses`` section means everywhere else.
     """
 
-    payload: dict[str, Any] = {"schema_version": CURRENT_SCHEMA_VERSION}
-    payload.update({name: {} for name in STORE_COLLECTIONS})
-    payload["statuses"] = {
-        slug: serialize_status_definition(definition)
-        for slug, definition in seed_status_definitions().items()
-    }
-    return payload
-
-
-def schema_downgrade_message(*, stored_version: int, supported_version: int) -> str:
-    """Build the refusal shown when stored data outranks this build.
-
-    Shared by the storage layer and setup validation so both refusal paths tell
-    the user the same thing.
-    """
-
-    return (
-        f"stored data uses schema version {stored_version}, which is newer than this "
-        f"build supports ({supported_version}); HAventory will not downgrade it. "
-        "Upgrade HAventory to a version that understands this data, or restore a backup "
-        "taken with this version. The stored data was left unchanged."
+    return _normalized(
+        {
+            "statuses": {
+                slug: serialize_status_definition(definition)
+                for slug, definition in seed_status_definitions().items()
+            }
+        },
+        schema_version=CURRENT_SCHEMA_VERSION,
     )
 
 
@@ -197,6 +207,10 @@ class DomainStore:
 
         Returns a copy of the data to prevent external mutation of the cached
         object inside the storage layer.
+
+        The payload comes back stamped with this build's schema version, whether
+        it was migrated to get there or already carried it, so what the caller
+        reads never disagrees with the store it came from.
         """
 
         raw = await self._store.async_load()
@@ -207,33 +221,25 @@ class DomainStore:
         from_version = read_schema_version(raw, missing=0) if isinstance(raw, dict) else 0
 
         if from_version != self._schema_version:
-            migrated = await self.async_migrate_if_needed(raw)
-            return deepcopy(migrated)
+            data = await self.async_migrate_if_needed(raw)
+        else:
+            data = _normalized(
+                raw if isinstance(raw, dict) else {}, schema_version=self._schema_version
+            )
 
-        # Ensure required keys exist (older stubs or external mutations)
-        data: dict[str, Any] = {"schema_version": self._schema_version}
-        data.update({name: {} for name in STORE_COLLECTIONS})
-        if isinstance(raw, dict):
-            data.update(raw)
+        # A hand-edited file can hold anything under these keys, and the
+        # repository walks them as maps of rows.
+        for name in _REQUIRED_COLLECTIONS:
+            if not isinstance(data.get(name), dict):
+                raise StorageError(f"storage payload {name} is not a mapping")
         return deepcopy(data)
 
     async def async_save(self, data: dict[str, Any]) -> None:
-        """Persist the dataset, ensuring schema_version is up to date.
+        """Persist the dataset, ensuring schema_version is up to date."""
 
-        The copy is one level deep: enough that the defaults below land on this
-        method's dict rather than the caller's, and no deeper. The collections
-        underneath are handed over, not duplicated — ``Repository.export_state``
-        builds every one of them fresh on each call and keeps no reference, so a
-        deep copy would rebuild the whole dataset a second time on the event
-        loop for nothing. At a thousand items that copy measured longer than
-        building the payload and encoding it put together, and it grows with the
-        inventory the way both of those do.
-        """
-
-        payload = dict(data) if isinstance(data, dict) else {}
-        payload.setdefault("schema_version", self._schema_version)
-        for name in STORE_COLLECTIONS:
-            payload.setdefault(name, {})
+        payload = _normalized(
+            data if isinstance(data, dict) else {}, schema_version=self._schema_version
+        )
         await self._store.async_save(payload)
 
     async def async_migrate_if_needed(self, raw: dict[str, Any]) -> dict[str, Any]:
@@ -265,11 +271,7 @@ class DomainStore:
         from_version = read_schema_version(raw, missing=0)
         to_version = self._schema_version
         if from_version == to_version:
-            # Normalize missing keys even when versions match
-            normalized: dict[str, Any] = {"schema_version": to_version}
-            normalized.update({name: {} for name in STORE_COLLECTIONS})
-            normalized.update(raw)
-            return normalized
+            return _normalized(raw, schema_version=to_version)
 
         if from_version > to_version:
             # Migrations are forward-only, so a newer payload would pass through
@@ -286,7 +288,10 @@ class DomainStore:
                 },
             )
             raise SchemaDowngradeError(
-                schema_downgrade_message(stored_version=from_version, supported_version=to_version)
+                f"stored data uses schema version {from_version}, which is newer than this "
+                f"build supports ({to_version}); HAventory will not downgrade it. "
+                "Upgrade HAventory to a version that understands this data, or restore a "
+                "backup taken with this version. The stored data was left unchanged."
             )
 
         try:
@@ -317,13 +322,14 @@ class DomainStore:
                 },
             )
             raise StorageError("storage migration returned non-dict payload")
-        # Guarantee required fields and version
-        for name in STORE_COLLECTIONS:
-            migrated.setdefault(name, {})
+        # The version is this build's, not whatever the last step left behind: a
+        # payload saved under a version it does not carry is one nothing can read
+        # back correctly.
         migrated["schema_version"] = to_version
+        normalized = _normalized(migrated, schema_version=to_version)
 
-        await self._store.async_save(migrated)
-        return migrated
+        await self._store.async_save(normalized)
+        return normalized
 
 
 async def async_persist_repo(hass: HomeAssistant) -> None:

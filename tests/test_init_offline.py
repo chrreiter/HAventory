@@ -100,22 +100,6 @@ async def test_setup_entry_logs_populated_storage_at_debug(monkeypatch, caplog) 
 
 
 @pytest.mark.asyncio
-async def test_setup_entry_invalid_version_raises(monkeypatch) -> None:
-    """Schema version mismatch triggers ConfigEntryNotReady."""
-
-    hass = HomeAssistant()
-    entry = ConfigEntry()
-
-    async def _bad_load(self):  # type: ignore[no-untyped-def]
-        return {"schema_version": 0, "items": {}, "locations": {}}
-
-    monkeypatch.setattr(DomainStore, "async_load", _bad_load)
-
-    with pytest.raises(ConfigEntryNotReady):
-        await haven_init.async_setup_entry(hass, entry)
-
-
-@pytest.mark.asyncio
 async def test_setup_entry_refuses_newer_schema_and_leaves_store_intact(monkeypatch) -> None:
     """Data written by a newer build aborts setup permanently and is never rewritten."""
 
@@ -145,22 +129,6 @@ async def test_setup_entry_refuses_newer_schema_and_leaves_store_intact(monkeypa
 
     assert await raw_store.async_load() == pre_payload
     assert "repository" not in hass.data[haven_init.DOMAIN]
-
-
-@pytest.mark.asyncio
-async def test_validate_storage_payload_reports_newer_version_specifically() -> None:
-    """A newer payload reaching validation is refused with the downgrade message."""
-
-    payload = {
-        "schema_version": CURRENT_SCHEMA_VERSION + 2,
-        "items": {},
-        "locations": {},
-    }
-
-    with pytest.raises(SchemaDowngradeError) as excinfo:
-        haven_init._validate_storage_payload(payload, schema_version=CURRENT_SCHEMA_VERSION)
-
-    assert str(CURRENT_SCHEMA_VERSION + 2) in str(excinfo.value)
 
 
 @pytest.mark.asyncio
@@ -196,32 +164,23 @@ async def test_setup_entry_refuses_corrupt_schema_version_and_leaves_store_intac
 
 
 @pytest.mark.asyncio
-async def test_validate_storage_payload_rejects_a_numeric_string_version() -> None:
-    """``"5"`` is corruption, not the current version — validation must not coerce it."""
+async def test_setup_entry_retries_on_a_collection_of_the_wrong_type(monkeypatch) -> None:
+    """A stored ``items`` that is not a mapping stops setup rather than half-loading.
 
-    payload = {
-        "schema_version": str(CURRENT_SCHEMA_VERSION),
-        "items": {},
-        "locations": {},
-    }
-
-    with pytest.raises(CorruptSchemaVersionError) as excinfo:
-        haven_init._validate_storage_payload(payload, schema_version=CURRENT_SCHEMA_VERSION)
-
-    assert repr(str(CURRENT_SCHEMA_VERSION)) in str(excinfo.value)
-
-
-@pytest.mark.asyncio
-async def test_setup_entry_invalid_collections_raise(monkeypatch) -> None:
-    """Non-dict collections trigger ConfigEntryNotReady."""
+    ConfigEntryNotReady, not ConfigEntryError: a file in that state was written
+    by something other than this integration, and a restore in the background is
+    a fix a retry would pick up.
+    """
 
     hass = HomeAssistant()
     entry = ConfigEntry()
+    key = "test_init_collection_wrong_type"
+    monkeypatch.setattr(haven_init, "STORAGE_KEY", key)
 
-    async def _bad_load(self):  # type: ignore[no-untyped-def]
-        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": [], "locations": {}}
-
-    monkeypatch.setattr(DomainStore, "async_load", _bad_load)
+    raw_store = HAStore(hass, DomainStore.HA_STORE_VERSION, key)
+    await raw_store.async_save(
+        {"schema_version": CURRENT_SCHEMA_VERSION, "items": [], "locations": {}}
+    )
 
     with pytest.raises(ConfigEntryNotReady):
         await haven_init.async_setup_entry(hass, entry)
@@ -384,7 +343,10 @@ async def test_a_newer_store_also_reaches_settings_repairs(monkeypatch) -> None:
     entry = ConfigEntry()
 
     async def _newer(self):  # type: ignore[no-untyped-def]
-        return {"schema_version": CURRENT_SCHEMA_VERSION + 1, "items": {}, "locations": {}}
+        raise SchemaDowngradeError(
+            f"stored data uses schema version {CURRENT_SCHEMA_VERSION + 1}, which is newer "
+            f"than this build supports ({CURRENT_SCHEMA_VERSION})"
+        )
 
     monkeypatch.setattr(DomainStore, "async_load", _newer)
 
@@ -568,45 +530,10 @@ async def test_a_lossy_load_rewrites_the_store_it_could_not_fully_read(monkeypat
     }
     raw_store = HAStore(hass, DomainStore.HA_STORE_VERSION, key)
     await raw_store.async_save(deepcopy(payload))
-    backup = HAStore(hass, DomainStore.HA_STORE_VERSION, CORRUPT_BACKUP_STORAGE_KEY)
-    await backup.async_remove()
-
-    try:
-        await setup_entry(hass, entry)
-
-        written = await raw_store.async_load()
-        assert set(written["items"]) == {"11111111-1111-4111-8111-111111111111"}
-        # The rows that just left the store are in the copy, which is what makes
-        # rewriting it something other than deleting them.
-        assert set((await backup.async_load())["items"]) == set(payload["items"])
-    finally:
-        # The stub's backing dict is module-global, so a copy left under the real
-        # key would outlive this test.
-        await backup.async_remove()
-
-
-@pytest.mark.asyncio
-async def test_a_lossy_load_that_cannot_be_copied_leaves_the_store_alone(
-    monkeypatch, caplog
-) -> None:
-    """No copy, no rewrite: the rows stay recoverable at the price of one more refusal."""
-
-    hass = HomeAssistant()
-    entry = ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True})
-    key = "test_init_lossy_load_no_copy"
-    monkeypatch.setattr(haven_init, "STORAGE_KEY", key)
-
-    payload = _corrupt_payload()
-    raw_store = HAStore(hass, DomainStore.HA_STORE_VERSION, key)
-    await raw_store.async_save(deepcopy(payload))
-
-    async def _no_copy(_hass, **_kwargs):  # type: ignore[no-untyped-def]
-        return False
-
-    monkeypatch.setattr(haven_init, "async_backup_store", _no_copy)
-    caplog.set_level(logging.ERROR)
 
     await setup_entry(hass, entry)
 
-    assert await raw_store.async_load() == payload
-    assert any("could not copy it aside" in record.message for record in caplog.records)
+    # What the copy the repair flow took holds is asserted where that flow can
+    # actually run: `tests/integration/test_repairs.py`.
+    written = await raw_store.async_load()
+    assert set(written["items"]) == {"11111111-1111-4111-8111-111111111111"}

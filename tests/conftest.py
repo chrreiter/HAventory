@@ -40,7 +40,6 @@ import asyncio
 import dataclasses
 import datetime
 import functools
-import json
 import os
 import sys
 import tempfile
@@ -355,9 +354,6 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             self.config_entries = _ConfigEntries()
             self.services = _Services()
             self.http = _Http()
-            # What was handed to a worker thread, in order. A test telling an
-            # event-loop file read apart from an offloaded one reads this.
-            self.executor_jobs: list = []
 
         def async_create_background_task(self, target, name, eager_start=True):
             """Stand in for HA's tracked-task helper; the real one also cancels on shutdown."""
@@ -369,7 +365,6 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
             Running the callable on a genuine worker thread keeps the offline suite
             honest about what does and does not touch the event loop thread.
             """
-            self.executor_jobs.append(target)
             return await asyncio.get_running_loop().run_in_executor(None, target, *args)
 
     class ServiceCall:  # type: ignore[override]
@@ -1114,49 +1109,6 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     ha_diagnostics.REDACTED = REDACTED
     ha_diagnostics.async_redact_data = async_redact_data
     sys.modules["homeassistant.components.diagnostics"] = ha_diagnostics
-
-    # homeassistant.loader
-    ha_loader = types.ModuleType("homeassistant.loader")
-
-    _SHIPPED_MANIFEST = json.loads(
-        (ROOT / "custom_components" / "haventory" / "manifest.json").read_text(encoding="utf-8")
-    )
-
-    class IntegrationNotFound(Exception):  # type: ignore[override]
-        def __init__(self, domain: str) -> None:
-            super().__init__(f"Integration '{domain}' not found.")
-            self.domain = domain
-
-    class Integration:  # type: ignore[override]
-        def __init__(self, domain: str, manifest: dict) -> None:
-            self.domain = domain
-            self.manifest = manifest
-
-    async def async_get_integration(hass: HomeAssistant, domain: str):  # type: ignore[override]
-        """Hand back the manifest HA parsed at load time, doing no file I/O.
-
-        Tests override per-hass through ``hass.data["__integration_manifests__"]``;
-        mapping a domain to None makes the lookup raise, the way it does in real HA
-        for an integration that is not installed.
-        """
-        overrides = getattr(hass, "data", None)
-        if isinstance(overrides, dict) and domain in (
-            overrides.get("__integration_manifests__") or {}
-        ):
-            manifest = overrides["__integration_manifests__"][domain]
-        elif domain == _SHIPPED_MANIFEST.get("domain"):
-            manifest = _SHIPPED_MANIFEST
-        else:
-            manifest = None
-
-        if manifest is None:
-            raise IntegrationNotFound(domain)
-        return Integration(domain, manifest)
-
-    ha_loader.IntegrationNotFound = IntegrationNotFound
-    ha_loader.Integration = Integration
-    ha_loader.async_get_integration = async_get_integration
-    sys.modules["homeassistant.loader"] = ha_loader
 
 
 if _INTEGRATION_MODE:

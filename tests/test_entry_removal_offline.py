@@ -8,29 +8,21 @@ inventory, so a re-add restores the data.
 from __future__ import annotations
 
 import importlib
-import json
 import sys
 import types
-from pathlib import Path
 from typing import Any
 
 import pytest
+from custom_components.haventory.const import INTEGRATION_VERSION
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 CARD_URL = "/haventory_static/haventory-card.js"
-# What installs from before the bundle moved into the package registered.
-LEGACY_CARD_URL = "/local/haventory/haventory-card.js"
 LOVELACE_KEY = "lovelace_data_key"
-
-
-def current_card_url() -> str:
-    """The versioned URL setup would have registered, from the shipped manifest."""
-    manifest = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
-    version = json.loads((manifest / "manifest.json").read_text(encoding="utf-8"))["version"]
-    return f"{CARD_URL}?v={version}"
+# The versioned URL setup would have registered.
+CURRENT_CARD_URL = f"{CARD_URL}?v={INTEGRATION_VERSION}"
 
 
 class MockResourceCollection:
@@ -117,9 +109,9 @@ async def test_remove_entry_removes_the_frontend_module_url(monkeypatch) -> None
     """The extra-module URL goes too, or the frontend keeps requesting a dead asset."""
 
     hav_init = _import_with_lovelace(monkeypatch)
-    resources = MockResourceCollection([{"id": "haventory", "url": current_card_url()}])
+    resources = MockResourceCollection([{"id": "haventory", "url": CURRENT_CARD_URL}])
     hass = _hass_with_resources(
-        resources, module_urls=[current_card_url(), "/other_static/other-card.js"]
+        resources, module_urls=[CURRENT_CARD_URL, "/other_static/other-card.js"]
     )
 
     await hav_init.async_remove_entry(hass, ConfigEntry())
@@ -148,9 +140,6 @@ async def test_remove_entry_removes_the_module_url_recorded_at_setup(monkeypatch
         f"{CARD_URL}?v=38b725595b78",
         f"{CARD_URL}?v=1&foo=bar",
         f"{CARD_URL}#frag",
-        # An install that never got past the legacy `/local` URL.
-        LEGACY_CARD_URL,
-        f"{LEGACY_CARD_URL}?v=0.0.1",
     ],
 )
 async def test_remove_entry_deletes_versioned_card_resource(monkeypatch, registered_url) -> None:
