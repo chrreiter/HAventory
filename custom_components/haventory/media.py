@@ -328,10 +328,40 @@ def _read_head_blocking(source: Path) -> tuple[bytes, int]:
         return handle.read(SNIFF_BYTES), size
 
 
-def _delete_blocking(targets: Iterable[Path]) -> None:
-    """Unlink each path that is present. Blocks — run it in the executor."""
+def _prune_emptied_blocking(root: Path, directories: Iterable[Path]) -> None:
+    """Remove each directory the caller has just emptied. Blocks — executor only.
 
+    ``rmdir`` is the whole check: a directory still holding something — an
+    operator's own file, or a tile from an encoder generation this build cannot
+    name — refuses to go, so nothing has to recognise that file first. Any other
+    refusal (a file being served at that instant, a mount point) leaves the
+    directory where it is, which costs an inert directory and nothing else.
+
+    ``root`` is where the next upload is written and is never a candidate; only
+    a directory under it is, and one resolving elsewhere is skipped for the same
+    reason the sweep re-checks every file.
+    """
+
+    resolved_root = root.resolve()
+    for directory in directories:
+        resolved = directory.resolve()
+        if resolved_root not in resolved.parents:
+            continue
+        try:
+            resolved.rmdir()
+        except OSError:
+            continue
+
+
+def _delete_blocking(root: Path, targets: Iterable[Path]) -> None:
+    """Unlink each path that is present, then drop what that empties.
+
+    Blocks — run it in the executor.
+    """
+
+    emptied: set[Path] = set()
     for target in targets:
+        emptied.add(target.parent)
         try:
             target.unlink()
         except FileNotFoundError:
@@ -344,15 +374,17 @@ def _delete_blocking(targets: Iterable[Path]) -> None:
                 extra={"domain": DOMAIN, "op": "attachment_delete", "path": str(target)},
                 exc_info=True,
             )
+    _prune_emptied_blocking(root, emptied)
 
 
 def _sweep_blocking(root: Path, referenced: frozenset[str]) -> list[str]:
     """Delete every file under ``root`` no metadata claims. Blocks — executor only.
 
-    Files only, and only ones resolving inside ``root``: ``rglob`` follows a
+    Files first, and only ones resolving inside ``root``: ``rglob`` follows a
     symlinked directory, so an unchecked candidate could name a file anywhere in
-    the config tree. Empty directories are left behind — they are inert, and an
-    operator's own file may sit in one.
+    the config tree. A directory this sweep has itself emptied then goes with
+    them; one that was already empty is left alone, so an operator who made a
+    directory here keeps it.
     """
 
     if not root.is_dir():
@@ -360,6 +392,7 @@ def _sweep_blocking(root: Path, referenced: frozenset[str]) -> list[str]:
 
     resolved_root = root.resolve()
     removed: list[str] = []
+    emptied: set[Path] = set()
     for candidate in root.rglob("*"):
         if not candidate.is_file():
             continue
@@ -382,6 +415,8 @@ def _sweep_blocking(root: Path, referenced: frozenset[str]) -> list[str]:
             )
             continue
         removed.append(str(resolved))
+        emptied.add(resolved.parent)
+    _prune_emptied_blocking(root, emptied)
     return removed
 
 
@@ -440,7 +475,8 @@ async def async_delete_attachments(
     """Delete the files named by each (item id, attachment) pair.
 
     A removed picture takes its row tile with it; `_delete_blocking` passes over
-    one that was never made.
+    one that was never made, and removes the item's directory when the pair was
+    the last thing in it.
     """
 
     root = media_root(hass)
@@ -456,7 +492,7 @@ async def async_delete_attachments(
         except ValidationError:  # pragma: no cover - ids come from validated metadata
             continue
     if targets:
-        await hass.async_add_executor_job(_delete_blocking, targets)
+        await hass.async_add_executor_job(_delete_blocking, root, targets)
 
 
 async def async_delete_item_files(hass: HomeAssistant, items: Iterable[Mapping[str, Any]]) -> None:
@@ -485,7 +521,7 @@ async def async_delete_item_files(hass: HomeAssistant, items: Iterable[Mapping[s
 async def async_sweep_orphans(
     hass: HomeAssistant, pairs: Iterable[tuple[str, AttachmentMeta]]
 ) -> tuple[str, ...]:
-    """Remove media files no metadata references.
+    """Remove media files no metadata references, and what that empties.
 
     Its own module rather than ``stale_files``: that one is deliberately
     confined to the integration package directory and refuses anything resolving

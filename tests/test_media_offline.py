@@ -18,6 +18,7 @@ Scenarios:
 - the sweep refuses a path resolving outside the media root
 - a tile names the encoder generation that wrote it, and the sweep removes the
   tiles an earlier generation left behind
+- an item's directory goes with its last file, and one holding anything else stays
 - a tile keeps the transparency its source had, where there is a decoder to
   look at the bytes with
 """
@@ -615,6 +616,108 @@ async def test_deleting_an_attachment_takes_its_thumbnail_with_it(monkeypatch) -
 
     assert not thumb.exists()
     assert not media.attachment_path(root, str(item.id), str(meta.id), meta.mime).exists()
+
+
+# -----------------------------
+# The item's directory
+# -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_deleting_the_last_attachment_takes_the_item_directory(monkeypatch) -> None:
+    """A picture is two files, and the directory goes when the second one does."""
+
+    hass = HomeAssistant()
+    _, item, meta = await _stored_picture(hass)
+    monkeypatch.setattr(media, "_encode_thumbnail_blocking", _stub_encoder([]))
+    root = media.media_root(hass)
+    thumb = await media.async_thumbnail(hass, root=root, item_id=str(item.id), meta=meta)
+    assert thumb is not None and thumb.is_file()
+    directory = thumb.parent
+
+    await media.async_delete_attachments(hass, [(str(item.id), meta)])
+
+    assert not directory.exists()
+    assert root.is_dir()
+
+
+@pytest.mark.asyncio
+async def test_a_directory_that_still_holds_an_attachment_is_kept() -> None:
+    """Removing one of two attachments empties nothing."""
+
+    hass = HomeAssistant()
+    item_id = str(new_uuid4())
+    root = media.media_root(hass)
+    going, staying = _meta(), _meta()
+    going_path = media.attachment_path(root, item_id, str(going.id), going.mime)
+    staying_path = media.attachment_path(root, item_id, str(staying.id), staying.mime)
+    going_path.parent.mkdir(parents=True, exist_ok=True)
+    going_path.write_bytes(PNG_BYTES)
+    staying_path.write_bytes(PNG_BYTES)
+
+    await media.async_delete_attachments(hass, [(item_id, going)])
+
+    assert not going_path.exists()
+    assert staying_path.is_file()
+    assert staying_path.parent.is_dir()
+
+
+@pytest.mark.asyncio
+async def test_a_directory_holding_a_file_of_the_operators_own_is_kept() -> None:
+    """`rmdir` is the whole check: a directory that still holds something
+    refuses to go, so nothing has to recognise the file first."""
+
+    hass = HomeAssistant()
+    item_id = str(new_uuid4())
+    meta = _meta()
+    root = media.media_root(hass)
+    path = media.attachment_path(root, item_id, str(meta.id), meta.mime)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(PNG_BYTES)
+    theirs = path.parent / "where-the-receipt-is.txt"
+    theirs.write_text("filing cabinet, second drawer", encoding="utf-8")
+
+    await media.async_delete_attachments(hass, [(item_id, meta)])
+
+    assert not path.exists()
+    assert theirs.is_file()
+    assert path.parent.is_dir()
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_takes_a_directory_it_emptied_of_an_old_generation_tile() -> None:
+    """A tile the current encoder cannot name outlives the delete that emptied
+    the directory around it, so the next setup takes the pair."""
+
+    hass = HomeAssistant()
+    root = media.media_root(hass)
+    directory = root / str(new_uuid4())
+    directory.mkdir(parents=True)
+    stale = directory / f"{new_uuid4()}{FIRST_GENERATION_SUFFIX}"
+    stale.write_bytes(WEBP_BYTES)
+
+    removed = await media.async_sweep_orphans(hass, [])
+
+    assert removed == (str(stale.resolve()),)
+    assert not directory.exists()
+    assert root.is_dir()
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_leaves_the_media_root_itself_where_it_is() -> None:
+    """The root is where the next upload is written, and an orphan sitting
+    directly in it is not an item's directory."""
+
+    hass = HomeAssistant()
+    root = media.media_root(hass)
+    root.mkdir(parents=True, exist_ok=True)
+    orphan = root / "loose.png"
+    orphan.write_bytes(PNG_BYTES)
+
+    removed = await media.async_sweep_orphans(hass, [])
+
+    assert removed == (str(orphan.resolve()),)
+    assert root.is_dir()
 
 
 def test_referenced_paths_names_both_files_for_a_picture_and_one_for_a_manual() -> None:
