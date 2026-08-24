@@ -185,7 +185,7 @@ sections column measures ~500px even in a 1440px window, so it gets the narrow b
 | shape | what qualifies | who asks for it |
 |---|---|---|
 | `wide` | a `type: panel` view — the card gets the whole content area (~1184px here) | `visual_pass.mjs` desktop, `drive_import.mjs` |
-| `column` | any other view — sections, masonry — the column a card normally sits in | `screenshot.mjs`, `visual_pass.mjs` mobile, `import_policies.mjs`, `rl_banner.mjs` |
+| `column` | any other view — sections, masonry — the column a card normally sits in | `screenshot.mjs`, `visual_pass.mjs` mobile, `import_policies.mjs` |
 
 A view without a `path` is addressed by **index**, which is why the dev instance's sections
 view is `/dashboard-dev/0`.
@@ -450,7 +450,7 @@ uv run python $D send '{"type":"frontend/get_user_data","key":"language"}'   # c
 
 Removing the entry keeps the store (`.storage/haventory_store` is not touched) but **drops
 the entry's options**, so read them out first and put them back through the options flow
-afterwards — every section key is required in that POST, `todo` and `rate_limit` included:
+afterwards — every section key is required in that POST, `todo` included:
 
 ```bash
 docker exec home-assistant python -c "import json; d = json.load(open('/config/.storage/core.config_entries')); print([e['options'] for e in d['data']['entries'] if e['domain'] == 'haventory'])"
@@ -458,40 +458,17 @@ docker exec home-assistant python -c "import json; d = json.load(open('/config/.
 
 ## Verification harnesses
 
-Four checks that need a real instance and a real browser, each with its own oracle so a
+Six checks that need a real instance and a real browser, each with its own oracle so a
 run either passes or says why not. All are read-only except `lifecycle_probe.py`.
 
 | harness | what it proves |
 |---|---|
-| `rl_banner.mjs` | the card's rate-limit degraded-banner lifecycle, with the WS frames that caused each state |
 | `visual_pass.mjs` | every card surface still opens, at desktop and mobile widths, and every panel surface on `/haventory` |
 | `import_policies.mjs` | the import sheet describes the conflict policy the backend actually applied |
 | `two_tab.mjs` | a mutation nobody in the browser made repaints every open card |
 | `reload_probe.mjs` | a reload and an options change leave the card, the panel and the sidebar working |
 | `log_sweep.py` | the container log obeys the error taxonomy's severity policy |
 | `lifecycle_probe.py` | resource cache-bust rewriting, schema-downgrade refusal, entry removal/re-add |
-
-### Rate-limit banner lifecycle
-
-```bash
-cd .claude/skills/run-haventory
-node rl_banner.mjs                       # both scenarios; leaves rate limiting OFF
-node rl_banner.mjs --scenario exhausted   # just the paused -> Refresh half
-node rl_banner.mjs --observe 30           # watch only; never touches the options flow
-```
-
-Squeezes the real per-connection command budget through the options flow so the card's
-`subscribe` is refused, then reads what it renders. A refusal is retried four times
-(400/800/1600/3200 ms), so there are two outcomes to check and both are: a retry that wins
-must clear the banner with no user action and offer no button, and a budget that outlasts
-the whole window must switch the wording to "until you refresh" and grow a Refresh that
-restores live updates. Prints a WS trace next to the banner timeline — a paused banner with
-no `rate_limited` frame behind it is a card bug, one with a refusal behind it is the card
-doing its job. A scenario whose budget never provoked its state is reported
-**INCONCLUSIVE**, not as a pass.
-
-Rate limiting is reset to OFF on the way out, including after a failure — every other
-harness assumes it is off.
 
 ### Visual surface pass
 

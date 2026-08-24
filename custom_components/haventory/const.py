@@ -1,8 +1,8 @@
 """Constants for the HAventory integration.
 
-Defines the integration domain, the public integration version, the card
-title option, the option keys/defaults for WebSocket rate limiting, the entity
-platforms and the sensor catalog, and the Home Assistant bus event types.
+Defines the integration domain, the public integration version, the config-entry
+option keys and their defaults, the entity platforms and the sensor catalog, and
+the Home Assistant bus event types.
 """
 
 from dataclasses import dataclass
