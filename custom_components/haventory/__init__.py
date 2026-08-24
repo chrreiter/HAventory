@@ -1141,7 +1141,7 @@ def _corrupt_store_message(report: LoadReport, *, store_key: str) -> str:
 
 
 def _log_storage_health(payload: dict[str, Any], *, schema_version: int) -> None:
-    """Log storage health summary after validation.
+    """Log what the store came back with, once it has come back.
 
     Always DEBUG, whatever the counts. An empty store is what every fresh
     install and every household that cleared its inventory boots with, and HA
