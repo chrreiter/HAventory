@@ -1770,19 +1770,32 @@ def today_local_date() -> str:
     return dt_util.now().date().isoformat()
 
 
+def _date_passed(item: Item, field: str, today: str, *, inclusive: bool) -> bool:
+    """Whether the item's ``field`` date has come round by ``today``.
+
+    The one test behind the five named below, which are its five (field,
+    inclusive) pairs. An item carrying no date on that field is never counted.
+    Both sides are YYYY-MM-DD, which compares correctly as text. An empty
+    ``today`` reads the instance's current local date, and reads it only for an
+    item that has a date to compare — callers walking many items fill it in
+    once rather than paying for the clock per item.
+    """
+
+    value: str | None = getattr(item, field)
+    if not value:
+        return False
+    day = today or today_local_date()
+    return value <= day if inclusive else value < day
+
+
 def item_is_overdue(item: Item, *, today: str = "") -> bool:
     """Return True when the item's due date has passed.
 
     A due date only exists while an item is checked out (see
     ``validate_due_date_rules``), so this needs no separate checked-out test.
-    Both sides are YYYY-MM-DD, which compares correctly as text. ``today``
-    defaults to the instance's current local date; callers filtering many items
-    pass it in once rather than re-reading the clock per item.
     """
 
-    if not item.due_date:
-        return False
-    return item.due_date < (today or today_local_date())
+    return _date_passed(item, "due_date", today, inclusive=False)
 
 
 def item_is_due(item: Item, *, today: str = "") -> bool:
@@ -1795,22 +1808,17 @@ def item_is_due(item: Item, *, today: str = "") -> bool:
     ``item_inspection_is_due`` has to ``item_inspection_is_overdue``.
     """
 
-    if not item.due_date:
-        return False
-    return item.due_date <= (today or today_local_date())
+    return _date_passed(item, "due_date", today, inclusive=True)
 
 
 def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
     """Return True when the item is past the date it was next due for inspection.
 
     Independent of the check-out state: an inspection is a fact about the item,
-    not about a borrowing, so this walks any item that carries a date. Same
-    text comparison and same ``today`` convention as ``item_is_overdue``.
+    not about a borrowing, so this walks any item that carries a date.
     """
 
-    if not item.inspection_date:
-        return False
-    return item.inspection_date < (today or today_local_date())
+    return _date_passed(item, "inspection_date", today, inclusive=False)
 
 
 def item_inspection_is_due(item: Item, *, today: str = "") -> bool:
@@ -1823,9 +1831,7 @@ def item_inspection_is_due(item: Item, *, today: str = "") -> bool:
     items whose date is today, and every overdue item is also due.
     """
 
-    if not item.inspection_date:
-        return False
-    return item.inspection_date <= (today or today_local_date())
+    return _date_passed(item, "inspection_date", today, inclusive=True)
 
 
 def item_reminder_is_due(item: Item, *, today: str = "") -> bool:
@@ -1837,9 +1843,7 @@ def item_reminder_is_due(item: Item, *, today: str = "") -> bool:
     date the household said to be reminded on.
     """
 
-    if not item.reminder_date:
-        return False
-    return item.reminder_date <= (today or today_local_date())
+    return _date_passed(item, "reminder_date", today, inclusive=True)
 
 
 def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
@@ -1864,10 +1868,13 @@ def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
 def _item_matches_locations(
     item: Item, needles: Sequence[uuid.UUID], include_subtree: bool
 ) -> bool:
-    """True when the item sits in — or under — any of the selected locations."""
+    """True when the item sits in — or under — any of the selected locations.
 
-    if not needles:
-        return True
+    An empty selection keeps nothing, which is what a selection of only
+    unparsable ids has always meant: the filter names locations, and none of
+    them is this item's.
+    """
+
     if not item.location_id:
         return False
     for needle in needles:
@@ -1876,6 +1883,143 @@ def _item_matches_locations(
         if include_subtree and item.location_path.id_path and needle in item.location_path.id_path:
             return True
     return False
+
+
+#: The filter keys these two tables read, spelled out so a table entry is
+#: checked against ``ItemFilter`` rather than against a plain string.
+DateFilterKey = Literal[
+    "overdue_only",
+    "checked_out_due_only",
+    "inspection_overdue_only",
+    "inspection_due_only",
+    "reminder_due_only",
+]
+TimestampBoundKey = Literal["updated_after", "created_after", "updated_before", "created_before"]
+
+#: The five date filters, each with the item field it reads and whether today
+#: itself counts. A ``*_due_only`` key counts it because a due date names the
+#: day something is being asked for; an ``*overdue*`` key does not, so a pair
+#: over one field differs by exactly the items dated today.
+_DATE_FILTERS: Final[tuple[tuple[DateFilterKey, str, bool], ...]] = (
+    ("overdue_only", "due_date", False),
+    ("checked_out_due_only", "due_date", True),
+    ("inspection_overdue_only", "inspection_date", False),
+    ("inspection_due_only", "inspection_date", True),
+    ("reminder_due_only", "reminder_date", True),
+)
+
+#: The four timestamp bounds, each with the item field it reads and which side
+#: of the bound the item must fall on. Read in this order, which is the order a
+#: filter carrying more than one malformed bound is refused in.
+_TIMESTAMP_BOUNDS: Final[tuple[tuple[TimestampBoundKey, str, bool], ...]] = (
+    ("updated_after", "updated_at", True),
+    ("created_after", "created_at", True),
+    ("updated_before", "updated_at", False),
+    ("created_before", "created_at", False),
+)
+
+
+def _date_predicate(field: str, today: str, *, inclusive: bool) -> Callable[[Item], bool]:
+    """One date filter, bound to the field and the day it measures against."""
+
+    def passes(item: Item) -> bool:
+        return _date_passed(item, field, today, inclusive=inclusive)
+
+    return passes
+
+
+def _bound_predicate(field: str, bound: str, *, after: bool) -> Callable[[Item], bool]:
+    """One timestamp filter, bound to the field and the bound it compares to.
+
+    Canonical fixed-width 'Z' timestamps compare lexicographically, so an item
+    costs no parsing here — only the bound itself was parsed, once, to refuse a
+    malformed one.
+    """
+
+    def passes(item: Item) -> bool:
+        value: str = getattr(item, field)
+        return value > bound if after else value < bound
+
+    return passes
+
+
+def _timestamp_predicates(flt: ItemFilter) -> list[Callable[[Item], bool]]:
+    """The timestamp filters a filter carries, refusing a malformed bound.
+
+    A bound the filter names as null is no filter at all; one it names as empty
+    is not a timestamp to parse but is still compared against, which is what
+    keeps ``updated_before: ""`` meaning what it has always meant.
+    """
+
+    predicates: list[Callable[[Item], bool]] = []
+    for key, attr, after in _TIMESTAMP_BOUNDS:
+        bound = flt.get(key)
+        if bound is None:
+            continue
+        if bound:
+            _parse_iso8601_utc(bound, field_name=key)
+        predicates.append(_bound_predicate(attr, bound, after=after))
+    return predicates
+
+
+def _filter_predicates(
+    flt: ItemFilter, *, known_statuses: Collection[str]
+) -> list[Callable[[Item], bool]]:
+    """The tests a filter asks for, one per key it carries.
+
+    Built once for the whole query, so a key the filter leaves out costs an item
+    nothing, and what a key needs parsed — the status, the location ids, the
+    timestamp bounds, the day — is parsed here rather than against every
+    candidate. A malformed value is refused here too, in the order the keys are
+    read below, so a filter that cannot be honoured raises before any item is
+    walked. ``q`` is appended last because it is the only test that normalizes
+    text: the cheap ones drop what they can before it runs.
+    """
+
+    predicates: list[Callable[[Item], bool]] = []
+
+    q = (flt.get("q") or "").strip()
+    tags_any = selected_tags(flt, "tags_any")
+    if tags_any:
+        predicates.append(lambda item: any(tag in item.tags for tag in tags_any))
+    tags_all = selected_tags(flt, "tags_all")
+    if tags_all:
+        predicates.append(lambda item: all(tag in item.tags for tag in tags_all))
+    categories = set(selected_categories(flt))
+    if categories:
+        predicates.append(lambda item: (item.category or "").strip().casefold() in categories)
+    if "status" in flt:
+        status = validate_item_status(flt["status"], known_statuses=known_statuses)
+        predicates.append(lambda item: item.status == status)
+    checked_out = flt.get("checked_out")
+    if checked_out is not None:
+        wanted = bool(checked_out)
+        predicates.append(lambda item: item.checked_out == wanted)
+    if flt.get("low_stock_only"):
+        predicates.append(item_is_low_stock)
+    if flt.get("orphaned_only"):
+        predicates.append(lambda item: item.location_id is None)
+
+    dated = [(attr, inclusive) for key, attr, inclusive in _DATE_FILTERS if flt.get(key)]
+    if dated:
+        # One clock read for the whole query, and only when a date filter is on.
+        today = today_local_date()
+        predicates.extend(
+            _date_predicate(attr, today, inclusive=inclusive) for attr, inclusive in dated
+        )
+
+    location_ids = selected_location_ids(flt)
+    if location_ids:
+        # Parsed once for the whole query rather than once per candidate item.
+        needles = _parse_location_selection(location_ids)
+        include_subtree = bool(flt.get("include_subtree"))
+        predicates.append(lambda item: _item_matches_locations(item, needles, include_subtree))
+
+    predicates.extend(_timestamp_predicates(flt))
+
+    if q:
+        predicates.append(lambda item: _item_matches_q(item, q))
+    return predicates
 
 
 def filter_items(
@@ -1907,138 +2051,20 @@ def filter_items(
       optionally includes descendants (by prefix of id_path), one flag for all
     - updated_after/created_after: ISO-8601 UTC with 'Z', strictly greater-than
     - updated_before/created_before: ISO-8601 UTC with 'Z', strictly less-than
+
+    Each key the filter carries becomes one test, built once by
+    :func:`_filter_predicates`; an item is walked against those and no others,
+    and stops at the first one it fails.
     """
 
     if not flt:
         return list(items)
 
-    q = (flt.get("q") or "").strip()
-    tags_any = selected_tags(flt, "tags_any")
-    tags_all = selected_tags(flt, "tags_all")
-    categories = set(selected_categories(flt))
-    status = (
-        validate_item_status(flt["status"], known_statuses=known_statuses)
-        if "status" in flt
-        else None
-    )
-    checked_out = flt.get("checked_out") if "checked_out" in flt else None
-    low_stock_only = bool(flt.get("low_stock_only")) if "low_stock_only" in flt else False
-    orphaned_only = bool(flt.get("orphaned_only")) if "orphaned_only" in flt else False
-    overdue_only = bool(flt.get("overdue_only")) if "overdue_only" in flt else False
-    checked_out_due_only = (
-        bool(flt.get("checked_out_due_only")) if "checked_out_due_only" in flt else False
-    )
-    inspection_overdue_only = (
-        bool(flt.get("inspection_overdue_only")) if "inspection_overdue_only" in flt else False
-    )
-    inspection_due_only = (
-        bool(flt.get("inspection_due_only")) if "inspection_due_only" in flt else False
-    )
-    reminder_due_only = bool(flt.get("reminder_due_only")) if "reminder_due_only" in flt else False
-    location_ids = selected_location_ids(flt)
-    include_subtree = bool(flt.get("include_subtree")) if "include_subtree" in flt else False
-    updated_after = flt.get("updated_after") if "updated_after" in flt else None
-    created_after = flt.get("created_after") if "created_after" in flt else None
-    updated_before = flt.get("updated_before") if "updated_before" in flt else None
-    created_before = flt.get("created_before") if "created_before" in flt else None
-
-    # Validate filter bounds (raises ValidationError for malformed input).
-    for bound, name in (
-        (updated_after, "updated_after"),
-        (created_after, "created_after"),
-        (updated_before, "updated_before"),
-        (created_before, "created_before"),
-    ):
-        if bound:
-            _parse_iso8601_utc(bound, field_name=name)
-    # Parsed once for the whole query, beside the bounds, rather than once per
-    # candidate item. A selection that parses to nothing keeps its old meaning:
-    # it selects nothing, rather than falling through to "no location filter".
-    location_needles = _parse_location_selection(location_ids)
-    if location_ids and not location_needles:
-        return []
-    # One clock read for the whole query, and only when a date predicate is on.
-    date_predicates = (
-        overdue_only,
-        checked_out_due_only,
-        inspection_overdue_only,
-        inspection_due_only,
-        reminder_due_only,
-    )
-    today = today_local_date() if any(date_predicates) else ""
-
-    predicates_active = (
-        bool(q)
-        or bool(tags_any)
-        or bool(tags_all)
-        or bool(categories)
-        or status is not None
-        or checked_out is not None
-        or low_stock_only
-        or orphaned_only
-        or any(date_predicates)
-        or bool(location_ids)
-        or updated_after is not None
-        or created_after is not None
-        or updated_before is not None
-        or created_before is not None
-    )
-    if not predicates_active:
-        # e.g. flt only carries presentation hints such as low_stock_first
+    predicates = _filter_predicates(flt, known_statuses=known_statuses)
+    if not predicates:
+        # A filter carrying only presentation hints, such as low_stock_first.
         return list(items)
-
-    filtered: list[Item] = []
-    for it in items:
-        matches_q = (not q) or _item_matches_q(it, q)
-        matches_any = (not tags_any) or any(tag in it.tags for tag in tags_any)
-        matches_all = (not tags_all) or all(tag in it.tags for tag in tags_all)
-        matches_category = (not categories) or (
-            (it.category or "").strip().casefold() in categories
-        )
-        matches_status = (status is None) or (it.status == status)
-        matches_checked = (checked_out is None) or (it.checked_out == bool(checked_out))
-        matches_low_stock = (not low_stock_only) or item_is_low_stock(it)
-        matches_orphaned = (not orphaned_only) or (it.location_id is None)
-        matches_overdue = (not overdue_only) or item_is_overdue(it, today=today)
-        matches_due = (not checked_out_due_only) or item_is_due(it, today=today)
-        matches_inspection_overdue = (not inspection_overdue_only) or item_inspection_is_overdue(
-            it, today=today
-        )
-        matches_inspection_due = (not inspection_due_only) or item_inspection_is_due(
-            it, today=today
-        )
-        matches_reminder = (not reminder_due_only) or item_reminder_is_due(it, today=today)
-        matches_location = _item_matches_locations(it, location_needles, include_subtree)
-        # Canonical fixed-width 'Z' timestamps compare lexicographically, so no
-        # per-item parsing is needed (the filter bound was validated above).
-        matches_updated = ((updated_after is None) or (it.updated_at > updated_after)) and (
-            (updated_before is None) or (it.updated_at < updated_before)
-        )
-        matches_created = ((created_after is None) or (it.created_at > created_after)) and (
-            (created_before is None) or (it.created_at < created_before)
-        )
-        ok = (
-            matches_q
-            and matches_any
-            and matches_all
-            and matches_category
-            and matches_status
-            and matches_checked
-            and matches_low_stock
-            and matches_orphaned
-            and matches_overdue
-            and matches_due
-            and matches_inspection_overdue
-            and matches_inspection_due
-            and matches_reminder
-            and matches_location
-            and matches_updated
-            and matches_created
-        )
-        if ok:
-            filtered.append(it)
-
-    return filtered
+    return [item for item in items if all(passes(item) for passes in predicates)]
 
 
 #: What an item with no location sorts under in ascending order.
@@ -2086,6 +2112,10 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
     name sorting is case-insensitive using normalize_text_for_sort.
     due_date / inspection_date place undated items last in both orders, and
     location does the same for items filed nowhere.
+
+    Orders, it does not validate: :func:`validate_sort` refuses an unknown field
+    or order at the WebSocket boundary, which is where a client's typo has to be
+    named. A field this does not know falls to the default ordering.
     """
 
     result = list(items)
@@ -2101,11 +2131,6 @@ def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
 
     field = sort.get("field")
     order = sort.get("order")
-    if field not in SORT_FIELDS:
-        raise ValidationError(f"sort.field must be one of: {', '.join(sorted(SORT_FIELDS))}")
-    if order not in SORT_ORDERS:
-        raise ValidationError("sort.order must be 'asc' or 'desc'")
-
     reverse = order == "desc"
     # Stable sort: primary key, then id asc tie-break
     result.sort(key=lambda x: str(x.id))

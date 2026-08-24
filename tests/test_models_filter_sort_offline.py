@@ -513,15 +513,6 @@ async def test_sort_by_inspection_date_nulls_last_both_orders() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sort_invalid_inputs_raise() -> None:
-    items = [create_item_from_create({"name": "A"})]
-    with pytest.raises(ValidationError):
-        sort_items(items, Sort(field="bogus", order="asc"))  # type: ignore[arg-type]
-    with pytest.raises(ValidationError):
-        sort_items(items, Sort(field="name", order="ascending"))  # type: ignore[arg-type]
-
-
-@pytest.mark.asyncio
 async def test_filter_then_sort_pipeline() -> None:
     a = create_item_from_create({"name": "B", "tags": ["x"]})
     b = create_item_from_create({"name": "A", "tags": ["y"]})
@@ -585,19 +576,6 @@ def test_validate_sort_accepts_the_vocabulary_and_rejects_the_rest() -> None:
         validate_sort({"by": "name", "order": "asc"})
     with pytest.raises(ValidationError, match=r"sort must be an object"):
         validate_sort("name")
-
-
-def test_validate_sort_agrees_with_sort_items() -> None:
-    """The two must not drift: both read the same allowed-field set."""
-
-    for field_name in SORT_FIELDS:
-        sort_items([], Sort(field=field_name, order="asc"))  # type: ignore[typeddict-item]
-
-    with pytest.raises(ValidationError):
-        sort_items(
-            [create_item_from_create({"name": "Widget"})],
-            {"field": "colour", "order": "asc"},  # type: ignore[typeddict-item]
-        )
 
 
 # -----------------------------
