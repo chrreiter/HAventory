@@ -61,9 +61,9 @@ from .models import (
     serialize_status_definition,
     sort_items,
     today_local_date,
-    validate_location_name,
     validate_status_definition,
     validate_status_slug,
+    validate_write_name,
     walk_location_chain,
 )
 
@@ -1530,7 +1530,7 @@ class Repository:
         parent_id: str | uuid.UUID | None = None,
         area_id: str | None = None,
     ) -> Location:
-        name = validate_location_name(name)
+        name = validate_write_name(name)
         # Parse/normalize parent id once at ingress using shared helper
         parsed_parent: uuid.UUID | None
         if parent_id is None:
@@ -1638,7 +1638,7 @@ class Repository:
         # Validate inputs first (no mutation yet)
         updated_name = loc.name
         if name is not None:
-            updated_name = validate_location_name(name)
+            updated_name = validate_write_name(name)
 
         parent_changed, target_parent_id = self._parse_new_parent(new_parent_id, loc.parent_id)
         # Parse area but don't use target_area directly - we propagate to root
