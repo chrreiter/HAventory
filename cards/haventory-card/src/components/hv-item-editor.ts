@@ -13,6 +13,7 @@ import { counted } from '../ui/plural';
 import type { ConfirmDiscard } from '../ui/discard';
 import { COPIED_MS, copyText } from '../ui/clipboard';
 import { ViewportNarrow } from '../ui/responsive';
+import { LocationPicker } from '../ui/location-picker';
 import { nextZBase } from '../utils/zindex';
 import {
   REMINDER_UNITS,
@@ -1142,7 +1143,6 @@ export class HVItemEditor extends LitElement {
   @state() private _model: ItemFormModel = formFromItem(null);
   @state() private _errors: FieldError[] = [];
   @state() private _showErrors = false;
-  @state() private _locationOpen = false;
   @state() private _moreOpen = false;
   @state() private _categoryOpen = false;
   /** Opened from the arrow: list everything, ignoring what is already typed. */
@@ -1205,6 +1205,8 @@ export class HVItemEditor extends LitElement {
   private readonly _urls = new MediaUrls(this);
   /** Window width, for the two dialogs this form raises over itself. */
   private readonly _viewport = new ViewportNarrow(this);
+  /** The location field: one location, so a pick finishes the job. */
+  private readonly _location = new LocationPicker(this);
   private _uploadSeq = 0;
   /**
    * The item id `_model` was built from. `undefined` until the first update,
@@ -1246,7 +1248,7 @@ export class HVItemEditor extends LitElement {
       this._model = formFromItem(this.item);
       this._errors = [];
       this._showErrors = false;
-      this._locationOpen = false;
+      this._location.close();
       this._moreOpen = false;
       this._checkoutOpen = false;
       this._uploads = [];
@@ -1340,7 +1342,7 @@ export class HVItemEditor extends LitElement {
         this._closeCategory();
       } else if (this._checkoutOpen) {
         this._checkoutOpen = false;
-      } else if (this._locationOpen) {
+      } else if (this._location.open) {
         this._closeLocation();
       } else {
         this._requestCancel();
@@ -1362,7 +1364,7 @@ export class HVItemEditor extends LitElement {
 
   /** Shut the location picker and put focus back on the control that opened it. */
   private _closeLocation() {
-    this._locationOpen = false;
+    this._location.close();
     this._locationError = null;
     this.renderRoot.querySelector<HTMLElement>('[data-testid="editor-location"]')?.focus();
   }
@@ -1441,44 +1443,35 @@ export class HVItemEditor extends LitElement {
     const parts = locationPathParts(loc, locations, this.areas, t('hv.term.noLocation'));
     return html`<div class="cell span2">
       <span class="hv-label">${t('hv.editor.field.location')}</span>
-      <button
-        class="field-button ${this._model.locationId ? '' : 'empty'}"
-        data-testid="editor-location"
-        title=${pathTitle(parts)}
-        aria-expanded=${String(this._locationOpen)}
-        aria-controls=${LOCATION_TREE_ID}
-        @click=${() => {
-          this._locationOpen = !this._locationOpen;
-        }}
-      >
-        ${icon('mapMarker', 15)}${renderAreaChip(areaMarkName(parts.areaName, parts.path))}<span
-          class="value"
-          >${parts.path}</span
-        >${icon('chevronDown', 15)}
-      </button>
-      <div class="tree-holder" id=${LOCATION_TREE_ID} ?hidden=${!this._locationOpen}>
-        ${this._locationOpen
-          ? html`<hv-location-tree
-              data-testid="editor-location-tree"
-              .nodes=${this._knownLocationTree}
-              .areas=${this.areas}
-              .selectedId=${this._model.locationId}
-              showAll
-              allLabel=${t('hv.term.noLocation')}
-              allIcon="close"
-              ?allowCreate=${this.createLocation !== null}
-              @select=${(e: CustomEvent) => {
-                this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
-                this._locationOpen = false;
-                this._locationError = null;
-              }}
-              @create-location=${(e: CustomEvent) => {
-                e.stopPropagation();
-                void this._createLocation((e.detail as { name: string }).name);
-              }}
-            ></hv-location-tree>`
-          : null}
-      </div>
+      ${this._location.render(
+        {
+          triggerClass: `field-button ${this._model.locationId ? '' : 'empty'}`,
+          testid: 'editor-location',
+          title: pathTitle(parts),
+          holderId: LOCATION_TREE_ID,
+          trigger: html`${icon('mapMarker', 15)}${renderAreaChip(
+            areaMarkName(parts.areaName, parts.path),
+          )}<span class="value">${parts.path}</span>${icon('chevronDown', 15)}`,
+        },
+        () => html`<hv-location-tree
+          data-testid="editor-location-tree"
+          .nodes=${this._knownLocationTree}
+          .areas=${this.areas}
+          .selectedId=${this._model.locationId}
+          showAll
+          allLabel=${t('hv.term.noLocation')}
+          allIcon="close"
+          ?allowCreate=${this.createLocation !== null}
+          @select=${(e: CustomEvent) => {
+            this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
+            this._locationError = null;
+          }}
+          @create-location=${(e: CustomEvent) => {
+            e.stopPropagation();
+            void this._createLocation((e.detail as { name: string }).name);
+          }}
+        ></hv-location-tree>`,
+      )}
       ${this._locationError
         ? html`<span class="field-error" data-testid="editor-location-error">${this._locationError}</span>`
         : null}
@@ -1500,7 +1493,7 @@ export class HVItemEditor extends LitElement {
       const created = await create(name);
       this._createdLocations = [...this._createdLocations, created];
       this._patch({ locationId: created.id });
-      this._locationOpen = false;
+      this._location.close();
     } catch (err) {
       this._locationError = errorText(err, t('hv.editor.locationCreateFailed'));
     }

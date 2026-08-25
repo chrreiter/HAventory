@@ -8,6 +8,7 @@ import { ref } from 'lit/directives/ref.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, tagLabel } from '../ui/chip';
 import { Modal, modalChrome } from '../ui/modal';
+import { LocationPicker } from '../ui/location-picker';
 import { icon } from '../ui/icons';
 import type { IconName } from '../ui/icons';
 import { counted } from '../ui/plural';
@@ -46,7 +47,6 @@ import type {
   StoreState,
 } from '../store/types';
 import './hv-confirm';
-import './hv-location-tree';
 
 export type OrganizeTab = 'locations' | 'categories' | 'tags' | 'statuses';
 
@@ -548,6 +548,12 @@ export class HVOrganizeDialog extends LitElement {
         min-height: 46px;
         font-size: 15px;
       }
+      /* The merge target takes what the struck-through source leaves of the row,
+         and stops shrinking before the name it holds is unreadable. */
+      .control.grow {
+        flex: 1;
+        min-width: 180px;
+      }
       .control .value {
         flex: 1;
         min-width: 0;
@@ -702,13 +708,16 @@ export class HVOrganizeDialog extends LitElement {
   @property({ type: String }) tab: OrganizeTab = 'locations';
   @property({ type: Boolean, reflect: true }) mobile = false;
 
+  /** The parent picker and the merge target: one location each, so a pick ends it. */
+  private readonly _parentPicker = new LocationPicker(this);
+  private readonly _mergePicker = new LocationPicker(this);
+
   @state() private _filter = '';
   /** Location being edited, `'new'` for the create row, or null. */
   @state() private _editingLocation: string | 'new' | null = null;
   @state() private _locName = '';
   @state() private _locArea: string | null = null;
   @state() private _locParent: string | null = null;
-  @state() private _locParentOpen = false;
   @state() private _locError: string | null = null;
   /**
    * Whether the open editor's id was copied a moment ago. Set only on a copy the
@@ -721,7 +730,6 @@ export class HVOrganizeDialog extends LitElement {
   /** Location being merged away, with the location it is merging into. */
   @state() private _mergingLocation: string | null = null;
   @state() private _mergeTarget: string | null = null;
-  @state() private _mergeTargetOpen = false;
   /** Location whose actions are open in the touch sheet. */
   @state() private _sheetLocation: string | null = null;
   /** The value row expanded for rename or merge, if any; the kind comes from the active tab. */
@@ -856,7 +864,7 @@ export class HVOrganizeDialog extends LitElement {
     this._newValueError = null;
     this._mergingLocation = null;
     this._mergeTarget = null;
-    this._mergeTargetOpen = false;
+    this._mergePicker.close();
     this._sheetLocation = null;
   }
 
@@ -981,7 +989,7 @@ export class HVOrganizeDialog extends LitElement {
     this._locName = node?.name ?? '';
     this._locArea = node?.area_id ?? null;
     this._locParent = node?.parent_id ?? null;
-    this._locParentOpen = false;
+    this._parentPicker.close();
     this._locError = null;
     this._guard = null;
     this._clearCopied();
@@ -1051,7 +1059,7 @@ export class HVOrganizeDialog extends LitElement {
     this._rewrite = null;
     this._mergingLocation = id;
     this._mergeTarget = null;
-    this._mergeTargetOpen = false;
+    this._mergePicker.close();
   }
 
   /**
@@ -1374,46 +1382,38 @@ export class HVOrganizeDialog extends LitElement {
                 ${t('hv.organize.parentLocationNote')}
               </span>
             </span>
-            <button
-              class="control"
-              data-testid="location-parent"
-              aria-expanded=${String(this._locParentOpen)}
-              aria-controls=${LOC_PARENT_TREE_ID}
-              @click=${() => {
-                this._locParentOpen = !this._locParentOpen;
-              }}
-            >
-              ${icon('mapMarker', 15)}<span class="value">${this._parentLabel(parent, areas)}</span>
-              ${icon('chevronDown', 15)}
-            </button>
-            <div class="tree-holder" id=${LOC_PARENT_TREE_ID} ?hidden=${!this._locParentOpen}>
-              ${this._locParentOpen
-                ? html`<hv-location-tree
-                    data-testid="location-parent-tree"
-                    .nodes=${tree}
-                    .areas=${areas}
-                    .selectedId=${this._locParent}
-                    .selectedAreaId=${this._locParent === null ? this._locArea : null}
-                    .excludeSubtreeOf=${node?.id ?? null}
-                    showAll
-                    allLabel=${t('hv.organize.topLevel')}
-                    areaSelectable
-                    showEmptyAreas
-                    @select=${(e: CustomEvent) => {
-                      this._locParent = (e.detail as { locationId: string | null }).locationId;
-                      this._locParentOpen = false;
-                    }}
-                    @select-area=${(e: CustomEvent) => {
-                      // An area heads the top level rather than sitting in the
-                      // tree, so picking one is both halves of the move: out to
-                      // the top level, and into that area.
-                      this._locParent = null;
-                      this._locArea = (e.detail as { areaId: string }).areaId;
-                      this._locParentOpen = false;
-                    }}
-                  ></hv-location-tree>`
-                : null}
-            </div>
+            ${this._parentPicker.render(
+              {
+                triggerClass: 'control',
+                testid: 'location-parent',
+                holderId: LOC_PARENT_TREE_ID,
+                trigger: html`${icon('mapMarker', 15)}<span class="value"
+                    >${this._parentLabel(parent, areas)}</span
+                  >${icon('chevronDown', 15)}`,
+              },
+              () => html`<hv-location-tree
+                data-testid="location-parent-tree"
+                .nodes=${tree}
+                .areas=${areas}
+                .selectedId=${this._locParent}
+                .selectedAreaId=${this._locParent === null ? this._locArea : null}
+                .excludeSubtreeOf=${node?.id ?? null}
+                showAll
+                allLabel=${t('hv.organize.topLevel')}
+                areaSelectable
+                showEmptyAreas
+                @select=${(e: CustomEvent) => {
+                  this._locParent = (e.detail as { locationId: string | null }).locationId;
+                }}
+                @select-area=${(e: CustomEvent) => {
+                  // An area heads the top level rather than sitting in the tree,
+                  // so picking one is both halves of the move: out to the top
+                  // level, and into that area.
+                  this._locParent = null;
+                  this._locArea = (e.detail as { areaId: string }).areaId;
+                }}
+              ></hv-location-tree>`,
+            )}
           </div>
           ${
             // haventory.item_create and location_create take this string as
@@ -1508,36 +1508,26 @@ export class HVOrganizeDialog extends LitElement {
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
         <span class="hv-chip" style="text-decoration: line-through">${source.name}</span>
         ${icon('arrowRight', 18)}
-        <button
-          class="control"
-          style="flex:1;min-width:180px"
-          data-testid="merge-target"
-          aria-expanded=${String(this._mergeTargetOpen)}
-          aria-controls=${MERGE_TARGET_TREE_ID}
-          @click=${() => {
-            this._mergeTargetOpen = !this._mergeTargetOpen;
-          }}
-        >
-          ${icon('mapMarker', 15)}<span class="value"
-            >${target?.name ?? t('hv.organize.mergeIntoPlaceholder')}</span
-          >
-          ${icon('chevronDown', 15)}
-        </button>
-      </div>
-      <div class="tree-holder" id=${MERGE_TARGET_TREE_ID} ?hidden=${!this._mergeTargetOpen}>
-        ${this._mergeTargetOpen
-          ? html`<hv-location-tree
-              data-testid="merge-target-tree"
-              .nodes=${tree}
-              .areas=${this.st?.areasCache?.areas ?? []}
-              .selectedId=${this._mergeTarget}
-              .excludeSubtreeOf=${source.id}
-              @select=${(e: CustomEvent) => {
-                this._mergeTarget = (e.detail as { locationId: string | null }).locationId;
-                this._mergeTargetOpen = false;
-              }}
-            ></hv-location-tree>`
-          : null}
+        ${this._mergePicker.render(
+          {
+            triggerClass: 'control grow',
+            testid: 'merge-target',
+            holderId: MERGE_TARGET_TREE_ID,
+            trigger: html`${icon('mapMarker', 15)}<span class="value"
+                >${target?.name ?? t('hv.organize.mergeIntoPlaceholder')}</span
+              >${icon('chevronDown', 15)}`,
+          },
+          () => html`<hv-location-tree
+            data-testid="merge-target-tree"
+            .nodes=${tree}
+            .areas=${this.st?.areasCache?.areas ?? []}
+            .selectedId=${this._mergeTarget}
+            .excludeSubtreeOf=${source.id}
+            @select=${(e: CustomEvent) => {
+              this._mergeTarget = (e.detail as { locationId: string | null }).locationId;
+            }}
+          ></hv-location-tree>`,
+        )}
       </div>
       <span class="note" data-testid="merge-effect">
         ${target
