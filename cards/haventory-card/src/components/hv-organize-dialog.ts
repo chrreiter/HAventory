@@ -1508,27 +1508,28 @@ export class HVOrganizeDialog extends LitElement {
       <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
         <span class="hv-chip" style="text-decoration: line-through">${source.name}</span>
         ${icon('arrowRight', 18)}
-        ${this._mergePicker.render(
-          {
-            triggerClass: 'control grow',
-            testid: 'merge-target',
-            holderId: MERGE_TARGET_TREE_ID,
-            trigger: html`${icon('mapMarker', 15)}<span class="value"
-                >${target?.name ?? t('hv.organize.mergeIntoPlaceholder')}</span
-              >${icon('chevronDown', 15)}`,
-          },
-          () => html`<hv-location-tree
-            data-testid="merge-target-tree"
-            .nodes=${tree}
-            .areas=${this.st?.areasCache?.areas ?? []}
-            .selectedId=${this._mergeTarget}
-            .excludeSubtreeOf=${source.id}
-            @select=${(e: CustomEvent) => {
-              this._mergeTarget = (e.detail as { locationId: string | null }).locationId;
-            }}
-          ></hv-location-tree>`,
-        )}
+        ${this._mergePicker.renderTrigger({
+          triggerClass: 'control grow',
+          testid: 'merge-target',
+          holderId: MERGE_TARGET_TREE_ID,
+          trigger: html`${icon('mapMarker', 15)}<span class="value"
+              >${target?.name ?? t('hv.organize.mergeIntoPlaceholder')}</span
+            >${icon('chevronDown', 15)}`,
+        })}
       </div>
+      ${this._mergePicker.renderHolder(
+        { holderId: MERGE_TARGET_TREE_ID },
+        () => html`<hv-location-tree
+          data-testid="merge-target-tree"
+          .nodes=${tree}
+          .areas=${this.st?.areasCache?.areas ?? []}
+          .selectedId=${this._mergeTarget}
+          .excludeSubtreeOf=${source.id}
+          @select=${(e: CustomEvent) => {
+            this._mergeTarget = (e.detail as { locationId: string | null }).locationId;
+          }}
+        ></hv-location-tree>`,
+      )}
       <span class="note" data-testid="merge-effect">
         ${target
           ? t('hv.organize.mergeEffect', {

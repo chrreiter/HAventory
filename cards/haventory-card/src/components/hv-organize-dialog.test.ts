@@ -373,6 +373,13 @@ describe('hv-organize-dialog: locations', () => {
       expect(control().getAttribute('aria-expanded'), picker).toBe('true');
       expect(control().getAttribute('aria-controls'), picker).toBe(id);
       expect(sr.getElementById(id)?.querySelector('hv-location-tree'), `${picker} open`).toBeTruthy();
+      // The tree opens under the control, or under the row holding it — never
+      // as another item inside that row: the merge row is a flex line carrying
+      // the source, the arrow and the target, and a 200px box would join it.
+      const holder = sr.getElementById(id) as HTMLElement;
+      const after =
+        control().parentElement === holder.parentElement ? control() : control().parentElement;
+      expect(holder.previousElementSibling, `${picker} placement`).toBe(after);
     }
   });
 

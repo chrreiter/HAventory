@@ -511,26 +511,12 @@ export class HVFilterPanel extends LitElement {
       <div class="group">
         <span class="hv-label">${t('hv.filter.where')}</span>
         <div class="chips">
-          ${this._location.render(
-            {
-              triggerClass: `hv-chip toggle chip ${f.locationIds.length ? 'on' : ''}`,
-              testid: 'filter-location',
-              holderId: LOCATION_TREE_ID,
-              trigger: html`${icon('mapMarker', 14)}${label}${icon('chevronDown', 14)}`,
-            },
-            () => html`<hv-location-tree
-              data-testid="filter-location-tree"
-              .nodes=${this.locationTree}
-              .areas=${this.areas}
-              .selectedIds=${f.locationIds}
-              showAll
-              showCounts
-              .totalCount=${this.grandTotal}
-              @select=${(e: CustomEvent) => {
-                this._toggleLocation((e.detail as { locationId: string | null }).locationId);
-              }}
-            ></hv-location-tree>`,
-          )}
+          ${this._location.renderTrigger({
+            triggerClass: `hv-chip toggle chip ${f.locationIds.length ? 'on' : ''}`,
+            testid: 'filter-location',
+            holderId: LOCATION_TREE_ID,
+            trigger: html`${icon('mapMarker', 14)}${label}${icon('chevronDown', 14)}`,
+          })}
           <label class="field select-field ${f.areaId ? 'on' : ''}" data-testid="filter-area">
             <span class="hv-sr-only">${t('hv.filter.area')}</span>
             <select
@@ -551,6 +537,21 @@ export class HVFilterPanel extends LitElement {
             { testid: 'filter-include-subtree' },
           )}
         </div>
+        ${this._location.renderHolder(
+          { holderId: LOCATION_TREE_ID },
+          () => html`<hv-location-tree
+            data-testid="filter-location-tree"
+            .nodes=${this.locationTree}
+            .areas=${this.areas}
+            .selectedIds=${f.locationIds}
+            showAll
+            showCounts
+            .totalCount=${this.grandTotal}
+            @select=${(e: CustomEvent) => {
+              this._toggleLocation((e.detail as { locationId: string | null }).locationId);
+            }}
+          ></hv-location-tree>`,
+        )}
       </div>
     `;
   }

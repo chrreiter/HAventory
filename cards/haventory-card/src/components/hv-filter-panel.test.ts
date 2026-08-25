@@ -635,6 +635,11 @@ describe('hv-filter-panel: dates and location', () => {
     expect(chip().getAttribute('aria-controls')).toBe(id);
     const open = el.shadowRoot?.getElementById(id);
     expect(open?.querySelector('hv-location-tree'), 'tree open inside the holder').toBeTruthy();
+    // The tree opens under the chip row, not as another item in it: the row is
+    // a wrapping flex line, and a 230px box joining it would sit beside the
+    // Area select rather than below the group.
+    expect(open?.parentElement?.classList.contains('chips')).toBe(false);
+    expect(open?.previousElementSibling?.classList.contains('chips')).toBe(true);
   });
 
   it('names the picked location on the chip', async () => {

@@ -38,8 +38,8 @@ export interface LocationPickerOptions {
   keepOpenOnSelect?: boolean;
 }
 
-/** What the trigger and the holder are called and dressed in, per render. */
-export interface LocationPickerChrome {
+/** What the trigger is called and dressed in, per render. */
+export interface LocationPickerTrigger {
   /** The classes the host's stylesheet dresses the trigger in. */
   triggerClass: string;
   /** What a harness and the host's own queries locate the trigger by. */
@@ -52,6 +52,12 @@ export interface LocationPickerChrome {
    * The id `aria-controls` names, and the holder's own. Scoped to the host's
    * shadow root, so two forms mounted at once do not collide.
    */
+  holderId: string;
+}
+
+/** What the holder is called and dressed in, per render. */
+export interface LocationPickerHolder {
+  /** The same id the trigger points at. */
   holderId: string;
   /** The holder's classes; every host calls it `tree-holder` and sizes its own. */
   holderClass?: string;
@@ -93,32 +99,45 @@ export class LocationPicker {
     this.close();
   };
 
+  /** The trigger on its own, for a host that puts the holder somewhere else. */
+  renderTrigger(chrome: LocationPickerTrigger): TemplateResult {
+    return html`<button
+      class=${chrome.triggerClass}
+      data-testid=${chrome.testid}
+      title=${ifDefined(chrome.title)}
+      aria-expanded=${String(this._open)}
+      aria-controls=${chrome.holderId}
+      @click=${() => this._set(!this._open)}
+    >
+      ${chrome.trigger}
+    </button>`;
+  }
+
   /**
-   * `tree` is a function, not a template: a closed picker draws nothing, and
-   * building the nodes for a tree nobody has opened is work every keystroke in
-   * the form around it would pay for.
+   * The holder on its own, for the same host. `tree` is a function, not a
+   * template: a closed picker draws nothing, and building the nodes for a tree
+   * nobody has opened is work every keystroke in the form around it would pay
+   * for.
    */
-  render(chrome: LocationPickerChrome, tree: () => unknown): TemplateResult {
-    return html`
-      <button
-        class=${chrome.triggerClass}
-        data-testid=${chrome.testid}
-        title=${ifDefined(chrome.title)}
-        aria-expanded=${String(this._open)}
-        aria-controls=${chrome.holderId}
-        @click=${() => this._set(!this._open)}
-      >
-        ${chrome.trigger}
-      </button>
-      <div
-        class=${chrome.holderClass ?? 'tree-holder'}
-        id=${chrome.holderId}
-        ?hidden=${!this._open}
-        @select=${this._onSelect}
-        @select-area=${this._onSelect}
-      >
-        ${this._open ? tree() : null}
-      </div>
-    `;
+  renderHolder(holder: LocationPickerHolder, tree: () => unknown): TemplateResult {
+    return html`<div
+      class=${holder.holderClass ?? 'tree-holder'}
+      id=${holder.holderId}
+      ?hidden=${!this._open}
+      @select=${this._onSelect}
+      @select-area=${this._onSelect}
+    >
+      ${this._open ? tree() : null}
+    </div>`;
+  }
+
+  /**
+   * Both, one after the other — the usual case, where the trigger and the box
+   * it opens are siblings in the host's own form. A host whose layout puts them
+   * in different parents — a chip row with the tree under it — draws the two
+   * halves itself.
+   */
+  render(chrome: LocationPickerTrigger & LocationPickerHolder, tree: () => unknown): TemplateResult {
+    return html`${this.renderTrigger(chrome)}${this.renderHolder(chrome, tree)}`;
   }
 }
