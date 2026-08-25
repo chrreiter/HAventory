@@ -1577,6 +1577,23 @@ describe('hv-organize-dialog: disclosures come into view', () => {
     expect(scrolls).toHaveLength(1);
   });
 
+  // The mode is half a value editor's identity: switching a row from rename to
+  // merge swaps the form under one element, and it is a different question.
+  it('reveals the value editor again when the same row switches mode', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'battery')!;
+    (row.querySelector('[data-testid="value-rename"]') as HTMLButtonElement).click();
+    await settle(el);
+    (row.querySelector('[data-testid="value-merge"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = q(sr, '[data-testid="value-editor"]') as HTMLElement;
+    expect(editor.dataset.mode).toBe('merge');
+    expect(scrolls).toHaveLength(2);
+    expect(scrolls[1].el).toBe(editor);
+    expect(sr.activeElement).toBe(q(sr, '[data-testid="value-target"]'));
+  });
+
   it('scrolls again when a second row opens the same kind of disclosure', async () => {
     const { el, sr } = await mount({ locations: [loc('garage', 'Garage'), loc('attic', 'Attic')] });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
