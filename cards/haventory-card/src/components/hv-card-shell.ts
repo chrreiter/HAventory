@@ -12,27 +12,22 @@ import { emptyKindFor } from '../ui/empty-state';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
-import { editorErrorText } from '../ui/editor-error';
 import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
 import type { BannerHooks } from '../ui/banners';
 import { HostSurfaces } from '../host-surfaces';
+import { ItemWorkspace } from '../item-workspace';
 import type { Store } from '../store/store';
-import type { Item, Location, StoreFilters, StoreState } from '../store/types';
+import type { StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import './hv-bottom-sheet';
 import './hv-filter-chips';
 import './hv-filter-panel';
 import './hv-list';
-import './hv-item-editor';
-import './hv-detail-sheet';
 import './hv-full-view';
 import type { OrganizeTab } from './hv-organize-dialog';
-import './hv-checkout-popover';
 import './hv-overflow-menu';
 import type { HVFilterPanel } from './hv-filter-panel';
 import type { HVItemEditor } from './hv-item-editor';
-import type { MediaBindings } from '../ui/media';
-import type { ItemCreate, ItemUpdate } from '../store/types';
 
 const SEARCH_DEBOUNCE_MS = 200;
 const FILTER_PANEL_STORAGE_KEY = 'haventory:filter-panel-open:v1';
@@ -327,29 +322,33 @@ export class HVCardShell extends LitElement {
   /** The sheet's in-flight filter set, so its header counts what you staged. */
   @state() private _stagedFilters: StoreFilters | null = null;
   @state() private _searchDraft = '';
-  /** Row expanded into the inline editor, or `'new'` for the add-item expander. */
-  @state() private _editing: string | 'new' | null = null;
-  @state() private _editorBusy = false;
-  @state() private _editorError: string | null = null;
   /**
    * Changes whenever anything `_renderEditor` reads has changed identity — see
    * `_syncEditorEpoch`, which is the list of what that is.
    */
   @state() private _editorEpoch = 0;
-  /** Item shown in the mobile detail sheet. */
-  @state() private _detailItemId: string | null = null;
   @state() private _fullViewOpen = false;
   @state() private _startSelecting = false;
-  /** Item whose check-out / due-date step is open, with where to anchor it. */
-  @state() private _checkout: { itemId: string; mode: 'check-out' | 'set-due-date'; anchor: DOMRect | null } | null =
-    null;
+
+  /** The editor, the detail sheet and the check-out step, as the full view has them. */
+  private readonly _workspace = new ItemWorkspace(this, () => this.store, {
+    confirmDiscard: () => this.surfaces.confirmDiscard,
+    editor: () => this._editor,
+    // Touch has no hover: tapping a row opens the detail sheet, which is the
+    // single mobile surface. Desktop expands the row in place instead — and so
+    // does the row menu's Edit, which is a request for the form rather than
+    // for whatever the width would have opened.
+    openItem: (itemId) => {
+      if (this.mobile) this._workspace.openDetail(itemId);
+      else this._workspace.startEdit(itemId);
+    },
+    editItem: (itemId) => this._workspace.startEdit(itemId),
+    requestDelete: (detail) => this.surfaces.requestDeleteById(detail.itemId),
+  });
 
   /** The dialogs both hosts share — confirm, organize, import, diagnostics. */
   readonly surfaces = new HostSurfaces(this, () => this.store, {
-    onItemDeleted: (itemId) => {
-      if (this._editing === itemId) this._editing = null;
-      if (this._detailItemId === itemId) this._detailItemId = null;
-    },
+    onItemDeleted: (itemId) => this._workspace.forgetItem(itemId),
     onBrowse: () => {
       // Organizing is a full-screen job, so the filter it hands back belongs
       // on the full-screen surface too — dropping back to the small card
@@ -359,41 +358,8 @@ export class HVCardShell extends LitElement {
   });
 
   private readonly responsive = new ResponsiveController(this);
-  private _storeUnsub?: () => void;
-  private _media: MediaBindings | null = null;
   /** Identities `_editorEpoch` was last bumped for; see `_syncEditorEpoch`. */
   private _editorInputs: unknown[] = [];
-  /**
-   * The last copy of the row being edited, kept for as long as the form is open.
-   *
-   * A filter change refetches, and the edited row can drop out of the result.
-   * The editor rebuilds its model whenever the item id it was handed changes,
-   * so handing it `null` there would wipe the typed edits just as surely as
-   * unmounting it. `_syncPinnedItem` keeps this at the freshest copy the store
-   * has listed.
-   */
-  private _pinnedItem: Item | null = null;
-
-  /**
-   * Picture access for every surface below, built once per store.
-   *
-   * Rebuilt only when the store is swapped: a fresh object each render would
-   * read as a changed property on every row and re-render the whole list.
-   */
-  private get media(): MediaBindings | null {
-    const store = this.store;
-    if (!store) return null;
-    this._media ??= {
-      sign: (path, expires) => store.signMediaPath(path, expires),
-      upload: (itemId, file, kind) => store.uploadAttachment(itemId, file, kind),
-      remove: (itemId, attachmentId) => store.removeAttachment(itemId, attachmentId),
-      retitle: (itemId, attachmentId, title) =>
-        store.updateAttachment(itemId, attachmentId, title),
-      reorder: (itemId, kind, attachmentIds) =>
-        store.reorderAttachments(itemId, kind, attachmentIds),
-    };
-    return this._media;
-  }
 
   get mobile(): boolean {
     return this.responsive.mobile;
@@ -405,56 +371,17 @@ export class HVCardShell extends LitElement {
 
   connectedCallback(): void {
     super.connectedCallback();
-    this.surfaces.connect();
     this._filterPanelOpen = readPanelPref();
-    if (this.store && !this._storeUnsub) {
-      // The parent passes a stable `store` object, so a property binding would
-      // never re-render this element — it has to watch the store itself.
-      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
-    }
-  }
-
-  disconnectedCallback(): void {
-    super.disconnectedCallback();
-    this.surfaces.disconnect();
-    this._storeUnsub?.();
-    this._storeUnsub = undefined;
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('store') && this.store) {
-      this._media = null;
-      this._storeUnsub?.();
-      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
       this._searchDraft = this.store.state.value.filters.q;
     }
     // Reflect the mode so child selectors and :host([mobile]) rules apply.
     this.toggleAttribute('mobile', this.mobile);
-    this._syncPinnedItem();
+    this._workspace.syncPinnedItem();
     this._syncEditorEpoch();
-  }
-
-  /**
-   * Hold on to the row being edited, and close the form when it is really gone.
-   *
-   * Falling off the current page and being deleted look identical from the item
-   * list alone; the store is the only place that knows which happened, so it is
-   * asked rather than guessed at.
-   */
-  private _syncPinnedItem() {
-    const editing = this._editing;
-    if (editing === null || editing === 'new') {
-      this._pinnedItem = null;
-      return;
-    }
-    if (this.store?.wasRemoved(editing)) {
-      this._pinnedItem = null;
-      this._editing = null;
-      this._editorError = null;
-      return;
-    }
-    const listed = this.st?.items.find((i) => i.id === editing);
-    if (listed) this._pinnedItem = listed;
   }
 
   /**
@@ -483,9 +410,9 @@ export class HVCardShell extends LitElement {
       st?.locationsFlatCache,
       st?.locationTreeCache,
       st?.distinctValuesCache,
-      this.media,
-      this._editorBusy,
-      this._editorError,
+      this._workspace.media,
+      this._workspace.editorBusy,
+      this._workspace.editorError,
     ];
     if (next.some((value, i) => value !== this._editorInputs[i])) {
       this._editorInputs = next;
@@ -522,45 +449,6 @@ export class HVCardShell extends LitElement {
     });
   }, 150);
 
-  // ---------- Item actions ----------
-  private _adjust(itemId: string, delta: number) {
-    void this.store?.adjustQuantity(itemId, delta);
-  }
-
-  private _requestDelete(item: Item) {
-    this.surfaces.requestDeleteById(item.id);
-  }
-
-  private _itemById(itemId: string): Item | undefined {
-    return this.st?.items.find((i) => i.id === itemId);
-  }
-
-  /** The item an open editor edits — the listed row, or the pinned copy of it. */
-  private _editorItem(itemId: string | null): Item | null {
-    if (itemId === null) return null;
-    return this._itemById(itemId) ?? (this._pinnedItem?.id === itemId ? this._pinnedItem : null);
-  }
-
-  private _onRowAction(item: Item, detail: { action?: string; anchor?: DOMRect }) {
-    switch (detail.action) {
-      case 'check-out':
-        this._checkout = { itemId: item.id, mode: 'check-out', anchor: detail.anchor ?? null };
-        break;
-      case 'set-due-date':
-        this._checkout = { itemId: item.id, mode: 'set-due-date', anchor: detail.anchor ?? null };
-        break;
-      case 'check-in':
-        void this.store?.markCheckedIn(item.id, item.version);
-        break;
-      case 'edit':
-        this._startEdit(item.id);
-        break;
-      case 'delete':
-        this._requestDelete(item);
-        break;
-    }
-  }
-
   // ---------- Inline editing ----------
   private get _editor(): HVItemEditor | null {
     // Two homes: on a phone the add form is slotted into a sheet in this shadow
@@ -576,141 +464,12 @@ export class HVCardShell extends LitElement {
   }
 
   /**
-   * Open an expander, closing whichever one is open. Only one row edits at a
-   * time; if the open one has unsaved changes the user is asked first, rather
-   * than silently losing them.
+   * The expander, drawn by `hv-list` inside the row order rather than here — so
+   * it takes no arguments: which row it is on is the workspace's `editing`,
+   * which is also what tells the list to call this.
    */
-  private _startEdit(next: string | 'new' | null) {
-    if (this._editing === next) return;
-    if (this._editing !== null && this._editor?.dirty) {
-      this.surfaces.confirmDiscard(() => {
-        this._editorError = null;
-        this._editing = next;
-      });
-      return;
-    }
-    this._editorError = null;
-    this._editing = next;
-  }
-
-  /**
-   * The editor's first-run way out of an empty location picker: a root location
-   * with no area, handed back so the form can file the item in it at once.
-   */
-  private _createLocationForEditor = (name: string): Promise<Location> => {
-    const store = this.store;
-    if (!store) return Promise.reject(new Error(t('hv.card.notConnected')));
-    return store.createLocation(name, null, null);
-  };
-
-  private _onEditorSave = async (e: CustomEvent) => {
-    const detail = e.detail as {
-      itemId: string | null;
-      expectedVersion?: number;
-      changes?: ItemUpdate;
-      create?: ItemCreate;
-    };
-    this._editorBusy = true;
-    this._editorError = null;
-    const errorsBefore = this.st?.errorQueue.length ?? 0;
-    try {
-      if (detail.itemId && detail.changes) {
-        await this.store?.updateItem(detail.itemId, detail.changes, detail.expectedVersion);
-      } else if (detail.create) {
-        await this.store?.createItem(detail.create);
-      }
-    } finally {
-      this._editorBusy = false;
-    }
-    // The store reports failures through its error queue rather than throwing,
-    // so a new entry is how we know the save did not land. Keep the expander
-    // open in that case so the user's edits are still there to retry — and say
-    // why inside it, because the card's banner list is above a form tall enough
-    // to have scrolled it off the screen.
-    const queue = this.st?.errorQueue ?? [];
-    const failed = queue.length > errorsBefore;
-    this._editorError = failed ? editorErrorText(queue[queue.length - 1]) : null;
-    if (!failed) this._editing = null;
-  };
-
-  private _onEditorDelete = (e: CustomEvent) => {
-    const { itemId } = e.detail as { itemId: string };
-    // The pinned copy counts: a row filtered off the page is still deletable
-    // from the form that is still open on it.
-    const item = this._editorItem(itemId);
-    if (!item) return;
-    this._requestDelete(item);
-  };
-
-  /**
-   * `opts.noHeader` is for the mobile add sheet, which draws its own title bar
-   * — the editor's own header leads with an expander chevron that means
-   * nothing once the form is not an expander.
-   */
-  private _renderEditor = (itemId: string | null, opts: { noHeader?: boolean } = {}) => {
-    const st = this.st;
-    return html`<hv-item-editor
-      .statuses=${st?.statuses ?? null}
-      data-testid="inline-editor"
-      .areas=${st?.areasCache?.areas ?? []}
-      .media=${this.media}
-      .mediaConfig=${st?.mediaConfig ?? null}
-      ?noHeader=${opts.noHeader ?? false}
-      .item=${this._editorItem(itemId)}
-      .locations=${st?.locationsFlatCache ?? null}
-      .locationTree=${st?.locationTreeCache ?? []}
-      .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
-      .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
-      .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
-      .createLocation=${this._createLocationForEditor}
-      .confirmDiscard=${this.surfaces.confirmDiscard}
-      ?mobile=${this.mobile}
-      .busy=${this._editorBusy}
-      .errorMessage=${this._editorError}
-      @save=${this._onEditorSave}
-      @delete-item=${this._onEditorDelete}
-      @cancel=${() => {
-        this._editing = null;
-        this._editorError = null;
-      }}
-    ></hv-item-editor>`;
-  };
-
-  private _onRowEvent = (name: string, detail: { itemId: string }) => {
-    const item = this._itemById(detail.itemId);
-    if (!item) return;
-    switch (name) {
-      case 'increment':
-        this._adjust(item.id, +1);
-        break;
-      case 'decrement':
-        if (item.quantity > 0) this._adjust(item.id, -1);
-        break;
-      case 'check-in':
-        void this.store?.markCheckedIn(item.id, item.version);
-        break;
-      case 'reminder-bump':
-        void this.store?.bumpReminder(item.id, item.version);
-        break;
-      case 'request-delete':
-        this._requestDelete(item);
-        break;
-      case 'row-action':
-        this._onRowAction(item, detail as { action?: string; anchor?: DOMRect });
-        break;
-      case 'edit':
-      case 'open-item':
-        // Touch has no hover: tapping a row opens the detail sheet, which is the
-        // single mobile surface. Desktop expands the row in place instead.
-        if (this.mobile) this._detailItemId = item.id;
-        else this._startEdit(item.id);
-        break;
-      default:
-        this.dispatchEvent(
-          new CustomEvent(name, { detail: { itemId: item.id }, bubbles: true, composed: true }),
-        );
-    }
-  };
+  private _renderEditor = () =>
+    this._workspace.renderEditor({ testid: 'inline-editor', mobile: this.mobile });
 
   // ---------- Overflow menu ----------
   /**
@@ -836,7 +595,7 @@ export class HVCardShell extends LitElement {
     const { id } = e.detail as { id: string };
     if (id === 'clear-filters') this.store?.clearFilters();
     else if (id === 'refresh') void this.store?.refreshAll();
-    else if (id === 'add-item') this._startEdit('new');
+    else if (id === 'add-item') this._workspace.startEdit('new');
     else this._runMenuAction(id);
   };
 
@@ -908,7 +667,7 @@ export class HVCardShell extends LitElement {
           data-testid="add-item"
           aria-label=${t('hv.card.addItem')}
           title=${t('hv.card.addItem')}
-          @click=${() => this._startEdit('new')}
+          @click=${() => this._workspace.startEdit('new')}
         >
           ${icon('plus', 16)}${mobile ? null : t('hv.card.addShort')}
         </button>
@@ -973,29 +732,29 @@ export class HVCardShell extends LitElement {
       <hv-list
         .statuses=${st?.statuses ?? null}
         .areas=${st?.areasCache?.areas ?? []}
-        .media=${this.media}
+        .media=${this._workspace.media}
         data-testid="card-list"
         .items=${st?.items ?? []}
         .loading=${st?.loading ?? true}
         .mobile=${mobile}
         .editorTemplate=${this._renderEditor}
         .editorEpoch=${this._editorEpoch}
-        .editingItemId=${this._editing === 'new' ? null : this._editing}
-        .pinnedItem=${this._pinnedItem}
-        .addingNew=${!mobile && this._editing === 'new'}
+        .editingItemId=${this._workspace.editing === 'new' ? null : this._workspace.editing}
+        .pinnedItem=${this._workspace.pinnedItem}
+        .addingNew=${!mobile && this._workspace.editing === 'new'}
         .emptyKind=${emptyKindFor(this.st)}
         .emptyLocationName=${(st?.locationsFlatCache ?? []).find((l) => l.id === soleLocationId(filters))?.name ??
         null}
         @near-end=${(e: CustomEvent) =>
           void this.store?.prefetchIfNeeded((e.detail as { ratio: number }).ratio)}
         @empty-action=${this._onEmptyAction}
-        @increment=${(e: CustomEvent) => this._onRowEvent('increment', e.detail)}
-        @decrement=${(e: CustomEvent) => this._onRowEvent('decrement', e.detail)}
-        @check-in=${(e: CustomEvent) => this._onRowEvent('check-in', e.detail)}
-        @request-delete=${(e: CustomEvent) => this._onRowEvent('request-delete', e.detail)}
-        @edit=${(e: CustomEvent) => this._onRowEvent('edit', e.detail)}
-        @open-item=${(e: CustomEvent) => this._onRowEvent('open-item', e.detail)}
-        @row-action=${(e: CustomEvent) => this._onRowEvent('row-action', e.detail)}
+        @increment=${(e: CustomEvent) => this._workspace.onRowEvent('increment', e.detail)}
+        @decrement=${(e: CustomEvent) => this._workspace.onRowEvent('decrement', e.detail)}
+        @check-in=${(e: CustomEvent) => this._workspace.onRowEvent('check-in', e.detail)}
+        @request-delete=${(e: CustomEvent) => this._workspace.onRowEvent('request-delete', e.detail)}
+        @edit=${(e: CustomEvent) => this._workspace.onRowEvent('edit', e.detail)}
+        @open-item=${(e: CustomEvent) => this._workspace.onRowEvent('open-item', e.detail)}
+        @row-action=${(e: CustomEvent) => this._workspace.onRowEvent('row-action', e.detail)}
       ></hv-list>
 
       ${loaded > 0
@@ -1031,7 +790,7 @@ export class HVCardShell extends LitElement {
           this._startSelecting = false;
         }}
         @menu-action=${this._onMenuSelect}
-        @request-delete=${(e: CustomEvent) => this._onRowEvent('request-delete', e.detail)}
+        @request-delete=${(e: CustomEvent) => this._workspace.onRowEvent('request-delete', e.detail)}
       ></hv-full-view>
       ${mobile
         ? html`<hv-bottom-sheet
@@ -1088,9 +847,9 @@ export class HVCardShell extends LitElement {
       ${mobile
         ? html`<hv-bottom-sheet
             label=${t('hv.card.newItem')}
-            ?open=${this._editing === 'new'}
+            ?open=${this._workspace.editing === 'new'}
             data-testid="add-sheet"
-            @cancel=${() => this._startEdit(null)}
+            @cancel=${() => this._workspace.startEdit(null)}
           >
             <div class="sheet-head">
               <span class="heading">${t('hv.card.newItem')}</span>
@@ -1099,84 +858,19 @@ export class HVCardShell extends LitElement {
                 style="margin-left:auto"
                 data-testid="add-sheet-close"
                 aria-label=${t('hv.action.close')}
-                @click=${() => this._startEdit(null)}
+                @click=${() => this._workspace.startEdit(null)}
               >
                 ${icon('close', 18)}
               </button>
             </div>
-            ${this._editing === 'new' ? this._renderEditor(null, { noHeader: true }) : null}
+            ${this._workspace.editing === 'new'
+              ? this._workspace.renderEditor({ testid: 'inline-editor', mobile, noHeader: true })
+              : null}
           </hv-bottom-sheet>`
         : null}
 
-      ${mobile
-        ? html`<hv-detail-sheet
-            .statuses=${st?.statuses ?? null}
-            .areas=${st?.areasCache?.areas ?? []}
-            .media=${this.media}
-            .mediaConfig=${st?.mediaConfig ?? null}
-            data-testid="card-detail-sheet"
-            ?open=${this._detailItemId !== null}
-            .item=${this._detailItemId ? (this._itemById(this._detailItemId) ?? null) : null}
-            .locations=${st?.locationsFlatCache ?? null}
-            .locationTree=${st?.locationTreeCache ?? []}
-            .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
-            .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
-            .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
-            .createLocation=${this._createLocationForEditor}
-            .confirmDiscard=${this.surfaces.confirmDiscard}
-            .busy=${this._editorBusy}
-            .errorMessage=${this._editorError}
-            @cancel=${() => {
-              this._detailItemId = null;
-              this._editorError = null;
-            }}
-            @increment=${(e: CustomEvent) => this._onRowEvent('increment', e.detail)}
-            @decrement=${(e: CustomEvent) => this._onRowEvent('decrement', e.detail)}
-            @check-in=${(e: CustomEvent) => this._onRowEvent('check-in', e.detail)}
-            @check-out-confirmed=${(e: CustomEvent) => {
-              const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
-              const item = this._itemById(itemId);
-              if (item) void this.store?.checkOut(item.id, dueDate, item.version);
-            }}
-            @set-due-date=${(e: CustomEvent) => {
-              const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
-              const item = this._itemById(itemId);
-              if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
-            }}
-            @reminder-bump=${(e: CustomEvent) => this._onRowEvent('reminder-bump', e.detail)}
-            @request-delete=${(e: CustomEvent) => this._onRowEvent('request-delete', e.detail)}
-            @save=${this._onEditorSave}
-          ></hv-detail-sheet>`
-        : null}
-
-      <!-- Never inline: that presentation is a step drawn inside the body of the
-           surface that opened it, and this is a sibling at the end of the shell
-           with no body around it. The narrow branch reaches its check-out
-           through the detail sheet, which mounts its own. -->
-      <hv-checkout-popover
-        data-testid="card-checkout"
-        ?open=${this._checkout !== null}
-        ?touch=${mobile}
-        .mode=${this._checkout?.mode ?? 'check-out'}
-        .anchor=${this._checkout?.anchor ?? null}
-        .item=${this._checkout ? (this._itemById(this._checkout.itemId) ?? null) : null}
-        @check-out=${(e: CustomEvent) => {
-          const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
-          const item = this._itemById(itemId);
-          this._checkout = null;
-          if (item) void this.store?.checkOut(item.id, dueDate, item.version);
-        }}
-        @set-due-date=${(e: CustomEvent) => {
-          const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
-          const item = this._itemById(itemId);
-          this._checkout = null;
-          // A due date only exists while an item is out, so this is a plain update.
-          if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
-        }}
-        @cancel=${() => {
-          this._checkout = null;
-        }}
-      ></hv-checkout-popover>
+      ${mobile ? this._workspace.renderDetailSheet({ testid: 'card-detail-sheet' }) : null}
+      ${this._workspace.renderCheckoutPopover({ testid: 'card-checkout', mobile })}
 
       ${this.surfaces.renderSurfaces()}
     `;

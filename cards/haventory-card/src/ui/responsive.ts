@@ -39,11 +39,17 @@ export const NARROW_QUERY = '(max-width: 700px)';
  */
 export class ViewportNarrow implements ReactiveController {
   private readonly host: ReactiveControllerHost;
+  private readonly notify?: (narrow: boolean) => void;
   private query: MediaQueryList | null = null;
   private matches = false;
 
-  constructor(host: ReactiveControllerHost) {
+  /**
+   * `onChange` is for a host holding state that only means something at one
+   * width — it is dropped when the answer flips. The redraw happens either way.
+   */
+  constructor(host: ReactiveControllerHost, onChange?: (narrow: boolean) => void) {
     this.host = host;
+    this.notify = onChange;
     host.addController(this);
   }
 
@@ -65,6 +71,7 @@ export class ViewportNarrow implements ReactiveController {
 
   private readonly onChange = (e: MediaQueryListEvent) => {
     this.matches = e.matches;
+    this.notify?.(this.matches);
     this.host.requestUpdate();
   };
 }

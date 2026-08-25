@@ -25,11 +25,11 @@ import {
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
 import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
-import { editorErrorText } from '../ui/editor-error';
 import type { ConfirmDiscard } from '../ui/discard';
 import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
 import type { BannerHooks } from '../ui/banners';
-import { NARROW_QUERY } from '../ui/responsive';
+import { ViewportNarrow } from '../ui/responsive';
+import { ItemWorkspace } from '../item-workspace';
 import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
@@ -51,11 +51,8 @@ import './hv-bulk-bar';
 import './hv-checkout-popover';
 import './hv-confirm';
 import './hv-data-table';
-import './hv-detail-sheet';
-import type { MediaBindings } from '../ui/media';
 import './hv-filter-chips';
 import './hv-filter-panel';
-import './hv-item-editor';
 import './hv-location-tree';
 import './hv-overflow-menu';
 import type { HVItemEditor } from './hv-item-editor';
@@ -895,23 +892,20 @@ export class HVFullView extends LitElement {
 
   @property({ attribute: false }) store!: Store;
 
-  private _media: MediaBindings | null = null;
+  /**
+   * The editor, the read sheet and the check-out step, as the card's shell has
+   * them. Delete leaves for the host here: this surface owns no confirmation,
+   * and a row click and the row menu's Edit mean the same thing on it.
+   */
+  private readonly _workspace = new ItemWorkspace(this, () => this.store, {
+    confirmDiscard: () => this.confirmDiscard,
+    editor: () => this._editor,
+    openItem: (itemId) => this._openItem(itemId),
+    editItem: (itemId) => this._openItem(itemId),
+    requestDelete: (detail) =>
+      this.dispatchEvent(new CustomEvent('request-delete', { detail, bubbles: true, composed: true })),
+  });
 
-  /** Picture access for the editor this view hosts; built once per store. */
-  private get media(): MediaBindings | null {
-    const store = this.store;
-    if (!store) return null;
-    this._media ??= {
-      sign: (path, expires) => store.signMediaPath(path, expires),
-      upload: (itemId, file, kind) => store.uploadAttachment(itemId, file, kind),
-      remove: (itemId, attachmentId) => store.removeAttachment(itemId, attachmentId),
-      retitle: (itemId, attachmentId, title) =>
-        store.updateAttachment(itemId, attachmentId, title),
-      reorder: (itemId, kind, attachmentIds) =>
-        store.reorderAttachments(itemId, kind, attachmentIds),
-    };
-    return this._media;
-  }
   @property({ type: Boolean, reflect: true }) open = false;
   @property({ type: String }) heading = DEFAULT_CARD_TITLE;
   @property({ attribute: false }) columns: ColumnKey[] = [];
@@ -939,7 +933,7 @@ export class HVFullView extends LitElement {
   /**
    * Home Assistant's own narrow flag, forwarded by the panel host.
    *
-   * Distinct from `_narrow` below, which is this surface's own phone
+   * Distinct from `_viewport` below, which is this surface's own phone
    * breakpoint: HA sets this whenever the sidebar is collapsed, at any width.
    */
   @property({ type: Boolean }) narrow = false;
@@ -956,33 +950,6 @@ export class HVFullView extends LitElement {
   @state() private _zBase = 0;
   @state() private _filtersOpen = false;
   @state() private _searchDraft = '';
-  @state() private _editing: string | 'new' | null = null;
-  /**
-   * The item the read sheet is showing, on a narrow viewport.
-   *
-   * There is no read view at this width otherwise: the table is one, but it is
-   * off the side of a phone, and tapping a row landed straight in the edit form
-   * — a surface the card answers the same tap with a sheet on.
-   */
-  @state() private _detailItemId: string | null = null;
-  @state() private _editorBusy = false;
-  /**
-   * What the open form says about a save the store refused.
-   *
-   * This surface fills the screen, so the card's banner list is not behind it —
-   * without this the user is left with a form that did not close and no account
-   * of why.
-   */
-  @state() private _editorError: string | null = null;
-  /**
-   * The last copy of the row being edited, kept for as long as the form is open.
-   *
-   * Same reason the card's shell keeps one: a filter change refetches, the
-   * edited row can drop out of the result, and the editor rebuilds its model
-   * from whatever item it is handed — so handing it `null` there discards the
-   * typed edits.
-   */
-  @state() private _pinnedItem: Item | null = null;
   @state() private _creatingLocation = false;
   @state() private _locationError: string | null = null;
   /**
@@ -1018,8 +985,14 @@ export class HVFullView extends LitElement {
    * editor's three-column desktop grid in 156px + 78px + 78px, with "Low-stock
    * at" wrapping over its own field. A media query cannot set a property, so
    * the same breakpoint is read here and handed down.
+   *
+   * The phone panel drops its draft when it stops being on a phone, so a staged
+   * set held from before the rotation would have the head row counting filters
+   * the controls under it no longer carry.
    */
-  @state() private _narrow = false;
+  private readonly _viewport = new ViewportNarrow(this, () => {
+    this._stagedFilters = null;
+  });
   /**
    * Which of the app bar's two steps the room calls for, as the classes that
    * carry them — see `barSteps`.
@@ -1055,41 +1028,20 @@ export class HVFullView extends LitElement {
   @state() private _pendingDelete = false;
   /** The whole selection's check-out is waiting on one due date. */
   @state() private _pendingBulkCheckout = false;
-  /** The row whose check-out / due-date step is open. */
-  @state() private _checkout: {
-    itemId: string;
-    mode: 'check-out' | 'set-due-date';
-  } | null = null;
   @state() private _loadingAll = false;
   /** Set while a batch is running so Cancel can stop it between chunks. */
   private _bulkCancelled = false;
   /** The ops of the last run, so "Retry failed" can replay just the failures. */
   private _lastOps: { label: string; ops: BulkOperation[] } | null = null;
 
-  private _storeUnsub?: () => void;
   private _prevFocus: HTMLElement | null = null;
 
   private get st(): StoreState | null {
     return this.store?.state.value ?? null;
   }
 
-  connectedCallback(): void {
-    super.connectedCallback();
-    if (this.store && !this._storeUnsub) {
-      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
-    }
-    this._narrowQuery ??= window.matchMedia?.(NARROW_QUERY) ?? null;
-    if (this._narrowQuery) {
-      this._narrow = this._narrowQuery.matches;
-      this._narrowQuery.addEventListener('change', this._onNarrowChange);
-    }
-  }
-
   disconnectedCallback(): void {
     super.disconnectedCallback();
-    this._storeUnsub?.();
-    this._storeUnsub = undefined;
-    this._narrowQuery?.removeEventListener('change', this._onNarrowChange);
     this._barObserver?.disconnect();
     this._barTarget = null;
   }
@@ -1124,15 +1076,6 @@ export class HVFullView extends LitElement {
     if (next !== this._barSteps) this._barSteps = next;
   }
 
-  private _narrowQuery?: MediaQueryList | null;
-  private _onNarrowChange = (e: MediaQueryListEvent) => {
-    this._narrow = e.matches;
-    // The panel drops its draft when it stops being on a phone, so a staged set
-    // held from before the rotation would have the head row counting filters
-    // the controls under it no longer carry.
-    this._stagedFilters = null;
-  };
-
   /** Price a staged (not yet applied) filter set, so the footer can be honest. */
   private _priceStaged = debounce((filters: StoreFilters) => {
     void this.store?.countMatching(filters).then((count) => {
@@ -1141,11 +1084,7 @@ export class HVFullView extends LitElement {
   }, 150);
 
   protected willUpdate(changed: Map<string, unknown>) {
-    if (changed.has('store') && this.store) {
-      this._storeUnsub?.();
-      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
-    }
-    this._syncPinnedItem();
+    this._workspace.syncPinnedItem();
     if (changed.has('open')) {
       if (this.open) {
         this._zBase = nextZBase();
@@ -1155,9 +1094,8 @@ export class HVFullView extends LitElement {
       } else {
         this._filtersOpen = false;
         this._stagedFilters = null;
-        this._editing = null;
-        this._detailItemId = null;
-        this._editorError = null;
+        this._workspace.setEditing(null);
+        this._workspace.closeDetail();
         this._creatingLocation = false;
         this._locationError = null;
         this._selecting = false;
@@ -1261,28 +1199,14 @@ export class HVFullView extends LitElement {
 
   /**
    * Leave the open form — for another row, for the create form, or by closing
-   * the whole surface — asking first if there is typing to lose.
-   *
-   * The form asks for its own Cancel, ✕ and Escape, but only about closing.
-   * Everything here has somewhere else to be afterwards, so the destination is
-   * held in the callback until the host's question comes back answered.
+   * the whole surface. Closing is this surface's own destination: everywhere
+   * else the workspace's question is the whole of it.
    */
   private _leaveEditor(to: string | 'new' | 'close') {
-    const ask = this.confirmDiscard;
-    if (ask && this._editing !== null && this._editor?.dirty) {
-      ask(() => this._applyLeave(to));
-      return;
-    }
-    this._applyLeave(to);
-  }
-
-  private _applyLeave(to: string | 'new' | 'close') {
-    if (to === 'close') {
-      this._close();
-      return;
-    }
-    this._editing = to;
-    this._editorError = null;
+    this._workspace.leave(() => {
+      if (to === 'close') this._close();
+      else this._workspace.setEditing(to);
+    });
   }
 
   // ---------- Focus trap ----------
@@ -1317,58 +1241,6 @@ export class HVFullView extends LitElement {
   }
 
   /**
-   * Hold on to the row being edited, and close the form when it is really gone.
-   *
-   * Falling off the current page and being deleted look identical from the item
-   * list alone; the store is the only place that knows which happened, so it is
-   * asked rather than guessed at.
-   */
-  private _syncPinnedItem() {
-    // The read sheet holds an id too, and a deleted item leaves it showing
-    // nothing at all rather than closing.
-    if (this._detailItemId !== null && this.store?.wasRemoved(this._detailItemId)) {
-      this._detailItemId = null;
-    }
-    const editing = this._editing;
-    if (editing === null || editing === 'new') {
-      this._pinnedItem = null;
-      return;
-    }
-    if (this.store?.wasRemoved(editing)) {
-      this._pinnedItem = null;
-      this._editing = null;
-      this._editorError = null;
-      return;
-    }
-    const listed = this.st?.items.find((i) => i.id === editing);
-    if (listed) this._pinnedItem = listed;
-  }
-
-  /** The item the open editor edits — the listed row, or the pinned copy of it. */
-  private get _editorItem(): Item | null {
-    if (this._editing === null || this._editing === 'new') return null;
-    const id = this._editing;
-    return this.st?.items.find((i) => i.id === id) ?? (this._pinnedItem?.id === id ? this._pinnedItem : null);
-  }
-
-  private _onRowEvent(name: string, detail: { itemId?: string }) {
-    const item = this.st?.items.find((i) => i.id === detail.itemId);
-    if (!item) return;
-    switch (name) {
-      case 'increment':
-        void this.store?.adjustQuantity(item.id, +1);
-        break;
-      case 'decrement':
-        if (item.quantity > 0) void this.store?.adjustQuantity(item.id, -1);
-        break;
-      case 'edit':
-      case 'open-item':
-        this._openItem(item.id);
-        break;
-    }
-  }
-
-  /**
    * Show an item: the read sheet on a narrow viewport, the inline form on a
    * wide one, with Edit one tap deeper inside the sheet.
    *
@@ -1378,74 +1250,12 @@ export class HVFullView extends LitElement {
    * answers the same tap with the same sheet.
    */
   private _openItem(id: string) {
-    if (this._narrow) {
-      this._detailItemId = id;
+    if (this._viewport.narrow) {
+      this._workspace.openDetail(id);
       return;
     }
     this._leaveEditor(id);
   }
-
-  /**
-   * The table rows' ⋮, answered the way the card's shell answers its own rows'.
-   *
-   * Same ids, same meanings — the entries come from one list — so a household
-   * learns Check out / Check in / due date / Delete once. Delete leaves for the
-   * host, which owns the confirmation and the store call; the Delete key on a
-   * row already went the same way.
-   */
-  private _onRowAction(detail: { itemId?: string; action?: string }) {
-    const item = this.st?.items.find((i) => i.id === detail.itemId);
-    if (!item) return;
-    switch (detail.action) {
-      case 'check-out':
-      case 'set-due-date':
-        this._checkout = { itemId: item.id, mode: detail.action };
-        break;
-      case 'check-in':
-        void this.store?.markCheckedIn(item.id, item.version);
-        break;
-      case 'edit':
-        this._openItem(item.id);
-        break;
-      case 'delete':
-        this.dispatchEvent(
-          new CustomEvent('request-delete', {
-            detail: { itemId: item.id, name: item.name },
-            bubbles: true,
-            composed: true,
-          }),
-        );
-        break;
-    }
-  }
-
-  private _onEditorSave = async (e: CustomEvent) => {
-    const detail = e.detail as {
-      itemId: string | null;
-      expectedVersion?: number;
-      changes?: Parameters<Store['updateItem']>[1];
-      create?: Parameters<Store['createItem']>[0];
-    };
-    this._editorBusy = true;
-    this._editorError = null;
-    const before = this.st?.errorQueue.length ?? 0;
-    try {
-      if (detail.itemId && detail.changes) {
-        await this.store?.updateItem(detail.itemId, detail.changes, detail.expectedVersion);
-      } else if (detail.create) {
-        await this.store?.createItem(detail.create);
-      }
-    } finally {
-      this._editorBusy = false;
-    }
-    // The store reports failures through its error queue rather than throwing,
-    // so a new entry is how we know the save did not land. The form stays open
-    // on the user's edits and names the failure inside itself.
-    const queue = this.st?.errorQueue ?? [];
-    const failed = queue.length > before;
-    this._editorError = failed ? editorErrorText(queue[queue.length - 1]) : null;
-    if (!failed) this._editing = null;
-  };
 
   // ---------- Bulk actions ----------
   private get _selectedItems(): Item[] {
@@ -2094,8 +1904,8 @@ export class HVFullView extends LitElement {
               this._filtersOpen = !this._filtersOpen;
               // The phone panel stages its edits, so its head row and its
               // button both have a number to print from the moment it opens.
-              this._stagedFilters = this._filtersOpen && this._narrow ? filters : null;
-              if (this._filtersOpen && this._narrow) this._priceStaged(filters);
+              this._stagedFilters = this._filtersOpen && this._viewport.narrow ? filters : null;
+              if (this._filtersOpen && this._viewport.narrow) this._priceStaged(filters);
             }}
           >
             ${icon('tune', 16)}${t('hv.card.filters')}
@@ -2105,7 +1915,7 @@ export class HVFullView extends LitElement {
                many for 375px: the picker dropped onto a line of its own under
                the chip. The ⋮ menu offers Columns on both hosts, so nothing is
                lost by leaving it as the only route there at this width. -->
-          ${this._narrow
+          ${this._viewport.narrow
             ? null
             : html`<button
                 class="hv-icon-button"
@@ -2255,7 +2065,7 @@ export class HVFullView extends LitElement {
     const allowsPill = (key: QuickFilterKey) => quickFilterAllowed(this.quickFilters, key);
     // The narrow branch dresses these same controls its own way, on its own
     // breakpoint, so the measured steps stand aside for it.
-    const steps = this._narrow ? '' : this._barSteps;
+    const steps = this._viewport.narrow ? '' : this._barSteps;
     const addLabelClass = steps.includes('tight') ? 'add-label hv-sr-only' : 'add-label';
     // One strip, so the pills are what gives when the bar runs out of room —
     // and no strip at all when nothing is flagged, because an empty one is
@@ -2365,7 +2175,7 @@ export class HVFullView extends LitElement {
             @click=${() => this._leaveEditor('new')}
           >
             ${icon('plus', 16)}<span class=${addLabelClass}
-              >${t(this._narrow ? 'hv.card.addShort' : 'hv.card.addItem')}</span
+              >${t(this._viewport.narrow ? 'hv.card.addShort' : 'hv.card.addItem')}</span
             >
           </button>
           <button
@@ -2419,7 +2229,7 @@ export class HVFullView extends LitElement {
             <div class="panel-holder" id=${FILTER_PANEL_ID} ?hidden=${!this._filtersOpen}>
               ${this._filtersOpen
                 ? html`
-                  ${this._narrow ? this._renderPanelHead(filters) : null}
+                  ${this._viewport.narrow ? this._renderPanelHead(filters) : null}
                   <div class="panel-scroll">
                   <hv-filter-panel
                     .statuses=${this.st?.statuses ?? null}
@@ -2432,7 +2242,7 @@ export class HVFullView extends LitElement {
                     .total=${st?.total ?? null}
                     .grandTotal=${counts?.items_total ?? null}
                     .counts=${counts ?? null}
-                    ?mobile=${this._narrow}
+                    ?mobile=${this._viewport.narrow}
                     @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}
                     @stage=${(e: CustomEvent) => {
                       const staged = (e.detail as { filters: StoreFilters }).filters;
@@ -2447,44 +2257,22 @@ export class HVFullView extends LitElement {
                     @clear-filters=${() => this.store?.clearFilters()}
                   ></hv-filter-panel>
                   </div>
-                  ${this._narrow ? this._renderPanelFoot() : null}
+                  ${this._viewport.narrow ? this._renderPanelFoot() : null}
                 `
                 : null}
             </div>
-            ${this._editing !== null
+            ${this._workspace.editing !== null
               ? html`<div class="editor-holder">
-                  ${this._editing !== 'new' && !st?.items.some((i) => i.id === this._editing)
+                  ${this._workspace.editing !== 'new' &&
+                  !st?.items.some((i) => i.id === this._workspace.editing)
                     ? html`<p class="pinned-hint" data-testid="pinned-editor-hint">
                         ${t('hv.list.noLongerMatches')}
                       </p>`
                     : null}
-                  <hv-item-editor
-                    .statuses=${this.st?.statuses ?? null}
-                    data-testid="full-editor"
-                    .areas=${st?.areasCache?.areas ?? []}
-                    .media=${this.media}
-                    .mediaConfig=${st?.mediaConfig ?? null}
-                    .item=${this._editorItem}
-                    .locations=${st?.locationsFlatCache ?? null}
-                    .locationTree=${st?.locationTreeCache ?? []}
-                    .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
-                    .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
-                    .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
-                    .createLocation=${this._createLocationForEditor}
-                    .confirmDiscard=${this.confirmDiscard}
-                    .busy=${this._editorBusy}
-                    .errorMessage=${this._editorError}
-                    ?mobile=${this._narrow}
-                    @save=${this._onEditorSave}
-                    @cancel=${() => {
-                      this._editing = null;
-                      this._editorError = null;
-                    }}
-                    @delete-item=${(e: CustomEvent) =>
-                      this.dispatchEvent(
-                        new CustomEvent('request-delete', { detail: e.detail, bubbles: true, composed: true }),
-                      )}
-                  ></hv-item-editor>
+                  ${this._workspace.renderEditor({
+                    testid: 'full-editor',
+                    mobile: this._viewport.narrow,
+                  })}
                 </div>`
               : null}
 
@@ -2497,23 +2285,22 @@ export class HVFullView extends LitElement {
             <hv-data-table
               .statuses=${this.st?.statuses ?? null}
               .areas=${st?.areasCache?.areas ?? []}
-              .media=${this.media}
+              .media=${this._workspace.media}
               data-testid="full-table"
               .items=${(st?.items ?? []) as Item[]}
               .columns=${this.columns}
               .sort=${filters.sort as Sort}
               ?selectable=${this._selecting}
-              ?narrow=${this._narrow}
+              ?narrow=${this._viewport.narrow}
               .selection=${selection}
               @sort-change=${(e: CustomEvent) => this._setFilters({ sort: (e.detail as { sort: Sort }).sort })}
               @near-end=${(e: CustomEvent) =>
                 void this.store?.prefetchIfNeeded((e.detail as { ratio: number }).ratio)}
-              @increment=${(e: CustomEvent) => this._onRowEvent('increment', e.detail)}
-              @decrement=${(e: CustomEvent) => this._onRowEvent('decrement', e.detail)}
-              @edit=${(e: CustomEvent) => this._onRowEvent('edit', e.detail)}
-              @open-item=${(e: CustomEvent) => this._onRowEvent('open-item', e.detail)}
-              @row-action=${(e: CustomEvent) =>
-                this._onRowAction(e.detail as { itemId?: string; action?: string })}
+              @increment=${(e: CustomEvent) => this._workspace.onRowEvent('increment', e.detail)}
+              @decrement=${(e: CustomEvent) => this._workspace.onRowEvent('decrement', e.detail)}
+              @edit=${(e: CustomEvent) => this._workspace.onRowEvent('edit', e.detail)}
+              @open-item=${(e: CustomEvent) => this._workspace.onRowEvent('open-item', e.detail)}
+              @row-action=${(e: CustomEvent) => this._workspace.onRowAction(e.detail)}
               @toggle-select=${(e: CustomEvent) =>
                 this.store?.toggleSelected((e.detail as { itemId: string }).itemId)}
               @select-all-loaded=${() => this.store?.selectAllLoaded()}
@@ -2563,7 +2350,7 @@ export class HVFullView extends LitElement {
         <hv-confirm
           data-testid="bulk-confirm"
           ?open=${this._pendingDelete}
-          ?mobile=${this._narrow}
+          ?mobile=${this._viewport.narrow}
           .heading=${t('hv.fullView.deleteHeading', {
             items: counted(selection.size, 'item'),
           })}
@@ -2580,94 +2367,23 @@ export class HVFullView extends LitElement {
           }}
         ></hv-confirm>
 
-        ${this._narrow
-          ? html`<hv-detail-sheet
-              data-testid="full-detail-sheet"
-              .statuses=${st?.statuses ?? null}
-              .areas=${st?.areasCache?.areas ?? []}
-              .media=${this.media}
-              .mediaConfig=${st?.mediaConfig ?? null}
-              ?open=${this._detailItemId !== null}
-              .item=${this._detailItemId ? (st?.items.find((i) => i.id === this._detailItemId) ?? null) : null}
-              .locations=${st?.locationsFlatCache ?? null}
-              .locationTree=${st?.locationTreeCache ?? []}
-              .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
-              .tagSuggestions=${(st?.distinctValuesCache?.tags ?? []).map((t) => t.value)}
-              .customFieldKeys=${st?.distinctValuesCache?.custom_field_keys ?? []}
-              .createLocation=${this._createLocationForEditor}
-              .confirmDiscard=${this.confirmDiscard}
-              .busy=${this._editorBusy}
-              .errorMessage=${this._editorError}
-              @cancel=${() => {
-                this._detailItemId = null;
-                this._editorError = null;
-              }}
-              @increment=${(e: CustomEvent) => this._onRowEvent('increment', e.detail)}
-              @decrement=${(e: CustomEvent) => this._onRowEvent('decrement', e.detail)}
-              @check-in=${(e: CustomEvent) =>
-                this._onRowAction({ itemId: (e.detail as { itemId: string }).itemId, action: 'check-in' })}
-              @check-out-confirmed=${(e: CustomEvent) => {
-                const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
-                const item = st?.items.find((i) => i.id === itemId);
-                if (item) void this.store?.checkOut(item.id, dueDate, item.version);
-              }}
-              @set-due-date=${(e: CustomEvent) => {
-                const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
-                const item = st?.items.find((i) => i.id === itemId);
-                if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
-              }}
-              @reminder-bump=${(e: CustomEvent) => {
-                const { itemId } = e.detail as { itemId: string };
-                const item = st?.items.find((i) => i.id === itemId);
-                if (item) void this.store?.bumpReminder(item.id, item.version);
-              }}
-              @request-delete=${(e: CustomEvent) =>
-                this.dispatchEvent(
-                  new CustomEvent('request-delete', { detail: e.detail, bubbles: true, composed: true }),
-                )}
-              @save=${this._onEditorSave}
-            ></hv-detail-sheet>`
+        ${this._viewport.narrow
+          ? this._workspace.renderDetailSheet({ testid: 'full-detail-sheet' })
           : null}
 
-        <!-- Centred and scrimmed at every width, like the bulk popover below.
-             Neither of the other two placements fits this call site: an inline
-             step has to sit inside the body of the surface that opened it, and
-             this is a sibling at the end of the shell with no body around it;
-             an anchored one hangs off the row ⋮, which sits in a column the
-             table scrolls sideways out of view. Finger-sized controls are a
-             separate question and follow the narrow branch on their own. -->
-        <hv-checkout-popover
-          data-testid="full-checkout"
-          ?open=${this._checkout !== null}
-          ?touch=${this._narrow}
-          .mode=${this._checkout?.mode ?? 'check-out'}
-          .item=${this._checkout ? (st?.items.find((i) => i.id === this._checkout!.itemId) ?? null) : null}
-          @check-out=${(e: CustomEvent) => {
-            const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
-            const item = st?.items.find((i) => i.id === itemId);
-            this._checkout = null;
-            if (item) void this.store?.checkOut(item.id, dueDate, item.version);
-          }}
-          @set-due-date=${(e: CustomEvent) => {
-            const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
-            const item = st?.items.find((i) => i.id === itemId);
-            this._checkout = null;
-            // A due date only exists while an item is out, so this is a plain update.
-            if (item) void this.store?.updateItem(item.id, { due_date: dueDate }, item.version);
-          }}
-          @cancel=${() => {
-            this._checkout = null;
-          }}
-        ></hv-checkout-popover>
+        ${this._workspace.renderCheckoutPopover({
+          testid: 'full-checkout',
+          mobile: this._viewport.narrow,
+        })}
 
-        <!-- Centred at every width for the same reason as the one above: it is
-             opened by a bar at the foot of the table with no body of its own to
-             sit in. It anchors to nothing, so it takes the same scrimmed
-             middle-of-the-screen position the bulk confirm does. -->
+        <!-- Centred at every width and scrimmed: it is opened by a bar at the
+             foot of the table with no body of its own to sit in, and it anchors
+             to nothing, so it takes the same middle-of-the-screen position the
+             bulk confirm does. -->
         <hv-checkout-popover
           data-testid="full-bulk-checkout"
           ?open=${this._pendingBulkCheckout}
-          ?touch=${this._narrow}
+          ?touch=${this._viewport.narrow}
           .itemName=${counted(selection.size, 'item')}
           @check-out=${(e: CustomEvent) => {
             const { dueDate } = e.detail as { dueDate: string | null };

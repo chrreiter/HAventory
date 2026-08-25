@@ -46,8 +46,14 @@ It also publishes the active HA theme as `color-scheme` on the host, which every
 component inherits.
 
 `src/haventory-panel.ts` defines `haventory-panel` — the same bundle's second element,
-which HA's custom-panel loader instantiates for the sidebar page. It mirrors the card's
-store lifecycle and renders `<hv-full-view embedded open>`.
+which HA's custom-panel loader instantiates for the sidebar page. It renders
+`<hv-full-view embedded open>`.
+
+Both take that store lifecycle from `StoreHostElement` (`src/store-host.ts`), which they
+extend: the `hass` setter that sets the language before anything renders and builds the
+store from the first object, the subscription that survives a disconnect and comes back
+with the element, and the `color-scheme` publish. What each one adds is what it renders
+and what configuration it reads.
 
 `src/haventory-card-editor.ts` defines `haventory-card-editor` — the bundle's third
 HA-facing element, which `getConfigElement` creates by tag. It renders one field for
@@ -83,9 +89,22 @@ the delete/discard confirmation, the organize dialog, the import sheet, the diag
 panel with its refresh state, and the shared ⋮ menu-entry builder. On the card side the
 instance lives in `hv-card-shell`; on the panel it lives in the panel element directly.
 Host differences enter as constructor hooks (`onItemDeleted`, `onBrowse`). The phone form of
-those dialogs is not one of them: the instance watches the viewport itself (`NARROW_QUERY`,
-started and stopped from each host's connected/disconnected callbacks) and hands the same
-answer to all five, so the card and the panel cannot disagree about what a phone is.
+those dialogs is not one of them: the instance watches the viewport itself (a
+`ViewportNarrow` controller on the host, so it needs no lifecycle calls of its own) and
+hands the same answer to all five, so the card and the panel cannot disagree about what a
+phone is.
+
+`hv-card-shell` and `hv-full-view` hold an `ItemWorkspace` (`src/item-workspace.ts`) on the
+same terms — host, `getStore`, hooks. It is everything the two shells do to one item: which
+row the form is open on, the copy of that row pinned while a refetch is in flight, the save
+and what a refused one leaves on screen, the read sheet's item, the check-out step, and one
+dispatch table for every event a row can raise. It renders the editor, the read sheet and
+the check-out popover, each taking its surface's own `data-testid` and phone flag as
+parameters. The hooks are the three things that genuinely differ: where a row tap goes
+(the card sends a phone tap to the read sheet and the row menu's Edit to the form; the
+expanded view sends both to the same place), who answers a delete (the card's
+`HostSurfaces`; the expanded view's host, over an event), and which shadow root the open
+form is in.
 
 ---
 
@@ -114,7 +133,8 @@ Home Assistant theme variable bound without a line in `HA_THEME_VARS`.
 haventory-card                     Lovelace element; store owner
 └── hv-card-shell                  container: header, search, filters, list, footer;
     │                              holds the HostSurfaces instance (the four dialogs
-    │                              below it render through that)
+    │                              below it render through that) and the ItemWorkspace
+    │                              (the editor, the read sheet and the check-out step)
     ├── hv-overflow-menu           the ⋮ menu (also used by the app bar and rows)
     ├── hv-filter-chips            removable chips for every active filter
     ├── hv-filter-panel            the complete filter set; desktop panel / mobile sheet
@@ -446,8 +466,8 @@ threading each one back through the root element as a re-dispatched event is mor
 than it is worth.
 
 Because the shell receives a stable `store` object, a property binding would never
-re-render it — so each container subscribes to `store.state.onChange` itself in
-`connectedCallback` and unsubscribes on disconnect.
+re-render it — so each container subscribes to `store.state.onChange` itself, through the
+`ItemWorkspace` it holds, for as long as it is in the DOM.
 
 ---
 
@@ -458,7 +478,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself i
 | `tokens.ts` | Every design token as a `--hv-*` custom property, bound to the HA theme variable first with the mock hex as fallback, plus dark-mode and reduced-motion overrides. `base` adds the pill/icon-button/chip/input primitives. Composed as `static styles = [tokens, base, css\`…\`]`. |
 | `icons.ts` | ~30 MDI glyphs as inline path data, rendered as `<svg fill="currentColor">`. See the deviation note below. |
 | `brand-icon.ts` | The HAventory mark as one path, published to HA's icon registry (`window.customIcons`) under the `haventory:` prefix so the sidebar entry can name it. The backend's `PANEL_ICON` is the matching string. |
-| `responsive.ts` | The two phone predicates: `ResponsiveController` (a Lit reactive controller driving mobile mode from the card's own measured width, ≤600px) and `NARROW_QUERY`, the viewport query every fixed overlay switches on. |
+| `responsive.ts` | The two phone predicates, both as Lit reactive controllers: `ResponsiveController` drives mobile mode from the card's own measured width (≤600px), and `ViewportNarrow` follows `NARROW_QUERY`, the viewport query every fixed overlay switches on. |
 | `dialog-sheet.ts` | The bottom-sheet presentation the host dialogs share under `mobile`, as one `css` block added to each of their `static styles`. |
 | `relative-time.ts` | "2 h ago" / "Jul 31" formatting, overdue checks, and the `+N days` arithmetic the check-out chips use. |
 | `day-clock.ts` | `onDayChange(cb)`: one shared timer to the next local midnight, so everything that renders a date re-renders when the day turns. See "The day turning over". |
