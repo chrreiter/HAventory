@@ -16,6 +16,7 @@ import {
   DEFAULT_STATUS,
   STATUS_COLORS,
   STATUS_ICONS,
+  displayLabel,
   hexToneStyle,
   isHexColor,
   knownIcon,
@@ -1822,20 +1823,29 @@ export class HVOrganizeDialog extends LitElement {
    * filter chip and select on the card — only the slug tells them apart, and
    * the slug is what the editor hides. The status being edited is excluded:
    * keeping its own name is not a collision.
+   *
+   * Compared against what each status *displays*, not what it stores: a reader
+   * in German sees "Fehlt" on the chips, and typing that word is the collision
+   * they would have to live with. The stored English behind it is not on any
+   * screen, so a warning about it would name a word nobody can see.
    */
   private get _duplicateLabel(): string | null {
     const typed = this._statusLabel.trim().toLowerCase();
     if (!typed) return null;
     const editing = this._editingStatus;
-    return (
-      this._statusDefs.find((d) => d.slug !== editing && d.label.trim().toLowerCase() === typed)
-        ?.label ?? null
+    const clash = this._statusDefs.find(
+      (d) => d.slug !== editing && displayLabel(d).trim().toLowerCase() === typed,
     );
+    return clash ? displayLabel(clash) : null;
   }
 
   private _startStatusEdit(slug: string | 'new') {
     const existing = slug === 'new' ? undefined : this._statusDefs.find((d) => d.slug === slug);
     this._editingStatus = slug;
+    // The stored label, never the displayed one. The box is what `_saveStatus`
+    // writes: seeded with a translation, a German household that opened this
+    // editor and pressed save would rename the built-in three for everyone,
+    // English readers included, and no language could translate them again.
     this._statusLabel = existing?.label ?? '';
     this._statusColor = existing?.color ?? 'neutral';
     this._statusIcon = existing?.icon ?? 'check';
@@ -1935,12 +1945,15 @@ export class HVOrganizeDialog extends LitElement {
         ${defs.map((d, index) => {
           const isDefault = d.slug === DEFAULT_STATUS;
           const count = this._statusCount(d.slug);
+          // What the chip beside these buttons says, so a screen reader names
+          // the row the same way the screen does.
+          const shown = displayLabel(d);
           return html`
             <div class="value-row status-row" data-testid="status-row" data-value=${d.slug}>
               <span class="move">
                 <button
                   data-testid="status-up"
-                  aria-label=${t('hv.organize.statusMoveUp', { label: d.label })}
+                  aria-label=${t('hv.organize.statusMoveUp', { label: shown })}
                   title=${t('hv.term.moveUp')}
                   ?disabled=${index === 0}
                   @click=${() => this._moveStatus(d.slug, -1)}
@@ -1949,7 +1962,7 @@ export class HVOrganizeDialog extends LitElement {
                 </button>
                 <button
                   data-testid="status-down"
-                  aria-label=${t('hv.organize.statusMoveDown', { label: d.label })}
+                  aria-label=${t('hv.organize.statusMoveDown', { label: shown })}
                   title=${t('hv.term.moveDown')}
                   ?disabled=${index === defs.length - 1}
                   @click=${() => this._moveStatus(d.slug, 1)}
@@ -1970,7 +1983,7 @@ export class HVOrganizeDialog extends LitElement {
                   : null}
                 <button
                   data-testid="status-edit"
-                  aria-label=${t('hv.organize.statusEdit', { label: d.label })}
+                  aria-label=${t('hv.organize.statusEdit', { label: shown })}
                   title=${t('hv.action.edit')}
                   @click=${() => this._startStatusEdit(d.slug)}
                 >
@@ -1982,7 +1995,7 @@ export class HVOrganizeDialog extends LitElement {
                       <button
                         class="danger"
                         data-testid="status-remove"
-                        aria-label=${t('hv.organize.statusDelete', { label: d.label })}
+                        aria-label=${t('hv.organize.statusDelete', { label: shown })}
                         title=${t('hv.action.delete')}
                         @click=${() => this._askDeleteStatus(d.slug)}
                       >
@@ -2016,6 +2029,18 @@ export class HVOrganizeDialog extends LitElement {
     const duplicate = this._duplicateLabel;
     const glyph = knownIcon(this._statusIcon);
     const custom = isHexColor(this._statusColor) ? this._statusColor : null;
+    // A built-in nobody has renamed stores English and prints the reader's
+    // language, so for that reader the box and the chips say different words.
+    // Showing what the box's text prints as is what stops the English in it
+    // reading as a mistake to be corrected — correcting it is exactly the
+    // rename that would take the translation away from everyone. Dropped as
+    // soon as the box stops holding the stored label: from that keystroke on
+    // it is a new name, and the translation no longer describes it.
+    const editing = creating ? undefined : this._statusDefs.find((d) => d.slug === slug);
+    const printsAs =
+      editing && this._statusLabel === editing.label && displayLabel(editing) !== editing.label
+        ? displayLabel(editing)
+        : null;
     return keyed(
       slug,
       html`<div class="expander" data-testid="status-editor" data-field="status-label" ${ref(this._reveal)}>
@@ -2037,6 +2062,9 @@ export class HVOrganizeDialog extends LitElement {
           <span class="status-slug" data-testid="status-slug-preview" title=${derived}
             >${derived}</span
           >
+          ${printsAs === null
+            ? null
+            : html`<span class="hv-chip quiet" data-testid="status-shown">${printsAs}</span>`}
         </label>
         ${duplicate
           ? html`<div class="hint" data-testid="status-duplicate-hint">
@@ -2150,7 +2178,7 @@ export class HVOrganizeDialog extends LitElement {
                   this._reassignTarget = (e.target as HTMLSelectElement).value;
                 }}
               >
-                ${targets.map((d) => html`<option value=${d.slug}>${d.label}</option>`)}
+                ${targets.map((d) => html`<option value=${d.slug}>${displayLabel(d)}</option>`)}
               </select>
             </label>`
           : null}

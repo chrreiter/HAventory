@@ -1,3 +1,4 @@
+import { setLanguage } from '../i18n';
 import './hv-filter-panel';
 import type { HVFilterPanel } from './hv-filter-panel';
 import { defaultFilters } from '../store/store';
@@ -238,6 +239,34 @@ describe('hv-filter-panel: status', () => {
     expect(
       q(el, '[data-testid="filter-status"][data-value="ok"]')!.classList.contains('tone-green'),
     ).toBe(false);
+  });
+
+  // #536: the three the backend seeds are stored in English because they are
+  // data a household owns; the chips are what a household reads, and those
+  // follow the reader. A rename is the household's own word and outranks both.
+  it('names the built-in three in the reader\u2019s language, a renamed one as stored', async () => {
+    setLanguage('de');
+    const seeded = await mount();
+    expect(
+      all(seeded, '[data-testid="filter-status"]').map((c) =>
+        (c.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      ),
+    ).toEqual(['OK', 'Fehlt', 'Reparatur n\u00f6tig']);
+
+    const renamed = await mount(
+      {},
+      {
+        statuses: [
+          { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
+          { slug: 'missing', label: 'Gone walkabout', order: 1, color: 'amber', icon: 'alert' },
+        ],
+      },
+    );
+    expect(
+      all(renamed, '[data-testid="filter-status"]').map((c) =>
+        (c.textContent ?? '').replace(/\s+/g, ' ').trim(),
+      ),
+    ).toEqual(['OK', 'Gone walkabout']);
   });
 
   // A household colour outside the ten has no class to carry it, so the chip

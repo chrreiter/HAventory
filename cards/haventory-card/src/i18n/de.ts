@@ -404,6 +404,10 @@ export const de: CompleteDictionary = {
   'hv.field.categories': 'Kategorien',
   'hv.field.statuses': 'Status',
 
+  'hv.status.ok': 'OK',
+  'hv.status.missing': 'Fehlt',
+  'hv.status.needs_repair': 'Reparatur nötig',
+
   'hv.store.transportError':
     'Home Assistant war nicht erreichbar – die letzte Aktion ist nicht durchgegangen.',
   'hv.store.unknownError': 'Unbekannter Fehler',

@@ -2,6 +2,8 @@ import { html } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import type { TemplateResult } from 'lit';
 import type { Item, StatsCounts, StatusColor, StatusDefinition } from '../store/types';
+import { t } from '../i18n';
+import type { TranslationKey } from '../i18n';
 import { ICONS, icon } from './icons';
 import type { IconName } from './icons';
 
@@ -15,21 +17,40 @@ import type { IconName } from './icons';
  * therefore takes the definitions the store holds. What stays local is the
  * fallback: the built-in three, which is what an absent `statuses` section has
  * meant since schema v6 and what a backend too old to report them still means.
+ *
+ * One label does not come from the store as stored: a built-in nobody has
+ * renamed is printed in the reader's language. `displayLabel` holds that rule,
+ * and every surface reaches it through `statusLabel` or `renderStatusChip`.
  */
 
 /** What an item carries when nothing set its status. */
 export const DEFAULT_STATUS = 'ok';
 
 /**
- * The built-in vocabulary, matching what the backend seeds. Used only until
+ * The built-in vocabulary, matching what the backend seeds. Used until
  * `haventory/config` answers — after that the store's copy wins, including for
- * these three, because a household may have renamed or recoloured them.
+ * these three, because a household may have renamed or recoloured them — and
+ * its labels stay in use afterwards as the English `displayLabel` measures a
+ * rename against. `tests/test_frontend_registration.py` holds the three to the
+ * backend's own seed, which neither side can read.
  */
 export const BUILT_IN_STATUSES: readonly StatusDefinition[] = [
   { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
   { slug: 'missing', label: 'Missing', order: 1, color: 'amber', icon: 'alert' },
   { slug: 'needs_repair', label: 'Needs repair', order: 2, color: 'amber', icon: 'wrench' },
 ];
+
+/** The key each built-in slug is printed under while nobody has renamed it. */
+const BUILT_IN_LABEL_KEYS: ReadonlyMap<string, TranslationKey> = new Map<string, TranslationKey>([
+  ['ok', 'hv.status.ok'],
+  ['missing', 'hv.status.missing'],
+  ['needs_repair', 'hv.status.needs_repair'],
+]);
+
+/** The English seeded per built-in slug, which is what a rename is measured against. */
+const SEEDED_LABELS: ReadonlyMap<string, string> = new Map(
+  BUILT_IN_STATUSES.map((d) => [d.slug, d.label]),
+);
 
 /**
  * Every colour a status may take: five hues, each in a light and a strong form.
@@ -87,6 +108,31 @@ function definitionOf(
 }
 
 /**
+ * What a definition reads as on screen, which is not always what it stores.
+ *
+ * A status a household created is that household's own words, in whatever
+ * language it typed them, and prints exactly as stored. The three the backend
+ * seeds are nobody's words: while one still carries the English the seed wrote,
+ * the card prints the reader's word for it, so two members of one household
+ * reading different languages each see their own — the same rule Home Assistant
+ * applies to an entity state. The first rename makes the label a choice
+ * somebody took, and from then on it prints as stored in every language.
+ *
+ * The store never sees any of this. A translated chip is a display, not a
+ * rename: nothing here is ever written back, so an export stays language-
+ * neutral and a French household gets French chips the day that dictionary
+ * ships.
+ *
+ * Exported for the one surface that needs the two apart — the organize dialog
+ * edits the stored label and shows this beside it.
+ */
+export function displayLabel(def: StatusDefinition): string {
+  const key = BUILT_IN_LABEL_KEYS.get(def.slug);
+  if (key === undefined || def.label !== SEEDED_LABELS.get(def.slug)) return def.label;
+  return t(key);
+}
+
+/**
  * Display label for a slug.
  *
  * Falls back to the slug itself rather than rendering nothing: an item can
@@ -97,7 +143,8 @@ export function statusLabel(
   slug: string,
   defs: readonly StatusDefinition[] | null | undefined,
 ): string {
-  return definitionOf(slug, defs)?.label ?? slug;
+  const def = definitionOf(slug, defs);
+  return def ? displayLabel(def) : slug;
 }
 
 /**

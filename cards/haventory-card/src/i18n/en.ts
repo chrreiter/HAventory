@@ -452,6 +452,15 @@ export const en = {
   'hv.field.categories': 'Categories',
   'hv.field.statuses': 'Statuses',
 
+  // The three statuses a store is seeded with. A status a household created is
+  // its own words and renders as stored; these three are nobody's words until
+  // somebody renames one, so the card prints them in the reader's language for
+  // as long as each still carries the English the backend wrote. The store
+  // itself never sees these strings — `ui/status.ts` has the rule.
+  'hv.status.ok': 'OK',
+  'hv.status.missing': 'Missing',
+  'hv.status.needs_repair': 'Needs repair',
+
   // store — what the card says when a command does not come back. The
   // backend's own `message` text is not translated; these are the card's.
   'hv.store.transportError': 'Could not reach Home Assistant — the last action did not go through.',
