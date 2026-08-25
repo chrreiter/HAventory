@@ -1,4 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { setLanguage } from '../i18n';
 import './hv-filter-chips';
 import { chipsFor, clearedValueFor } from './hv-filter-chips';
 import { defaultFilters } from '../store/store';
@@ -360,6 +361,15 @@ describe('hv-filter-chips', () => {
     const el = await mount({ filters: { ...defaultFilters(), overdueOnly: true } });
     const chip = el.shadowRoot?.querySelector('[data-testid="filter-chip"]') as HTMLElement;
     expect(chip.getAttribute('aria-label')).toBe('Clear filter Overdue');
+  });
+
+  // A name nobody sees is a name nobody proofreads: this one was English on a
+  // row of German chips until a screen reader said so.
+  it('says that name in the language in force', async () => {
+    setLanguage('de');
+    const el = await mount({ filters: { ...defaultFilters(), overdueOnly: true } });
+    const chip = el.shadowRoot?.querySelector('[data-testid="filter-chip"]') as HTMLElement;
+    expect(chip.getAttribute('aria-label')).toBe('Filter Überfällig zurücksetzen');
   });
 
   // A search term, a list of tags or a nested location path has no length this

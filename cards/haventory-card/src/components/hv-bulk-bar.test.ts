@@ -318,6 +318,26 @@ describe('hv-bulk-bar: the band belongs to the theme', () => {
   });
 });
 
+describe('hv-bulk-bar: the language in force', () => {
+  // Every state of the bar draws its own buttons, and the ones behind a picker
+  // or a running batch are the ones a reader of the source scrolls past.
+  it('names the buttons of all three states in it', async () => {
+    setLanguage('de');
+
+    const picking = await mount();
+    (q(picking, '[data-action="adjust-qty"]') as HTMLButtonElement).click();
+    await picking.updateComplete;
+    expect(q(picking, '[data-testid="bulk-picker-cancel"]')?.textContent?.trim()).toBe('Abbrechen');
+    expect(q(picking, '[data-testid="bulk-picker-apply"]')?.textContent?.trim()).toBe('Anwenden');
+
+    const running = await mount({ progress: { done: 1, total: 4, failed: 0, label: 'Moving' } });
+    expect(q(running, '[data-testid="bulk-cancel"]')?.textContent?.trim()).toBe('Abbrechen');
+
+    const finished = await mount({ result: { label: 'Move', succeeded: 2, failed: [] } });
+    expect(q(finished, '[data-testid="bulk-result-dismiss"]')?.textContent?.trim()).toBe('Schließen');
+  });
+});
+
 describe('hv-bulk-bar: close verbs', () => {
   // A result panel is read and dismissed; "Close" is what every other surface
   // that only dismisses says.

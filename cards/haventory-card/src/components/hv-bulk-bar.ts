@@ -362,7 +362,7 @@ export class HVBulkBar extends LitElement {
               }}
             />
             <button class="hv-text-button" data-testid="bulk-picker-cancel" @click=${() => (this._active = null)}>
-              Cancel
+              ${t('hv.action.cancel')}
             </button>
             <button
               class="hv-pill"
@@ -370,7 +370,7 @@ export class HVBulkBar extends LitElement {
               ?disabled=${!Number.isFinite(Number(this._draft)) || this._draft.trim() === '' || Number(this._draft) === 0}
               @click=${() => this._run({ action: 'adjust-qty', delta: Number(this._draft) })}
             >
-              Apply
+              ${t('hv.action.apply')}
             </button>
           </div>
         </div>`;
@@ -401,7 +401,7 @@ export class HVBulkBar extends LitElement {
           data-testid="bulk-cancel"
           @click=${() => this.dispatchEvent(new CustomEvent('cancel-run', { bubbles: true, composed: true }))}
         >
-          Cancel
+          ${t('hv.action.cancel')}
         </button>
       </div>
       <div class="track"><div class="fill" style="width: ${pct}%"></div></div>
@@ -455,7 +455,7 @@ export class HVBulkBar extends LitElement {
           data-testid="bulk-result-dismiss"
           @click=${() => this.dispatchEvent(new CustomEvent('dismiss-result', { bubbles: true, composed: true }))}
         >
-          Close
+          ${t('hv.action.close')}
         </button>
         ${failedCount
           ? html`<button
