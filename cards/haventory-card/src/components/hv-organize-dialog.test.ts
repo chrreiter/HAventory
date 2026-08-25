@@ -1766,3 +1766,124 @@ describe('hv-organize-dialog: the language in force', () => {
     expect(q(sr, '[data-testid="new-value-create"]')?.textContent?.trim()).toBe('Erstellen');
   });
 });
+
+// The store keeps the built-in three in English because they are data a
+// household owns and edits; the card prints the reader's word for one nobody
+// has renamed. This tab is where the two meet, and the only place the
+// translation could be written back by accident.
+describe('hv-organize-dialog: the statuses tab in German', () => {
+  const ladder = makeItem({ id: 'i1', name: 'Leiter', status: 'missing' });
+
+  it('chips the three the backend seeded in German', async () => {
+    setLanguage('de');
+    const { sr } = await mount({ tab: 'statuses' });
+
+    expect(all(sr, '[data-testid="status-chip"]').map((c) => c.textContent?.trim())).toEqual([
+      'OK',
+      'Fehlt',
+      'Reparatur nötig',
+    ]);
+  });
+
+  it('names each row on the buttons a screen reader reads', async () => {
+    setLanguage('de');
+    const { sr } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    expect(row?.querySelector('[data-testid="status-edit"]')?.getAttribute('aria-label')).toBe(
+      'Fehlt bearbeiten',
+    );
+    expect(row?.querySelector('[data-testid="status-remove"]')?.getAttribute('aria-label')).toBe(
+      'Fehlt löschen',
+    );
+  });
+
+  it('edits the stored English and shows what it prints as beside it', async () => {
+    setLanguage('de');
+    const { el, sr } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect((q(sr, '[data-testid="status-label"]') as HTMLInputElement).value).toBe('Missing');
+    expect(q(sr, '[data-testid="status-shown"]')?.textContent?.trim()).toBe('Fehlt');
+  });
+
+  // Rule two, and the reason the box holds English at all: a household that
+  // opened this editor and pressed save would otherwise have renamed all three
+  // for every member, in one language, permanently.
+  it('saves an untouched label back exactly as stored', async () => {
+    setLanguage('de');
+    const { el, sr, hass } = await mount({ tab: 'statuses' });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(hass.__messages.filter((m) => m.type === 'haventory/status/update')).toEqual([
+      expect.objectContaining({ slug: 'missing', label: 'Missing' }),
+    ]);
+  });
+
+  // The stored English is on no screen, so a warning about it would name a word
+  // the reader cannot see; the word they can see is the one that would leave
+  // two chips reading the same thing.
+  it('warns about a collision with the word on the chips, not the one in the store', async () => {
+    setLanguage('de');
+    const { el, sr } = await mount({ tab: 'statuses' });
+
+    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+    await settle(el);
+    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+    input.value = 'Fehlt';
+    input.dispatchEvent(new Event('input'));
+    await settle(el);
+    expect(q(sr, '[data-testid="status-duplicate-hint"]')?.textContent).toContain('Fehlt');
+
+    input.value = 'Missing';
+    input.dispatchEvent(new Event('input'));
+    await settle(el);
+    expect(q(sr, '[data-testid="status-duplicate-hint"]')).toBe(null);
+  });
+
+  it('offers the reassign targets in German', async () => {
+    setLanguage('de');
+    const { el, sr } = await mount({ tab: 'statuses', items: [ladder] });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    (row?.querySelector('[data-testid="status-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const select = q(sr, '[data-testid="status-reassign"]') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent?.trim())).toEqual([
+      'OK',
+      'Reparatur nötig',
+    ]);
+  });
+
+  // A rename is the household saying what it wants these called, and it holds
+  // for everyone: the box, the chip and the guard all read it back as typed.
+  it('shows a renamed built-in as renamed, and stops offering a translation', async () => {
+    setLanguage('de');
+    const { el, sr } = await mount({
+      tab: 'statuses',
+      statuses: [
+        { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
+        { slug: 'missing', label: 'Verschollen', order: 1, color: 'amber', icon: 'alert' },
+      ],
+    });
+
+    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
+    expect(row?.querySelector('[data-testid="status-chip"]')?.textContent?.trim()).toBe(
+      'Verschollen',
+    );
+    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect((q(sr, '[data-testid="status-label"]') as HTMLInputElement).value).toBe('Verschollen');
+    expect(q(sr, '[data-testid="status-shown"]')).toBe(null);
+  });
+});

@@ -305,6 +305,13 @@ Every string above — and every string in every component — comes out of `src
   `hv.term.*` for the facts more than one surface states, and `hv.field.*` for what an item's
   fields are called — one key per word, read by the column header, the sort option, the editor
   label, the facet tab and the detail sheet's fact row alike.
+- **`hv.status.*` is displayed copy over stored data.** A household owns its status labels
+  and renames them, so they are stored rather than translated — but nobody chose the three a
+  store is seeded with. `ui/status.ts`'s `displayLabel` therefore prints the reader's word for
+  a built-in slug while its stored label is still the seeded English, and the stored label from
+  the first rename on. Every surface reaches it through `statusLabel` or `renderStatusChip`,
+  and nothing writes a translation back: the organize dialog's Statuses tab edits the stored
+  English and shows what it prints as beside the box.
 - **Deliberately untranslated**: `DEFAULT_CARD_TITLE` (a product name, pinned to `const.py`),
   the card-picker entry and `setConfig`'s refusal in `index.ts` (both run before any `hass`
   exists), the diagnostics panel's copy-to-clipboard report (it is read by a maintainer), and

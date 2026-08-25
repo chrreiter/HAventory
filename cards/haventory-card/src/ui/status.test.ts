@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'lit';
 import type { StatsCounts, StatusDefinition } from '../store/types';
+import { DICTIONARIES, setLanguage, t } from '../i18n';
+import type { TranslationKey } from '../i18n';
 import {
   BUILT_IN_STATUSES,
   DEFAULT_STATUS,
+  displayLabel,
   isHexColor,
   itemStatus,
   knownIcon,
@@ -15,6 +18,9 @@ import {
   statusList,
   statusTone,
 } from './status';
+
+/** Every language this bundle carries; nothing here is true of German alone. */
+const LANGUAGES = Object.keys(DICTIONARIES);
 
 const CUSTOM: StatusDefinition[] = [
   { slug: 'ok', label: 'Fine', order: 0, color: 'green', icon: 'check' },
@@ -111,6 +117,85 @@ describe('ui/status: rendering a slug', () => {
     expect(knownIcon('not-a-glyph')).toBeNull();
     expect(knownIcon(undefined)).toBeNull();
     expect(knownIcon(null)).toBeNull();
+  });
+});
+
+describe('ui/status: the built-in three in the reader’s language', () => {
+  /** What `haventory/config` answers for a store nobody has touched. */
+  const seeded = (): StatusDefinition[] => BUILT_IN_STATUSES.map((d) => ({ ...d }));
+
+  it('prints a slug still carrying its seeded English in the reader’s language', () => {
+    setLanguage('de');
+    expect(seeded().map((d) => displayLabel(d))).toEqual(['OK', 'Fehlt', 'Reparatur nötig']);
+  });
+
+  it('prints each of them as the catalog’s word for its slug, in every language', () => {
+    // The key is spelled from the slug here and looked up from a table there:
+    // a built-in the table forgets keeps its stored English in every language,
+    // which is the failure #536 is about and nothing else would notice.
+    for (const tag of LANGUAGES) {
+      setLanguage(tag);
+      for (const def of seeded()) {
+        const key = `hv.status.${def.slug}` as TranslationKey;
+        expect([tag, def.slug, displayLabel(def)]).toEqual([tag, def.slug, t(key)]);
+      }
+    }
+  });
+
+  // Rule one. A rename is a household saying what it wants these called; from
+  // then on the stored words are the answer, in every language, or a household
+  // that renamed a status would see it renamed only in the language it typed.
+  it('prints a renamed built-in as stored, in every language', () => {
+    const renamed: StatusDefinition[] = [
+      { slug: 'ok', label: 'Alles gut', order: 0, color: 'green', icon: 'check' },
+      { slug: 'missing', label: 'Verschollen', order: 1, color: 'amber', icon: 'alert' },
+      { slug: 'needs_repair', label: 'Kaputt', order: 2, color: 'amber', icon: 'wrench' },
+    ];
+    for (const tag of LANGUAGES) {
+      setLanguage(tag);
+      expect([tag, renamed.map((d) => displayLabel(d))]).toEqual([
+        tag,
+        ['Alles gut', 'Verschollen', 'Kaputt'],
+      ]);
+    }
+  });
+
+  // A rename to the empty-looking neighbour of the seed is still a rename:
+  // only the exact stored English means "nobody chose this".
+  it('takes any difference from the seed as the household’s own words', () => {
+    setLanguage('de');
+    expect(displayLabel({ slug: 'missing', label: 'missing', order: 1, color: 'amber' })).toBe(
+      'missing',
+    );
+    expect(displayLabel({ slug: 'missing', label: 'Missing ', order: 1, color: 'amber' })).toBe(
+      'Missing ',
+    );
+  });
+
+  // A household's own status carries its own words whatever they are — even a
+  // slug that looks built-in on a store this card has been told nothing about.
+  it('leaves a household’s own status exactly as stored', () => {
+    setLanguage('de');
+    expect(
+      displayLabel({ slug: 'lent_out', label: 'Missing', order: 3, color: 'blue' }),
+    ).toBe('Missing');
+  });
+
+  // Rule three. The stand-in stands in for a fresh store, so a chip drawn
+  // before `haventory/config` answers has to say what the same chip says
+  // after — otherwise every page load rewords three chips a moment in.
+  it('says the same word before and after haventory/config answers, in every language', () => {
+    const wording = (slug: string, defs: StatusDefinition[] | null) => {
+      const host = document.createElement('div');
+      render(renderStatusChip(slug, defs), host);
+      return host.querySelector('.hv-chip-text')?.textContent;
+    };
+    for (const tag of LANGUAGES) {
+      setLanguage(tag);
+      for (const { slug } of BUILT_IN_STATUSES) {
+        expect([tag, slug, wording(slug, null)]).toEqual([tag, slug, wording(slug, seeded())]);
+      }
+    }
   });
 });
 

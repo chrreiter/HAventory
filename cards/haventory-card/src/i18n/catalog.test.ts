@@ -57,6 +57,7 @@ const IDENTICAL_TO_ENGLISH: Readonly<Record<string, readonly string[]>> = {
   de: [
     // Loan words and international terms German uses unchanged.
     'hv.bottomSheet.label',
+    'hv.status.ok',
     'hv.editor.type.string',
     'hv.surfaces.badge.offline',
     'hv.field.name',
