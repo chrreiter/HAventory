@@ -53,7 +53,6 @@ import type {
 } from '../store/types';
 import './hv-chip-input';
 import './hv-confirm';
-import './hv-location-tree';
 import './hv-checkout-popover';
 
 /**
@@ -1870,13 +1869,10 @@ export class HVItemEditor extends LitElement {
    * creating an item that has no id to check out yet.
    */
   /**
-   * The same quick jumps the check-out popover offers, on the one date it does
-   * not own. An inspection interval is known in weeks or months rather than as
-   * a calendar square, and typing a date three months out means doing the
-   * arithmetic yourself; pressing an offset writes the date into the field
-   * above, so the two controls are one value with two ways in. The custom row
-   * appears only once "+X days" is pressed — the escape hatch for an interval
-   * the three presets do not cover, not a fourth preset.
+   * The quick jumps of `ui/day-offsets`, on the one date the check-out popover
+   * does not own. An inspection interval is known in weeks or months rather
+   * than as a calendar square, and pressing an offset writes the date into the
+   * field above — the two controls are one value with two ways in.
    */
   private _renderInspectionOffsets(current: string) {
     return renderDayOffsets(
