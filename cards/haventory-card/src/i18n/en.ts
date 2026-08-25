@@ -608,6 +608,10 @@ export const en = {
   'hv.import.chooseFile': 'Choose file…',
   'hv.import.noFileChosen': 'No file chosen',
   'hv.import.textareaLabel': 'Backup JSON',
+  // The parser's own words are appended, and stay in the language the
+  // browser wrote them in — they name a character and a position, which is
+  // what a reader fixing the file needs, and nothing here can translate them.
+  'hv.import.invalidJson': 'That is not valid JSON — {message}',
   'hv.import.ifExists': 'If an item already exists',
   'hv.import.policy.merge': 'Merge',
   'hv.import.policy.mergeDescription':

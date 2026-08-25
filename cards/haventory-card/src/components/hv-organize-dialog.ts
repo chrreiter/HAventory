@@ -1787,7 +1787,7 @@ export class HVOrganizeDialog extends LitElement {
           this._newValueError = null;
         },
         testid: 'new-value-create',
-        label: 'Create',
+        label: t('hv.action.create'),
         disabled: !this._newValue.trim(),
         onCommit: () => this._createValue(),
       })}

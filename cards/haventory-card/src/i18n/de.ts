@@ -553,6 +553,7 @@ export const de: CompleteDictionary = {
   'hv.import.chooseFile': 'Datei wählen …',
   'hv.import.noFileChosen': 'Keine Datei gewählt',
   'hv.import.textareaLabel': 'Backup-JSON',
+  'hv.import.invalidJson': 'Das ist kein gültiges JSON – {message}',
   'hv.import.ifExists': 'Wenn ein Gegenstand schon vorhanden ist',
   'hv.import.policy.merge': 'Zusammenführen',
   'hv.import.policy.mergeDescription':

@@ -2,6 +2,7 @@ import './hv-import-sheet';
 import type { HVImportSheet } from './hv-import-sheet';
 import type { ImportPreview, ImportSummary } from '../store/types';
 import { all, mountComponent, q, settle } from '../test.utils';
+import { setLanguage } from '../i18n';
 // The clipboard itself is `ui/clipboard`'s own test; what this sheet owes is
 // asking the helper and believing its answer, which needs both answers.
 vi.mock('../ui/clipboard', async (importOriginal) => ({
@@ -502,5 +503,24 @@ describe('hv-import-sheet: keyboard and focus', () => {
     await el.updateComplete;
 
     expect(cancels).toBe(1);
+  });
+});
+
+describe('hv-import-sheet: the language in force', () => {
+  it('says a document is not JSON in the language in force', async () => {
+    // The parser's own words follow, in whatever language the browser wrote
+    // them; the sentence around them is the card's and is translated.
+    setLanguage('de');
+    try {
+      const el = await mount();
+      await type(el, '{ not json');
+      (q(el, '[data-testid="import-preview"]') as HTMLButtonElement).click();
+      await el.updateComplete;
+      expect(q(el, '[data-testid="import-parse-error"]')?.textContent).toContain(
+        'Das ist kein gültiges JSON', // codespell:ignore
+      );
+    } finally {
+      setLanguage('en');
+    }
   });
 });

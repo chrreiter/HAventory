@@ -372,7 +372,7 @@ export class HVImportSheet extends LitElement {
       this._parseError = null;
       return doc;
     } catch (err) {
-      this._parseError = `That is not valid JSON — ${(err as Error).message}`;
+      this._parseError = t('hv.import.invalidJson', { message: (err as Error).message });
       return null;
     }
   }
