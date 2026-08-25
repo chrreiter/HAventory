@@ -7,6 +7,7 @@ import { tokens, base } from '../ui/tokens';
 import { chip, tagLabel } from '../ui/chip';
 import { Modal, modalChrome } from '../ui/modal';
 import { icon } from '../ui/icons';
+import type { IconName } from '../ui/icons';
 import { counted } from '../ui/plural';
 import {
   DEFAULT_STATUS,
@@ -900,6 +901,102 @@ export class HVOrganizeDialog extends LitElement {
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
 
+  // ---------- Chrome the four tabs share ----------
+  /**
+   * A tab's head row: what it is filtering, how many there are, and the one
+   * thing this tab creates. Statuses have a fixed vocabulary to scroll, not a
+   * list to search, so the field is optional and the count then heads the row.
+   */
+  private _renderToolbar(opts: {
+    search?: { label: string; placeholder: string };
+    count: string;
+    countTestid: string;
+    newTestid: string;
+    newLabel: string;
+    onNew: () => void;
+  }) {
+    return html`<div class="toolbar">
+      ${opts.search
+        ? html`<label class="search">
+            ${icon('magnify', 17)}
+            <span class="hv-sr-only">${opts.search.label}</span>
+            <input
+              data-testid="organize-filter"
+              placeholder=${opts.search.placeholder}
+              .value=${this._filter}
+              @input=${(e: Event) => {
+                this._filter = (e.target as HTMLInputElement).value;
+              }}
+            />
+          </label>`
+        : null}
+      <span class="toolbar-count" data-testid=${opts.countTestid}>${opts.count}</span>
+      <button class="hv-pill" data-testid=${opts.newTestid} @click=${opts.onNew}>
+        ${icon('plus', 15)}${opts.newLabel}
+      </button>
+    </div>`;
+  }
+
+  /**
+   * The commit row every inline form and guard ends with: what backs out on the
+   * left of the auto margin's far end, and what writes on the right. A guard's
+   * commit is a text button in the error ink — it is the destructive half of a
+   * refusal, and the filled shape would read as the recommended way on.
+   */
+  private _renderFooter(opts: {
+    lead?: unknown;
+    cancelTestid: string;
+    onCancel: () => void;
+    testid: string;
+    label: unknown;
+    onCommit: () => void;
+    disabled?: boolean;
+    danger?: boolean;
+  }) {
+    return html`<div class="actions">
+      ${opts.lead ?? null}
+      <span class="spacer"></span>
+      <button class="hv-text-button" data-testid=${opts.cancelTestid} @click=${opts.onCancel}>
+        ${t('hv.action.cancel')}
+      </button>
+      <button
+        class=${opts.danger ? 'hv-text-button danger' : 'hv-pill'}
+        data-testid=${opts.testid}
+        ?disabled=${opts.disabled ?? false}
+        @click=${opts.onCommit}
+      >
+        ${opts.label}
+      </button>
+    </div>`;
+  }
+
+  /** Touch has no hover, so a row's actions live in a sheet instead of beside it. */
+  private _renderActionSheet(
+    testid: string,
+    actions: {
+      testid: string;
+      glyph: IconName;
+      label: unknown;
+      trailing?: unknown;
+      danger?: boolean;
+      onPick: () => void;
+    }[],
+  ) {
+    return html`<div class="expander" data-testid=${testid}>
+      <div class="sheet-actions">
+        ${actions.map(
+          (a) => html`<button
+            class=${a.danger ? 'danger' : ''}
+            data-testid=${a.testid}
+            @click=${a.onPick}
+          >
+            ${icon(a.glyph, 20)}${a.label}${a.trailing ?? null}
+          </button>`,
+        )}
+      </div>
+    </div>`;
+  }
+
   // ---------- Locations ----------
   private _findNode(nodes: LocationTreeNode[], id: string): LocationTreeNode | null {
     for (const node of nodes) {
@@ -1374,8 +1471,8 @@ export class HVOrganizeDialog extends LitElement {
       ${this._locError
         ? html`<div class="failure" role="alert" data-testid="location-error">${this._locError}</div>`
         : null}
-      <div class="actions">
-        ${node
+      ${this._renderFooter({
+        lead: node
           ? html`<button
               class="hv-text-button danger"
               data-testid="location-delete"
@@ -1383,50 +1480,50 @@ export class HVOrganizeDialog extends LitElement {
             >
               ${t('hv.action.delete')}
             </button>`
-          : null}
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="location-cancel"
-          @click=${() => {
-            this._editingLocation = null;
-          }}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button class="hv-pill" data-testid="location-save" @click=${() => void this._saveLocation()}>
-          ${t('hv.action.save')}
-        </button>
-      </div>
+          : null,
+        cancelTestid: 'location-cancel',
+        onCancel: () => {
+          this._editingLocation = null;
+        },
+        testid: 'location-save',
+        label: t('hv.action.save'),
+        onCommit: () => void this._saveLocation(),
+      })}
     </div>`;
   }
 
-  /** Touch has no hover, so a location's actions live in a sheet — as on the value rows. */
   private _renderLocationSheet(node: LocationTreeNode) {
     const count = node.subtree_item_count ?? 0;
-    return html`<div class="expander" data-testid="location-sheet">
-      <div class="sheet-actions">
-        <button data-testid="location-sheet-show" @click=${() => this._showLocation(node.id)}>
-          ${icon('magnify', 20)}${t('hv.organize.showItems', { items: counted(count, 'item') })}
-        </button>
-        <button data-testid="location-sheet-edit" @click=${() => this._startLocationEdit(node.id)}>
-          ${icon('pencil', 20)}${t('hv.organize.editEllipsis')}
-        </button>
-        <button data-testid="location-sheet-merge" @click=${() => this._startLocationMerge(node.id)}>
-          ${icon('callMerge', 20)}${t('hv.organize.mergeIntoEllipsis')}
-        </button>
-        <button
-          class="danger"
-          data-testid="location-sheet-delete"
-          @click=${() => {
-            this._sheetLocation = null;
-            void this._deleteLocation(node);
-          }}
-        >
-          ${icon('del', 20)}${t('hv.action.delete')}
-        </button>
-      </div>
-    </div>`;
+    return this._renderActionSheet('location-sheet', [
+      {
+        testid: 'location-sheet-show',
+        glyph: 'magnify',
+        label: t('hv.organize.showItems', { items: counted(count, 'item') }),
+        onPick: () => this._showLocation(node.id),
+      },
+      {
+        testid: 'location-sheet-edit',
+        glyph: 'pencil',
+        label: t('hv.organize.editEllipsis'),
+        onPick: () => this._startLocationEdit(node.id),
+      },
+      {
+        testid: 'location-sheet-merge',
+        glyph: 'callMerge',
+        label: t('hv.organize.mergeIntoEllipsis'),
+        onPick: () => this._startLocationMerge(node.id),
+      },
+      {
+        testid: 'location-sheet-delete',
+        glyph: 'del',
+        label: t('hv.action.delete'),
+        danger: true,
+        onPick: () => {
+          this._sheetLocation = null;
+          void this._deleteLocation(node);
+        },
+      },
+    ]);
   }
 
   /** The merge step: pick where this location's contents should end up. */
@@ -1489,28 +1586,18 @@ export class HVOrganizeDialog extends LitElement {
                 : ''
             }`}
       </span>
-      <div class="actions">
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="merge-cancel"
-          @click=${() => {
-            this._mergingLocation = null;
-          }}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button
-          class="hv-pill"
-          data-testid="merge-apply"
-          ?disabled=${!this._mergeTarget}
-          @click=${() => {
-            if (this._mergeTarget) void this._runLocationMerge(source, this._mergeTarget);
-          }}
-        >
-          ${t('hv.action.merge')}
-        </button>
-      </div>
+      ${this._renderFooter({
+        cancelTestid: 'merge-cancel',
+        onCancel: () => {
+          this._mergingLocation = null;
+        },
+        testid: 'merge-apply',
+        label: t('hv.action.merge'),
+        disabled: !this._mergeTarget,
+        onCommit: () => {
+          if (this._mergeTarget) void this._runLocationMerge(source, this._mergeTarget);
+        },
+      })}
     </div>`;
   }
 
@@ -1522,30 +1609,17 @@ export class HVOrganizeDialog extends LitElement {
     // tabs count their values, so all three tabs state a total in one idiom.
     const count = countLocations(tree, this._filter);
     return html`
-      <div class="toolbar">
-        <label class="search">
-          ${icon('magnify', 17)}
-          <span class="hv-sr-only">${t('hv.organize.filterLocations')}</span>
-          <input
-            data-testid="organize-filter"
-            placeholder=${t('hv.organize.filterLocationsPlaceholder')}
-            .value=${this._filter}
-            @input=${(e: Event) => {
-              this._filter = (e.target as HTMLInputElement).value;
-            }}
-          />
-        </label>
-        <span class="toolbar-count" data-testid="organize-location-count">
-          ${counted(count, 'location')}
-        </span>
-        <button
-          class="hv-pill"
-          data-testid="organize-new-location"
-          @click=${() => this._startLocationEdit('new')}
-        >
-          ${icon('plus', 15)}${t('hv.organize.newLocation')}
-        </button>
-      </div>
+      ${this._renderToolbar({
+        search: {
+          label: t('hv.organize.filterLocations'),
+          placeholder: t('hv.organize.filterLocationsPlaceholder'),
+        },
+        count: counted(count, 'location'),
+        countTestid: 'organize-location-count',
+        newTestid: 'organize-new-location',
+        newLabel: t('hv.organize.newLocation'),
+        onNew: () => this._startLocationEdit('new'),
+      })}
       <div class="body">
         ${this._editingLocation === 'new' ? this._renderLocationEditor('new') : null}
         ${this._rewrite ? this._renderRewrite() : null}
@@ -1699,26 +1773,16 @@ export class HVOrganizeDialog extends LitElement {
           ? describeRewrite(this._kind, count, value, target)
           : t('hv.organize.pickNameToContinue')}
       </span>
-      <div class="actions">
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="value-cancel"
-          @click=${() => {
-            this._editingValue = null;
-          }}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button
-          class="hv-pill"
-          data-testid="value-apply"
-          ?disabled=${!target || target === value}
-          @click=${() => void this._runRewrite(value, target, merging ? 'merge' : 'rename')}
-        >
-          ${merging ? t('hv.action.merge') : t('hv.action.rename')}
-        </button>
-      </div>
+      ${this._renderFooter({
+        cancelTestid: 'value-cancel',
+        onCancel: () => {
+          this._editingValue = null;
+        },
+        testid: 'value-apply',
+        label: merging ? t('hv.action.merge') : t('hv.action.rename'),
+        disabled: !target || target === value,
+        onCommit: () => void this._runRewrite(value, target, merging ? 'merge' : 'rename'),
+      })}
     </div>`;
   }
 
@@ -1744,27 +1808,17 @@ export class HVOrganizeDialog extends LitElement {
         ? html`<div class="failure" role="alert" data-testid="new-value-error">${this._newValueError}</div>`
         : null}
       <span class="note">${t('hv.organize.draftNote', { noun: this._noun })}</span>
-      <div class="actions">
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="new-value-cancel"
-          @click=${() => {
-            this._creatingValue = false;
-            this._newValueError = null;
-          }}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button
-          class="hv-pill"
-          data-testid="new-value-create"
-          ?disabled=${!this._newValue.trim()}
-          @click=${() => this._createValue()}
-        >
-          Create
-        </button>
-      </div>
+      ${this._renderFooter({
+        cancelTestid: 'new-value-cancel',
+        onCancel: () => {
+          this._creatingValue = false;
+          this._newValueError = null;
+        },
+        testid: 'new-value-create',
+        label: 'Create',
+        disabled: !this._newValue.trim(),
+        onCommit: () => this._createValue(),
+      })}
     </div>`;
   }
 
@@ -1897,18 +1951,13 @@ export class HVOrganizeDialog extends LitElement {
   private _renderStatusesTab() {
     const defs = this._statusDefs;
     return html`
-      <div class="toolbar">
-        <span class="toolbar-count" data-testid="organize-status-count"
-          >${counted(defs.length, 'status')}</span
-        >
-        <button
-          class="hv-pill"
-          data-testid="organize-new-status"
-          @click=${() => this._startStatusEdit('new')}
-        >
-          ${icon('plus', 15)}${t('hv.organize.newStatus')}
-        </button>
-      </div>
+      ${this._renderToolbar({
+        count: counted(defs.length, 'status'),
+        countTestid: 'organize-status-count',
+        newTestid: 'organize-new-status',
+        newLabel: t('hv.organize.newStatus'),
+        onNew: () => this._startStatusEdit('new'),
+      })}
       <div class="body">
         ${this._editingStatus === 'new' ? this._renderStatusEditor('new') : null}
         ${defs.map((d, index) => {
@@ -2085,24 +2134,14 @@ export class HVOrganizeDialog extends LitElement {
             ${this._statusError}
           </div>`
         : null}
-      <div class="actions">
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="status-cancel"
-          @click=${() => this._cancelStatusEdit()}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button
-          class="hv-pill"
-          data-testid="status-save"
-          ?disabled=${!this._statusLabel.trim()}
-          @click=${() => this._saveStatus()}
-        >
-          ${creating ? t('hv.action.create') : t('hv.action.save')}
-        </button>
-      </div>
+      ${this._renderFooter({
+        cancelTestid: 'status-cancel',
+        onCancel: () => this._cancelStatusEdit(),
+        testid: 'status-save',
+        label: creating ? t('hv.action.create') : t('hv.action.save'),
+        disabled: !this._statusLabel.trim(),
+        onCommit: () => this._saveStatus(),
+      })}
     </div>`;
   }
 
@@ -2133,25 +2172,16 @@ export class HVOrganizeDialog extends LitElement {
             </select>
           </label>`
         : null}
-      <div class="actions">
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="status-guard-cancel"
-          @click=${() => {
-            this._statusGuard = null;
-          }}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button
-          class="hv-text-button danger"
-          data-testid="status-guard-confirm"
-          @click=${() => this._deleteStatus(guard.slug, inUse ? this._reassignTarget : undefined)}
-        >
-          ${inUse ? t('hv.organize.reassignAndDelete') : t('hv.action.delete')}
-        </button>
-      </div>
+      ${this._renderFooter({
+        cancelTestid: 'status-guard-cancel',
+        onCancel: () => {
+          this._statusGuard = null;
+        },
+        testid: 'status-guard-confirm',
+        label: inUse ? t('hv.organize.reassignAndDelete') : t('hv.action.delete'),
+        danger: true,
+        onCommit: () => void this._deleteStatus(guard.slug, inUse ? this._reassignTarget : undefined),
+      })}
     </div>`;
   }
 
@@ -2160,33 +2190,22 @@ export class HVOrganizeDialog extends LitElement {
     const noun =
       this.tab === 'tags' ? t('hv.organize.plural.tags') : t('hv.organize.plural.categories');
     return html`
-      <div class="toolbar">
-        <label class="search">
-          ${icon('magnify', 17)}
-          <span class="hv-sr-only">${t('hv.organize.filterValues', { values: noun })}</span>
-          <input
-            data-testid="organize-filter"
-            placeholder=${t('hv.organize.filterValuesPlaceholder', { values: noun })}
-            .value=${this._filter}
-            @input=${(e: Event) => {
-              this._filter = (e.target as HTMLInputElement).value;
-            }}
-          />
-        </label>
-        <span class="toolbar-count" data-testid="organize-value-count">${counted(values.length, this.tab === 'tags' ? 'tag' : 'category')}</span>
-        <button
-          class="hv-pill"
-          data-testid="organize-new-value"
-          @click=${() => {
-            this._creatingValue = true;
-            this._newValue = '';
-            this._newValueError = null;
-            this._editingValue = null;
-          }}
-        >
-          ${icon('plus', 15)}${t('hv.organize.newValue', { noun: this._noun })}
-        </button>
-      </div>
+      ${this._renderToolbar({
+        search: {
+          label: t('hv.organize.filterValues', { values: noun }),
+          placeholder: t('hv.organize.filterValuesPlaceholder', { values: noun }),
+        },
+        count: counted(values.length, this.tab === 'tags' ? 'tag' : 'category'),
+        countTestid: 'organize-value-count',
+        newTestid: 'organize-new-value',
+        newLabel: t('hv.organize.newValue', { noun: this._noun }),
+        onNew: () => {
+          this._creatingValue = true;
+          this._newValue = '';
+          this._newValueError = null;
+          this._editingValue = null;
+        },
+      })}
       <div class="body">
         ${this._creatingValue ? this._renderValueCreator() : null}
         ${this._rewrite ? this._renderRewrite() : null}
@@ -2271,7 +2290,6 @@ export class HVOrganizeDialog extends LitElement {
     `;
   }
 
-  /** Touch has no hover, so the row's actions live in a sheet. */
   private _renderValueSheet(value: string, count: number) {
     const others = (this.tab === 'tags'
       ? (this.st?.distinctValuesCache?.tags ?? [])
@@ -2280,35 +2298,42 @@ export class HVOrganizeDialog extends LitElement {
       .map((v) => v.value)
       .filter((v) => v !== value);
     const suggestion = closestMatch(value, others);
-    return html`<div class="expander" data-testid="value-sheet">
-      <div class="sheet-actions">
-        <button data-testid="sheet-show" @click=${() => this._showValue(value)}>
-          ${icon('magnify', 20)}${t('hv.organize.showItems', { items: counted(count, 'item') })}
-        </button>
-        <button data-testid="sheet-rename" @click=${() => this._startValueEdit(value, 'rename')}>
-          ${icon('pencil', 20)}${t('hv.organize.renameEllipsis')}
-        </button>
-        <button data-testid="sheet-merge" @click=${() => this._startValueEdit(value, 'merge')}>
-          ${icon('callMerge', 20)}${t('hv.organize.mergeIntoEllipsis')}
-          ${suggestion
-            ? this._valueChip(suggestion, {
-                style: 'margin-left:auto',
-                testid: 'sheet-merge-suggestion',
-              })
-            : null}
-        </button>
-        <button
-          class="danger"
-          data-testid="sheet-remove"
-          @click=${() => {
-            this._sheetValue = null;
-            this._confirmRemove = value;
-          }}
-        >
-          ${icon('del', 20)}${t('hv.organize.removeFromAllItems')}
-        </button>
-      </div>
-    </div>`;
+    return this._renderActionSheet('value-sheet', [
+      {
+        testid: 'sheet-show',
+        glyph: 'magnify',
+        label: t('hv.organize.showItems', { items: counted(count, 'item') }),
+        onPick: () => this._showValue(value),
+      },
+      {
+        testid: 'sheet-rename',
+        glyph: 'pencil',
+        label: t('hv.organize.renameEllipsis'),
+        onPick: () => this._startValueEdit(value, 'rename'),
+      },
+      {
+        testid: 'sheet-merge',
+        glyph: 'callMerge',
+        label: t('hv.organize.mergeIntoEllipsis'),
+        trailing: suggestion
+          ? this._valueChip(suggestion, {
+              style: 'margin-left:auto',
+              testid: 'sheet-merge-suggestion',
+            })
+          : null,
+        onPick: () => this._startValueEdit(value, 'merge'),
+      },
+      {
+        testid: 'sheet-remove',
+        glyph: 'del',
+        label: t('hv.organize.removeFromAllItems'),
+        danger: true,
+        onPick: () => {
+          this._sheetValue = null;
+          this._confirmRemove = value;
+        },
+      },
+    ]);
   }
 
   render() {
