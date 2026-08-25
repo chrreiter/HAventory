@@ -37,6 +37,7 @@ import {
   pictures,
 } from '../ui/media';
 import { prepareForUpload } from '../ui/downscale';
+import { renderDocumentRow, renderLightboxHost, renderPhotoFigure } from '../ui/attachments';
 import type { MediaBindings } from '../ui/media';
 import type {
   AreaRef,
@@ -51,7 +52,6 @@ import type {
 } from '../store/types';
 import './hv-chip-input';
 import './hv-confirm';
-import './hv-lightbox';
 import './hv-location-tree';
 import './hv-checkout-popover';
 
@@ -2264,12 +2264,7 @@ export class HVItemEditor extends LitElement {
         @drop=${drop.drop}
       >
         ${shots.map((picture, index) => {
-          // Asked the same way the document rows ask, and for the same reason:
-          // an export carries the references and not the bytes, so a fresh
-          // install genuinely holds pictures whose files were never uploaded to
-          // it. One item's photos are few enough to ask about up front, which
-          // is what keeps the browser from ever being handed a URL it can only
-          // draw its broken-image glyph for.
+          const alt = pictureAlt(item.name, index, shots.length);
           const missing = this._urls.presence(item.id, picture.id) === 'missing';
           // The tile, not the picture: tapping one opens the lightbox, which
           // asks for the stored file itself.
@@ -2281,47 +2276,37 @@ export class HVItemEditor extends LitElement {
                 attachmentNameToken(picture),
                 MEDIA_VARIANT_THUMB,
               );
-          return html`<figure data-testid="editor-photo">
-            ${missing
-              ? html`<span class="placeholder missing" data-testid="editor-photo-missing">
-                  ${icon('camera', 20)}
-                  <span class="hv-chip warning">${t('hv.term.fileMissing')}</span>
-                </span>`
-              : src
-              ? html`<button
-                  class="open"
-                  data-testid="editor-photo-open"
-                  aria-label=${t('hv.editor.viewPhoto', {
-                    photo: pictureAlt(item.name, index, shots.length),
-                  })}
-                  @click=${() => {
-                    this._lightbox = index;
-                  }}
-                >
-                  <img
-                    src=${src}
-                    alt=${pictureAlt(item.name, index, shots.length)}
-                    loading="lazy"
-                    decoding="async"
-                  />
-                </button>`
-              : html`<span class="placeholder" data-testid="editor-photo-placeholder"
-                  >${icon('camera', 20)}</span
-                >`}
-            <button
-              class="remove"
-              data-testid="editor-photo-remove"
-              aria-label=${t('hv.editor.removePhoto', {
-                photo: pictureAlt(item.name, index, shots.length),
-              })}
-              @click=${() => {
-                this._confirmRemove = { id: picture.id, kind: 'picture' };
-              }}
-            >
-              ${icon('close', 15)}
-            </button>
-            ${shots.length > 1 ? this._renderPhotoControls(picture.id, index, shots.length) : null}
-          </figure>`;
+          return renderPhotoFigure(
+            {
+              src,
+              missing,
+              alt,
+              openLabel: t('hv.editor.viewPhoto', { photo: alt }),
+              onOpen: () => {
+                this._lightbox = index;
+              },
+            },
+            {
+              testid: 'editor-photo',
+              glyph: 20,
+              tileClass: 'placeholder',
+              openClass: 'open',
+              pendingTile: true,
+            },
+            html`<button
+                class="remove"
+                data-testid="editor-photo-remove"
+                aria-label=${t('hv.editor.removePhoto', { photo: alt })}
+                @click=${() => {
+                  this._confirmRemove = { id: picture.id, kind: 'picture' };
+                }}
+              >
+                ${icon('close', 15)}
+              </button>
+              ${shots.length > 1
+                ? this._renderPhotoControls(picture.id, index, shots.length)
+                : null}`,
+          );
         })}
         <label class="picker" data-testid="editor-photo-picker">
           ${icon('camera', 20)}
@@ -2519,38 +2504,29 @@ export class HVItemEditor extends LitElement {
         @dragleave=${drop.leave}
         @drop=${drop.drop}
       >
-        ${docs.map((doc) => {
-          const src = this._urls.get(item.id, doc.id, attachmentNameToken(doc));
-          const missing = this._urls.presence(item.id, doc.id) === 'missing';
-          return html`<li data-testid="editor-document">
-            <span class="doc-icon">${icon('fileDocument', 18)}</span>
-            <input
-              class="hv-input doc-title"
-              data-testid="editor-document-title"
-              .value=${doc.title ?? ''}
-              placeholder=${doc.filename}
-              aria-label=${t('hv.editor.titleFor', { filename: doc.filename })}
-              @change=${(e: Event) =>
-                void this._retitle(doc.id, (e.target as HTMLInputElement).value.trim())}
-            />
-            <span class="doc-size">${formatBytes(doc.size)}</span>
-            ${missing
-              ? html`<span class="hv-chip warning" data-testid="editor-document-missing"
-                  >${t('hv.term.fileMissing')}</span
-                >`
-              : src
-                ? html`<a
-                    class="doc-open"
-                    data-testid="editor-document-open"
-                    href=${src}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label=${t('hv.editor.openNamed', { name: attachmentTitle(doc) })}
-                    title=${t('hv.editor.openDocument')}
-                    >${icon('openInNew', 15)}</a
-                  >`
-                : null}
-            <button
+        ${docs.map((doc) =>
+          renderDocumentRow(
+            {
+              src: this._urls.get(item.id, doc.id, attachmentNameToken(doc)),
+              missing: this._urls.presence(item.id, doc.id) === 'missing',
+            },
+            {
+              testid: 'editor-document',
+              glyph: 18,
+              openLabel: t('hv.editor.openNamed', { name: attachmentTitle(doc) }),
+              openTitle: t('hv.editor.openDocument'),
+            },
+            html`<input
+                class="hv-input doc-title"
+                data-testid="editor-document-title"
+                .value=${doc.title ?? ''}
+                placeholder=${doc.filename}
+                aria-label=${t('hv.editor.titleFor', { filename: doc.filename })}
+                @change=${(e: Event) =>
+                  void this._retitle(doc.id, (e.target as HTMLInputElement).value.trim())}
+              />
+              <span class="doc-size">${formatBytes(doc.size)}</span>`,
+            html`<button
               class="doc-remove"
               data-testid="editor-document-remove"
               aria-label=${t('hv.editor.removeNamed', { name: attachmentTitle(doc) })}
@@ -2559,9 +2535,9 @@ export class HVItemEditor extends LitElement {
               }}
             >
               ${icon('close', 15)}
-            </button>
-          </li>`;
-        })}
+            </button>`,
+          ),
+        )}
       </ul>
       <label class="picker doc-picker" data-testid="editor-manual-picker">
         ${icon('fileDocument', 18)}
@@ -2825,17 +2801,16 @@ export class HVItemEditor extends LitElement {
         </div>
       </div>
 
-      <hv-lightbox
-        data-testid="editor-lightbox-host"
-        .item=${this._current}
-        .media=${this.media}
-        .index=${this._lightbox}
-        .onOpenerGone=${() => this._refocus()}
-        @close=${(e: Event) => {
-          e.stopPropagation();
+      ${renderLightboxHost({
+        testid: 'editor-lightbox-host',
+        item: this._current,
+        media: this.media,
+        index: this._lightbox,
+        onOpenerGone: () => this._refocus(),
+        onClose: () => {
           this._lightbox = null;
-        }}
-      ></hv-lightbox>
+        },
+      })}
 
       <!-- Outside the form's own keydown scope, and its events stopped here: a
            host listens for the cancel event on this editor to close it, and a
