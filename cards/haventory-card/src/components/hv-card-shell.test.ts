@@ -688,6 +688,12 @@ describe('hv-card-shell: list and footer', () => {
   });
 });
 
+/** The treatment the first queued entry is drawn with. */
+const bannerKind = (sr: ShadowRoot) =>
+  (sr.querySelector('[data-testid="banner-entry"]') as HTMLElement).shadowRoot?.querySelector(
+    '[data-testid="banner"]',
+  )?.getAttribute('data-kind');
+
 describe('hv-card-shell: banners', () => {
   it('offers both recovery paths on a conflict', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'A' })] });
@@ -705,6 +711,53 @@ describe('hv-card-shell: banners', () => {
     (sr.querySelector('[data-testid="banner-dismiss"]') as HTMLButtonElement).click();
     await settle(el);
     expect(sr.querySelector('[data-testid="banner-entry"]')).toBe(null);
+  });
+
+  // "version conflict: expected 4, actual 5" is the backend's own English, and
+  // it stayed English on a German screen beside a translated heading. The
+  // numbers name a row of a store nobody can see, so the frame is all of it —
+  // the same call the form makes in `ui/editor-error`.
+  it('frames a refused save in words rather than in version numbers', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'A' })] });
+    store['pushError'](
+      { code: 'conflict', message: 'version conflict: expected 4, actual 5' },
+      { itemId: '1', changes: { name: 'B' } },
+    );
+    await settle(el);
+
+    const banner = (sr.querySelector('[data-testid="banner-entry"]') as HTMLElement).shadowRoot;
+    expect(banner?.textContent).toContain('Someone else changed this item');
+    expect(banner?.querySelector('[data-testid="banner-message"]')?.textContent).toBe('');
+    expect(bannerKind(sr)).toBe('warning');
+    expect(sr.querySelector('[data-testid="banner-view-latest"]')).toBeTruthy();
+  });
+
+  // The row's own ± is the other half: a delta cannot be re-applied against a
+  // version somebody else has moved, so the store files the entry without an
+  // item — and the banner used to fall through to the raw message with no
+  // heading at all, which was the one place a household read the numbers with
+  // nothing around them.
+  it('frames a refused quantity the same way, with no way back offered', async () => {
+    const { el, store, sr } = await mountShell({
+      items: [makeItem({ id: '1', name: 'A', quantity: 3 })],
+    });
+    store['ws'].adjustQuantity = async () => {
+      throw { code: 'conflict', message: 'version conflict: expected 4, actual 5' };
+    };
+
+    await store.adjustQuantity('1', 1);
+    await settle(el);
+
+    const entry = sr.querySelector('[data-testid="banner-entry"]') as HTMLElement;
+    expect(entry.dataset.code).toBe('conflict');
+    expect(entry.shadowRoot?.textContent).toContain('Someone else changed this item');
+    expect(entry.shadowRoot?.querySelector('[data-testid="banner-message"]')?.textContent).toBe('');
+    // Down to the tone: one event, one treatment, whether or not the row it
+    // happened on can be named.
+    expect(bannerKind(sr)).toBe('warning');
+    expect(sr.querySelector('[data-testid="banner-view-latest"]')).toBe(null);
+    // The queue still carries the backend's sentence; only the banner drops it.
+    expect(store.state.value.errorQueue[0].message).toBe('version conflict: expected 4, actual 5');
   });
 
   it('re-applies the rejected change against the newer server version', async () => {

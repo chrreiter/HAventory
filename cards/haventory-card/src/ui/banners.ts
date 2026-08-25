@@ -113,15 +113,24 @@ export function renderErrorBanners(st: StoreState | null, hooks: BannerHooks): T
   return html`
     <div class="banners" data-testid="banners">
       ${errors.map((e) => {
-        const conflict = e.kind === 'conflict' && e.itemId;
+        const conflict = e.kind === 'conflict';
+        // A conflict's own message names version numbers, which say nothing to
+        // a household in any language — the heading is the whole account, the
+        // way `ui/editor-error` frames the same event inside the form. The
+        // queue keeps the backend's sentence either way.
+        //
+        // The two ways out need the item the write was refused for. A quantity
+        // delta cannot be re-applied against a version somebody else moved, so
+        // the store files that one with no item and it gets the sentence alone.
+        const recoverable = conflict && e.itemId;
         return html`<hv-banner
           kind=${conflict ? 'warning' : 'error'}
           .heading=${conflict ? t('hv.banner.conflict.heading') : null}
-          .message=${e.message}
+          .message=${conflict ? '' : e.message}
           data-testid="banner-entry"
           data-code=${e.code}
         >
-          ${conflict
+          ${recoverable
             ? html`<span slot="below">
                 <button
                   class="hv-pill outline"
