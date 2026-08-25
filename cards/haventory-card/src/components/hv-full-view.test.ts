@@ -1816,6 +1816,38 @@ describe('hv-full-view: phone-width children', () => {
     }
   });
 
+  // Turn the phone sideways with the panel open and the panel drops its own
+  // draft, because it is no longer the surface that stages one. A staged set
+  // held across that flip would leave the head row counting filters the
+  // controls under it no longer carry.
+  it('drops the staged set when the viewport stops being narrow', async () => {
+    // The stub is the restore, and it announces the flip.
+    const viewport = stubViewport(true);
+    try {
+      const { el, sr } = await mount({
+        items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })],
+      });
+      (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      const count = () => (q(sr, '[data-testid="full-panel-count"]') as HTMLElement).textContent?.trim();
+      const panel = q(sr, '[data-testid="full-filter-panel"]') as HTMLElement;
+      (panel.shadowRoot?.querySelector('[data-testid="filter-low-stock-only"]') as HTMLButtonElement).click();
+      await settle(el);
+      expect(count()).toBe('1 active');
+
+      viewport.announce(false);
+      await settle(el);
+      expect(q(sr, '[data-testid="full-panel-head"]'), 'no phone head row on a desktop width').toBe(null);
+
+      viewport.announce(true);
+      await settle(el);
+      expect(count()).toBe('0 active');
+    } finally {
+      viewport();
+    }
+  });
+
   it('leaves the desktop panel without a head row', async () => {
     const restore = stubViewport(false);
     try {

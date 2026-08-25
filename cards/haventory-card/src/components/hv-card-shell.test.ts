@@ -1727,6 +1727,26 @@ describe('hv-card-shell: mobile detail sheet', () => {
     expect(store.state.value.items).toHaveLength(0);
     expect(sheet(sr).open).toBe(false);
   });
+
+  // The sheet holds an id, not a copy, so an item deleted from anywhere else —
+  // another client, the expanded view, a service call — leaves it showing an
+  // empty hero rather than closing. Falling off the page looks identical from
+  // the list alone, so the store is asked which happened.
+  it('closes the sheet when the store reports the item gone', async () => {
+    const { el, store, sr } = await mountShell({
+      items: [makeItem({ id: '1', name: 'Doomed' }), makeItem({ id: '2', name: 'Bystander' })],
+      mobile: true,
+    });
+    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+    await settle(el);
+    expect(sheet(sr).open).toBe(true);
+
+    await store.deleteItem('1', 1);
+    await settle(el);
+
+    expect(sheet(sr).open).toBe(false);
+    expect(sheet(sr).item).toBe(null);
+  });
 });
 
 describe('hv-card-shell: full view', () => {
