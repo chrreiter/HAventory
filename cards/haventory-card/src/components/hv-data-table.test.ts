@@ -11,7 +11,7 @@ import {
 import { ACTIONS_COLUMN_WIDTH } from '../store/columns';
 import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays, toIsoDate } from '../ui/relative-time';
-import { rowMenuEntries } from './hv-list-row';
+import { rowMenuEntries } from '../ui/row-chrome';
 import type { HVDataTable } from './hv-data-table';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import type { Item, Sort } from '../store/types';
