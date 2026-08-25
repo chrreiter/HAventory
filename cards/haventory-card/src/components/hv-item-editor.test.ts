@@ -779,23 +779,22 @@ describe('hv-item-editor: category picker', () => {
     expect(options(el)).toEqual(['Hardware', 'Tools']);
   });
 
-  // In flow the list grew its own grid cell, which grew the row, which
-  // stretched the Location button beside it — the form came apart every time
-  // the suggestions opened. Fixed, not absolute: the expanded view wraps the
-  // whole form in an overflow-y:auto holder that would clip an absolute list.
-  it('floats the list over the form instead of growing the row it sits in', async () => {
+  // The list belongs to the field above it, so it opens under that field and
+  // pushes the form down — the same disclosure the location tree in this form
+  // already is. Placed against the viewport it needed a measurement, two window
+  // listeners and a stacking base, and drifted off its own input whenever the
+  // surface behind it scrolled.
+  it('opens the list in flow under its input, like the location tree', async () => {
     const el = await mount(null);
     await focusCategory(el);
 
     const list = q(el, '[data-testid="editor-category-list"]');
-    expect(list?.classList).toContain('floating');
-    // Placed from a measurement, so it carries its own coordinates and stack.
-    expect(list?.getAttribute('style')).toMatch(/left: -?\d+px/);
-    expect(list?.getAttribute('style')).toMatch(/z-index: \d+/);
+    expect(list?.classList.contains('floating')).toBe(false);
+    expect(list?.getAttribute('style')).toBeNull();
 
     const css = componentCss('hv-item-editor');
-    expect(css).toMatch(/\.list-holder\.floating \{[^}]*position: fixed/);
-    expect(css).toMatch(/\.tree-holder, \.list-holder \{[^}]*margin-top: 6px/);
+    expect(css).not.toMatch(/position: fixed/);
+    expect(css).toMatch(/\.tree-holder,\s*\.list-holder \{[^}]*margin-top: 6px/);
   });
 
   // The combobox always named its listbox, but the listbox left the DOM with
