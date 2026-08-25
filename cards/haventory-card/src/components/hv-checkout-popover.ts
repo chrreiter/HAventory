@@ -4,12 +4,8 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
-import {
-  DEFAULT_CUSTOM_DAYS,
-  quickDayOffsets,
-  addDays,
-  formatDate,
-} from '../ui/relative-time';
+import { DEFAULT_CUSTOM_DAYS, addDays, formatDate } from '../ui/relative-time';
+import { dayOffsets, renderDayOffsets } from '../ui/day-offsets';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
 import type { Item } from '../store/types';
@@ -41,6 +37,7 @@ export class HVCheckoutPopover extends LitElement {
   static styles = [
     tokens,
     base,
+    dayOffsets,
     css`
       :host {
         display: block;
@@ -93,51 +90,15 @@ export class HVCheckoutPopover extends LitElement {
         display: grid;
         gap: 8px;
       }
-      .offsets {
-        display: flex;
-        gap: 7px;
-        flex-wrap: wrap;
-      }
-      .offset {
-        border: 1px solid var(--hv-divider);
-        background: none;
-        color: var(--hv-chip-text);
-        border-radius: var(--hv-radius-chip);
-        padding: 6px 13px;
-        font: 400 12.5px var(--hv-font);
-      }
+      /* The shape is ui/day-offsets; a thumb's worth of height on top of it is
+         this popover's, and the editor that draws the same chips grows them by
+         its own amount. */
       :host([touch]) .offset {
         min-height: 40px;
         padding: 0 15px;
         font-size: 13.5px;
       }
-      .offset.on {
-        background: var(--hv-primary-dark);
-        border-color: var(--hv-primary-dark);
-        color: #fff;
-        font-weight: 500;
-      }
-      .custom {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        border: 1px solid var(--hv-divider);
-        border-radius: var(--hv-radius-input);
-        font-size: 13px;
-        color: var(--hv-text-secondary);
-      }
-      .custom input {
-        width: 72px;
-        box-sizing: border-box;
-        border: 1px solid var(--hv-input-border);
-        border-radius: var(--hv-radius-input);
-        background: var(--hv-surface);
-        color: var(--hv-text);
-        padding: 5px 8px;
-        font: 400 13.5px var(--hv-font);
-      }
-      :host([touch]) .custom input {
+      :host([touch]) .day-box input {
         min-height: 44px;
         width: 88px;
         font-size: var(--hv-input-font, 14.5px);
@@ -325,52 +286,26 @@ export class HVCheckoutPopover extends LitElement {
           <div class="sub">${t('hv.checkout.sub')}</div>
         </div>
         <div class="body">
-          <div class="offsets">
-            ${quickDayOffsets().map((offset) => {
-              const value = addDays(offset.days);
-              return html`<button
-                class="offset ${!this._customOpen && this._due === value ? 'on' : ''}"
-                data-testid="checkout-offset"
-                data-days=${offset.days}
-                @click=${() => {
-                  this._customOpen = false;
-                  this._due = value;
-                }}
-              >
-                ${offset.label}
-              </button>`;
-            })}
-            <button
-              class="offset ${this._customOpen ? 'on' : ''}"
-              data-testid="checkout-offset-custom"
-              @click=${() => {
+          ${renderDayOffsets(
+            { current: this._due, customOpen: this._customOpen, customDays: this._customDays },
+            {
+              prefix: 'checkout',
+              onPick: (date) => {
+                this._customOpen = false;
+                this._due = date;
+              },
+              onCustom: (date) => {
                 this._customOpen = true;
-                this._due = addDays(this._customDays);
-              }}
-            >
-              ${t('hv.editor.customDaysOffset')}
-            </button>
-          </div>
-          ${this._customOpen
-            ? html`<label class="custom" data-testid="checkout-custom">
-                <input
-                  type="number"
-                  min="1"
-                  max="3650"
-                  inputmode="numeric"
-                  aria-label=${t('hv.editor.daysFromToday')}
-                  .value=${String(this._customDays)}
-                  @input=${(e: Event) => {
-                    const days = Number((e.target as HTMLInputElement).value);
-                    // An empty or nonsense box means no date yet, not a stale
-                    // one — the confirm button disables itself on a null due.
-                    this._customDays = days;
-                    this._due = Number.isFinite(days) && days >= 1 ? addDays(Math.floor(days)) : null;
-                  }}
-                />
-                <span>${t('hv.editor.daysFromToday')}</span>
-              </label>`
-            : null}
+                this._due = date;
+              },
+              // A cleared box leaves no due date, and the confirm button
+              // disables itself on one.
+              onDays: (days, date) => {
+                this._customDays = days;
+                this._due = date;
+              },
+            },
+          )}
           <label class="date ${this._due ? '' : 'none'}" data-testid="checkout-date">
             ${icon('calendar', 17)}
             <span class="hv-sr-only">${t('hv.editor.dueDate')}</span>

@@ -5,14 +5,8 @@ import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { areaMarkName, locationPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
-import {
-  DEFAULT_CUSTOM_DAYS,
-  quickDayOffsets,
-  addDays,
-  formatDate,
-  isOverdue,
-  relativeTime,
-} from '../ui/relative-time';
+import { DEFAULT_CUSTOM_DAYS, formatDate, isOverdue, relativeTime } from '../ui/relative-time';
+import { dayOffsets, renderDayOffsets } from '../ui/day-offsets';
 import { onDayChange } from '../ui/day-clock';
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
@@ -144,6 +138,7 @@ export class HVItemEditor extends LitElement {
     tokens,
     base,
     chip,
+    dayOffsets,
     css`
       :host {
         display: block;
@@ -347,54 +342,15 @@ export class HVItemEditor extends LitElement {
         line-height: 1.4;
         color: var(--hv-text-tertiary);
       }
-      /* Same chips, same states as the check-out popover's: one gesture, so it
-         must not look like two. */
-      .offsets {
-        display: flex;
-        gap: 7px;
-        flex-wrap: wrap;
-      }
-      .offset {
-        border: 1px solid var(--hv-divider);
-        background: none;
-        color: var(--hv-chip-text);
-        border-radius: var(--hv-radius-chip);
-        padding: 6px 13px;
-        font: 400 12.5px var(--hv-font);
-        cursor: pointer;
-      }
+      /* The shape is ui/day-offsets; a finger's worth of height on top of it
+         is this form's, and the popover that draws the same chips grows them
+         by its own amount. */
       :host([mobile]) .offset {
         min-height: var(--hv-tap-min, auto);
         padding: 0 15px;
         font-size: 13.5px;
       }
-      .offset.on {
-        background: var(--hv-primary-dark);
-        border-color: var(--hv-primary-dark);
-        color: #fff;
-        font-weight: 500;
-      }
-      .custom-days {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        border: 1px solid var(--hv-divider);
-        border-radius: var(--hv-radius-input);
-        font-size: 13px;
-        color: var(--hv-text-secondary);
-      }
-      .custom-days input {
-        width: 72px;
-        box-sizing: border-box;
-        border: 1px solid var(--hv-input-border);
-        border-radius: var(--hv-radius-input);
-        background: var(--hv-surface);
-        color: var(--hv-text);
-        padding: 5px 8px;
-        font: 400 13.5px var(--hv-font);
-      }
-      :host([mobile]) .custom-days input {
+      :host([mobile]) .day-box input {
         min-height: 44px;
         width: 88px;
         font-size: var(--hv-input-font, 14.5px);
@@ -1997,57 +1953,28 @@ export class HVItemEditor extends LitElement {
    * the three presets do not cover, not a fourth preset.
    */
   private _renderInspectionOffsets(current: string) {
-    return html`
-      <div class="offsets" data-testid="editor-inspection-offsets">
-        ${quickDayOffsets().map((offset) => {
-          const value = addDays(offset.days);
-          return html`<button
-            class="offset ${!this._inspectionCustomOpen && current === value ? 'on' : ''}"
-            data-testid="editor-inspection-offset"
-            data-days=${offset.days}
-            @click=${() => {
-              this._inspectionCustomOpen = false;
-              this._patch({ inspectionDate: value });
-            }}
-          >
-            ${offset.label}
-          </button>`;
-        })}
-        <button
-          class="offset ${this._inspectionCustomOpen ? 'on' : ''}"
-          data-testid="editor-inspection-offset-custom"
-          @click=${() => {
-            this._inspectionCustomOpen = true;
-            this._patch({ inspectionDate: addDays(this._inspectionCustomDays) });
-          }}
-        >
-          ${t('hv.editor.customDaysOffset')}
-        </button>
-      </div>
-      ${this._inspectionCustomOpen
-        ? html`<label class="custom-days" data-testid="editor-inspection-custom">
-            <input
-              type="number"
-              min="1"
-              max="3650"
-              inputmode="numeric"
-              aria-label=${t('hv.editor.daysFromToday')}
-              .value=${String(this._inspectionCustomDays)}
-              @input=${(e: Event) => {
-                const days = Number((e.target as HTMLInputElement).value);
-                this._inspectionCustomDays = days;
-                // An empty or nonsense box means no date yet rather than a
-                // stale one, so the field clears instead of keeping the last.
-                this._patch({
-                  inspectionDate:
-                    Number.isFinite(days) && days >= 1 ? addDays(Math.floor(days)) : '',
-                });
-              }}
-            />
-            <span>${t('hv.editor.daysFromToday')}</span>
-          </label>`
-        : null}
-    `;
+    return renderDayOffsets(
+      {
+        current,
+        customOpen: this._inspectionCustomOpen,
+        customDays: this._inspectionCustomDays,
+      },
+      {
+        prefix: 'editor-inspection',
+        onPick: (date) => {
+          this._inspectionCustomOpen = false;
+          this._patch({ inspectionDate: date });
+        },
+        onCustom: (date) => {
+          this._inspectionCustomOpen = true;
+          this._patch({ inspectionDate: date });
+        },
+        onDays: (days, date) => {
+          this._inspectionCustomDays = days;
+          this._patch({ inspectionDate: date ?? '' });
+        },
+      },
+    );
   }
 
   private _onCheckoutPressed = (e: Event) => {
