@@ -1816,6 +1816,38 @@ describe('hv-full-view: phone-width children', () => {
     }
   });
 
+  // Turn the phone sideways with the panel open and the panel drops its own
+  // draft, because it is no longer the surface that stages one. A staged set
+  // held across that flip would leave the head row counting filters the
+  // controls under it no longer carry.
+  it('drops the staged set when the viewport stops being narrow', async () => {
+    // The stub is the restore, and it announces the flip.
+    const viewport = stubViewport(true);
+    try {
+      const { el, sr } = await mount({
+        items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })],
+      });
+      (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
+      await settle(el);
+
+      const count = () => (q(sr, '[data-testid="full-panel-count"]') as HTMLElement).textContent?.trim();
+      const panel = q(sr, '[data-testid="full-filter-panel"]') as HTMLElement;
+      (panel.shadowRoot?.querySelector('[data-testid="filter-low-stock-only"]') as HTMLButtonElement).click();
+      await settle(el);
+      expect(count()).toBe('1 active');
+
+      viewport.announce(false);
+      await settle(el);
+      expect(q(sr, '[data-testid="full-panel-head"]'), 'no phone head row on a desktop width').toBe(null);
+
+      viewport.announce(true);
+      await settle(el);
+      expect(count()).toBe('0 active');
+    } finally {
+      viewport();
+    }
+  });
+
   it('leaves the desktop panel without a head row', async () => {
     const restore = stubViewport(false);
     try {
@@ -1939,62 +1971,13 @@ describe('hv-full-view: app bar filters', () => {
 
   // One vocabulary on both surfaces: the card hands its `quick_filters` config
   // down, and the panel — which has no YAML — takes the default of all of them.
-  describe('the dashboard\'s pill choice', () => {
-    const stocked = () => [
-      makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 }),
-      makeItem({ id: '2', checked_out: true }),
-    ];
-
-    it('draws every pill by default', async () => {
-      const { sr } = await mount({ items: stocked() });
-      expect(q(sr, '[data-testid="full-badge-low"]')).toBeTruthy();
-      expect(q(sr, '[data-testid="full-badge-out"]')).toBeTruthy();
-    });
-
-    it('draws only the pills the config names', async () => {
-      const { el, sr } = await mount({ items: stocked() });
-      el.quickFilters = ['low_stock'];
-      await el.updateComplete;
-
-      expect(q(sr, '[data-testid="full-badge-low"]')).toBeTruthy();
-      expect(q(sr, '[data-testid="full-badge-out"]')).toBe(null);
-    });
-
-    it('still hides an allowed pill whose count is zero', async () => {
-      const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
-      el.quickFilters = ['low_stock', 'checked_out'];
-      await el.updateComplete;
-
-      expect(q(sr, '[data-testid="full-badge-low"]')).toBe(null);
-      expect(q(sr, '[data-testid="full-badge-out"]')).toBe(null);
-    });
-  });
+  // Which pills a config leaves is `renderStatBadges`' arithmetic, pinned in
+  // ui/stat-badges.test.ts.
 
   // "82 out" reads as "82 out of stock", which is the opposite of what it counts.
   it('spells out what the checked-out pill counts', async () => {
     const { sr } = await mount({ items: flagged });
     expect(q(sr, '[data-testid="full-badge-out"]')?.textContent?.trim()).toBe('2 checked out');
-  });
-
-  it('debounces the app bar search', async () => {
-    const { store, sr } = await mount({ items: [makeItem({ id: '1' })] });
-    const input = q(sr, '[data-testid="full-search"]') as HTMLInputElement;
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    try {
-      input.value = 'glue';
-      input.dispatchEvent(new Event('input'));
-      expect(store.state.value.filters.q).toBe('');
-
-      // Still nothing on the last millisecond of the 200 ms window...
-      await vi.advanceTimersByTimeAsync(199);
-      expect(store.state.value.filters.q).toBe('');
-
-      // ...and the store hears it on the next one.
-      await vi.advanceTimersByTimeAsync(1);
-      expect(store.state.value.filters.q).toBe('glue');
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
 

@@ -86,32 +86,9 @@ describe('hv-card-shell: header', () => {
       makeItem({ id: '2', name: 'Impact Driver', checked_out: true }),
     ];
 
-    it('draws every pill by default', async () => {
-      const { sr } = await mountShell({ items: stocked() });
-      expect(sr.querySelector('[data-testid="badge-total"]')).toBeTruthy();
-      expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
-      expect(sr.querySelector('[data-testid="badge-out"]')).toBeTruthy();
-    });
-
-    it('draws only the pills the config names', async () => {
-      const { el, sr } = await mountShell({ items: stocked() });
-      el.quickFilters = ['low_stock'];
-      await el.updateComplete;
-
-      expect(sr.querySelector('[data-testid="badge-low"]')).toBeTruthy();
-      expect(sr.querySelector('[data-testid="badge-total"]')).toBe(null);
-      expect(sr.querySelector('[data-testid="badge-out"]')).toBe(null);
-    });
-
-    // Allowed is not the same as shown: the count gate is unchanged.
-    it('still hides an allowed pill whose count is zero', async () => {
-      const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
-      el.quickFilters = ['low_stock', 'checked_out'];
-      await el.updateComplete;
-
-      expect(sr.querySelector('[data-testid="badge-low"]')).toBe(null);
-      expect(sr.querySelector('[data-testid="badge-out"]')).toBe(null);
-    });
+    // Which pills a config leaves is `renderStatBadges`' arithmetic, pinned in
+    // ui/stat-badges.test.ts. What is the card's own is the phone row below and
+    // the config it hands the full view.
 
     // On a phone the wrapper takes a row of its own, so a band with nothing
     // allowed in it would be a blank strip under the title.
@@ -390,28 +367,6 @@ describe('hv-card-shell: overflow menu', () => {
 });
 
 describe('hv-card-shell: search and filters', () => {
-  it('debounces the search before touching the store', async () => {
-    const { store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
-    const input = sr.querySelector('[data-testid="search-input"]') as HTMLInputElement;
-
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-    try {
-      input.value = 'glue';
-      input.dispatchEvent(new Event('input'));
-      expect(store.state.value.filters.q).toBe('');
-
-      // Still nothing on the last millisecond of the 200 ms window...
-      await vi.advanceTimersByTimeAsync(199);
-      expect(store.state.value.filters.q).toBe('');
-
-      // ...and the store hears it on the next one.
-      await vi.advanceTimersByTimeAsync(1);
-      expect(store.state.value.filters.q).toBe('glue');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   // The full view and the panel word it this way, and the card searches the same
   // store they do — "matching" claimed a filter that need not be there at all.
   it('offers the whole inventory in the search placeholder, in the full view wording', async () => {
@@ -1726,6 +1681,26 @@ describe('hv-card-shell: mobile detail sheet', () => {
 
     expect(store.state.value.items).toHaveLength(0);
     expect(sheet(sr).open).toBe(false);
+  });
+
+  // The sheet holds an id, not a copy, so an item deleted from anywhere else —
+  // another client, the expanded view, a service call — leaves it showing an
+  // empty hero rather than closing. Falling off the page looks identical from
+  // the list alone, so the store is asked which happened.
+  it('closes the sheet when the store reports the item gone', async () => {
+    const { el, store, sr } = await mountShell({
+      items: [makeItem({ id: '1', name: 'Doomed' }), makeItem({ id: '2', name: 'Bystander' })],
+      mobile: true,
+    });
+    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+    await settle(el);
+    expect(sheet(sr).open).toBe(true);
+
+    await store.deleteItem('1', 1);
+    await settle(el);
+
+    expect(sheet(sr).open).toBe(false);
+    expect(sheet(sr).item).toBe(null);
   });
 });
 

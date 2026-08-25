@@ -989,6 +989,9 @@ export function makeMediaBindings(
   };
 }
 
+/** The restore a {@link stubViewport} hands back, and the flip it can announce. */
+export type ViewportStub = (() => void) & { announce: (matches: boolean) => void };
+
 /**
  * Pin `window.matchMedia` to one answer for the length of a test, and hand back
  * the restore.
@@ -997,22 +1000,38 @@ export function makeMediaBindings(
  * `false` — which reads as "desktop viewport" to the overlays that switch on
  * one, and leaves their phone form untestable. Call the restore in a `finally`
  * so the next test starts from the real implementation.
+ *
+ * `announce` changes the answer and tells the listeners, which is the only way
+ * to reach a host that drops state when the width stops being a phone's.
  */
-export function stubViewport(matches: boolean): () => void {
+export function stubViewport(matches: boolean): ViewportStub {
   const original = window.matchMedia;
+  const listeners: ((e: MediaQueryListEvent) => void)[] = [];
+  let current = matches;
   window.matchMedia = ((media: string) => ({
-    matches,
+    get matches() {
+      return current;
+    },
     media,
     onchange: null,
-    addEventListener: () => {},
-    removeEventListener: () => {},
+    addEventListener: (_: string, fn: (e: MediaQueryListEvent) => void) => listeners.push(fn),
+    removeEventListener: (_: string, fn: (e: MediaQueryListEvent) => void) => {
+      const at = listeners.indexOf(fn);
+      if (at >= 0) listeners.splice(at, 1);
+    },
     addListener: () => {},
     removeListener: () => {},
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
-  return () => {
+  const restore = () => {
     window.matchMedia = original;
   };
+  return Object.assign(restore, {
+    announce(next: boolean) {
+      current = next;
+      for (const fn of [...listeners]) fn({ matches: next } as MediaQueryListEvent);
+    },
+  });
 }
 
 /**

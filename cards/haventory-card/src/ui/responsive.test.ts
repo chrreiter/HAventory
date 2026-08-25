@@ -125,6 +125,32 @@ describe('ViewportNarrow', () => {
     }
   });
 
+  // The callback is for state that only means something at one width — a staged
+  // filter set counts controls the surface stops drawing. Connecting is not a
+  // change: there is nothing held from a previous answer to drop.
+  it('tells the host when the answer flips, and not when it first reads one', () => {
+    const media = stub(true);
+    try {
+      const flips: boolean[] = [];
+      const c = new ViewportNarrow(makeHost() as never, (narrow) => flips.push(narrow));
+
+      c.hostConnected();
+      expect(c.narrow).toBe(true);
+      expect(flips).toEqual([]);
+
+      media.announce(false);
+      expect(flips).toEqual([false]);
+      media.announce(true);
+      expect(flips).toEqual([false, true]);
+
+      c.hostDisconnected();
+      media.announce(false);
+      expect(flips).toEqual([false, true]);
+    } finally {
+      media.restore();
+    }
+  });
+
   // jsdom answers no media query, and a host that cannot say how wide the window
   // is has no business claiming it is a phone.
   it('stays on the desktop answer when matchMedia is missing', () => {
