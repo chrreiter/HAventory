@@ -568,10 +568,9 @@ are opened as one **round**, because each
 subscribe is answered on its own and one can be accepted while the next is refused; live
 updates only count as restored once every subscribe in the newest round is accepted, which
 `WSClient.subscribe`'s `onOpen` reports. A round refused with `storage_error` or
-`unknown_command` is re-opened automatically on a bounded budget, waiting the envelope's
-retry-after hint when it carries one (`retry_after_ms`, or `retry_after` in seconds, read
-from `data`, `context` or the top level and clamped to 30 s) and otherwise backing off
-exponentially: both codes say the backend is not there *yet* rather than broken — the first
+`unknown_command` is re-opened automatically on a bounded budget, backing off exponentially
+off the card's base delay and never waiting longer than 30 s for one attempt: both codes say
+the backend is not there *yet* rather than broken — the first
 is what a config entry mid-reload answers, the second is Home Assistant's answer for a
 command type nobody has registered, which is what a restarting instance serves until the
 integration finishes setting up. `degraded.liveUpdates` tracks this as

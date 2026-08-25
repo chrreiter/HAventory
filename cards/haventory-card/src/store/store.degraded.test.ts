@@ -150,27 +150,11 @@ describe('Store: the backend going away and coming back', () => {
 });
 
 describe('subscribeRetryDelayMs', () => {
-  it('prefers the envelope hint over the backoff, in either unit', () => {
-    expect(subscribeRetryDelayMs({ data: { retry_after_ms: 250 } }, 0, 400)).toBe(250);
-    // Seconds, the HTTP Retry-After convention.
-    expect(subscribeRetryDelayMs({ data: { retry_after: 2 } }, 0, 400)).toBe(2000);
-    // The card's own error entries name the bag `context`.
-    expect(subscribeRetryDelayMs({ context: { retry_after_ms: 30 } }, 3, 400)).toBe(30);
-  });
-
-  it('backs off exponentially when the envelope carries no hint', () => {
-    const delays = [0, 1, 2, 3].map((attempt) => subscribeRetryDelayMs({}, attempt, 400));
+  it('backs off exponentially, and never past the ceiling on one wait', () => {
+    const delays = [0, 1, 2, 3].map((attempt) => subscribeRetryDelayMs(attempt, 400));
     expect(delays).toEqual([400, 800, 1600, 3200]);
-  });
-
-  it('clamps a hint that would park live updates for hours', () => {
-    expect(subscribeRetryDelayMs({ data: { retry_after: 86_400 } }, 0, 400)).toBe(30_000);
-  });
-
-  it('ignores a hint that is not a usable number', () => {
-    expect(subscribeRetryDelayMs({ data: { retry_after_ms: 'soon' } }, 0, 400)).toBe(400);
-    expect(subscribeRetryDelayMs({ data: { retry_after: -5 } }, 0, 400)).toBe(400);
-    expect(subscribeRetryDelayMs({ data: { retry_after: Number.NaN } }, 1, 400)).toBe(800);
+    // A base delay a host passed in cannot park live updates for hours.
+    expect(subscribeRetryDelayMs(3, 60_000)).toBe(30_000);
   });
 
   it('declares the connection lost after consecutive transport failures', async () => {
