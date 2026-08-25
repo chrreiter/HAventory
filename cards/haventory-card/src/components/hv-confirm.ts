@@ -2,7 +2,7 @@ import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { dialogSheet } from '../ui/dialog-sheet';
+import { modalSheet } from '../ui/modal';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
 import { nextZBase } from '../utils/zindex';
@@ -72,7 +72,7 @@ export class HVConfirm extends LitElement {
         padding: 0 14px 14px;
       }
     `,
-    dialogSheet,
+    modalSheet,
   ];
 
   @property({ type: Boolean, reflect: true }) open = false;

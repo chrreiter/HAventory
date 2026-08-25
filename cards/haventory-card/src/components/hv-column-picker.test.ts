@@ -153,7 +153,6 @@ describe('hv-column-picker', () => {
     el.addEventListener('cancel', () => { cancels += 1; });
     (sr.querySelector('[data-testid="column-picker-done"]') as HTMLButtonElement).click();
     expect(cancels).toBe(1);
-    expect(el.open).toBe(false);
   });
 
   it('closes on Escape', async () => {
@@ -167,7 +166,6 @@ describe('hv-column-picker', () => {
     );
 
     expect(cancels).toBe(1);
-    expect(el.open).toBe(false);
   });
 
   it('puts focus in the dialog when it opens, so Escape can reach it', async () => {
@@ -187,13 +185,14 @@ describe('hv-column-picker', () => {
     // The component's own block — the tokens sheet ahead of it is where HA's
     // variables are legitimately read, and the shared phone-sheet block after
     // it declares no colours at all.
-    const own = sheets
-      .map((s) => String(s.cssText).replace(/\s+/g, ' '))
-      .find((c) => c.includes('.option {')) as string;
+    const text = sheets.map((s) => String(s.cssText).replace(/\s+/g, ' '));
+    const own = text.find((c) => c.includes('.option {')) as string;
+    const box = text.find((c) => c.includes('.panel {')) as string;
 
     expect(sheets.length).toBeGreaterThan(1);
     expect(own, 'the component block').toBeTruthy();
-    expect(own).toMatch(/\.panel \{[^}]*border-radius: var\(--hv-radius-dialog\)/);
+    expect(box, 'the modal chrome').toBeTruthy();
+    expect(box).toMatch(/\.panel \{[^}]*border-radius: var\(--hv-radius-dialog\)/);
     expect(own).toMatch(/\.option \{[^}]*min-height: var\(--hv-tap-min, 34px\)/);
     // Done is the shared pill, not a bespoke button.
     expect(

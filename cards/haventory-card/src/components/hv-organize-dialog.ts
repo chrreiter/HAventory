@@ -5,7 +5,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, tagLabel } from '../ui/chip';
-import { onEscape } from '../ui/keyboard';
+import { Modal, modalChrome } from '../ui/modal';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import {
@@ -28,8 +28,6 @@ import { areaChangePreview, areaNameById } from '../ui/area';
 import type { AreaChangePreview } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
 import { countLocations } from '../store/location-tree';
-import { nextZBase } from '../utils/zindex';
-import { DialogFocus } from '../ui/dialog-focus';
 import { COPIED_MS, copyText } from '../ui/clipboard';
 import { describeFailure } from './hv-bulk-bar';
 import { makeBulkOp } from '../store/store';
@@ -103,9 +101,9 @@ export class HVOrganizeDialog extends LitElement {
     tokens,
     base,
     chip,
+    modalChrome,
     css`
       :host {
-        display: block;
         /*
          * The vertical padding of every row in this dialog, declared once so
          * the four tabs cannot drift apart: the value rows below read it, and
@@ -115,18 +113,8 @@ export class HVOrganizeDialog extends LitElement {
          */
         --hv-organize-row-pad: 8px;
       }
-      .backdrop {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.4);
-      }
       .wrap {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
         padding: 24px;
-        box-sizing: border-box;
       }
       :host([mobile]) .wrap {
         padding: 0;
@@ -134,16 +122,9 @@ export class HVOrganizeDialog extends LitElement {
       }
       .panel {
         width: 620px;
-        max-width: 100%;
         max-height: 100%;
-        box-sizing: border-box;
         display: flex;
         flex-direction: column;
-        background: var(--hv-surface);
-        color: var(--hv-text);
-        border-radius: var(--hv-radius-dialog);
-        box-shadow: var(--hv-shadow-dialog);
-        overflow: hidden;
       }
       /* Mobile is a full-bleed page, not a floating modal. */
       :host([mobile]) .panel {
@@ -718,7 +699,6 @@ export class HVOrganizeDialog extends LitElement {
   @property({ type: String }) tab: OrganizeTab = 'locations';
   @property({ type: Boolean, reflect: true }) mobile = false;
 
-  @state() private _zBase = 0;
   @state() private _filter = '';
   /** Location being edited, `'new'` for the create row, or null. */
   @state() private _editingLocation: string | 'new' | null = null;
@@ -781,6 +761,8 @@ export class HVOrganizeDialog extends LitElement {
     this._clearCopied();
   }
 
+  private _modal = new Modal(this, { open: () => this.open });
+
   private _clearCopied() {
     clearTimeout(this._copiedTimer);
     this._copiedTimer = undefined;
@@ -800,10 +782,6 @@ export class HVOrganizeDialog extends LitElement {
       this._copiedId = false;
     }, COPIED_MS);
   }
-
-
-  /** Opening a surface must put focus in it, or Escape never reaches it. */
-  private _dialogFocus = new DialogFocus();
 
   /** Which disclosure of each kind the last render left on screen. */
   private _shown = new Map<string, string | null>();
@@ -882,9 +860,6 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   protected updated() {
-    this._dialogFocus.sync(this.open, () =>
-      this.renderRoot.querySelector<HTMLElement>('[data-testid="organize-dialog"]'),
-    );
     // A native select stops following its options' `selected` attributes once it
     // has been touched, so an area chosen in the parent tree is written to the
     // live element rather than left to the bindings to express.
@@ -900,10 +875,7 @@ export class HVOrganizeDialog extends LitElement {
       this._storeUnsub?.();
       this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
-    if (changed.has('open') && this.open) {
-      this._zBase = nextZBase();
-      this._resetTransient();
-    }
+    if (changed.has('open') && this.open) this._resetTransient();
     if (changed.has('tab')) this._resetTransient();
   }
 
@@ -925,7 +897,6 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   private _close = () => {
-    this.open = false;
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
 
@@ -2342,7 +2313,6 @@ export class HVOrganizeDialog extends LitElement {
 
   render() {
     if (!this.open) return null;
-    const z = this._zBase || 9998;
     const removeCount =
       this._values.find((v) => v.value === this._confirmRemove)?.count ??
       (this.tab === 'tags'
@@ -2352,16 +2322,9 @@ export class HVOrganizeDialog extends LitElement {
       0;
 
     return html`
-      <div class="backdrop" role="presentation" style="z-index:${z}" @click=${this._close}></div>
-      <div class="wrap" role="none" style="z-index:${z + 1}">
-        <div
-          class="panel"
-          role="dialog"
-          aria-modal="true"
-          aria-label=${t('hv.organize.title')}
-          data-testid="organize-dialog"
-          @keydown=${onEscape(() => this._close())}
-        >
+      ${this._modal.render(
+        { label: t('hv.organize.title'), testid: 'organize-dialog', onClose: this._close },
+        html`
           <div class="head">
             ${this.mobile
               ? html`<button
@@ -2406,8 +2369,8 @@ export class HVOrganizeDialog extends LitElement {
             : this.tab === 'statuses'
               ? this._renderStatusesTab()
               : this._renderValuesTab()}
-        </div>
-      </div>
+        `,
+      )}
 
       <hv-confirm
         data-testid="organize-confirm"

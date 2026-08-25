@@ -2,12 +2,9 @@ import { t, tn } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { dialogSheet } from '../ui/dialog-sheet';
-import { onEscape } from '../ui/keyboard';
+import { Modal, modalChrome, modalSheet } from '../ui/modal';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
-import { nextZBase } from '../utils/zindex';
-import { DialogFocus } from '../ui/dialog-focus';
 import { copyText } from '../ui/clipboard';
 import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } from '../store/types';
 
@@ -103,35 +100,16 @@ export class HVImportSheet extends LitElement {
   static styles = [
     tokens,
     base,
+    modalChrome,
     css`
-      :host {
-        display: block;
-      }
-      .backdrop {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.35);
-      }
       .wrap {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
         padding: 24px;
-        box-sizing: border-box;
       }
       .panel {
         width: 500px;
-        max-width: 100%;
         max-height: 100%;
-        box-sizing: border-box;
         display: flex;
         flex-direction: column;
-        background: var(--hv-surface);
-        color: var(--hv-text);
-        border-radius: var(--hv-radius-dialog);
-        box-shadow: var(--hv-shadow-dialog);
-        overflow: hidden;
       }
       .head {
         padding: 16px 20px 12px;
@@ -356,7 +334,7 @@ export class HVImportSheet extends LitElement {
         gap: 10px;
       }
     `,
-    dialogSheet,
+    modalSheet,
   ];
 
   @property({ type: Boolean, reflect: true }) open = false;
@@ -373,22 +351,12 @@ export class HVImportSheet extends LitElement {
   @state() private _fileName: string | null = null;
   @state() private _policy: ImportPolicy = 'merge';
   @state() private _parseError: string | null = null;
-  @state() private _zBase = 0;
   @state() private _copied = false;
 
-
-  /** Opening a surface must put focus in it, or Escape never reaches it. */
-  private _dialogFocus = new DialogFocus();
-
-  protected updated() {
-    this._dialogFocus.sync(this.open, () =>
-      this.renderRoot.querySelector<HTMLElement>('[data-testid="import-sheet"]'),
-    );
-  }
+  private _modal = new Modal(this, { open: () => this.open });
 
   protected willUpdate(changed: Map<string, unknown>) {
     if (changed.has('open') && this.open) {
-      this._zBase = nextZBase();
       this._source = 'paste';
       this._text = '';
       this._fileName = null;
@@ -410,7 +378,6 @@ export class HVImportSheet extends LitElement {
   }
 
   private _close = () => {
-    this.open = false;
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
 
@@ -744,7 +711,6 @@ export class HVImportSheet extends LitElement {
 
   render() {
     if (!this.open) return null;
-    const z = this._zBase || 9998;
     const body = this.summary
       ? this._renderSummary(this.summary)
       : this.preview && !this.preview.valid
@@ -753,21 +719,10 @@ export class HVImportSheet extends LitElement {
           ? this._renderPreview(this.preview)
           : this._renderInput();
 
-    return html`
-      <div class="backdrop" role="presentation" style="z-index:${z}" @click=${this._close}></div>
-      <div class="wrap" role="none" style="z-index:${z + 1}">
-        <div
-          class="panel"
-          role="dialog"
-          aria-modal="true"
-          aria-label=${t('hv.import.title')}
-          data-testid="import-sheet"
-          @keydown=${onEscape(() => this._close())}
-        >
-          ${body}
-        </div>
-      </div>
-    `;
+    return this._modal.render(
+      { label: t('hv.import.title'), testid: 'import-sheet', onClose: this._close },
+      body,
+    );
   }
 }
 
