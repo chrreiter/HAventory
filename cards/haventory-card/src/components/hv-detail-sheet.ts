@@ -10,7 +10,7 @@ import { customFieldLabel } from '../ui/field-label';
 import { canBumpReminder, hasReminder, isReminderDue, reminderSummary } from '../ui/reminder';
 import { inferType } from '../ui/item-form';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
-import { isLowStock } from './hv-list-row';
+import { isLowStock } from '../ui/row-chrome';
 import { areaMarkName, itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import {
   MediaUrls,

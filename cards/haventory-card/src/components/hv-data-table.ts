@@ -15,22 +15,21 @@ import {
   normalizeColumns,
   tableTemplateFor,
 } from '../store/columns';
-import {
-  MEDIA_VARIANT_THUMB,
-  MediaUrls,
-  PictureFallback,
-  ROW_THUMB_SIZE,
-  attachmentNameToken,
-  pictureAlt,
-  pictures,
-} from '../ui/media';
+import { MediaUrls, PictureFallback } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import { getDefaultOrderFor } from '../store/sort';
 import type { AreaRef, StatusDefinition } from '../store/types';
 import type { ColumnKey } from '../store/columns';
-import { isLowStock, rowMenuEntries } from './hv-list-row';
+import {
+  isLowStock,
+  renderNameChips,
+  renderRowThumb,
+  rowChrome,
+  rowKeyAction,
+  rowMenuEntries,
+} from '../ui/row-chrome';
 import './hv-overflow-menu';
-import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
+import { itemStatus, renderStatusChip } from '../ui/status';
 import {
   areaMarkName,
   elideMobilePath,
@@ -54,6 +53,7 @@ export class HVDataTable extends LitElement {
     tokens,
     base,
     chip,
+    rowChrome,
     css`
       :host {
         display: flex;
@@ -180,40 +180,6 @@ export class HVDataTable extends LitElement {
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-      }
-      /* The same box the card's list rows draw, so one item is the same size
-         and shape whichever surface it is browsed on. Fixed, so a portrait
-         photo and a landscape one leave the row the same height; and rendered
-         only where there is a picture, so a mostly photo-less inventory does
-         not grow a column of empty squares — and so the name keeps its whole
-         floor on every row that has no photo to spend it on. What the picture
-         costs the name on the rows that do have one, and why the column's floor
-         does not grow to cover it, is on NAME_COLUMN_SIZE. */
-      .thumb {
-        flex: none;
-        width: ${unsafeCSS(ROW_THUMB_SIZE)}px;
-        height: ${unsafeCSS(ROW_THUMB_SIZE)}px;
-        border-radius: 6px;
-        object-fit: cover;
-        background: var(--hv-surface-raised);
-      }
-      /* The tile of a picture whose file the backend no longer has. It keeps the
-         box, because a restore without the media directory leaves every row in
-         this state and a table that dropped them all would hand the width back
-         to the name column row by row. */
-      .thumb.missing {
-        display: inline-grid;
-        place-items: center;
-        box-sizing: border-box;
-        border: 1px dashed var(--hv-divider);
-        color: var(--hv-text-tertiary);
-      }
-      /* Between the failure and the probe's answer. Hidden rather than removed:
-         what an errored <img> draws is the browser's broken-image glyph with the
-         alt text spilling out of a 34px square, which is the whole thing this
-         state exists to keep out of the cell. */
-      .thumb.broken {
-        visibility: hidden;
       }
       /*
        * A phone shows about a quarter of this table — the template's floor is
@@ -489,51 +455,6 @@ export class HVDataTable extends LitElement {
   }
 
   /**
-   * A row's leading thumbnail: the item's first picture, or nothing.
-   *
-   * Asks for the `thumb` variant, so a 36px tile costs a few KB rather than the
-   * whole stored file; the backend serves the original whenever it cannot make
-   * one, so this never decides whether the picture appears. `loading="lazy"`
-   * and `decoding="async"` still matter — a long table would otherwise fetch
-   * and decode every row's tile at once.
-   *
-   * A file the backend no longer has is answered from the failure rather than
-   * probed for up front — see `PictureFallback`.
-   */
-  private _renderThumb(item: Item) {
-    const first = pictures(item.attachments)[0];
-    if (!first) return null;
-    const state = this._thumbs.state(item.id, first.id);
-    if (state === 'missing') {
-      return html`<span
-        class="thumb missing"
-        data-testid="row-thumb-missing"
-        role="img"
-        aria-label=${t('hv.term.fileMissing')}
-        title=${t('hv.term.fileMissing')}
-        >${icon('camera', 18)}</span
-      >`;
-    }
-    const src = this._urls.get(
-      item.id,
-      first.id,
-      attachmentNameToken(first),
-      MEDIA_VARIANT_THUMB,
-    );
-    if (!src) return null;
-    return html`<img
-      class=${state === 'errored' ? 'thumb broken' : 'thumb'}
-      data-testid="row-thumb"
-      src=${src}
-      alt=${pictureAlt(item.name, 0, 1)}
-      loading="lazy"
-      decoding="async"
-      @error=${() => this._thumbs.noteError(item.id, first.id)}
-      @load=${() => this._thumbs.noteLoad(item.id, first.id)}
-    />`;
-  }
-
-  /**
    * `row`, `columnheader` and `cell` are only meaningful under a table, grid or
    * treegrid; with no such ancestor the whole structure is thrown away and a
    * screen reader reads the rows as a run of text. The host is the only element
@@ -607,43 +528,15 @@ export class HVDataTable extends LitElement {
   }
 
   /**
-   * The rows carry `tabindex="0"`, so the keyboard can reach them; without this
-   * there is nothing to do once they are reached, and every item on this
-   * surface is behind a mouse.
-   *
-   * Same keys and same meanings as the card's list row, so the two surfaces do
-   * not teach two vocabularies for the same four actions. Enter follows this
-   * table's own row click: in selection mode a click selects rather than opens,
-   * and the keyboard has to land on whatever the pointer lands on.
-   *
-   * A key pressed on a control inside the row belongs to that control. Without
-   * the guard Enter on Edit would open the editor and then fire the row's own
-   * open on top of it, and Delete anywhere in the action group would ask to
-   * delete the item.
+   * Enter follows this table's own row click: in selection mode a click selects
+   * rather than opens, and the keyboard has to land on whatever the pointer
+   * lands on. The rest of the vocabulary is `rowKeyAction`'s.
    */
   private _onRowKeydown(e: KeyboardEvent, item: Item) {
-    if (e.target !== e.currentTarget) return;
-    switch (e.key) {
-      case 'Enter':
-        e.preventDefault();
-        this._emit(this.selectable ? 'toggle-select' : 'open-item', { itemId: item.id });
-        break;
-      case 'Delete':
-        e.preventDefault();
-        this._emit('request-delete', { itemId: item.id });
-        break;
-      case '+':
-      case '=':
-      case 'Add':
-        e.preventDefault();
-        this._emit('increment', { itemId: item.id });
-        break;
-      case '-':
-      case 'Subtract':
-        e.preventDefault();
-        this._emit('decrement', { itemId: item.id });
-        break;
-    }
+    const action = rowKeyAction(e);
+    if (!action) return;
+    const name = action === 'open-item' && this.selectable ? 'toggle-select' : action;
+    this._emit(name, { itemId: item.id });
   }
 
   private _cell(item: Item, key: ColumnKey) {
@@ -731,18 +624,8 @@ export class HVDataTable extends LitElement {
     const columns = this._columns;
     // The name cell's chip is the flagged-status signal for a table that has no
     // Status column. With the column shown it would put the same word twice on
-    // one row, so the column takes over and the chip stands down. The
-    // checked-out chip below has nothing to stand down for — the Due column
-    // carries a date, not the word — so it names an overdue loan either way,
-    // which is the only thing left saying so once the table is scrolled
-    // sideways or pinned to its name column.
+    // one row, so the column takes over and the chip stands down.
     const statusColumn = columns.includes('status');
-    // Low stands down for Checked out in the same cell, the way a phone row's
-    // one line already picks the most interrupting thing it has to say: both
-    // chips are unshrinkable, and together they take 138px of a 250px track,
-    // which leaves the name too short to tell two items apart. Who has the item
-    // outranks how many are left, and the Qty column still draws a low count in
-    // amber.
     const template = tableTemplateFor(columns, { selectable: this.selectable });
     const loadedIds = this.items.map((i) => i.id);
     const selectedCount = loadedIds.filter((id) => this.selection.has(id)).length;
@@ -813,30 +696,25 @@ export class HVDataTable extends LitElement {
                       >`
                     : null}
                   <span class="name-cell" role="cell">
-                    ${this._renderThumb(item)}
+                    ${renderRowThumb(item, this._urls, this._thumbs)}
                     <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>
-                    ${isLowStock(item) && !item.checked_out
-                      ? html`<span
-                          class="hv-chip warning"
-                          data-testid="table-low"
-                          aria-label=${t('hv.term.lowStock')}
-                          >${t('hv.term.low')}</span
-                        >`
-                      : null}
-                    ${!statusColumn && itemStatus(item) !== DEFAULT_STATUS
-                      ? renderStatusChip(itemStatus(item), this.statuses, {
-                          testid: 'table-status',
-                        })
-                      : null}
-                    ${item.checked_out
-                      ? html`<span
-                          class="hv-chip ${isOverdue(item.due_date) ? 'error' : 'state'}"
-                          data-testid="table-checked-out"
-                          >${isOverdue(item.due_date)
-                            ? t('hv.term.overdue')
-                            : t('hv.term.checkedOut')}</span
-                        >`
-                      : null}
+                    ${renderNameChips(item, this.statuses, {
+                      prefix: 'table',
+                      // Low stands down for Checked out in this one cell, the
+                      // way a phone row's single line already picks the most
+                      // interrupting thing it has to say: both chips are
+                      // unshrinkable, and together they take 138px of a 250px
+                      // track, which leaves the name too short to tell two items
+                      // apart. Who has the item outranks how many are left, and
+                      // the Qty column still draws a low count in amber.
+                      lowChip: !item.checked_out,
+                      statusChip: !statusColumn,
+                      // The Due column carries the date, so the chip only has to
+                      // name the state — and it is the one thing still saying so
+                      // once the table is scrolled sideways or pinned to its
+                      // name column.
+                      overdueText: 'overdue',
+                    })}
                   </span>
                   ${columns.map((key) => this._cell(item, key))}
                   <span class="actions" role="cell">

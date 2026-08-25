@@ -13,56 +13,20 @@ import {
 import { icon } from '../ui/icons';
 import { onDayChange } from '../ui/day-clock';
 import { formatDate, isDue, isOverdue } from '../ui/relative-time';
-import { itemStatus, renderStatusChip, statusLabel } from '../ui/status';
+import { itemStatus, statusLabel } from '../ui/status';
 import {
-  MEDIA_VARIANT_THUMB,
-  MediaUrls,
-  PictureFallback,
-  ROW_THUMB_SIZE,
-  ROW_THUMB_SIZE_TOUCH,
-  attachmentNameToken,
-  manuals,
-  pictureAlt,
-  pictures,
-} from '../ui/media';
+  isLowStock,
+  renderNameChips,
+  renderRowThumb,
+  rowChrome,
+  rowKeyAction,
+  rowMenuEntries,
+} from '../ui/row-chrome';
+import { MediaUrls, PictureFallback, ROW_THUMB_SIZE_TOUCH, manuals } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
 import type { TemplateResult } from 'lit';
 import type { AreaRef, Item, StatusDefinition } from '../store/types';
 import './hv-overflow-menu';
-import type { OverflowMenuEntry } from './hv-overflow-menu';
-
-/** True when an item is at or under its low-stock threshold. */
-export function isLowStock(item: Item): boolean {
-  return typeof item.low_stock_threshold === 'number' && item.quantity <= item.low_stock_threshold;
-}
-
-/**
- * What a row's ⋮ offers, which depends on whether the item is out and whether
- * it has a due date.
- *
- * Shared with the full view's table rows: one list, one set of ids, and the
- * hosts' existing `row-action` handlers answer both surfaces.
- */
-export function rowMenuEntries(item: Item): OverflowMenuEntry[] {
-  if (item.checked_out) {
-    return [
-      { id: 'check-in', label: t('hv.action.checkIn'), glyph: 'account' },
-      {
-        id: 'set-due-date',
-        label: item.due_date ? t('hv.row.menu.changeDueDate') : t('hv.row.menu.setDueDate'),
-        glyph: 'calendar',
-      },
-      { divider: true },
-      { id: 'delete', label: t('hv.action.deleteItem'), glyph: 'del' },
-    ];
-  }
-  return [
-    { id: 'check-out', label: t('hv.action.checkOutEllipsis'), glyph: 'account' },
-    { id: 'edit', label: t('hv.action.edit'), glyph: 'pencil' },
-    { divider: true },
-    { id: 'delete', label: t('hv.action.deleteItem'), glyph: 'del' },
-  ];
-}
 
 /**
  * One row of the standard card list.
@@ -78,6 +42,7 @@ export class HVListRow extends LitElement {
     tokens,
     base,
     chip,
+    rowChrome,
     css`
       :host {
         display: block;
@@ -114,40 +79,11 @@ export class HVListRow extends LitElement {
         flex: 1;
         min-width: 0;
       }
-      /* A fixed box, so a portrait photo and a landscape one leave the row the
-         same height and the list keeps a single rhythm. Rows without a picture
-         render nothing here rather than a placeholder: a mostly photo-less
-         inventory would otherwise grow a column of empty squares. */
-      .thumb {
-        flex: none;
-        width: ${unsafeCSS(ROW_THUMB_SIZE)}px;
-        height: ${unsafeCSS(ROW_THUMB_SIZE)}px;
-        border-radius: 6px;
-        object-fit: cover;
-        background: var(--hv-surface-raised);
-      }
+      /* A finger has the width for a larger tile, and one column of rows to
+         spend it on. */
       :host([mobile]) .thumb {
         width: ${unsafeCSS(ROW_THUMB_SIZE_TOUCH)}px;
         height: ${unsafeCSS(ROW_THUMB_SIZE_TOUCH)}px;
-      }
-      /* The tile of a picture whose file the backend no longer has. It keeps
-         the box, because a restore without the media directory leaves every row
-         in this state and a list that dropped them all would reflow entirely.
-         The glyph says a picture belongs here; the title and the label say why
-         it is not being shown. */
-      .thumb.missing {
-        display: inline-grid;
-        place-items: center;
-        box-sizing: border-box;
-        border: 1px dashed var(--hv-divider);
-        color: var(--hv-text-tertiary);
-      }
-      /* Between the failure and the probe's answer. Hidden rather than removed:
-         what an errored <img> draws is the browser's broken-image glyph with the
-         alt text spilling out of a 34px square, which is the whole thing this
-         state exists to keep off the row. */
-      .thumb.broken {
-        visibility: hidden;
       }
       /* A mark, not a chip: that an item has a manual is a fact about it, not
          a state anyone has to act on, so it stays out of the hue vocabulary the
@@ -434,86 +370,15 @@ export class HVListRow extends LitElement {
     this._urls.configure(this.media?.sign ?? null);
   }
 
-  /**
-   * The row's leading thumbnail: the item's first picture, or nothing.
-   *
-   * Asks for the `thumb` variant, so the tile costs a few KB rather than the
-   * whole stored file; the backend serves the original whenever it cannot make
-   * one, so this never decides whether the picture appears. `loading="lazy"`
-   * and `decoding="async"` still matter — a long list would otherwise fetch and
-   * decode everything at once.
-   *
-   * A file the backend no longer has is answered from the failure rather than
-   * probed for up front — see `PictureFallback`.
-   */
-  private _renderThumb() {
-    const first = pictures(this.item.attachments)[0];
-    if (!first) return null;
-    const state = this._thumbs.state(this.item.id, first.id);
-    if (state === 'missing') {
-      return html`<span
-        class="thumb missing"
-        data-testid="row-thumb-missing"
-        role="img"
-        aria-label=${t('hv.term.fileMissing')}
-        title=${t('hv.term.fileMissing')}
-        >${icon('camera', 18)}</span
-      >`;
-    }
-    const src = this._urls.get(
-      this.item.id,
-      first.id,
-      attachmentNameToken(first),
-      MEDIA_VARIANT_THUMB,
-    );
-    if (!src) return null;
-    return html`<img
-      class=${state === 'errored' ? 'thumb broken' : 'thumb'}
-      data-testid="row-thumb"
-      src=${src}
-      alt=${pictureAlt(this.item.name, 0, 1)}
-      loading="lazy"
-      decoding="async"
-      @error=${() => this._thumbs.noteError(this.item.id, first.id)}
-      @load=${() => this._thumbs.noteLoad(this.item.id, first.id)}
-    />`;
-  }
-
   private _emit(name: string, detail: Record<string, unknown> = {}) {
     this.dispatchEvent(
       new CustomEvent(name, { detail: { itemId: this.item.id, ...detail }, bubbles: true, composed: true }),
     );
   }
 
-  /**
-   * A key pressed on a control inside the row belongs to that control: Enter on
-   * Edit opens the editor, and an open ⋮ menu holds the keyboard. Without the
-   * guard the row answers those presses too — opening the item behind the menu,
-   * or asking to delete it.
-   */
   private _onKeydown = (e: KeyboardEvent) => {
-    if (e.target !== e.currentTarget) return;
-    switch (e.key) {
-      case 'Enter':
-        e.preventDefault();
-        this._emit('open-item');
-        break;
-      case 'Delete':
-        e.preventDefault();
-        this._emit('request-delete');
-        break;
-      case '+':
-      case '=':
-      case 'Add':
-        e.preventDefault();
-        this._emit('increment');
-        break;
-      case '-':
-      case 'Subtract':
-        e.preventDefault();
-        this._emit('decrement');
-        break;
-    }
+    const action = rowKeyAction(e);
+    if (action) this._emit(action);
   };
 
   /**
@@ -648,7 +513,7 @@ export class HVListRow extends LitElement {
         @keydown=${this._onKeydown}
         @click=${() => this._emit('open-item')}
       >
-        ${this._renderThumb()}
+        ${renderRowThumb(item, this._urls, this._thumbs)}
         <span class="names">
           <span class="name-line">
             <span class="name" data-testid="row-name" title=${item.name}>${item.name}</span>
@@ -704,24 +569,17 @@ export class HVListRow extends LitElement {
                       >`}
           </span>
         </span>
-        ${!this.mobile && low
-          ? html`<span class="hv-chip warning" data-testid="row-low" aria-label=${t('hv.term.lowStock')}
-              >${t('hv.term.low')}</span
-            >`
-          : null}
-        ${!this.mobile && flagged
-          ? renderStatusChip(status, this.statuses, { testid: 'row-status' })
-          : null}
-        ${!this.mobile && item.checked_out
-          ? html`<span
-              class="hv-chip ${overdue ? 'error' : 'state'}"
-              data-testid="row-checked-out"
-            >
-              ${overdue
-                ? t('hv.term.overdueOn', { date: formatDate(item.due_date) })
-                : t('hv.term.checkedOut')}
-            </span>`
-          : null}
+        ${this.mobile
+          ? // The phone row's one line has said all of this already.
+            null
+          : renderNameChips(item, this.statuses, {
+              prefix: 'row',
+              // Every chip is on offer here: they hang off the row beside the
+              // name rather than sharing a cell with it, so none of them is
+              // taking another's room. Nothing else on the row carries the due
+              // date either, so an overdue loan spells it out.
+              overdueText: 'overdueOn',
+            })}
         ${!this.mobile && inspectionDue
           ? html`<span class="hv-chip warning" data-testid="row-inspection-due">
               ${t('hv.term.inspectionDue')}

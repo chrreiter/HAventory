@@ -10,7 +10,7 @@ import {
   q,
 } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
-import { isLowStock, rowMenuEntries } from './hv-list-row';
+import { rowMenuEntries } from '../ui/row-chrome';
 import { addDays, toIsoDate } from '../ui/relative-time';
 import type { HVListRow } from './hv-list-row';
 import type { Item } from '../store/types';
@@ -25,17 +25,6 @@ function captured(el: HVListRow, names: string[]) {
   for (const name of names) el.addEventListener(name, () => seen.push(name));
   return seen;
 }
-
-describe('isLowStock', () => {
-  it('treats a null threshold as never low', () => {
-    expect(isLowStock(makeItem({ quantity: 0, low_stock_threshold: null }))).toBe(false);
-  });
-
-  it('is low at or below the threshold', () => {
-    expect(isLowStock(makeItem({ quantity: 3, low_stock_threshold: 3 }))).toBe(true);
-    expect(isLowStock(makeItem({ quantity: 4, low_stock_threshold: 3 }))).toBe(false);
-  });
-});
 
 describe('hv-list-row: content', () => {
   it('shows the name over location and category', async () => {
