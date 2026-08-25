@@ -13,6 +13,7 @@ import { counted } from '../ui/plural';
 import type { ConfirmDiscard } from '../ui/discard';
 import { COPIED_MS, copyText } from '../ui/clipboard';
 import { ViewportNarrow } from '../ui/responsive';
+import { focusStranded } from '../ui/dialog-focus';
 import { LocationPicker } from '../ui/location-picker';
 import {
   REMINDER_UNITS,
@@ -2181,6 +2182,12 @@ export class HVItemEditor extends LitElement {
     if (!media || !item) return;
     try {
       this._uploaded = await media.remove(item.id, attachmentId);
+      // The guard handed focus back to the control that raised it, and that
+      // control was this tile's own remove button — still there at the time,
+      // gone the moment the strip redraws without the tile. Nobody else is
+      // watching for that: the guard closed cleanly and the form is still up.
+      await this.updateComplete;
+      if (focusStranded()) this._refocus();
     } catch (err) {
       this._pushUploadError(
         'remove',

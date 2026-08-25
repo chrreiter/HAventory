@@ -1557,6 +1557,30 @@ describe('hv-item-editor: pictures', () => {
     expect(all(el, '[data-testid="editor-photo"]')).toHaveLength(0);
   });
 
+  // The guard hands focus back to the control that raised it, and that control
+  // is the removed tile's own remove button — gone by the time the strip
+  // redraws. Focus lands on the document, out of the form and out of reach of
+  // its Escape, unless the form catches it.
+  it('catches the focus the removed tile took with it', async () => {
+    const media = makeMediaBindings({
+      remove: async (itemId) => makeItem({ id: itemId, version: 9, attachments: [] }),
+    });
+    const el = await mount(
+      makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }),
+      { media },
+    );
+    await el.updateComplete;
+    // A press moves focus to the control pressed; jsdom's click does not.
+    (q(el, '[data-testid="editor-photo-remove"]') as HTMLButtonElement).focus();
+
+    await removeAttachment(el, 'editor-photo-remove', 'confirm');
+    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+
+    expect(all(el, '[data-testid="editor-photo"]')).toHaveLength(0);
+    expect(document.activeElement).toBe(el);
+    expect(el.shadowRoot?.activeElement).toBe(q(el, '[data-testid="editor-name"]'));
+  });
+
   it('keeps the picture when the guard is dismissed', async () => {
     const media = makeMediaBindings();
     const el = await mount(makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }), {
