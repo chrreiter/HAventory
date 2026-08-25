@@ -99,8 +99,8 @@ const CONNECTION_LOST_GRACE_MS = 4_500;
 const SUBSCRIBE_UNAVAILABLE_ATTEMPTS = 7;
 
 /**
- * Ceiling on a single re-subscribe wait. Also clamps a server-sent retry-after
- * hint, so a wrong or hostile value cannot park live updates indefinitely.
+ * Ceiling on a single re-subscribe wait, so a doubling backoff off a large base
+ * delay cannot park live updates for longer than a household would wait.
  */
 const SUBSCRIBE_RETRY_MAX_MS = 30_000;
 
@@ -151,40 +151,12 @@ function errorCode(err: unknown): string {
   return typeof code === 'string' && code ? code : TRANSPORT_ERROR_CODE;
 }
 
-function nonNegativeNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
-}
-
 /**
- * A retry-after hint in milliseconds, or null when the envelope carries none.
- *
- * The error taxonomy defines no retry-after field, so this is read defensively:
- * from `data` (where the contract puts structured context), from `context` (the
- * name the card's own error entries use) and from the top level, accepting
- * either milliseconds or the HTTP convention of seconds. A backend that starts
- * sending one is honoured without a contract change; until then the caller
- * falls back to its own backoff.
+ * How long to wait before re-opening a refused subscription: exponential
+ * backoff off the card's base delay, capped.
  */
-function retryAfterHintMs(err: unknown): number | null {
-  const envelope = err as { data?: unknown; context?: unknown } | undefined;
-  for (const source of [envelope, envelope?.data, envelope?.context]) {
-    if (!source || typeof source !== 'object') continue;
-    const bag = source as Record<string, unknown>;
-    const ms = nonNegativeNumber(bag.retry_after_ms);
-    if (ms !== null) return ms;
-    const seconds = nonNegativeNumber(bag.retry_after);
-    if (seconds !== null) return seconds * 1000;
-  }
-  return null;
-}
-
-/**
- * How long to wait before re-opening a refused subscription: the server's hint
- * when it sends one, otherwise exponential backoff off the card's base delay.
- */
-export function subscribeRetryDelayMs(err: unknown, attempt: number, baseMs: number): number {
-  const delay = retryAfterHintMs(err) ?? baseMs * 2 ** attempt;
-  return Math.min(delay, SUBSCRIBE_RETRY_MAX_MS);
+export function subscribeRetryDelayMs(attempt: number, baseMs: number): number {
+  return Math.min(baseMs * 2 ** attempt, SUBSCRIBE_RETRY_MAX_MS);
 }
 
 /**
@@ -576,8 +548,8 @@ export class Store {
       onOpen: () => {
         if (catchUp && current()) this.scheduleAreasRefresh();
       },
-      onError: (err) => {
-        if (current()) this.onAreaRegistryRefused(err);
+      onError: () => {
+        if (current()) this.onAreaRegistryRefused();
       },
     });
   }
@@ -591,9 +563,9 @@ export class Store {
    * gone, which is not what happened here. Once the budget is spent the card
    * keeps its boot-time snapshot, which is what it did before it listened.
    */
-  private onAreaRegistryRefused(err: unknown) {
+  private onAreaRegistryRefused() {
     if (this.areaRegistryAttempt >= AREA_REGISTRY_RETRY_ATTEMPTS) return;
-    const delay = subscribeRetryDelayMs(err, this.areaRegistryAttempt, this.retryBaseMs);
+    const delay = subscribeRetryDelayMs(this.areaRegistryAttempt, this.retryBaseMs);
     this.areaRegistryAttempt += 1;
     this.areaRegistryRetry.schedule(delay, () => this.watchAreaRegistry(false));
   }
@@ -678,7 +650,7 @@ export class Store {
     if (this.state.value.degraded.liveUpdatesReason === 'unavailable') return;
     this.stateObs.set({ connected: { items: false, stats: false } });
     this.subscribeAttempt = 0;
-    this.scheduleReopen('unavailable', null);
+    this.scheduleReopen('unavailable');
   }
 
   /** Fold one subscribe outcome into its round, and act once the round is complete. */
@@ -742,12 +714,12 @@ export class Store {
       return;
     }
 
-    this.scheduleReopen(reason, err);
+    this.scheduleReopen(reason);
   }
 
   /** Book the next re-subscribe and say so, so the banner can show the wait. */
-  private scheduleReopen(reason: LiveUpdatePause, err: unknown) {
-    const delay = subscribeRetryDelayMs(err, this.subscribeAttempt, this.retryBaseMs);
+  private scheduleReopen(reason: LiveUpdatePause) {
+    const delay = subscribeRetryDelayMs(this.subscribeAttempt, this.retryBaseMs);
     this.subscribeAttempt += 1;
     this.setDegraded({
       liveUpdates: 'retrying',
