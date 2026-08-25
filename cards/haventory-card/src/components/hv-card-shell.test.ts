@@ -983,6 +983,8 @@ describe('hv-card-shell: declining the question puts focus back in the form', ()
     (guard.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
     await settle(el);
 
+    // The dialog's own return-focus, which reaches back through the form's
+    // shadow root to the control the question was raised from.
     expect(form.shadowRoot?.activeElement).toBe(name);
     expect(name.value).toBe('Target EDITED');
   });

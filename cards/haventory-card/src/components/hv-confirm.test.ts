@@ -1,6 +1,6 @@
 import './hv-confirm';
 import type { HVConfirm } from './hv-confirm';
-import { mountComponent } from '../test.utils';
+import { mountComponent, settle } from '../test.utils';
 
 async function mount(props: Partial<HVConfirm> = {}) {
   const { el } = await mountComponent<HVConfirm>('hv-confirm', {
@@ -49,7 +49,6 @@ describe('hv-confirm', () => {
     accept.click();
 
     expect(fired).toBe(1);
-    expect(el.open).toBe(false);
   });
 
   it('emits cancel from the cancel button, the backdrop and Escape', async () => {
@@ -72,7 +71,6 @@ describe('hv-confirm', () => {
       }
 
       expect(fired, `cancel via ${trigger}`).toBe(1);
-      expect(el.open).toBe(false);
       el.remove();
     }
   });
@@ -83,5 +81,45 @@ describe('hv-confirm', () => {
     expect(dialog.getAttribute('role')).toBe('alertdialog');
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     expect(el.shadowRoot?.activeElement).toBe(el.shadowRoot?.querySelector('[data-testid="confirm-accept"]'));
+  });
+
+  // The question is raised over work in progress, so declining it has to put the
+  // caret back where it was taken from — including inside another component's
+  // shadow root, which is where every form that asks this question lives.
+  it('hands focus back to the control the question was raised from', async () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const field = document.createElement('input');
+    host.attachShadow({ mode: 'open' }).appendChild(field);
+
+    const el = await mount({ open: false });
+    field.focus();
+    el.open = true;
+    await settle(el);
+    expect(el.shadowRoot?.activeElement).toBe(el.shadowRoot?.querySelector('[data-testid="confirm-accept"]'));
+
+    (el.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
+    el.open = false;
+    await settle(el);
+
+    expect(host.shadowRoot?.activeElement).toBe(field);
+    host.remove();
+  });
+
+  it('hands focus back on an accepted question too', async () => {
+    const opener = document.createElement('button');
+    document.body.appendChild(opener);
+
+    const el = await mount({ open: false });
+    opener.focus();
+    el.open = true;
+    await settle(el);
+
+    (el.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
+    el.open = false;
+    await settle(el);
+
+    expect(document.activeElement).toBe(opener);
+    opener.remove();
   });
 });

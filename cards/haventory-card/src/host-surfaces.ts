@@ -30,8 +30,6 @@ interface ConfirmSpec {
   confirmLabel?: string;
   destructive?: boolean;
   onConfirm: () => void;
-  /** A declined prompt, for a caller that has to put focus back afterwards. */
-  onCancel?: () => void;
 }
 
 /** The ways a host differs; everything else in these surfaces is identical. */
@@ -162,8 +160,8 @@ export class HostSurfaces {
    * and calls it without knowing which host it is on. A bound field rather than
    * a method so a host can pass it straight down as a property.
    */
-  readonly confirmDiscard: ConfirmDiscard = (onConfirm, onCancel) => {
-    this.confirm({ ...discardPrompt(), onConfirm, onCancel });
+  readonly confirmDiscard: ConfirmDiscard = (onConfirm) => {
+    this.confirm({ ...discardPrompt(), onConfirm });
   };
 
   /** The delete flow: look the item up, ask, then send version-checked delete. */
@@ -302,10 +300,8 @@ export class HostSurfaces {
           this.host.requestUpdate();
         }}
         @cancel=${() => {
-          const declined = this.confirmSpec;
           this.confirmSpec = null;
           this.host.requestUpdate();
-          declined?.onCancel?.();
         }}
       ></hv-confirm>
 

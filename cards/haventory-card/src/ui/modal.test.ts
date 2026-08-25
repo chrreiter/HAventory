@@ -6,19 +6,20 @@ import '../components/hv-organize-dialog';
 import { mountComponent, settle } from '../test.utils';
 
 /**
- * The centred dialogs, which have to end up alike: each used to write its own
- * backdrop, its own centring layer, its own panel box and its own answer to
+ * The five centred dialogs, which have to end up alike: each used to write its
+ * own backdrop, its own centring layer, its own panel box and its own answer to
  * "who closes this?".
  */
 const DIALOGS = [
   'hv-column-picker',
+  'hv-confirm',
   'hv-import-sheet',
   'hv-diagnostics-panel',
   'hv-organize-dialog',
 ] as const;
 
-/** The ones that take the bottom-sheet form on a phone; organize is a full page. */
-const SHEETED = ['hv-column-picker', 'hv-confirm', 'hv-import-sheet', 'hv-diagnostics-panel'] as const;
+/** The four that take the bottom-sheet form on a phone; organize is a full page. */
+const SHEETED = DIALOGS.filter((tag) => tag !== 'hv-organize-dialog');
 
 type Dialog = HTMLElement & { open: boolean; mobile: boolean };
 

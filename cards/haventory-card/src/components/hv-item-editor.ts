@@ -1364,10 +1364,7 @@ export class HVItemEditor extends LitElement {
       this._cancel();
       return;
     }
-    ask(
-      () => this._cancel(),
-      () => this._refocus(),
-    );
+    ask(() => this._cancel());
   };
 
   /**
@@ -1398,16 +1395,20 @@ export class HVItemEditor extends LitElement {
     }
   };
 
+  /**
+   * Rescue focus into the form when a surface over it closes with its opener
+   * gone — the lightbox outliving the photo it was opened from. A dialog whose
+   * opener is still there hands focus back itself.
+   */
+  private _refocus() {
+    this.renderRoot.querySelector<HTMLElement>('[data-testid="editor-name"]')?.focus();
+  }
+
   /** Shut the location picker and put focus back on the control that opened it. */
   private _closeLocation() {
     this._locationOpen = false;
     this._locationError = null;
     this.renderRoot.querySelector<HTMLElement>('[data-testid="editor-location"]')?.focus();
-  }
-
-  /** Hand focus back to the form after a dialog over it closes. */
-  private _refocus() {
-    this.renderRoot.querySelector<HTMLElement>('[data-testid="editor-name"]')?.focus();
   }
 
   // ---------- Field renderers ----------
@@ -3009,7 +3010,6 @@ export class HVItemEditor extends LitElement {
         @cancel=${(e: Event) => {
           e.stopPropagation();
           this._confirmRemove = null;
-          this._refocus();
         }}
       ></hv-confirm>
     `;

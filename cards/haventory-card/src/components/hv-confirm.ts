@@ -1,11 +1,9 @@
 import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { modalSheet } from '../ui/modal';
-import { onEscape } from '../ui/keyboard';
+import { Modal, modalChrome, modalSheet } from '../ui/modal';
 import { icon } from '../ui/icons';
-import { nextZBase } from '../utils/zindex';
 import './hv-banner';
 
 /**
@@ -15,40 +13,17 @@ import './hv-banner';
  * which a browser confirm cannot express.
  *
  * Presentational and self-contained: the caller opens it, supplies the copy, and
- * listens for `confirm` / `cancel`.
+ * listens for `confirm` / `cancel`. The caret lands on the accepting button so
+ * Enter completes and Escape aborts, and goes back to whatever raised the
+ * question once it is answered — the question is asked over work in progress.
  */
 @customElement('hv-confirm')
 export class HVConfirm extends LitElement {
   static styles = [
     tokens,
     base,
+    modalChrome,
     css`
-      :host {
-        display: block;
-      }
-      .backdrop {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.35);
-      }
-      .wrap {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        padding: 16px;
-        box-sizing: border-box;
-      }
-      .panel {
-        width: 330px;
-        max-width: 100%;
-        box-sizing: border-box;
-        background: var(--hv-surface);
-        color: var(--hv-text);
-        border-radius: var(--hv-radius-dialog);
-        box-shadow: var(--hv-shadow-dialog);
-        overflow: hidden;
-      }
       h2 {
         margin: 0;
         padding: 14px 18px 8px;
@@ -86,68 +61,51 @@ export class HVConfirm extends LitElement {
   @property({ type: String }) cancelLabel = t('hv.action.cancel');
   @property({ type: Boolean }) destructive = false;
 
-  @state() private _zBase: number | null = null;
-
-  protected willUpdate(changed: Map<string, unknown>) {
-    if (changed.has('open') && this.open) {
-      this._zBase = nextZBase();
-    }
-  }
-
-  protected updated(changed: Map<string, unknown>) {
-    if (changed.has('open') && this.open) {
-      // Land focus on the confirm action so Enter completes and Esc aborts.
-      const btn = this.shadowRoot?.querySelector<HTMLButtonElement>('[data-testid="confirm-accept"]');
-      btn?.focus();
-    }
-  }
+  private _modal = new Modal(this, {
+    open: () => this.open,
+    // Land focus on the confirm action so Enter completes and Escape aborts.
+    initialFocus: () => this.renderRoot.querySelector<HTMLButtonElement>('[data-testid="confirm-accept"]'),
+  });
 
   private _cancel = () => {
-    this.open = false;
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
 
   private _confirm = () => {
-    this.open = false;
     this.dispatchEvent(new CustomEvent('confirm', { bubbles: true, composed: true }));
   };
 
   render() {
     if (!this.open) return null;
-    const z = this._zBase ?? 9998;
-    return html`
-      <div class="backdrop" role="presentation" style="z-index: ${z};" @click=${this._cancel}></div>
-      <div class="wrap" role="none" style="z-index: ${z + 1};">
-        <div
-          class="panel"
-          role="alertdialog"
-          aria-modal="true"
-          aria-label=${this.heading}
-          data-testid="confirm-dialog"
-          @keydown=${onEscape(() => this._cancel())}
-        >
-          <h2>${this.heading}</h2>
-          ${this.message ? html`<div class="message" data-testid="confirm-message">${this.message}</div>` : null}
-          ${this.warning
-            ? html`<div class="warning">
-                <hv-banner kind="error" .message=${this.warning} data-testid="confirm-warning"></hv-banner>
-              </div>`
-            : null}
-          <div class="actions">
-            <button class="hv-text-button" data-testid="confirm-cancel" @click=${this._cancel}>
-              ${this.cancelLabel}
-            </button>
-            <button
-              class="hv-pill ${this.destructive ? 'danger' : ''}"
-              data-testid="confirm-accept"
-              @click=${this._confirm}
-            >
-              ${this.destructive ? icon('del', 15) : null}${this.confirmLabel}
-            </button>
-          </div>
+    return this._modal.render(
+      {
+        label: this.heading,
+        testid: 'confirm-dialog',
+        role: 'alertdialog',
+        onClose: this._cancel,
+      },
+      html`
+        <h2>${this.heading}</h2>
+        ${this.message ? html`<div class="message" data-testid="confirm-message">${this.message}</div>` : null}
+        ${this.warning
+          ? html`<div class="warning">
+              <hv-banner kind="error" .message=${this.warning} data-testid="confirm-warning"></hv-banner>
+            </div>`
+          : null}
+        <div class="actions">
+          <button class="hv-text-button" data-testid="confirm-cancel" @click=${this._cancel}>
+            ${this.cancelLabel}
+          </button>
+          <button
+            class="hv-pill ${this.destructive ? 'danger' : ''}"
+            data-testid="confirm-accept"
+            @click=${this._confirm}
+          >
+            ${this.destructive ? icon('del', 15) : null}${this.confirmLabel}
+          </button>
         </div>
-      </div>
-    `;
+      `,
+    );
   }
 }
 
