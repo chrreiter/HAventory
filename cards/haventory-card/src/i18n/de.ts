@@ -153,6 +153,7 @@ export const de: CompleteDictionary = {
   'hv.action.close': 'Schließen',
   'hv.action.edit': 'Bearbeiten',
   'hv.action.create': 'Erstellen',
+  'hv.action.apply': 'Anwenden',
   'hv.action.confirm': 'Bestätigen',
   'hv.action.delete': 'Löschen',
   'hv.action.remove': 'Entfernen',

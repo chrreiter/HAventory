@@ -174,6 +174,7 @@ export const en = {
   'hv.action.close': 'Close',
   'hv.action.edit': 'Edit',
   'hv.action.create': 'Create',
+  'hv.action.apply': 'Apply',
   'hv.action.confirm': 'Confirm',
   'hv.action.delete': 'Delete',
   'hv.action.remove': 'Remove',
