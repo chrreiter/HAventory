@@ -1,4 +1,4 @@
-import { DialogFocus, deepActiveElement, deepFocusables } from './dialog-focus';
+import { DialogFocus, deepActiveElement, deepFocusables, focusStranded } from './dialog-focus';
 
 function panel(): HTMLElement {
   const el = document.createElement('div');
@@ -297,5 +297,25 @@ describe('deepFocusables', () => {
   it('survives a surface that has not rendered yet', () => {
     expect(deepFocusables(null)).toEqual([]);
     expect(deepFocusables(undefined)).toEqual([]);
+  });
+});
+
+describe('focusStranded', () => {
+  it('says nothing is stranded while a real control holds focus', () => {
+    const btn = document.createElement('button');
+    document.body.appendChild(btn);
+    btn.focus();
+    expect(focusStranded()).toBe(false);
+    btn.remove();
+  });
+
+  // What the browser does when the element holding focus leaves the document:
+  // it drops focus on the body, out of reach of whatever is still on screen.
+  it('sees focus dropped on the document when its holder goes', () => {
+    const btn = document.createElement('button');
+    document.body.appendChild(btn);
+    btn.focus();
+    btn.remove();
+    expect(focusStranded()).toBe(true);
   });
 });

@@ -6,11 +6,11 @@ import { tokens, base } from '../ui/tokens';
 import { chip, tagLabel } from '../ui/chip';
 import { locationPathParts, pathLabel } from '../ui/location-path';
 import { icon } from '../ui/icons';
+import { LocationPicker } from '../ui/location-picker';
 import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { DEFAULT_STATUS, statusCount, statusLabel, statusList, statusTone } from '../ui/status';
 import type { DistinctValues, Location, LocationTreeNode, SortField, StatsCounts, StatusDefinition, StoreFilters } from '../store/types';
-import './hv-location-tree';
 
 /** Sort fields the backend supports, in the order the menu lists them. */
 const SORT_FIELDS: readonly SortField[] = [
@@ -349,7 +349,6 @@ export class HVFilterPanel extends LitElement {
   @property({ attribute: false }) counts: StatsCounts | null = null;
 
   @state() private _draft: StoreFilters | null = null;
-  @state() private _locationOpen = false;
   @state() private _showAllCategories = false;
   @state() private _showAllTags = false;
   @state() private _tagDraft = '';
@@ -358,6 +357,13 @@ export class HVFilterPanel extends LitElement {
     updated: 'after',
     created: 'after',
   };
+
+  /**
+   * The Where chip's tree. A filter narrows by a set, so adding to it means
+   * picking again and the tree stays open; clearing the selection is the one
+   * pick that finishes the job.
+   */
+  private readonly _location = new LocationPicker(this, { keepOpenOnSelect: true });
 
   /** The filter set the controls are bound to. */
   get working(): StoreFilters {
@@ -505,17 +511,12 @@ export class HVFilterPanel extends LitElement {
       <div class="group">
         <span class="hv-label">${t('hv.filter.where')}</span>
         <div class="chips">
-          <button
-            class="hv-chip toggle chip ${f.locationIds.length ? 'on' : ''}"
-            data-testid="filter-location"
-            aria-expanded=${String(this._locationOpen)}
-            aria-controls=${LOCATION_TREE_ID}
-            @click=${() => {
-              this._locationOpen = !this._locationOpen;
-            }}
-          >
-            ${icon('mapMarker', 14)}${label}${icon('chevronDown', 14)}
-          </button>
+          ${this._location.renderTrigger({
+            triggerClass: `hv-chip toggle chip ${f.locationIds.length ? 'on' : ''}`,
+            testid: 'filter-location',
+            holderId: LOCATION_TREE_ID,
+            trigger: html`${icon('mapMarker', 14)}${label}${icon('chevronDown', 14)}`,
+          })}
           <label class="field select-field ${f.areaId ? 'on' : ''}" data-testid="filter-area">
             <span class="hv-sr-only">${t('hv.filter.area')}</span>
             <select
@@ -536,26 +537,21 @@ export class HVFilterPanel extends LitElement {
             { testid: 'filter-include-subtree' },
           )}
         </div>
-        <div class="tree-holder" id=${LOCATION_TREE_ID} ?hidden=${!this._locationOpen}>
-          ${this._locationOpen
-            ? html`<hv-location-tree
-                data-testid="filter-location-tree"
-                .nodes=${this.locationTree}
-                .areas=${this.areas}
-                .selectedIds=${f.locationIds}
-                showAll
-                showCounts
-                .totalCount=${this.grandTotal}
-                @select=${(e: CustomEvent) => {
-                  const picked = (e.detail as { locationId: string | null }).locationId;
-                  this._toggleLocation(picked);
-                  // Adding to a selection means picking again, so the tree stays
-                  // open; "All items" is the one pick that finishes the job.
-                  if (picked === null) this._locationOpen = false;
-                }}
-              ></hv-location-tree>`
-            : null}
-        </div>
+        ${this._location.renderHolder(
+          { holderId: LOCATION_TREE_ID },
+          () => html`<hv-location-tree
+            data-testid="filter-location-tree"
+            .nodes=${this.locationTree}
+            .areas=${this.areas}
+            .selectedIds=${f.locationIds}
+            showAll
+            showCounts
+            .totalCount=${this.grandTotal}
+            @select=${(e: CustomEvent) => {
+              this._toggleLocation((e.detail as { locationId: string | null }).locationId);
+            }}
+          ></hv-location-tree>`,
+        )}
       </div>
     `;
   }

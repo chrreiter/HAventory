@@ -5,21 +5,16 @@ import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { areaMarkName, locationPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
-import {
-  DEFAULT_CUSTOM_DAYS,
-  quickDayOffsets,
-  addDays,
-  formatDate,
-  isOverdue,
-  relativeTime,
-} from '../ui/relative-time';
+import { DEFAULT_CUSTOM_DAYS, formatDate, isOverdue, relativeTime } from '../ui/relative-time';
+import { dayOffsets, renderDayOffsets } from '../ui/day-offsets';
 import { onDayChange } from '../ui/day-clock';
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
 import type { ConfirmDiscard } from '../ui/discard';
 import { COPIED_MS, copyText } from '../ui/clipboard';
 import { ViewportNarrow } from '../ui/responsive';
-import { nextZBase } from '../utils/zindex';
+import { focusStranded } from '../ui/dialog-focus';
+import { LocationPicker } from '../ui/location-picker';
 import {
   REMINDER_UNITS,
   customFieldsFrom,
@@ -43,6 +38,7 @@ import {
   pictures,
 } from '../ui/media';
 import { prepareForUpload } from '../ui/downscale';
+import { renderDocumentRow, renderLightboxHost, renderPhotoFigure } from '../ui/attachments';
 import type { MediaBindings } from '../ui/media';
 import type {
   AreaRef,
@@ -57,8 +53,6 @@ import type {
 } from '../store/types';
 import './hv-chip-input';
 import './hv-confirm';
-import './hv-lightbox';
-import './hv-location-tree';
 import './hv-checkout-popover';
 
 /**
@@ -144,6 +138,7 @@ export class HVItemEditor extends LitElement {
     tokens,
     base,
     chip,
+    dayOffsets,
     css`
       :host {
         display: block;
@@ -347,54 +342,15 @@ export class HVItemEditor extends LitElement {
         line-height: 1.4;
         color: var(--hv-text-tertiary);
       }
-      /* Same chips, same states as the check-out popover's: one gesture, so it
-         must not look like two. */
-      .offsets {
-        display: flex;
-        gap: 7px;
-        flex-wrap: wrap;
-      }
-      .offset {
-        border: 1px solid var(--hv-divider);
-        background: none;
-        color: var(--hv-chip-text);
-        border-radius: var(--hv-radius-chip);
-        padding: 6px 13px;
-        font: 400 12.5px var(--hv-font);
-        cursor: pointer;
-      }
+      /* The shape is ui/day-offsets; a finger's worth of height on top of it
+         is this form's, and the popover that draws the same chips grows them
+         by its own amount. */
       :host([mobile]) .offset {
         min-height: var(--hv-tap-min, auto);
         padding: 0 15px;
         font-size: 13.5px;
       }
-      .offset.on {
-        background: var(--hv-primary-dark);
-        border-color: var(--hv-primary-dark);
-        color: #fff;
-        font-weight: 500;
-      }
-      .custom-days {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        border: 1px solid var(--hv-divider);
-        border-radius: var(--hv-radius-input);
-        font-size: 13px;
-        color: var(--hv-text-secondary);
-      }
-      .custom-days input {
-        width: 72px;
-        box-sizing: border-box;
-        border: 1px solid var(--hv-input-border);
-        border-radius: var(--hv-radius-input);
-        background: var(--hv-surface);
-        color: var(--hv-text);
-        padding: 5px 8px;
-        font: 400 13.5px var(--hv-font);
-      }
-      :host([mobile]) .custom-days input {
+      :host([mobile]) .day-box input {
         min-height: 44px;
         width: 88px;
         font-size: var(--hv-input-font, 14.5px);
@@ -475,6 +431,10 @@ export class HVItemEditor extends LitElement {
         font-size: var(--hv-editor-note);
         color: var(--hv-error);
       }
+      /* Both disclosures the form opens under a control push the form down
+         rather than covering it: they belong to the field above them, and a
+         layer measured against the viewport drifts off that field the moment
+         the surface behind it scrolls. */
       .tree-holder,
       .list-holder {
         margin-top: 6px;
@@ -484,21 +444,6 @@ export class HVItemEditor extends LitElement {
         max-height: 220px;
         overflow: auto;
         padding: 4px 0;
-      }
-      /* The category list is the one holder that must NOT take part in the
-         layout: in flow it grows its own grid cell, which grows the row and
-         stretches the Location button beside it, so the form comes apart every
-         time the suggestions open. The location tree below is the opposite case
-         and keeps the in-flow rule above — it is meant to push the form open.
-
-         Fixed rather than absolute: the expanded view puts the whole form
-         inside an editor-holder that is max-height 70dvh with overflow-y auto,
-         and an absolute list would be clipped by it. Same technique the
-         checkout popover and the overflow menu use. */
-      .list-holder.floating {
-        position: fixed;
-        margin-top: 0;
-        box-shadow: var(--hv-shadow-menu);
       }
       /* The category field is a text input plus its own dropdown affordance —
          without the arrow the existing values were only findable by guessing. */
@@ -1186,22 +1131,12 @@ export class HVItemEditor extends LitElement {
   @state() private _model: ItemFormModel = formFromItem(null);
   @state() private _errors: FieldError[] = [];
   @state() private _showErrors = false;
-  @state() private _locationOpen = false;
   @state() private _moreOpen = false;
   @state() private _categoryOpen = false;
   /** Opened from the arrow: list everything, ignoring what is already typed. */
   @state() private _categoryShowAll = false;
   /** Keyboard cursor into the visible category options; -1 = nothing active. */
   @state() private _categoryIndex = -1;
-  /** Viewport placement of the floating category list, while it is open. */
-  @state() private _categoryBox: {
-    left: number;
-    width: number;
-    edge: number;
-    flip: boolean;
-    room: number;
-  } | null = null;
-  private _categoryZ = 0;
   /** The check-out dialog, and the button it hangs from on a wide screen. */
   @state() private _checkoutOpen = false;
   @state() private _checkoutAnchor: DOMRect | null = null;
@@ -1249,6 +1184,8 @@ export class HVItemEditor extends LitElement {
   private readonly _urls = new MediaUrls(this);
   /** Window width, for the two dialogs this form raises over itself. */
   private readonly _viewport = new ViewportNarrow(this);
+  /** The location field: one location, so a pick finishes the job. */
+  private readonly _location = new LocationPicker(this);
   private _uploadSeq = 0;
   /**
    * The item id `_model` was built from. `undefined` until the first update,
@@ -1290,7 +1227,7 @@ export class HVItemEditor extends LitElement {
       this._model = formFromItem(this.item);
       this._errors = [];
       this._showErrors = false;
-      this._locationOpen = false;
+      this._location.close();
       this._moreOpen = false;
       this._checkoutOpen = false;
       this._uploads = [];
@@ -1384,7 +1321,7 @@ export class HVItemEditor extends LitElement {
         this._closeCategory();
       } else if (this._checkoutOpen) {
         this._checkoutOpen = false;
-      } else if (this._locationOpen) {
+      } else if (this._location.open) {
         this._closeLocation();
       } else {
         this._requestCancel();
@@ -1406,7 +1343,7 @@ export class HVItemEditor extends LitElement {
 
   /** Shut the location picker and put focus back on the control that opened it. */
   private _closeLocation() {
-    this._locationOpen = false;
+    this._location.close();
     this._locationError = null;
     this.renderRoot.querySelector<HTMLElement>('[data-testid="editor-location"]')?.focus();
   }
@@ -1485,44 +1422,35 @@ export class HVItemEditor extends LitElement {
     const parts = locationPathParts(loc, locations, this.areas, t('hv.term.noLocation'));
     return html`<div class="cell span2">
       <span class="hv-label">${t('hv.editor.field.location')}</span>
-      <button
-        class="field-button ${this._model.locationId ? '' : 'empty'}"
-        data-testid="editor-location"
-        title=${pathTitle(parts)}
-        aria-expanded=${String(this._locationOpen)}
-        aria-controls=${LOCATION_TREE_ID}
-        @click=${() => {
-          this._locationOpen = !this._locationOpen;
-        }}
-      >
-        ${icon('mapMarker', 15)}${renderAreaChip(areaMarkName(parts.areaName, parts.path))}<span
-          class="value"
-          >${parts.path}</span
-        >${icon('chevronDown', 15)}
-      </button>
-      <div class="tree-holder" id=${LOCATION_TREE_ID} ?hidden=${!this._locationOpen}>
-        ${this._locationOpen
-          ? html`<hv-location-tree
-              data-testid="editor-location-tree"
-              .nodes=${this._knownLocationTree}
-              .areas=${this.areas}
-              .selectedId=${this._model.locationId}
-              showAll
-              allLabel=${t('hv.term.noLocation')}
-              allIcon="close"
-              ?allowCreate=${this.createLocation !== null}
-              @select=${(e: CustomEvent) => {
-                this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
-                this._locationOpen = false;
-                this._locationError = null;
-              }}
-              @create-location=${(e: CustomEvent) => {
-                e.stopPropagation();
-                void this._createLocation((e.detail as { name: string }).name);
-              }}
-            ></hv-location-tree>`
-          : null}
-      </div>
+      ${this._location.render(
+        {
+          triggerClass: `field-button ${this._model.locationId ? '' : 'empty'}`,
+          testid: 'editor-location',
+          title: pathTitle(parts),
+          holderId: LOCATION_TREE_ID,
+          trigger: html`${icon('mapMarker', 15)}${renderAreaChip(
+            areaMarkName(parts.areaName, parts.path),
+          )}<span class="value">${parts.path}</span>${icon('chevronDown', 15)}`,
+        },
+        () => html`<hv-location-tree
+          data-testid="editor-location-tree"
+          .nodes=${this._knownLocationTree}
+          .areas=${this.areas}
+          .selectedId=${this._model.locationId}
+          showAll
+          allLabel=${t('hv.term.noLocation')}
+          allIcon="close"
+          ?allowCreate=${this.createLocation !== null}
+          @select=${(e: CustomEvent) => {
+            this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
+            this._locationError = null;
+          }}
+          @create-location=${(e: CustomEvent) => {
+            e.stopPropagation();
+            void this._createLocation((e.detail as { name: string }).name);
+          }}
+        ></hv-location-tree>`,
+      )}
       ${this._locationError
         ? html`<span class="field-error" data-testid="editor-location-error">${this._locationError}</span>`
         : null}
@@ -1544,7 +1472,7 @@ export class HVItemEditor extends LitElement {
       const created = await create(name);
       this._createdLocations = [...this._createdLocations, created];
       this._patch({ locationId: created.id });
-      this._locationOpen = false;
+      this._location.close();
     } catch (err) {
       this._locationError = errorText(err, t('hv.editor.locationCreateFailed'));
     }
@@ -1561,63 +1489,17 @@ export class HVItemEditor extends LitElement {
     return this.categorySuggestions.filter((c) => c.toLowerCase().includes(query));
   }
 
-  /**
-   * Where the floating category list goes, in viewport coordinates.
-   *
-   * Recomputed on every scroll and resize while the list is open: `position:
-   * fixed` is measured against the viewport, and the form it belongs to sits in
-   * a scroll box of its own, so the list would otherwise drift off its input.
-   */
-  private _placeCategory = () => {
-    const combo = this.renderRoot?.querySelector<HTMLElement>('.combo');
-    if (!combo) return;
-    const rect = combo.getBoundingClientRect();
-    const gap = 6;
-    const viewport = window.innerHeight;
-    const roomBelow = viewport - rect.bottom - gap - 8;
-    const roomAbove = rect.top - gap - 8;
-    // Flip up only when below is genuinely too tight and above is roomier.
-    const flip = roomBelow < 120 && roomAbove > roomBelow;
-    this._categoryBox = {
-      left: Math.round(rect.left),
-      width: Math.round(rect.width),
-      edge: flip ? Math.round(viewport - rect.top + gap) : Math.round(rect.bottom + gap),
-      flip,
-      room: Math.max(80, Math.round(flip ? roomAbove : roomBelow)),
-    };
-  };
-
-  private get _categoryStyle(): string {
-    const box = this._categoryBox;
-    if (!box) return '';
-    const edge = box.flip ? `bottom: ${box.edge}px` : `top: ${box.edge}px`;
-    return `${edge}; left: ${box.left}px; width: ${box.width}px; max-height: min(220px, ${box.room}px); z-index: ${this._categoryZ || 9999};`;
-  }
-
   private _openCategory(showAll: boolean) {
     if (!this.categorySuggestions.length) return;
     this._categoryShowAll = showAll;
-    if (!this._categoryOpen) {
-      this._categoryZ = nextZBase();
-      // Capture phase: the scrolling ancestor is a shadow-DOM box of another
-      // component, and a bubbling listener on this element never sees it.
-      window.addEventListener('scroll', this._placeCategory, true);
-      window.addEventListener('resize', this._placeCategory);
-    }
     this._categoryOpen = true;
     this._categoryIndex = -1;
-    this._placeCategory();
   }
 
   private _closeCategory() {
-    if (this._categoryOpen) {
-      window.removeEventListener('scroll', this._placeCategory, true);
-      window.removeEventListener('resize', this._placeCategory);
-    }
     this._categoryOpen = false;
     this._categoryShowAll = false;
     this._categoryIndex = -1;
-    this._categoryBox = null;
   }
 
   /**
@@ -1750,12 +1632,11 @@ export class HVItemEditor extends LitElement {
           : null}
       </div>
       <div
-        class="list-holder floating"
+        class="list-holder"
         role="listbox"
         id=${CATEGORY_LIST_ID}
         data-testid="editor-category-list"
         ?hidden=${!this._categoryOpen}
-        style=${this._categoryStyle}
       >
         ${this._categoryOpen
           ? html`${options.length
@@ -1988,66 +1869,34 @@ export class HVItemEditor extends LitElement {
    * creating an item that has no id to check out yet.
    */
   /**
-   * The same quick jumps the check-out popover offers, on the one date it does
-   * not own. An inspection interval is known in weeks or months rather than as
-   * a calendar square, and typing a date three months out means doing the
-   * arithmetic yourself; pressing an offset writes the date into the field
-   * above, so the two controls are one value with two ways in. The custom row
-   * appears only once "+X days" is pressed — the escape hatch for an interval
-   * the three presets do not cover, not a fourth preset.
+   * The quick jumps of `ui/day-offsets`, on the one date the check-out popover
+   * does not own. An inspection interval is known in weeks or months rather
+   * than as a calendar square, and pressing an offset writes the date into the
+   * field above — the two controls are one value with two ways in.
    */
   private _renderInspectionOffsets(current: string) {
-    return html`
-      <div class="offsets" data-testid="editor-inspection-offsets">
-        ${quickDayOffsets().map((offset) => {
-          const value = addDays(offset.days);
-          return html`<button
-            class="offset ${!this._inspectionCustomOpen && current === value ? 'on' : ''}"
-            data-testid="editor-inspection-offset"
-            data-days=${offset.days}
-            @click=${() => {
-              this._inspectionCustomOpen = false;
-              this._patch({ inspectionDate: value });
-            }}
-          >
-            ${offset.label}
-          </button>`;
-        })}
-        <button
-          class="offset ${this._inspectionCustomOpen ? 'on' : ''}"
-          data-testid="editor-inspection-offset-custom"
-          @click=${() => {
-            this._inspectionCustomOpen = true;
-            this._patch({ inspectionDate: addDays(this._inspectionCustomDays) });
-          }}
-        >
-          ${t('hv.editor.customDaysOffset')}
-        </button>
-      </div>
-      ${this._inspectionCustomOpen
-        ? html`<label class="custom-days" data-testid="editor-inspection-custom">
-            <input
-              type="number"
-              min="1"
-              max="3650"
-              inputmode="numeric"
-              aria-label=${t('hv.editor.daysFromToday')}
-              .value=${String(this._inspectionCustomDays)}
-              @input=${(e: Event) => {
-                const days = Number((e.target as HTMLInputElement).value);
-                this._inspectionCustomDays = days;
-                // An empty or nonsense box means no date yet rather than a
-                // stale one, so the field clears instead of keeping the last.
-                this._patch({
-                  inspectionDate:
-                    Number.isFinite(days) && days >= 1 ? addDays(Math.floor(days)) : '',
-                });
-              }}
-            />
-            <span>${t('hv.editor.daysFromToday')}</span>
-          </label>`
-        : null}
-    `;
+    return renderDayOffsets(
+      {
+        current,
+        customOpen: this._inspectionCustomOpen,
+        customDays: this._inspectionCustomDays,
+      },
+      {
+        prefix: 'editor-inspection',
+        onPick: (date) => {
+          this._inspectionCustomOpen = false;
+          this._patch({ inspectionDate: date });
+        },
+        onCustom: (date) => {
+          this._inspectionCustomOpen = true;
+          this._patch({ inspectionDate: date });
+        },
+        onDays: (days, date) => {
+          this._inspectionCustomDays = days;
+          this._patch({ inspectionDate: date ?? '' });
+        },
+      },
+    );
   }
 
   private _onCheckoutPressed = (e: Event) => {
@@ -2329,6 +2178,12 @@ export class HVItemEditor extends LitElement {
     if (!media || !item) return;
     try {
       this._uploaded = await media.remove(item.id, attachmentId);
+      // The guard handed focus back to the control that raised it, and that
+      // control was this tile's own remove button — still there at the time,
+      // gone the moment the strip redraws without the tile. Nobody else is
+      // watching for that: the guard closed cleanly and the form is still up.
+      await this.updateComplete;
+      if (focusStranded()) this._refocus();
     } catch (err) {
       this._pushUploadError(
         'remove',
@@ -2412,12 +2267,7 @@ export class HVItemEditor extends LitElement {
         @drop=${drop.drop}
       >
         ${shots.map((picture, index) => {
-          // Asked the same way the document rows ask, and for the same reason:
-          // an export carries the references and not the bytes, so a fresh
-          // install genuinely holds pictures whose files were never uploaded to
-          // it. One item's photos are few enough to ask about up front, which
-          // is what keeps the browser from ever being handed a URL it can only
-          // draw its broken-image glyph for.
+          const alt = pictureAlt(item.name, index, shots.length);
           const missing = this._urls.presence(item.id, picture.id) === 'missing';
           // The tile, not the picture: tapping one opens the lightbox, which
           // asks for the stored file itself.
@@ -2429,47 +2279,37 @@ export class HVItemEditor extends LitElement {
                 attachmentNameToken(picture),
                 MEDIA_VARIANT_THUMB,
               );
-          return html`<figure data-testid="editor-photo">
-            ${missing
-              ? html`<span class="placeholder missing" data-testid="editor-photo-missing">
-                  ${icon('camera', 20)}
-                  <span class="hv-chip warning">${t('hv.term.fileMissing')}</span>
-                </span>`
-              : src
-              ? html`<button
-                  class="open"
-                  data-testid="editor-photo-open"
-                  aria-label=${t('hv.editor.viewPhoto', {
-                    photo: pictureAlt(item.name, index, shots.length),
-                  })}
-                  @click=${() => {
-                    this._lightbox = index;
-                  }}
-                >
-                  <img
-                    src=${src}
-                    alt=${pictureAlt(item.name, index, shots.length)}
-                    loading="lazy"
-                    decoding="async"
-                  />
-                </button>`
-              : html`<span class="placeholder" data-testid="editor-photo-placeholder"
-                  >${icon('camera', 20)}</span
-                >`}
-            <button
-              class="remove"
-              data-testid="editor-photo-remove"
-              aria-label=${t('hv.editor.removePhoto', {
-                photo: pictureAlt(item.name, index, shots.length),
-              })}
-              @click=${() => {
-                this._confirmRemove = { id: picture.id, kind: 'picture' };
-              }}
-            >
-              ${icon('close', 15)}
-            </button>
-            ${shots.length > 1 ? this._renderPhotoControls(picture.id, index, shots.length) : null}
-          </figure>`;
+          return renderPhotoFigure(
+            {
+              src,
+              missing,
+              alt,
+              openLabel: t('hv.editor.viewPhoto', { photo: alt }),
+              onOpen: () => {
+                this._lightbox = index;
+              },
+            },
+            {
+              testid: 'editor-photo',
+              glyph: 20,
+              tileClass: 'placeholder',
+              openClass: 'open',
+              pendingTile: true,
+            },
+            html`<button
+                class="remove"
+                data-testid="editor-photo-remove"
+                aria-label=${t('hv.editor.removePhoto', { photo: alt })}
+                @click=${() => {
+                  this._confirmRemove = { id: picture.id, kind: 'picture' };
+                }}
+              >
+                ${icon('close', 15)}
+              </button>
+              ${shots.length > 1
+                ? this._renderPhotoControls(picture.id, index, shots.length)
+                : null}`,
+          );
         })}
         <label class="picker" data-testid="editor-photo-picker">
           ${icon('camera', 20)}
@@ -2667,38 +2507,29 @@ export class HVItemEditor extends LitElement {
         @dragleave=${drop.leave}
         @drop=${drop.drop}
       >
-        ${docs.map((doc) => {
-          const src = this._urls.get(item.id, doc.id, attachmentNameToken(doc));
-          const missing = this._urls.presence(item.id, doc.id) === 'missing';
-          return html`<li data-testid="editor-document">
-            <span class="doc-icon">${icon('fileDocument', 18)}</span>
-            <input
-              class="hv-input doc-title"
-              data-testid="editor-document-title"
-              .value=${doc.title ?? ''}
-              placeholder=${doc.filename}
-              aria-label=${t('hv.editor.titleFor', { filename: doc.filename })}
-              @change=${(e: Event) =>
-                void this._retitle(doc.id, (e.target as HTMLInputElement).value.trim())}
-            />
-            <span class="doc-size">${formatBytes(doc.size)}</span>
-            ${missing
-              ? html`<span class="hv-chip warning" data-testid="editor-document-missing"
-                  >${t('hv.term.fileMissing')}</span
-                >`
-              : src
-                ? html`<a
-                    class="doc-open"
-                    data-testid="editor-document-open"
-                    href=${src}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label=${t('hv.editor.openNamed', { name: attachmentTitle(doc) })}
-                    title=${t('hv.editor.openDocument')}
-                    >${icon('openInNew', 15)}</a
-                  >`
-                : null}
-            <button
+        ${docs.map((doc) =>
+          renderDocumentRow(
+            {
+              src: this._urls.get(item.id, doc.id, attachmentNameToken(doc)),
+              missing: this._urls.presence(item.id, doc.id) === 'missing',
+            },
+            {
+              testid: 'editor-document',
+              glyph: 18,
+              openLabel: t('hv.editor.openNamed', { name: attachmentTitle(doc) }),
+              openTitle: t('hv.editor.openDocument'),
+            },
+            html`<input
+                class="hv-input doc-title"
+                data-testid="editor-document-title"
+                .value=${doc.title ?? ''}
+                placeholder=${doc.filename}
+                aria-label=${t('hv.editor.titleFor', { filename: doc.filename })}
+                @change=${(e: Event) =>
+                  void this._retitle(doc.id, (e.target as HTMLInputElement).value.trim())}
+              />
+              <span class="doc-size">${formatBytes(doc.size)}</span>`,
+            html`<button
               class="doc-remove"
               data-testid="editor-document-remove"
               aria-label=${t('hv.editor.removeNamed', { name: attachmentTitle(doc) })}
@@ -2707,9 +2538,9 @@ export class HVItemEditor extends LitElement {
               }}
             >
               ${icon('close', 15)}
-            </button>
-          </li>`;
-        })}
+            </button>`,
+          ),
+        )}
       </ul>
       <label class="picker doc-picker" data-testid="editor-manual-picker">
         ${icon('fileDocument', 18)}
@@ -2973,17 +2804,16 @@ export class HVItemEditor extends LitElement {
         </div>
       </div>
 
-      <hv-lightbox
-        data-testid="editor-lightbox-host"
-        .item=${this._current}
-        .media=${this.media}
-        .index=${this._lightbox}
-        .onOpenerGone=${() => this._refocus()}
-        @close=${(e: Event) => {
-          e.stopPropagation();
+      ${renderLightboxHost({
+        testid: 'editor-lightbox-host',
+        item: this._current,
+        media: this.media,
+        index: this._lightbox,
+        onOpenerGone: () => this._refocus(),
+        onClose: () => {
           this._lightbox = null;
-        }}
-      ></hv-lightbox>
+        },
+      })}
 
       <!-- Outside the form's own keydown scope, and its events stopped here: a
            host listens for the cancel event on this editor to close it, and a

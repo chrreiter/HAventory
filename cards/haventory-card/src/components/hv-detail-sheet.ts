@@ -22,13 +22,13 @@ import {
   pictures,
 } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
+import { renderDocumentRow, renderLightboxHost, renderPhotoFigure } from '../ui/attachments';
 import type { ConfirmDiscard } from '../ui/discard';
 import { COPIED_MS, copyText } from '../ui/clipboard';
 import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
 import './hv-item-editor';
-import './hv-lightbox';
 import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { HVItemEditor } from './hv-item-editor';
 
@@ -643,34 +643,20 @@ export class HVDetailSheet extends LitElement {
     if (!shots.length) return null;
     return html`<div class="gallery" data-testid="sheet-gallery">
       ${shots.map((picture, index) => {
-        if (this._urls.presence(item.id, picture.id) === 'missing') {
-          return html`<figure data-testid="sheet-photo">
-            <span class="missing" data-testid="sheet-photo-missing">
-              ${icon('camera', 24)}
-              <span class="hv-chip warning">${t('hv.term.fileMissing')}</span>
-            </span>
-          </figure>`;
-        }
-        const src = this._urls.get(item.id, picture.id, attachmentNameToken(picture));
-        if (!src) return null;
-        return html`<figure data-testid="sheet-photo">
-          <button
-            data-testid="sheet-photo-open"
-            aria-label=${t('hv.sheet.openPhoto', {
-              photo: pictureAlt(item.name, index, shots.length),
-            })}
-            @click=${() => {
+        const alt = pictureAlt(item.name, index, shots.length);
+        const missing = this._urls.presence(item.id, picture.id) === 'missing';
+        return renderPhotoFigure(
+          {
+            src: missing ? null : this._urls.get(item.id, picture.id, attachmentNameToken(picture)),
+            missing,
+            alt,
+            openLabel: t('hv.sheet.openPhoto', { photo: alt }),
+            onOpen: () => {
               this._lightbox = index;
-            }}
-          >
-            <img
-              src=${src}
-              alt=${pictureAlt(item.name, index, shots.length)}
-              loading="lazy"
-              decoding="async"
-            />
-          </button>
-        </figure>`;
+            },
+          },
+          { testid: 'sheet-photo', glyph: 24 },
+        );
       })}
     </div>`;
   }
@@ -703,27 +689,14 @@ export class HVDetailSheet extends LitElement {
             formatBytes(doc.size),
             t('hv.sheet.documentAdded', { when: relativeTime(doc.uploaded_at) }),
           ].join(' · ');
-          return html`<li class=${missing ? 'missing' : ''} data-testid="sheet-document">
-            <span class="doc-icon">${icon('fileDocument', 20)}</span>
-            <span class="doc-text">
+          return renderDocumentRow(
+            { src, missing },
+            { testid: 'sheet-document', glyph: 20, openText: t('hv.action.open') },
+            html`<span class="doc-text">
               <span class="doc-title" data-testid="sheet-document-title">${title}</span>
               <span class="doc-meta" data-testid="sheet-document-meta">${meta}</span>
-            </span>
-            ${missing
-              ? html`<span class="hv-chip warning" data-testid="sheet-document-missing"
-                  >${t('hv.term.fileMissing')}</span
-                >`
-              : src
-                ? html`<a
-                    class="doc-open"
-                    data-testid="sheet-document-open"
-                    href=${src}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    >${icon('openInNew', 15)}${t('hv.action.open')}</a
-                  >`
-                : null}
-          </li>`;
+            </span>`,
+          );
         })}
       </ul>
     </div>`;
@@ -1036,17 +1009,16 @@ export class HVDetailSheet extends LitElement {
         ${item ? (this._mode === 'edit' ? this._renderEdit(item) : this._renderRead(item)) : null}
       </hv-bottom-sheet>
 
-      <hv-lightbox
-        data-testid="sheet-lightbox-host"
-        .item=${item}
-        .media=${this.media}
-        .index=${this._lightbox}
-        .onOpenerGone=${() => this._sheet?.focusPanel()}
-        @close=${(e: Event) => {
-          e.stopPropagation();
+      ${renderLightboxHost({
+        testid: 'sheet-lightbox-host',
+        item,
+        media: this.media,
+        index: this._lightbox,
+        onOpenerGone: () => this._sheet?.focusPanel(),
+        onClose: () => {
           this._lightbox = null;
-        }}
-      ></hv-lightbox>`;
+        },
+      })}`;
   }
 }
 

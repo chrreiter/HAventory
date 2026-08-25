@@ -17,6 +17,20 @@ export function deepActiveElement(): HTMLElement | null {
   return el;
 }
 
+/**
+ * Whether focus has been left on nothing.
+ *
+ * The browser drops focus on `<body>` when the element holding it leaves the
+ * document, and from there Escape and the arrow keys reach nothing that is
+ * still on screen. Only the surface still standing knows where focus belongs
+ * instead, so this reports rather than acts — and a caller must not yank focus
+ * from a user who had already moved on somewhere else.
+ */
+export function focusStranded(): boolean {
+  const at = deepActiveElement();
+  return !at || at === document.body || !at.isConnected;
+}
+
 const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /**
@@ -130,7 +144,6 @@ export class DialogFocus {
     // Nothing to return to. Rescue focus only if it really was stranded: a
     // close that happened while the user was already somewhere else must not
     // have focus yanked out from under them.
-    const stranded = deepActiveElement();
-    if (!stranded || stranded === document.body || !stranded.isConnected) onOpenerGone?.();
+    if (focusStranded()) onOpenerGone?.();
   }
 }

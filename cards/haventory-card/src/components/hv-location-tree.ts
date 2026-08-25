@@ -10,6 +10,7 @@ import { icon } from '../ui/icons';
 import type { IconName } from '../ui/icons';
 import { groupRootsByArea, locationMatches } from '../store/location-tree';
 import { renderAreaChip } from '../ui/location-path';
+import { rovingTarget, syncRovingTabindex } from '../ui/roving-list';
 import { counted } from '../ui/plural';
 import type { AreaGroup } from '../store/location-tree';
 import type { AreaRef, LocationTreeNode } from '../store/types';
@@ -384,54 +385,27 @@ export class HVLocationTree extends LitElement {
   }
 
   /**
-   * Leave exactly one node in the tab order, and give that node's own actions
-   * their only way in.
+   * Leave exactly one node in the tab order, its own actions riding with it.
    *
    * Written here rather than in `render` because the walk is the rendered DOM:
    * a template cannot ask which row comes first without rebuilding the walk
    * from the data it was drawn from.
    */
   private _syncRovingTabindex() {
-    const walk = this._walk();
-    if (!walk.length) {
-      this._activeKey = null;
-      return;
-    }
-    const held = walk.find((el) => this._nodeKey(el) === this._activeKey);
-    // The selection is where the tab stop belongs before anyone has moved it:
-    // arriving on the tree and pressing Enter should re-pick what is already
-    // chosen, not jump the household back to its first room.
-    const selected = walk.find((el) => el.getAttribute('aria-selected') === 'true');
-    const active = held ?? selected ?? walk[0];
-    this._activeKey = this._nodeKey(active);
-    for (const el of walk) {
-      const isActive = el === active;
-      el.tabIndex = isActive ? 0 : -1;
-      // A row's merge, edit, delete and overflow buttons have no key of their
-      // own to reach them by, so they ride with their row: Tab from the active
-      // node steps through that node's actions and then leaves the tree.
-      for (const action of el.querySelectorAll<HTMLElement>('.actions button')) {
-        action.tabIndex = isActive ? 0 : -1;
-      }
-    }
+    this._activeKey = syncRovingTabindex(
+      this._walk(),
+      this._activeKey,
+      (el) => this._nodeKey(el),
+      (el) => el.querySelectorAll<HTMLElement>('.actions button'),
+    );
   }
 
   /** Move the tab stop to `el` and take focus with it. */
-  private _activate(el: HTMLElement | undefined) {
-    if (!el) return;
+  private _activate(el: HTMLElement) {
     this._activeKey = this._nodeKey(el);
     el.tabIndex = 0;
     el.focus();
     this.requestUpdate();
-  }
-
-  /** The node one level out from `el` — the nearest earlier, shallower node. */
-  private _parentOf(walk: HTMLElement[], index: number): HTMLElement | undefined {
-    const level = Number(walk[index].getAttribute('aria-level') ?? '1');
-    for (let i = index - 1; i >= 0; i--) {
-      if (Number(walk[i].getAttribute('aria-level') ?? '1') < level) return walk[i];
-    }
-    return undefined;
   }
 
   /** Open or close the node `el` stands for, whichever kind it is. */
@@ -445,43 +419,14 @@ export class HVLocationTree extends LitElement {
   /**
    * The arrow layer the ARIA tree pattern asks for, and the other half of the
    * single tab stop: with one node reachable by Tab, the arrows are the only
-   * way to the rest, and the twisties are out of the tab order because Right
-   * and Left do what they do.
+   * way to the rest.
    */
   private _onTreeKeydown(e: KeyboardEvent) {
-    const keys = ['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft', 'Home', 'End'];
-    if (!keys.includes(e.key)) return;
-    const walk = this._walk();
-    const index = walk.findIndex((el) => el.contains(e.target as Node));
-    if (index < 0) return;
-    e.preventDefault();
-    e.stopPropagation();
-
-    const current = walk[index];
-    const expanded = current.getAttribute('aria-expanded');
-    // While a filter is running every node is drawn open whatever the expand
-    // state says, so collapsing one would move nothing on the screen.
-    const filtering = this.filterText.trim().length > 0;
-
-    switch (e.key) {
-      case 'ArrowDown':
-        return this._activate(walk[index + 1]);
-      case 'ArrowUp':
-        return this._activate(walk[index - 1]);
-      case 'Home':
-        return this._activate(walk[0]);
-      case 'End':
-        return this._activate(walk[walk.length - 1]);
-      case 'ArrowRight':
-        // Open what is closed; on what is already open, step into it — the
-        // first child is the next node drawn.
-        if (expanded === 'false') return this._toggleNode(current);
-        if (expanded === 'true') return this._activate(walk[index + 1]);
-        return;
-      case 'ArrowLeft':
-        if (expanded === 'true' && !filtering) return this._toggleNode(current);
-        return this._activate(this._parentOf(walk, index));
-    }
+    const next = rovingTarget(e, this._walk(), {
+      toggle: (el) => this._toggleNode(el),
+      frozen: this.filterText.trim().length > 0,
+    });
+    if (next) this._activate(next);
   }
 
   /** Open the ancestors of `id`, and its area group, so a deep selection is visible. */
