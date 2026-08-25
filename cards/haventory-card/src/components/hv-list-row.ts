@@ -485,7 +485,14 @@ export class HVListRow extends LitElement {
     );
   }
 
+  /**
+   * A key pressed on a control inside the row belongs to that control: Enter on
+   * Edit opens the editor, and an open ⋮ menu holds the keyboard. Without the
+   * guard the row answers those presses too — opening the item behind the menu,
+   * or asking to delete it.
+   */
   private _onKeydown = (e: KeyboardEvent) => {
+    if (e.target !== e.currentTarget) return;
     switch (e.key) {
       case 'Enter':
         e.preventDefault();

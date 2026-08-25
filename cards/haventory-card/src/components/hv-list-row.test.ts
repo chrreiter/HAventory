@@ -266,6 +266,23 @@ describe('hv-list-row: interaction', () => {
     expect(seen).toEqual(['open-item', 'request-delete', 'increment', 'decrement']);
   });
 
+  // Enter on Edit already opens the editor, and an open ⋮ menu holds the
+  // keyboard: the row answering the same press would open the item behind the
+  // menu, and Delete anywhere in that group would ask to delete it.
+  it('leaves a key pressed on a control inside the row to that control', async () => {
+    const el = await mount({ id: 'item-1' });
+    const seen = captured(el, ['open-item', 'request-delete', 'increment', 'decrement']);
+
+    for (const testid of ['row-edit', 'row-menu']) {
+      const control = q(el, `[data-testid="${testid}"]`) as HTMLElement;
+      for (const key of ['Enter', 'Delete', '+', '-']) {
+        control.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, composed: true }));
+      }
+    }
+
+    expect(seen).toEqual([]);
+  });
+
   it('offers edit and row-menu actions, hidden on touch by the mobile attribute', async () => {
     const desktop = await mount({ id: '1' });
     expect(q(desktop, '[data-testid="row-edit"]')).toBeTruthy();
