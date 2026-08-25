@@ -73,7 +73,7 @@ export function chipsFor(
           locations.find((l) => l.id === id),
           locations,
           ctx.areas ?? [],
-          t('hv.chips.locationFallback'),
+          t('hv.field.location'),
         ),
       ),
     );
@@ -91,7 +91,7 @@ export function chipsFor(
     const area = (ctx.areas ?? []).find((a) => a.id === filters.areaId);
     chips.push({
       key: 'areaId',
-      label: t('hv.chips.area', { name: area?.name ?? filters.areaId }),
+      label: t('hv.area.prefix', { name: area?.name ?? filters.areaId }),
       tone: 'primary',
     });
   }
@@ -122,7 +122,7 @@ export function chipsFor(
   if (filters.lowStockOnly)
     chips.push({ key: 'lowStockOnly', label: t('hv.chips.lowStockOnly'), tone: 'warning' });
   if (filters.lowStockFirst)
-    chips.push({ key: 'lowStockFirst', label: t('hv.chips.lowStockFirst'), tone: 'primary' });
+    chips.push({ key: 'lowStockFirst', label: t('hv.term.lowStockFirst'), tone: 'primary' });
   if (filters.checkedOutOnly)
     chips.push({ key: 'checkedOutOnly', label: t('hv.term.checkedOut'), tone: 'primary' });
   if (filters.overdueOnly)

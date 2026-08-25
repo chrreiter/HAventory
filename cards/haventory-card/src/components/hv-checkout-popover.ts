@@ -308,7 +308,7 @@ export class HVCheckoutPopover extends LitElement {
           )}
           <label class="date ${this._due ? '' : 'none'}" data-testid="checkout-date">
             ${icon('calendar', 17)}
-            <span class="hv-sr-only">${t('hv.editor.dueDate')}</span>
+            <span class="hv-sr-only">${t('hv.field.due_date')}</span>
             <input
               type="date"
               .value=${this._due ?? ''}
@@ -341,11 +341,11 @@ export class HVCheckoutPopover extends LitElement {
           >
             ${this._due
               ? t('hv.checkout.confirmWithDate', {
-                  action: settingOnly ? t('hv.checkout.set') : t('hv.action.checkOut'),
+                  action: settingOnly ? t('hv.action.set') : t('hv.action.checkOut'),
                   date: formatDate(this._due),
                 })
               : settingOnly
-                ? t('hv.checkout.set')
+                ? t('hv.action.set')
                 : t('hv.action.checkOut')}
           </button>
         </div>

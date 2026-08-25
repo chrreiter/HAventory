@@ -1421,7 +1421,7 @@ export class HVItemEditor extends LitElement {
     const loc = locations.find((l) => l.id === this._model.locationId);
     const parts = locationPathParts(loc, locations, this.areas, t('hv.term.noLocation'));
     return html`<div class="cell span2">
-      <span class="hv-label">${t('hv.editor.field.location')}</span>
+      <span class="hv-label">${t('hv.field.location')}</span>
       ${this._location.render(
         {
           triggerClass: `field-button ${this._model.locationId ? '' : 'empty'}`,
@@ -1588,7 +1588,7 @@ export class HVItemEditor extends LitElement {
     const typed = this._model.category.trim();
     const options = this._categoryOptions;
     return html`<div class="cell">
-      <label class="hv-label" for="editor-category">${t('hv.editor.field.category')}</label>
+      <label class="hv-label" for="editor-category">${t('hv.field.category')}</label>
       <div class="combo">
         <input
           id="editor-category"
@@ -1674,7 +1674,7 @@ export class HVItemEditor extends LitElement {
    */
   private _renderStatusField() {
     return html`<div class="cell">
-      <label class="hv-label" for="editor-status">${t('hv.editor.field.status')}</label>
+      <label class="hv-label" for="editor-status">${t('hv.field.status')}</label>
       <select
         id="editor-status"
         class="hv-input"
@@ -1730,7 +1730,7 @@ export class HVItemEditor extends LitElement {
               >
             </button>
             <label class="hv-label due-label ${model.checkedOut ? '' : 'muted'}" for="editor-due">
-              ${t('hv.editor.dueDate')}
+              ${t('hv.field.due_date')}
             </label>
             <input
               id="editor-due"
@@ -1770,7 +1770,7 @@ export class HVItemEditor extends LitElement {
         </div>
         <div class="group">
           <label class="hv-label group-caption" for="editor-inspection" data-testid="editor-inspection-caption">
-            ${icon('calendar', 14)} ${t('hv.editor.nextInspection')}
+            ${icon('calendar', 14)} ${t('hv.field.inspection_date')}
           </label>
           <div class="group-body">
             <input
@@ -1803,7 +1803,7 @@ export class HVItemEditor extends LitElement {
     const model = this._model;
     return html`<div class="group reminder" role="group" aria-labelledby="editor-reminder-caption">
       <span class="hv-label group-caption" id="editor-reminder-caption" data-testid="editor-reminder-caption">
-        ${icon('clock', 14)} ${t('hv.editor.reminder')}
+        ${icon('clock', 14)} ${t('hv.field.reminder_date')}
       </span>
       <div class="group-body">
         <input
@@ -2499,7 +2499,7 @@ export class HVItemEditor extends LitElement {
 
     const drop = this._dropBindings('manual');
     return html`<div class="cell span3">
-      <span class="hv-label">${t('hv.editor.documents')}</span>
+      <span class="hv-label">${t('hv.field.documents')}</span>
       <ul
         class="documents ${!this.mobile && this._dropTarget === 'manual' ? 'dropping' : ''}"
         data-testid="editor-documents"
@@ -2654,7 +2654,7 @@ export class HVItemEditor extends LitElement {
           ? html`
               <div class="cell span3">
                 <label class="hv-label" for="editor-description"
-                  >${t('hv.editor.field.description')}</label
+                  >${t('hv.field.description')}</label
                 >
                 <textarea
                   id="editor-description"
@@ -2723,12 +2723,12 @@ export class HVItemEditor extends LitElement {
           : null}
 
         <div class="grid">
-          ${this._text('name', t('hv.editor.field.name'), { testid: 'editor-name' })}
-          ${this._text('quantity', t('hv.editor.field.quantity'), {
+          ${this._text('name', t('hv.field.name'), { testid: 'editor-name' })}
+          ${this._text('quantity', t('hv.field.quantity'), {
             type: 'number',
             testid: 'editor-quantity',
           })}
-          ${this._text('lowStock', t('hv.editor.field.lowStock'), {
+          ${this._text('lowStock', t('hv.field.lowStock'), {
             type: 'number',
             testid: 'editor-low-stock',
           })}
@@ -2736,7 +2736,7 @@ export class HVItemEditor extends LitElement {
             ? null
             : html`<div class="cell span2">
                   <label class="hv-label" for="editor-description-desktop"
-                    >${t('hv.editor.field.description')}</label
+                    >${t('hv.field.description')}</label
                   >
                   <textarea
                     id="editor-description-desktop"
@@ -2751,7 +2751,7 @@ export class HVItemEditor extends LitElement {
           ${this.mobile ? this._renderStatusField() : null}
           <div class="cell span3">
             <span class="hv-label"
-              >${t('hv.editor.field.tags')}
+              >${t('hv.field.tags')}
               <span class="label-note">${t('hv.editor.field.tagsNote')}</span></span
             >
             <hv-chip-input

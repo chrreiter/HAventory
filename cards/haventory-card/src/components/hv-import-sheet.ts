@@ -372,7 +372,7 @@ export class HVImportSheet extends LitElement {
       this._parseError = null;
       return doc;
     } catch (err) {
-      this._parseError = `That is not valid JSON — ${(err as Error).message}`;
+      this._parseError = t('hv.import.invalidJson', { message: (err as Error).message });
       return null;
     }
   }
@@ -506,7 +506,7 @@ export class HVImportSheet extends LitElement {
     counts: ImportBucketCounts | undefined,
   ) {
     const caption =
-      captionKey === 'items' ? t('hv.import.tableItems') : t('hv.import.tableLocations');
+      captionKey === 'items' ? t('hv.import.tableItems') : t('hv.field.locations');
     const rows: [string, keyof ImportBucketCounts, string][] = [
       [t('hv.import.bucket.add'), 'add', 'add'],
       [t('hv.import.bucket.update'), 'update', 'update'],

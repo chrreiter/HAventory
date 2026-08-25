@@ -649,7 +649,7 @@ export class HVDataTable extends LitElement {
             >`
           : null}
         <span class="name-head" role="columnheader"
-          >${this._sortHeader('name', t('hv.table.name'))}</span
+          >${this._sortHeader('name', t('hv.field.name'))}</span
         >
         ${columns.map((key) => {
           const def = COLUMN_DEFS.find((d) => d.key === key)!;
@@ -743,7 +743,7 @@ export class HVDataTable extends LitElement {
                     <button
                       class="plain"
                       data-testid="table-edit"
-                      aria-label=${t('hv.table.edit', { name: item.name })}
+                      aria-label=${t('hv.row.editNamed', { name: item.name })}
                       @click=${(e: Event) => {
                         e.stopPropagation();
                         this._emit('edit', { itemId: item.id });
@@ -753,7 +753,7 @@ export class HVDataTable extends LitElement {
                     </button>
                     <hv-overflow-menu
                       data-testid="table-row-menu"
-                      label=${t('hv.table.actionsFor', { name: item.name })}
+                      label=${t('hv.row.actionsFor', { name: item.name })}
                       .entries=${rowMenuEntries(item)}
                       @click=${(e: Event) => e.stopPropagation()}
                       @select=${(e: CustomEvent) => {
@@ -775,7 +775,7 @@ export class HVDataTable extends LitElement {
                    is a live region already, and a second one wrapped around it
                    says everything twice. -->
               <div class="empty" role="cell" data-testid="table-empty">
-                <slot name="empty">${t('hv.table.empty')}</slot>
+                <slot name="empty">${t('hv.empty.noItems.headline')}</slot>
               </div>
             </div>`}
       </div>

@@ -638,6 +638,27 @@ describe('hv-full-view: sidebar', () => {
 
     expect(q(sr, '[data-testid="sidebar-location-error"]')?.textContent).toContain('name already used here');
   });
+
+  // One event, one sentence: the editor's inline creator reports a failure the
+  // backend put no message on in these words too, and a reader who meets it on
+  // both surfaces meets the same wording.
+  it('falls back to the card own sentence when the failure carries no message', async () => {
+    const { el, store, sr } = await mount({ items: [], locations });
+    store.createLocation = async () => {
+      throw { code: 'storage_error' };
+    };
+
+    (q(sr, '[data-testid="sidebar-new-location"]') as HTMLButtonElement).click();
+    await settle(el);
+    const input = q(sr, '[data-testid="sidebar-new-location-name"]') as HTMLInputElement;
+    input.value = 'Shelf C';
+    (q(sr, '[data-testid="sidebar-new-location-save"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(sr, '[data-testid="sidebar-location-error"]')?.textContent).toContain(
+      'The location could not be created.',
+    );
+  });
 });
 
 // The sidebar held locations and nothing else. An inventory with a handful of

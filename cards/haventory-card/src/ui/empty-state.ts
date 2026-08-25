@@ -80,7 +80,7 @@ export function emptyStateCopy(kind: EmptyKind, locationName?: string | null): E
     case 'no-matches':
       return {
         headline: t('hv.empty.noMatches.headline'),
-        offers: [{ id: 'clear-filters', label: t('hv.empty.noMatches.clearAction') }],
+        offers: [{ id: 'clear-filters', label: t('hv.action.clearAll') }],
       };
     case 'empty-location':
       return {
@@ -98,7 +98,7 @@ export function emptyStateCopy(kind: EmptyKind, locationName?: string | null): E
         detail: t('hv.empty.noItems.detail'),
         offers: [
           { id: 'add-item', label: t('hv.empty.noItems.addAction') },
-          { id: 'import', label: t('hv.empty.noItems.importAction') },
+          { id: 'import', label: t('hv.import.title') },
         ],
       };
   }

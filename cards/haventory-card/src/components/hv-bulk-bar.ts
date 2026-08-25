@@ -472,7 +472,7 @@ export class HVBulkBar extends LitElement {
 
   private _nameFor(failure: BulkFailure): string {
     const found = this.selectedItems.find((i) => i.id === failure.itemId);
-    return found?.name ?? failure.itemId ?? t('hv.bulk.itemFallback');
+    return found?.name ?? failure.itemId ?? t('hv.term.item');
   }
 
   render() {

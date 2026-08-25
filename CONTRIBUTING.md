@@ -175,10 +175,17 @@ export const DICTIONARIES: Readonly<Record<string, Dictionary>> = { en, de, fr }
 Type it `Dictionary` (a `Partial`) while it is incomplete: `t()` falls through to
 the English string for a key the dictionary has not reached, so a half-finished
 language ships as a mixed screen rather than as `hv.action.retry` printed on a
-button. Type it `Record<TranslationKey, string>` — the way `de.ts` is — once it
-is complete, and TypeScript then refuses an English string added without its
-counterpart. `catalog.test.ts` checks every registered dictionary for orphaned
-keys and for placeholders that do not match the English, whichever type it has.
+button. Type it `CompleteDictionary` — the way `de.ts` is — once it is complete,
+and TypeScript then refuses an English string added without its counterpart.
+`catalog.test.ts` checks every registered dictionary for orphaned keys and for
+placeholders that do not match the English, whichever type it has, and checks
+the ones its `COMPLETE` list names for completeness.
+
+A counted string is written per plural category rather than as a pair:
+`tn()` asks `Intl.PluralRules` for the language's category and reads
+`<key>.<category>`, so write the categories your language uses — `few` and
+`many` where it has them, `.other` alone where the noun does not inflect, since
+that is what every other category falls back to.
 
 **The integration.** Copy `custom_components/haventory/translations/en.json` to
 `<tag>.json` and translate the values. The key tree has to stay identical —

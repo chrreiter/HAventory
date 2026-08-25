@@ -590,7 +590,7 @@ export class HVLocationTree extends LitElement {
                   class="action"
                   data-testid="tree-more"
                   data-id=${node.id}
-                  aria-label=${t('hv.tree.actionsFor', { name: node.name })}
+                  aria-label=${t('hv.row.actionsFor', { name: node.name })}
                   @click=${(e: Event) => {
                     e.stopPropagation();
                     this._emit('more-location', { locationId: node.id, node });
@@ -619,7 +619,7 @@ export class HVLocationTree extends LitElement {
                   class="action"
                   data-testid="tree-edit"
                   data-id=${node.id}
-                  aria-label=${t('hv.tree.edit', { name: node.name })}
+                  aria-label=${t('hv.row.editNamed', { name: node.name })}
                   title=${t('hv.tree.editTitle')}
                   @click=${(e: Event) => {
                     e.stopPropagation();
@@ -700,7 +700,7 @@ export class HVLocationTree extends LitElement {
     const pickable = this.areaSelectable && group !== null;
     const selected =
       pickable && this.selectedAreaId === group.id && !this._anySelected() && !this.orphansSelected;
-    const name = group?.name ?? t('hv.tree.noArea');
+    const name = group?.name ?? t('hv.term.noArea');
     const label = group
       ? renderAreaChip(group.name)
       : html`<span class="hv-area-chip quiet area-none"
@@ -815,7 +815,7 @@ export class HVLocationTree extends LitElement {
         <input
           class="hv-input"
           data-testid="tree-create-name"
-          aria-label=${t('hv.tree.newLocationName')}
+          aria-label=${t('hv.fullView.newLocationName')}
           placeholder=${t('hv.tree.locationNamePlaceholder')}
           .value=${this._newName}
           @input=${(e: Event) => {
@@ -868,7 +868,7 @@ export class HVLocationTree extends LitElement {
         ].filter(Boolean)
       : this.nodes.map((n) => this._renderNode(n, 0, false)).filter(Boolean);
     return html`
-      <div role="tree" aria-label=${t('hv.tree.label')} @keydown=${this._onTreeKeydown}>
+      <div role="tree" aria-label=${t('hv.field.locations')} @keydown=${this._onTreeKeydown}>
         ${this.showAll
           ? html`<button
               class="row hv-browse-row ${!this.orphansSelected && !this._anySelected() ? 'selected' : ''}"

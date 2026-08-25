@@ -728,13 +728,13 @@ export class HVCardShell extends LitElement {
 
       ${mobile
         ? html`<hv-bottom-sheet
-            label=${t('hv.card.newItem')}
+            label=${t('hv.editor.heading.new')}
             ?open=${this._workspace.editing === 'new'}
             data-testid="add-sheet"
             @cancel=${() => this._workspace.startEdit(null)}
           >
             <div class="hv-sheet-head sheet-head">
-              <span class="heading">${t('hv.card.newItem')}</span>
+              <span class="heading">${t('hv.editor.heading.new')}</span>
               <button
                 class="hv-icon-button"
                 style="margin-left:auto"

@@ -1,5 +1,6 @@
 import { DICTIONARIES, language, resolveLanguage, setLanguage, t, tn } from './index';
-import type { Dictionary } from './index';
+import type { Dictionary, PluralKey } from './index';
+import { en } from './en';
 
 describe('resolveLanguage', () => {
   it('takes an exact tag', () => {
@@ -88,4 +89,91 @@ describe('tn', () => {
       'Removes "winter" from 2 items.',
     );
   });
+
+  it('renders every counted string the way a one/other split rendered it', () => {
+    // `Intl.PluralRules` is a wider mechanism than the two forms it reads, and
+    // the point of it is a language whose rules differ. For a language whose
+    // rules agree with the split — which is every language shipping today —
+    // nothing may move, so this walks every registered dictionary and every
+    // counted key at the three counts that separate the two forms.
+    const bases = [...new Set(Object.keys(en).filter((key) => key.endsWith('.other')))].map(
+      (key) => key.slice(0, -'.other'.length) as PluralKey,
+    );
+    for (const [tag, dictionary] of Object.entries(DICTIONARIES)) {
+      const rules = new Intl.PluralRules(tag);
+      setLanguage(tag);
+      for (const count of [0, 1, 2]) {
+        if (rules.select(count) !== (count === 1 ? 'one' : 'other')) continue;
+        for (const base of bases) {
+          const half = `${base}.${count === 1 ? 'one' : 'other'}`;
+          const before = (dictionary[half as keyof Dictionary] ??
+            dictionary[`${base}.other` as keyof Dictionary] ??
+            en[half as keyof typeof en]) as string;
+          expect([tag, half, tn(base, count)]).toEqual([
+            tag,
+            half,
+            before.replace('{count}', String(count)),
+          ]);
+        }
+      }
+    }
+    setLanguage('en');
+  });
+
+  it('asks the language which form a count wants, not English', () => {
+    // French counts zero as singular. Nothing about that is knowable from the
+    // English pair, which is the whole reason the categories come from `Intl`.
+    const fr: Dictionary = {
+      'hv.count.item.one': '{count} objet',
+      'hv.count.item.other': '{count} objets',
+    };
+    withDictionary('fr', fr, () => {
+      expect(tn('hv.count.item', 0)).toBe('0 objet');
+      expect(tn('hv.count.item', 2)).toBe('2 objets');
+    });
+  });
+
+  it('reaches a category no English key has', () => {
+    // Polish splits where English does not: `few` for 2–4, `many` above it.
+    // The dictionary type has to admit the form or this cannot be written.
+    const pl: Dictionary = {
+      'hv.count.item.one': '{count} przedmiot',
+      'hv.count.item.few': '{count} przedmioty',
+      'hv.count.item.many': '{count} przedmiotów',
+      'hv.count.item.other': '{count} przedmiotu',
+    };
+    withDictionary('pl', pl, () => {
+      expect(tn('hv.count.item', 1)).toBe('1 przedmiot');
+      expect(tn('hv.count.item', 3)).toBe('3 przedmioty');
+      expect(tn('hv.count.item', 9)).toBe('9 przedmiotów');
+    });
+  });
+
+  it('falls back to `.other` for a category the language writes no form for', () => {
+    // What a language that does not inflect the noun writes: one form, reached
+    // at every count, instead of the same string twice.
+    const fr: Dictionary = { 'hv.count.item.other': '{count} objet' };
+    withDictionary('fr', fr, () => {
+      expect(tn('hv.count.item', 1)).toBe('1 objet');
+      expect(tn('hv.count.item', 2)).toBe('2 objet');
+    });
+  });
+
+  it('falls back to English for a counted key a dictionary has not reached', () => {
+    withDictionary('fr', { 'hv.count.item.other': '{count} objet' }, () => {
+      expect(tn('hv.count.tag', 2)).toBe('2 tags');
+    });
+  });
 });
+
+/** Register a dictionary for the body of one test, then take it away again. */
+function withDictionary(tag: string, dictionary: Dictionary, body: () => void): void {
+  (DICTIONARIES as Record<string, Dictionary>)[tag] = dictionary;
+  try {
+    setLanguage(tag);
+    body();
+  } finally {
+    delete (DICTIONARIES as Record<string, Dictionary>)[tag];
+    setLanguage('en');
+  }
+}

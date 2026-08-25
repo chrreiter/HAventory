@@ -8,6 +8,7 @@
  */
 
 import { t } from '../i18n';
+import type { TranslationKey } from '../i18n';
 
 export type ColumnKey =
   | 'quantity'
@@ -39,15 +40,31 @@ export interface ColumnDef {
 }
 
 /**
+ * The two headers that take the short spelling of their field's name.
+ *
+ * Both sit on a fixed track narrower than the whole word — 70px and 100px
+ * below — where "Quantity" and "Due date" wrap onto a second line. Every other
+ * column is wide enough for the field's own name, which is the one every other
+ * surface uses.
+ */
+const SHORT_HEADERS: Partial<Record<ColumnKey, TranslationKey>> = {
+  quantity: 'hv.field.quantityShort',
+  due_date: 'hv.field.dueShort',
+};
+
+/**
  * What a column is called, in the language in force.
  *
  * Separate from `COLUMN_DEFS` below rather than a field on it: everything else
  * about a column — its order, its track size, the backend field it sorts on —
  * is the same in every language and is read at module scope, while the label is
  * copy and is not known until Home Assistant hands the card a `hass`.
+ *
+ * A header names the same field the sort menu, the editor and the detail sheet
+ * name, so it reads the same key they do.
  */
 export function columnLabel(key: ColumnKey): string {
-  return t(`hv.column.${key}`);
+  return t(SHORT_HEADERS[key] ?? `hv.field.${key}`);
 }
 
 /** Canonical column order — the default, and what "Reset order" restores. */

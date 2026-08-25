@@ -1757,4 +1757,12 @@ describe('hv-organize-dialog: the language in force', () => {
     );
     expect(tabs).toEqual(['Orte', 'Kategorien', 'Labels', 'Status']);
   });
+
+  it('names the button that creates a value in German too', async () => {
+    setLanguage('de');
+    const { el, sr } = await mount({ tab: 'tags' });
+    (q(sr, '[data-testid="organize-new-value"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(q(sr, '[data-testid="new-value-create"]')?.textContent?.trim()).toBe('Erstellen');
+  });
 });
