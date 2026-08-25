@@ -57,15 +57,10 @@ const IDENTICAL_TO_ENGLISH: Readonly<Record<string, readonly string[]>> = {
   de: [
     // Loan words and international terms German uses unchanged.
     'hv.bottomSheet.label',
-    'hv.editor.field.name',
-    'hv.editor.field.status',
     'hv.editor.type.string',
     'hv.surfaces.badge.offline',
-    'hv.column.status',
-    'hv.filter.status',
-    'hv.filter.sortField.name',
-    'hv.table.name',
-    'hv.organize.locationName',
+    'hv.field.name',
+    'hv.field.status',
     'hv.term.id',
     // Nothing but placeholders and punctuation — there is no word to move.
     'hv.editor.upload.progress',

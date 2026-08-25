@@ -506,7 +506,7 @@ export class HVImportSheet extends LitElement {
     counts: ImportBucketCounts | undefined,
   ) {
     const caption =
-      captionKey === 'items' ? t('hv.import.tableItems') : t('hv.import.tableLocations');
+      captionKey === 'items' ? t('hv.import.tableItems') : t('hv.field.locations');
     const rows: [string, keyof ImportBucketCounts, string][] = [
       [t('hv.import.bucket.add'), 'add', 'add'],
       [t('hv.import.bucket.update'), 'update', 'update'],

@@ -1329,7 +1329,7 @@ export class HVOrganizeDialog extends LitElement {
     // nothing above it to resolve from, so for it the empty value just means no area.
     const areaDefaultLabel = parent
       ? t('hv.organize.areaInherit')
-      : t('hv.organize.areaNone');
+      : t('hv.term.noArea');
     const preview = areaChangePreview(
       this.st?.locationsFlatCache ?? [],
       { id: nodeId === 'new' ? null : nodeId, parentId: this._locParent },
@@ -1341,7 +1341,7 @@ export class HVOrganizeDialog extends LitElement {
       html`<div class="expander" data-testid="location-editor" data-field="location-name" ${ref(this._reveal)}>
         <div class="grid2">
           <div class="cell ${areas.length ? '' : 'wide'}">
-            <label class="hv-label" for="org-loc-name">${t('hv.organize.locationName')}</label>
+            <label class="hv-label" for="org-loc-name">${t('hv.field.name')}</label>
             <input
               id="org-loc-name"
               class="control"
@@ -1577,7 +1577,7 @@ export class HVOrganizeDialog extends LitElement {
         count: counted(count, 'location'),
         countTestid: 'organize-location-count',
         newTestid: 'organize-new-location',
-        newLabel: t('hv.organize.newLocation'),
+        newLabel: t('hv.fullView.newLocation'),
         onNew: () => this._startLocationEdit('new'),
       })}
       <div class="body">
@@ -1652,7 +1652,7 @@ export class HVOrganizeDialog extends LitElement {
         <span data-testid="rewrite-label">${this._rewriteSummary(rewrite)}</span>
         ${rewrite.failed.length
           ? html`<span style="margin-left:auto" data-testid="rewrite-failed"
-              >${t('hv.organize.rewriteFailed', { count: rewrite.failed.length })}</span
+              >${t('hv.bulk.progressFailed', { count: rewrite.failed.length })}</span
             >`
           : null}
       </div>
@@ -1761,7 +1761,7 @@ export class HVOrganizeDialog extends LitElement {
   private _renderValueCreator() {
     return html`<div class="expander" data-testid="value-create">
       <label style="display:flex;align-items:center;gap:8px">
-        <span class="hv-sr-only">${t('hv.organize.newValueLabel', { noun: this._noun })}</span>
+        <span class="hv-sr-only">${t('hv.organize.newValue', { noun: this._noun })}</span>
         <input
           class="control"
           data-testid="new-value-name"
@@ -2214,7 +2214,7 @@ export class HVOrganizeDialog extends LitElement {
                           class="danger"
                           data-testid="value-discard"
                           aria-label=${t('hv.organize.discardValue', { value: v.value })}
-                          title=${t('hv.organize.discard')}
+                          title=${t('hv.action.discard')}
                           @click=${() => this.store?.removeDraftValue(this._kind, v.value)}
                         >
                           ${icon('del', 16)}
@@ -2368,7 +2368,7 @@ export class HVOrganizeDialog extends LitElement {
                   this.tab = tab;
                 }}
               >
-                ${t(`hv.organize.tab.${tab}`)}
+                ${t(`hv.field.${tab}`)}
               </button>`,
             )}
           </div>

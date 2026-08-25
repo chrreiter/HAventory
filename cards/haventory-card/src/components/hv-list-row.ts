@@ -589,7 +589,7 @@ export class HVListRow extends LitElement {
           <button
             data-testid="row-edit"
             aria-label=${t('hv.row.editNamed', { name: item.name })}
-            title=${t('hv.row.editItem')}
+            title=${t('hv.action.editItem')}
             @click=${(e: Event) => {
               e.stopPropagation();
               this._emit('edit');

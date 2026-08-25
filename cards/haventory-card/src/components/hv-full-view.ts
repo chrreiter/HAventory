@@ -1376,7 +1376,7 @@ export class HVFullView extends LitElement {
       this._creatingLocation = false;
     } catch (err) {
       this._locationError =
-        (err as { message?: string })?.message ?? t('hv.fullView.locationCreateFailed');
+        (err as { message?: string })?.message ?? t('hv.editor.locationCreateFailed');
     }
   }
 
@@ -1457,7 +1457,7 @@ export class HVFullView extends LitElement {
     const counts = st?.statsCounts;
     return html`
       <div class="sidebar-head">
-        ${this._renderSectionToggle('status', t('hv.filter.status'))}
+        ${this._renderSectionToggle('status', t('hv.field.status'))}
         <!-- The other sections tally how many rows they hold. Here that number
              is the size of the household's vocabulary, which says nothing
              about the inventory the facet navigates. -->
@@ -1483,7 +1483,7 @@ export class HVFullView extends LitElement {
       <div
         id=${sectionPanelId('status')}
         role="group"
-        aria-label=${t('hv.filter.status')}
+        aria-label=${t('hv.field.status')}
         ?hidden=${!this._sections.status}
         @keydown=${(e: KeyboardEvent) => this._onFacetKeydown('status', e)}
       >
@@ -1617,7 +1617,7 @@ export class HVFullView extends LitElement {
     return html`
       <div class="sidebar" data-testid="full-sidebar">
         <div class="sidebar-head">
-          ${this._renderSectionToggle('locations', t('hv.fullView.locations'))}
+          ${this._renderSectionToggle('locations', t('hv.field.locations'))}
           <!-- Categories and tags each state how many there are; locations
                offered a "+" and no number, so the one section you can add to was
                also the one you could not size up. -->
@@ -1647,7 +1647,7 @@ export class HVFullView extends LitElement {
         ${this._renderStatusSection()}
         ${this._renderFacetSection(
           'categories',
-          t('hv.fullView.categories'),
+          t('hv.field.categories'),
           distinct?.categories ?? [],
           (v) => selectedCategories.has(v),
           (v) =>
@@ -1659,7 +1659,7 @@ export class HVFullView extends LitElement {
         )}
         ${this._renderFacetSection(
           'tags',
-          t('hv.fullView.tags'),
+          t('hv.field.tags'),
           distinct?.tags ?? [],
           (v) => selectedTags.has(v),
           (v) =>
@@ -1830,7 +1830,7 @@ export class HVFullView extends LitElement {
                       ? html`<span class="current">${seg}</span>`
                       : html`<span>${seg} › </span>`,
                   )
-                : html`<span class="current">${t('hv.fullView.allItems')}</span>`}${st?.total !== null &&
+                : html`<span class="current">${t('hv.tree.allItems')}</span>`}${st?.total !== null &&
             st?.total !== undefined
               ? html` · ${counted(st.total, 'item')}`
               : null}
@@ -2073,8 +2073,8 @@ export class HVFullView extends LitElement {
           <button
             class="tap"
             data-testid="full-organize"
-            aria-label=${t('hv.fullView.organize')}
-            title=${t('hv.fullView.organize')}
+            aria-label=${t('hv.organize.title')}
+            title=${t('hv.organize.title')}
             @click=${() =>
               this.dispatchEvent(
                 new CustomEvent('menu-action', { detail: { id: 'organize' }, bubbles: true, composed: true }),

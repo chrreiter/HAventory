@@ -301,8 +301,10 @@ Every string above — and every string in every component — comes out of `src
   editor's `customFieldTypes()` are all functions for that one reason.
 - **Whole sentences, not fragments glued at the call site.** Word order is a language's own,
   and a sentence assembled from three keys can only ever be English word order with foreign
-  words in it. Two shared namespaces keep that from multiplying: `hv.action.*` for the verbs
-  and `hv.term.*` for the facts more than one surface states.
+  words in it. Three shared namespaces keep that from multiplying: `hv.action.*` for the verbs,
+  `hv.term.*` for the facts more than one surface states, and `hv.field.*` for what an item's
+  fields are called — one key per word, read by the column header, the sort option, the editor
+  label, the facet tab and the detail sheet's fact row alike.
 - **Deliberately untranslated**: `DEFAULT_CARD_TITLE` (a product name, pinned to `const.py`),
   the card-picker entry and `setConfig`'s refusal in `index.ts` (both run before any `hass`
   exists), the diagnostics panel's copy-to-clipboard report (it is read by a maintainer), and

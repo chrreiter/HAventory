@@ -25,13 +25,12 @@ const SRC = join(__dirname, '..');
 const COMPUTED_PREFIXES = [
   // `counted(n, noun)` over `CountNoun`, itself read off the key universe.
   'hv.count.',
-  // `columnLabel(key)` over `ColumnKey`.
-  'hv.column.',
-  // The sort select, over `SORT_FIELDS`.
-  'hv.filter.sortField.',
-  // The organize dialog's four tabs, and its rewrite progress line — one
-  // prefix per stage, completed with the operation being run.
-  'hv.organize.tab.',
+  // The one namespace three call sites complete: `columnLabel(key)` over
+  // `ColumnKey`, the sort select over `SORT_FIELDS`, the organize dialog's
+  // tabs over `OrganizeTab`.
+  'hv.field.',
+  // The organize dialog's rewrite progress line — one prefix per stage,
+  // completed with the operation being run.
   'hv.organize.rewrite.running.',
   'hv.organize.rewrite.nothing.',
   'hv.organize.rewrite.partial.',

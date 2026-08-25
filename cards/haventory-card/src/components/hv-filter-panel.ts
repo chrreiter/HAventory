@@ -48,8 +48,8 @@ const LOCATION_TREE_ID = 'filter-location-tree-holder';
 type DateField = 'updated' | 'created';
 
 const DATE_KEYS = {
-  updated: { after: 'updatedAfter', before: 'updatedBefore', noun: 'hv.filter.dateNoun.updated' },
-  created: { after: 'createdAfter', before: 'createdBefore', noun: 'hv.filter.dateNoun.created' },
+  updated: { after: 'updatedAfter', before: 'updatedBefore', noun: 'hv.field.updated_at' },
+  created: { after: 'createdAfter', before: 'createdBefore', noun: 'hv.field.created_at' },
 } as const;
 
 /**
@@ -572,7 +572,7 @@ export class HVFilterPanel extends LitElement {
     if (!all.length) return null;
     return html`
       <div class="group">
-        <span class="hv-label">${t('hv.filter.category')}</span>
+        <span class="hv-label">${t('hv.field.category')}</span>
         <div class="chips">
           ${shown.map(
             (c) => html`<button
@@ -625,7 +625,7 @@ export class HVFilterPanel extends LitElement {
     return html`
       <div class="group">
         <div class="group-head">
-          <span class="hv-label">${t('hv.filter.tags')}</span>
+          <span class="hv-label">${t('hv.field.tags')}</span>
           <!-- Beside its own heading, not pushed to the far edge: an auto margin
                parked Any/All against the right rim of a full-width panel, a
                screen's width from the word it qualifies and directly above an
@@ -793,7 +793,7 @@ export class HVFilterPanel extends LitElement {
     const c = this.counts;
     return html`
       <div class="group">
-        <span class="hv-label">${t('hv.filter.status')}</span>
+        <span class="hv-label">${t('hv.field.status')}</span>
         <div class="chips">
           ${statusList(this.statuses).map(({ slug: s }) => {
             const on = f.status === s;
@@ -903,7 +903,7 @@ export class HVFilterPanel extends LitElement {
             >
               ${SORT_FIELDS.map(
                 (field) => html`<option value=${field} ?selected=${f.sort.field === field}>
-                  ${t(`hv.filter.sortField.${field}`)}
+                  ${t(`hv.field.${field}`)}
                 </option>`,
               )}
             </select>
@@ -924,7 +924,7 @@ export class HVFilterPanel extends LitElement {
             )}
           </span>
           ${this._renderCheckbox(
-            t('hv.filter.lowStockFirst'),
+            t('hv.term.lowStockFirst'),
             f.lowStockFirst,
             () => this._patch({ lowStockFirst: !f.lowStockFirst }),
             { testid: 'filter-low-stock-first' },

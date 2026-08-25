@@ -225,7 +225,7 @@ export class HostSurfaces {
       },
       {
         id: 'diagnostics',
-        label: t('hv.surfaces.menu.diagnostics'),
+        label: t('hv.diagnostics.title'),
         glyph: 'alertCircle',
         // Badge only when there is actually something wrong — otherwise it is a plain row.
         ...(this.diagnosticsBadge ? { badge: this.diagnosticsBadge } : {}),

@@ -36,7 +36,6 @@ export const en = {
   'hv.empty.connectionLost.headline': "Can't reach Home Assistant",
   'hv.empty.connectionLost.detail': 'The list will fill in once the connection is back.',
   'hv.empty.noMatches.headline': 'No items match these filters',
-  'hv.empty.noMatches.clearAction': 'Clear all',
   'hv.empty.emptyLocation.headline': 'Nothing in {location}',
   // A separate sentence rather than a "this location" filler in the one above:
   // German takes a different preposition for a named place than for an unnamed
@@ -47,7 +46,6 @@ export const en = {
   'hv.empty.noItems.headline': 'No items yet',
   'hv.empty.noItems.detail': 'Add your first item, or restore a backup.',
   'hv.empty.noItems.addAction': 'Add your first item',
-  'hv.empty.noItems.importAction': 'Import backup',
 
   // ui/banners — the two stacks that say something is wrong.
   'hv.banner.connectionLost.heading': 'Connection lost',
@@ -184,6 +182,7 @@ export const en = {
   'hv.action.repeat': 'Retry',
   'hv.action.clearAll': 'Clear all',
   'hv.action.deleteItem': 'Delete item',
+  'hv.action.editItem': 'Edit item',
   'hv.action.checkIn': 'Check in',
   'hv.action.checkOut': 'Check out',
   'hv.action.checkOutEllipsis': 'Check out…',
@@ -191,12 +190,16 @@ export const en = {
   'hv.action.copied': 'Copied',
 
   // Words the card names a fact with, wherever it names one.
+  // The first stands in for an item whose name is not to hand.
+  'hv.term.item': 'Item',
   'hv.term.noLocation': 'No location',
+  'hv.term.noArea': 'No area',
   'hv.term.checkedOut': 'Checked out',
   'hv.term.overdue': 'Overdue',
   'hv.term.inspectionDue': 'Inspection due',
   'hv.term.low': 'Low',
   'hv.term.lowStock': 'Low stock',
+  'hv.term.lowStockFirst': 'Low stock first',
   'hv.term.notSet': 'Not set',
   'hv.term.yes': 'Yes',
   'hv.term.no': 'No',
@@ -233,7 +236,6 @@ export const en = {
   'hv.card.showItems': 'Show items',
   'hv.card.showCount.one': 'Show {count} item',
   'hv.card.showCount.other': 'Show {count} items',
-  'hv.card.newItem': 'New item',
   'hv.card.notConnected': 'Not connected to Home Assistant yet.',
 
   // hv-list — the one row the list draws that is not an item.
@@ -244,52 +246,33 @@ export const en = {
   'hv.row.hasDocument': 'Has a document',
   'hv.row.decreaseQuantity': 'Decrease quantity',
   'hv.row.increaseQuantity': 'Increase quantity',
-  'hv.row.editItem': 'Edit item',
   'hv.row.editNamed': 'Edit {name}',
   'hv.row.actionsFor': 'Actions for {name}',
   'hv.row.menu.changeDueDate': 'Change due date…',
   'hv.row.menu.setDueDate': 'Set due date…',
 
   // hv-detail-sheet.
-  'hv.sheet.label': 'Item',
-  'hv.sheet.documents': 'Documents',
   'hv.sheet.documentAdded': 'added {when}',
   'hv.sheet.openPhoto': 'Open {photo}',
   'hv.sheet.lowStockAt': 'low-stock at {threshold}',
-  'hv.sheet.fact.due': 'Due',
-  'hv.sheet.fact.nextInspection': 'Next inspection',
-  'hv.sheet.fact.reminder': 'Reminder',
-  'hv.sheet.fact.updated': 'Updated',
   'hv.sheet.updatedValue': '{when} · v{version}',
   'hv.sheet.markDone': 'Mark done',
   'hv.sheet.markDoneTitle': 'Mark this reminder done and move it to its next occurrence',
   'hv.sheet.editDetails': 'Edit details',
-  'hv.sheet.editItem': 'Edit item',
 
   // hv-item-editor.
   'hv.editor.heading.new': 'New item',
   'hv.editor.heading.editing': '{name} — editing',
   'hv.editor.version': 'v{version} · updated {when}',
   'hv.editor.close': 'Close editor',
-  'hv.editor.field.name': 'Name',
-  'hv.editor.field.quantity': 'Quantity',
-  'hv.editor.field.lowStock': 'Low-stock at',
-  'hv.editor.field.description': 'Description',
-  'hv.editor.field.status': 'Status',
-  'hv.editor.field.location': 'Location',
-  'hv.editor.field.category': 'Category',
-  'hv.editor.field.tags': 'Tags',
   'hv.editor.field.tagsNote': '· always lowercase',
   'hv.editor.categoryPlaceholder': 'No category',
   'hv.editor.showAllCategories': 'Show all categories',
   'hv.editor.categoryEmpty': 'No existing category matches “{typed}” — saving adds it as a new one.',
   'hv.editor.locationCreateFailed': 'The location could not be created.',
   'hv.editor.checkOutCaption': 'Check out',
-  'hv.editor.dueDate': 'Due date',
   'hv.editor.dueDateHint': 'A due date applies while the item is checked out.',
   'hv.editor.thisItem': 'this item',
-  'hv.editor.nextInspection': 'Next inspection',
-  'hv.editor.reminder': 'Reminder',
   'hv.editor.reminderDate': 'Reminder date',
   'hv.editor.repeatEvery': 'Repeat every',
   'hv.editor.repeatUnit': 'Repeat unit',
@@ -324,7 +307,6 @@ export const en = {
   'hv.editor.makeCover': 'Make cover',
   'hv.editor.makePhotoCover': 'Make photo {position} the cover',
   'hv.editor.coverPhoto': 'Cover photo',
-  'hv.editor.documents': 'Documents',
   'hv.editor.addManual': 'Add manual',
   'hv.editor.openDocument': 'Open document',
   'hv.editor.openNamed': 'Open {name}',
@@ -368,24 +350,18 @@ export const en = {
   'hv.checkout.noDueDate': 'No due date',
   'hv.checkout.clearDueDate': 'Clear due date',
   'hv.checkout.withoutDueDate': 'Check out with no due date',
-  'hv.checkout.set': 'Set',
   'hv.checkout.confirmWithDate': '{action} · due {date}',
 
   // hv-location-tree.
-  'hv.tree.label': 'Locations',
   'hv.tree.allItems': 'All items',
-  'hv.tree.noArea': 'No area',
   'hv.tree.noneMatch': 'No locations match',
   'hv.tree.noneYet': 'No locations yet',
   'hv.tree.newLocation': 'New location…',
-  'hv.tree.newLocationName': 'New location name',
   'hv.tree.locationNamePlaceholder': 'Location name',
   'hv.tree.collapse': 'Collapse {name}',
   'hv.tree.expand': 'Expand {name}',
-  'hv.tree.actionsFor': 'Actions for {name}',
   'hv.tree.merge': 'Merge {name}',
   'hv.tree.mergeTitle': 'Merge into another location',
-  'hv.tree.edit': 'Edit {name}',
   'hv.tree.editTitle': 'Edit location',
   'hv.tree.delete': 'Delete {name}',
   'hv.tree.deleteTitle': 'Delete location',
@@ -410,7 +386,6 @@ export const en = {
   'hv.surfaces.menu.columns': 'Columns…',
   'hv.surfaces.menu.refresh': 'Refresh data',
   'hv.surfaces.menu.refreshMeta': 'Items · Locations · Stats',
-  'hv.surfaces.menu.diagnostics': 'Diagnostics',
   'hv.surfaces.menu.data': 'Data',
   'hv.surfaces.menu.exportAll': 'Export backup',
   'hv.surfaces.menu.exportAllSub': 'Everything',
@@ -438,16 +413,39 @@ export const en = {
   'hv.term.moveUp': 'Move up',
   'hv.term.moveDown': 'Move down',
 
-  // store/columns — the table's column headers, and what the picker lists.
-  'hv.column.quantity': 'Qty',
-  'hv.column.status': 'Status',
-  'hv.column.category': 'Category',
-  'hv.column.location': 'Location',
-  'hv.column.tags': 'Tags',
-  'hv.column.due_date': 'Due',
-  'hv.column.inspection_date': 'Next inspection',
-  'hv.column.reminder_date': 'Reminder',
-  'hv.column.updated_at': 'Updated',
+  // What the card calls a field of an item, wherever it names one: a column
+  // header, a sort option, an editor label, a facet's tab or section, a fact
+  // row in the detail sheet. One key per word rather than one per surface —
+  // the same noun in the same role, and a language that would need two of them
+  // for two surfaces has not turned up yet.
+  //
+  // The date fields keep the backend's spelling because the call sites that
+  // build the key finish it with a `ColumnKey` or a `SortField`; the plurals
+  // are spelled as the organize dialog's `OrganizeTab` values, for the same
+  // reason.
+  'hv.field.name': 'Name',
+  'hv.field.quantity': 'Quantity',
+  'hv.field.status': 'Status',
+  'hv.field.category': 'Category',
+  'hv.field.location': 'Location',
+  'hv.field.tags': 'Tags',
+  'hv.field.description': 'Description',
+  'hv.field.lowStock': 'Low-stock at',
+  'hv.field.documents': 'Documents',
+  'hv.field.due_date': 'Due date',
+  'hv.field.inspection_date': 'Next inspection',
+  'hv.field.reminder_date': 'Reminder',
+  'hv.field.updated_at': 'Updated',
+  'hv.field.created_at': 'Created',
+  // The short spellings, for the slots that are narrower than the word: two
+  // table columns on a fixed track, and the detail sheet's fact rows.
+  'hv.field.quantityShort': 'Qty',
+  'hv.field.dueShort': 'Due',
+  // A whole set of one field's values, which is what a tab, a sidebar section
+  // and the import preview's tables name.
+  'hv.field.locations': 'Locations',
+  'hv.field.categories': 'Categories',
+  'hv.field.statuses': 'Statuses',
 
   // store — what the card says when a command does not come back. The
   // backend's own `message` text is not translated; these are the card's.
@@ -469,16 +467,13 @@ export const en = {
 
   // hv-filter-chips — each chip names its own facet, because the row has no
   // headings above it and a bare value could be any of them.
-  'hv.chips.locationFallback': 'Location',
   'hv.chips.plusSub': '{paths} + sub',
-  'hv.chips.area': 'Area: {name}',
   'hv.chips.category': 'Category: {values}',
   'hv.chips.categories': 'Categories: {values}',
   'hv.chips.tagsAny': 'any of: {values}',
   'hv.chips.tagsAll': 'all of: {values}',
   'hv.chips.status': 'Status: {label}',
   'hv.chips.lowStockOnly': 'Low stock only',
-  'hv.chips.lowStockFirst': 'Low stock first',
   'hv.chips.updatedAfter': 'Updated ≥',
   'hv.chips.updatedBefore': 'Updated ≤',
   'hv.chips.createdAfter': 'Created ≥',
@@ -491,16 +486,13 @@ export const en = {
   'hv.filter.area': 'Area',
   'hv.filter.areaAny': 'Area: Any',
   'hv.filter.includeSubtree': 'Include sub-locations',
-  'hv.filter.category': 'Category',
   'hv.filter.more': 'More…',
   'hv.filter.categoryHint': 'Any of the picked categories',
-  'hv.filter.tags': 'Tags',
   'hv.filter.tagMatchMode': 'Tag match mode',
   'hv.filter.addTag': 'Add tag',
   'hv.filter.addTagPlaceholder': '+ add tag…',
   'hv.filter.tagsHint': 'Tags are always lowercase',
   'hv.filter.showOnly': 'Show only',
-  'hv.filter.status': 'Status',
   'hv.filter.changed': 'Changed',
   'hv.filter.dateSince': '{noun} since',
   'hv.filter.dateBefore': '{noun} before',
@@ -508,8 +500,6 @@ export const en = {
   'hv.filter.dateFlipToBefore': '{noun} since — switch to before',
   'hv.filter.dateTitleBefore': 'Before this date — click for "since"',
   'hv.filter.dateTitleSince': 'Since this date — click for "before"',
-  'hv.filter.dateNoun.updated': 'Updated',
-  'hv.filter.dateNoun.created': 'Created',
   'hv.filter.sort': 'Sort',
   'hv.filter.sortBy': 'Sort by',
   'hv.filter.sortDirection': 'Sort direction',
@@ -517,26 +507,13 @@ export const en = {
   'hv.filter.oldest': 'Oldest',
   'hv.filter.descending': 'Descending',
   'hv.filter.ascending': 'Ascending',
-  'hv.filter.lowStockFirst': 'Low stock first',
   'hv.filter.sortHint': 'Undated items always sort last, in both directions',
   'hv.filter.summary': '{filters} active',
   'hv.filter.summaryMatching': '{filters} active · {total} of {grandTotal} match',
-  'hv.filter.sortField.updated_at': 'Updated',
-  'hv.filter.sortField.created_at': 'Created',
-  'hv.filter.sortField.name': 'Name',
-  'hv.filter.sortField.quantity': 'Quantity',
-  'hv.filter.sortField.due_date': 'Due date',
-  'hv.filter.sortField.inspection_date': 'Next inspection',
-  'hv.filter.sortField.reminder_date': 'Reminder',
-  'hv.filter.sortField.location': 'Location',
 
   // hv-data-table.
-  'hv.table.name': 'Name',
   'hv.table.selectAll': 'Select all loaded rows',
   'hv.table.select': 'Select {name}',
-  'hv.table.edit': 'Edit {name}',
-  'hv.table.actionsFor': 'Actions for {name}',
-  'hv.table.empty': 'No items yet',
 
   // hv-bulk-bar.
   'hv.bulk.toolbar': 'Bulk actions',
@@ -560,7 +537,6 @@ export const en = {
   'hv.bulk.succeeded': '{done} of {total} succeeded.',
   'hv.bulk.selectionKept': 'Selection kept to the {rows}',
   'hv.bulk.retryFailed': 'Retry {count} failed',
-  'hv.bulk.itemFallback': 'Item',
   'hv.bulk.failure.conflict': 'Conflict — changed by another client since you loaded it.',
   'hv.bulk.failure.notFound': 'Not found — deleted before this ran.',
   'hv.bulk.failure.rejected': 'Rejected — {message}',
@@ -577,7 +553,6 @@ export const en = {
   'hv.bulk.label.delete': 'Delete',
 
   // hv-full-view.
-  'hv.fullView.locationCreateFailed': 'Could not create that location.',
   'hv.fullView.tagsAnyTitle': 'Items with any of the selected tags',
   'hv.fullView.tagsAllTitle': 'Items with all of them',
   'hv.fullView.newStatus': 'New status…',
@@ -585,12 +560,8 @@ export const en = {
   'hv.fullView.newCategory': 'New category…',
   'hv.fullView.noTagsYet': 'No tags in use yet',
   'hv.fullView.noCategoriesYet': 'No categories in use yet',
-  'hv.fullView.locations': 'Locations',
-  'hv.fullView.categories': 'Categories',
-  'hv.fullView.tags': 'Tags',
   'hv.fullView.newLocation': 'New location',
   'hv.fullView.newLocationName': 'New location name',
-  'hv.fullView.allItems': 'All items',
   'hv.fullView.chooseColumns': 'Choose columns',
   'hv.fullView.exitSelection': 'Exit selection',
   'hv.fullView.selectedCount': '{count} selected',
@@ -601,7 +572,6 @@ export const en = {
   'hv.fullView.openMenu': 'Open the Home Assistant menu',
   'hv.fullView.menu': 'Menu',
   'hv.fullView.close': 'Close full view',
-  'hv.fullView.organize': 'Organize',
   'hv.fullView.selectionHonesty':
     '{loaded} of {total} loaded · scroll to load more. Select-all covers loaded rows only.',
   'hv.fullView.scrollToLoadMore': ' · scroll to load more',
@@ -659,7 +629,6 @@ export const en = {
   'hv.import.previewTitle': 'Import backup · preview',
   'hv.import.step2': 'Step 2 of 2 · validated on the server, nothing written yet · policy',
   'hv.import.tableItems': 'Items',
-  'hv.import.tableLocations': 'Locations',
   'hv.import.bucket.add': 'Add',
   'hv.import.bucket.update': 'Update',
   'hv.import.bucket.conflict': 'Conflict',
@@ -694,10 +663,6 @@ export const en = {
 
   // hv-organize-dialog.
   'hv.organize.title': 'Organize',
-  'hv.organize.tab.locations': 'Locations',
-  'hv.organize.tab.categories': 'Categories',
-  'hv.organize.tab.tags': 'Tags',
-  'hv.organize.tab.statuses': 'Statuses',
   'hv.organize.noun.tag': 'tag',
   'hv.organize.noun.category': 'category',
   'hv.organize.plural.tags': 'tags',
@@ -706,11 +671,9 @@ export const en = {
   'hv.organize.filterLocationsPlaceholder': 'Filter locations…',
   'hv.organize.filterValues': 'Filter {values}',
   'hv.organize.filterValuesPlaceholder': 'Filter {values}…',
-  'hv.organize.newLocation': 'New location',
   'hv.organize.newStatus': 'New status',
   'hv.organize.newValue': 'New {noun}',
   'hv.organize.newValuePlaceholder': 'New {noun}…',
-  'hv.organize.newValueLabel': 'New {noun}',
   'hv.organize.valueNeedsName': 'A {noun} needs a name.',
   'hv.organize.valueExists': '"{name}" already exists.',
   'hv.organize.draftNote': 'A {noun} exists through the items using it — there is nothing to create on the server. This one is kept on the card and offered while editing items, until an item takes it.',
@@ -733,7 +696,6 @@ export const en = {
   'hv.organize.removeFromEveryItem': 'Remove from every item',
   'hv.organize.removeFromAllItems': 'Remove from all items',
   'hv.organize.discardValue': 'Discard {value}',
-  'hv.organize.discard': 'Discard',
   'hv.organize.actionsFor': 'Actions for {value}',
   'hv.organize.removeHeading': 'Remove "{value}" from {items}?',
   'hv.organize.removeMessage':
@@ -745,10 +707,8 @@ export const en = {
   'hv.organize.locationReadFailed': 'Could not read that location’s items.',
   'hv.organize.mergeKeptSource': '"{name}" was kept: {items} could not be moved.',
   'hv.organize.mergeMovedNotRemoved': 'Moved the items, but "{name}" could not be removed.',
-  'hv.organize.locationName': 'Name',
   'hv.organize.locationArea': 'Area (HA)',
   'hv.organize.areaInherit': 'Inherit from location tree',
-  'hv.organize.areaNone': 'No area',
   'hv.organize.parentLocation': 'Parent location',
   'hv.organize.parentLocationNote': '(moves whole subtree)',
   'hv.organize.topLevel': 'Top level',
@@ -786,7 +746,6 @@ export const en = {
   'hv.organize.reassignAndDelete': 'Reassign and delete',
   'hv.organize.rewriteNote':
     'Sent as one batch call · already-rewritten items keep the new value, so cancelling or a failure part-way is not undone.',
-  'hv.organize.rewriteFailed': '{count} failed',
   'hv.organize.rewriteFailure': '{itemId} — {reason}',
   'hv.organize.rewrite.running.merge': 'Merge {done} of {total}',
   'hv.organize.rewrite.running.rename': 'Rename {done} of {total}',

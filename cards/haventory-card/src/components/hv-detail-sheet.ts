@@ -675,7 +675,7 @@ export class HVDetailSheet extends LitElement {
     const docs = manuals(item.attachments);
     if (!docs.length) return null;
     return html`<div class="documents" data-testid="sheet-documents">
-      <h3>${t('hv.sheet.documents')}</h3>
+      <h3>${t('hv.field.documents')}</h3>
       <ul>
         ${docs.map((doc) => {
           const src = this._urls.get(item.id, doc.id, attachmentNameToken(doc));
@@ -816,20 +816,20 @@ export class HVDetailSheet extends LitElement {
 
       <div class="facts">
         <div class="fact" data-testid="sheet-fact" data-key="due">
-          <span>${t('hv.sheet.fact.due')}</span>
+          <span>${t('hv.field.dueShort')}</span>
           <span class="value ${item.due_date ? '' : 'unset'} ${overdue ? 'late' : ''}"
             >${item.due_date ? formatDate(item.due_date) : t('hv.term.notSet')}</span
           >
         </div>
         <div class="fact" data-testid="sheet-fact" data-key="inspection">
-          <span>${t('hv.sheet.fact.nextInspection')}</span>
+          <span>${t('hv.field.inspection_date')}</span>
           <span class="value ${item.inspection_date ? '' : 'unset'} ${inspectionDue ? 'late' : ''}"
             >${item.inspection_date ? formatDate(item.inspection_date) : t('hv.term.notSet')}</span
           >
         </div>
         ${hasReminder(item)
           ? html`<div class="fact" data-testid="sheet-fact" data-key="reminder">
-              <span>${t('hv.sheet.fact.reminder')}</span>
+              <span>${t('hv.field.reminder_date')}</span>
               <span
                 class="value ${isReminderDue(item) ? 'late' : ''}"
                 data-testid="sheet-reminder"
@@ -850,7 +850,7 @@ export class HVDetailSheet extends LitElement {
           : null}
         ${customEntries.map(([key, value]) => this._renderCustomFact(key, value))}
         <div class="fact" data-testid="sheet-fact" data-key="updated">
-          <span>${t('hv.sheet.fact.updated')}</span>
+          <span>${t('hv.field.updated_at')}</span>
           <span class="value" data-testid="sheet-updated"
             >${t('hv.sheet.updatedValue', {
               when: relativeTime(item.updated_at),
@@ -948,7 +948,7 @@ export class HVDetailSheet extends LitElement {
         >
           ${icon('arrowLeft', 21)}
         </button>
-        <span class="heading">${t('hv.sheet.editItem')}</span>
+        <span class="heading">${t('hv.action.editItem')}</span>
         <button
           class="save"
           data-testid="sheet-save"
@@ -997,7 +997,7 @@ export class HVDetailSheet extends LitElement {
         data-testid="detail-sheet"
         ?open=${this.open && !!item}
         ?noHandle=${this._mode === 'edit'}
-        label=${item?.name ?? t('hv.sheet.label')}
+        label=${item?.name ?? t('hv.term.item')}
         @cancel=${(e: Event) => {
           // The inner sheet's cancel is composed, so it would reach the host as
           // "the detail sheet closed" — before this sheet has decided whether it
