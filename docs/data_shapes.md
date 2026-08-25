@@ -161,7 +161,11 @@ export document:
   characters of lowercase letters, digits and underscores.
 - `label` is the only part a rename touches, so renaming a status rewrites no item and
   raises no `version` question, exactly as a location rename does not touch `location_path`
-  semantics.
+  semantics. The three a store is seeded with — `ok`, `missing`, `needs_repair` — are stored
+  in English and *displayed* by the card in each reader's own language for as long as each
+  still carries that seeded English; renaming one replaces it for everyone, in every
+  language. Nothing writes a translation back, so an export stays language-neutral and its
+  built-ins import as built-ins on any instance.
 - `order` is display order alone; ties break by slug.
 - `color` is one of ten tone tokens — `neutral`, `green`, `blue`, `amber`, `red`, each also in
   a `_strong` form — **or** a `#rrggbb` literal. A token is resolved by the card against the
