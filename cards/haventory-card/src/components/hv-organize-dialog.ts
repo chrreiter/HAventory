@@ -2036,11 +2036,10 @@ export class HVOrganizeDialog extends LitElement {
     // rename that would take the translation away from everyone. Dropped as
     // soon as the box stops holding the stored label: from that keystroke on
     // it is a new name, and the translation no longer describes it.
-    const editing = creating ? undefined : this._statusDefs.find((d) => d.slug === slug);
+    const stored = creating ? undefined : this._statusDefs.find((d) => d.slug === slug);
+    const shown = stored ? displayLabel(stored) : null;
     const printsAs =
-      editing && this._statusLabel === editing.label && displayLabel(editing) !== editing.label
-        ? displayLabel(editing)
-        : null;
+      stored && this._statusLabel === stored.label && shown !== stored.label ? shown : null;
     return keyed(
       slug,
       html`<div class="expander" data-testid="status-editor" data-field="status-label" ${ref(this._reveal)}>
