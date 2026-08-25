@@ -612,8 +612,12 @@ describe('hv-organize-dialog: locations', () => {
       const { el, store, sr } = await mount({ items, locations });
       const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
       let browsed = 0;
+      let dismissed = 0;
       el.addEventListener('browse', () => {
         browsed += 1;
+      });
+      el.addEventListener('cancel', () => {
+        dismissed += 1;
       });
 
       (tree.shadowRoot?.querySelector(`[data-testid="${testid}"][data-id="garage"]`) as HTMLButtonElement).click();
@@ -622,7 +626,7 @@ describe('hv-organize-dialog: locations', () => {
       expect(store.state.value.filters.locationIds, testid).toEqual(['garage']);
       // Organizing happens full-screen; so should the list it hands back.
       expect(browsed, testid).toBe(1);
-      expect(el.open, testid).toBe(false);
+      expect(dismissed, testid).toBe(1);
       el.remove();
     }
   });
@@ -738,12 +742,16 @@ describe('hv-organize-dialog: tags and categories', () => {
     const { el, store, sr } = await mount({ items, tab: 'tags' });
     const rows = all(sr, '[data-testid="value-row"]').map((r) => r.dataset.value);
     expect(rows).toEqual(['aa', 'batery', 'battery']);
+    let dismissed = 0;
+    el.addEventListener('cancel', () => {
+      dismissed += 1;
+    });
 
     (all(sr, '[data-testid="value-count"]')[1] as HTMLButtonElement).click();
     await settle(el);
 
     expect(store.state.value.filters.tags).toEqual(['batery']);
-    expect(el.open).toBe(false);
+    expect(dismissed).toBe(1);
   });
 
   // Two tabs of the same shape, so the chip has to say which facet is on
@@ -1015,8 +1023,12 @@ describe('hv-organize-dialog: statuses', () => {
       items: [ladder, makeItem({ id: 'i2', name: 'Rake' })],
     });
     let browsed = 0;
+    let dismissed = 0;
     el.addEventListener('browse', () => {
       browsed += 1;
+    });
+    el.addEventListener('cancel', () => {
+      dismissed += 1;
     });
 
     const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
@@ -1026,7 +1038,7 @@ describe('hv-organize-dialog: statuses', () => {
     expect(store.state.value.filters.status).toBe('missing');
     // Organizing happens full-screen; so should the list it hands back.
     expect(browsed).toBe(1);
-    expect(el.open).toBe(false);
+    expect(dismissed).toBe(1);
   });
 
   it('creates a status, deriving the slug from the label', async () => {
@@ -1563,6 +1575,23 @@ describe('hv-organize-dialog: disclosures come into view', () => {
     await settle(el);
 
     expect(scrolls).toHaveLength(1);
+  });
+
+  // The mode is half a value editor's identity: switching a row from rename to
+  // merge swaps the form under one element, and it is a different question.
+  it('reveals the value editor again when the same row switches mode', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'battery')!;
+    (row.querySelector('[data-testid="value-rename"]') as HTMLButtonElement).click();
+    await settle(el);
+    (row.querySelector('[data-testid="value-merge"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = q(sr, '[data-testid="value-editor"]') as HTMLElement;
+    expect(editor.dataset.mode).toBe('merge');
+    expect(scrolls).toHaveLength(2);
+    expect(scrolls[1].el).toBe(editor);
+    expect(sr.activeElement).toBe(q(sr, '[data-testid="value-target"]'));
   });
 
   it('scrolls again when a second row opens the same kind of disclosure', async () => {

@@ -2,13 +2,10 @@ import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { dialogSheet } from '../ui/dialog-sheet';
-import { onEscape } from '../ui/keyboard';
+import { Modal, modalChrome, modalSheet } from '../ui/modal';
 import { icon } from '../ui/icons';
 import { counted } from '../ui/plural';
 import { relativeTime } from '../ui/relative-time';
-import { nextZBase } from '../utils/zindex';
-import { DialogFocus } from '../ui/dialog-focus';
 import { copyText } from '../ui/clipboard';
 import type { DegradedState, StatsCounts, VersionInfo } from '../store/types';
 
@@ -25,15 +22,8 @@ export class HVDiagnosticsPanel extends LitElement {
   static styles = [
     tokens,
     base,
+    modalChrome,
     css`
-      :host {
-        display: block;
-      }
-      .backdrop {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.35);
-      }
       /*
        * The single implicit track of a centring grid is auto-sized, and an
        * auto track takes the width its item asks for — 470px — however narrow
@@ -47,27 +37,14 @@ export class HVDiagnosticsPanel extends LitElement {
        * growing past the top and bottom edges.
        */
       .wrap {
-        position: fixed;
-        inset: 0;
-        display: grid;
         grid-template-columns: minmax(0, 1fr);
         grid-template-rows: minmax(0, 1fr);
-        place-items: center;
-        padding: 16px;
-        box-sizing: border-box;
       }
       .panel {
         width: 470px;
-        max-width: 100%;
         max-height: 100%;
-        box-sizing: border-box;
         display: flex;
         flex-direction: column;
-        background: var(--hv-surface);
-        color: var(--hv-text);
-        border-radius: var(--hv-radius-dialog);
-        box-shadow: var(--hv-shadow-dialog);
-        overflow: hidden;
       }
       .head {
         display: flex;
@@ -183,7 +160,7 @@ export class HVDiagnosticsPanel extends LitElement {
         margin-left: auto;
       }
     `,
-    dialogSheet,
+    modalSheet,
   ];
 
   @property({ type: Boolean, reflect: true }) open = false;
@@ -198,28 +175,15 @@ export class HVDiagnosticsPanel extends LitElement {
   @property({ type: String }) lastRefresh: string | null = null;
   @property({ type: Boolean }) busy = false;
 
-  @state() private _zBase = 0;
   @state() private _copied = false;
 
-
-  /** Opening a surface must put focus in it, or Escape never reaches it. */
-  private _dialogFocus = new DialogFocus();
-
-  protected updated() {
-    this._dialogFocus.sync(this.open, () =>
-      this.renderRoot.querySelector<HTMLElement>('[data-testid="diagnostics-panel"]'),
-    );
-  }
+  private _modal = new Modal(this, { open: () => this.open });
 
   protected willUpdate(changed: Map<string, unknown>) {
-    if (changed.has('open') && this.open) {
-      this._zBase = nextZBase();
-      this._copied = false;
-    }
+    if (changed.has('open') && this.open) this._copied = false;
   }
 
   private _close = () => {
-    this.open = false;
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
 
@@ -236,112 +200,106 @@ export class HVDiagnosticsPanel extends LitElement {
 
   render() {
     if (!this.open) return null;
-    const z = this._zBase || 9998;
     const live = !!this.connected?.items && !this.degraded?.connectionLost;
 
-    return html`
-      <div class="backdrop" role="presentation" style="z-index:${z}" @click=${this._close}></div>
-      <div class="wrap" role="none" style="z-index:${z + 1}">
-        <div
-          class="panel"
-          role="dialog"
-          aria-modal="true"
-          aria-label=${t('hv.diagnostics.title')}
-          data-testid="diagnostics-panel"
-          @keydown=${onEscape(() => this._close())}
-        >
-          <div class="head">
-            <span style="color: var(--hv-${live ? 'success' : 'warn'})">
-              ${icon(live ? 'checkCircle' : 'alert', 20)}
+    return this._modal.render(
+      {
+        label: t('hv.diagnostics.title'),
+        testid: 'diagnostics-panel',
+        onClose: this._close,
+      },
+      html`
+        <div class="head">
+          <span style="color: var(--hv-${live ? 'success' : 'warn'})">
+            ${icon(live ? 'checkCircle' : 'alert', 20)}
+          </span>
+          <h2>${t('hv.diagnostics.title')}</h2>
+          <button
+            class="hv-pill outline"
+            data-testid="health-refresh"
+            ?disabled=${this.busy}
+            @click=${() => this.dispatchEvent(new CustomEvent('refresh', { bubbles: true, composed: true }))}
+          >
+            ${icon('refresh', 15)}${this.busy
+              ? t('hv.diagnostics.refreshing')
+              : t('hv.action.refresh')}
+          </button>
+        </div>
+
+        <div class="body">
+          <div class="status ${live ? 'ok' : 'bad'}" data-testid="diagnostics-status">
+            <span class="dot"></span>
+            <span>
+              ${live
+                ? html`<strong>${t('hv.diagnostics.noIssues')}</strong
+                    >${t('hv.diagnostics.noIssuesDetail')}`
+                : html`<strong>${t('hv.diagnostics.notLive')}</strong
+                    >${t('hv.diagnostics.notLiveDetail')}`}
             </span>
-            <h2>${t('hv.diagnostics.title')}</h2>
-            <button
-              class="hv-pill outline"
-              data-testid="health-refresh"
-              ?disabled=${this.busy}
-              @click=${() => this.dispatchEvent(new CustomEvent('refresh', { bubbles: true, composed: true }))}
-            >
-              ${icon('refresh', 15)}${this.busy
-                ? t('hv.diagnostics.refreshing')
-                : t('hv.action.refresh')}
-            </button>
           </div>
 
-          <div class="body">
-            <div class="status ${live ? 'ok' : 'bad'}" data-testid="diagnostics-status">
-              <span class="dot"></span>
-              <span>
+          <div class="tiles">
+            <div class="tile">
+              <div class="value" data-testid="diagnostics-since">
+                ${this.lastRefresh ? relativeTime(this.lastRefresh) : '—'}
+              </div>
+              <div class="label">${t('hv.diagnostics.sinceLastRefresh')}</div>
+            </div>
+          </div>
+
+          <div class="facts">
+            <div class="fact">
+              <span>${t('hv.diagnostics.subscriptions')}</span>
+              <span class="value ${live ? 'live' : 'stale'}" data-testid="diagnostics-subscriptions">
                 ${live
-                  ? html`<strong>${t('hv.diagnostics.noIssues')}</strong
-                      >${t('hv.diagnostics.noIssuesDetail')}`
-                  : html`<strong>${t('hv.diagnostics.notLive')}</strong
-                      >${t('hv.diagnostics.notLiveDetail')}`}
+                  ? t('hv.diagnostics.subscriptionsLive')
+                  : t('hv.diagnostics.subscriptionsDown')}
               </span>
             </div>
-
-            <div class="tiles">
-              <div class="tile">
-                <div class="value" data-testid="diagnostics-since">
-                  ${this.lastRefresh ? relativeTime(this.lastRefresh) : '—'}
-                </div>
-                <div class="label">${t('hv.diagnostics.sinceLastRefresh')}</div>
-              </div>
+            <div class="fact">
+              <span>${t('hv.diagnostics.dataLoaded')}</span>
+              <span class="value" data-testid="diagnostics-loaded">
+                ${t('hv.diagnostics.loadedValue', {
+                  loaded: this.loadedItems,
+                  items: this.counts
+                    ? counted(this.counts.items_total, 'item')
+                    : t('hv.diagnostics.unknownItems'),
+                  locations: this.counts
+                    ? counted(this.counts.locations_total, 'location')
+                    : t('hv.diagnostics.unknownLocations'),
+                })}
+              </span>
             </div>
-
-            <div class="facts">
-              <div class="fact">
-                <span>${t('hv.diagnostics.subscriptions')}</span>
-                <span class="value ${live ? 'live' : 'stale'}" data-testid="diagnostics-subscriptions">
-                  ${live
-                    ? t('hv.diagnostics.subscriptionsLive')
-                    : t('hv.diagnostics.subscriptionsDown')}
-                </span>
-              </div>
-              <div class="fact">
-                <span>${t('hv.diagnostics.dataLoaded')}</span>
-                <span class="value" data-testid="diagnostics-loaded">
-                  ${t('hv.diagnostics.loadedValue', {
-                    loaded: this.loadedItems,
-                    items: this.counts
-                      ? counted(this.counts.items_total, 'item')
-                      : t('hv.diagnostics.unknownItems'),
-                    locations: this.counts
-                      ? counted(this.counts.locations_total, 'location')
-                      : t('hv.diagnostics.unknownLocations'),
-                  })}
-                </span>
-              </div>
-              <div class="fact">
-                <span>${t('hv.diagnostics.integrationVersion')}</span>
-                <span class="value" data-testid="diagnostics-version">
-                  ${this.version?.integration_version ?? '—'}
-                </span>
-              </div>
+            <div class="fact">
+              <span>${t('hv.diagnostics.integrationVersion')}</span>
+              <span class="value" data-testid="diagnostics-version">
+                ${this.version?.integration_version ?? '—'}
+              </span>
             </div>
-
-            <span class="note">${t('hv.diagnostics.healthyNote')}</span>
           </div>
 
-          <div class="foot">
-            <span class="spacer"></span>
-            <button
-              class="hv-text-button"
-              data-testid="diagnostics-copy"
-              @click=${async () => {
-                this._copied = await copyText(this.report);
-              }}
-            >
-              ${this._copied ? t('hv.action.copied') : t('hv.diagnostics.copyReport')}
-            </button>
-            <!-- This panel reports; it commits nothing. Its way out is drawn as
-                 an outline so the filled shape keeps meaning "this writes". -->
-            <button class="hv-pill outline" data-testid="diagnostics-close" @click=${this._close}>
-              ${t('hv.action.close')}
-            </button>
-          </div>
+          <span class="note">${t('hv.diagnostics.healthyNote')}</span>
         </div>
-      </div>
-    `;
+
+        <div class="foot">
+          <span class="spacer"></span>
+          <button
+            class="hv-text-button"
+            data-testid="diagnostics-copy"
+            @click=${async () => {
+              this._copied = await copyText(this.report);
+            }}
+          >
+            ${this._copied ? t('hv.action.copied') : t('hv.diagnostics.copyReport')}
+          </button>
+          <!-- This panel reports; it commits nothing. Its way out is drawn as
+               an outline so the filled shape keeps meaning "this writes". -->
+          <button class="hv-pill outline" data-testid="diagnostics-close" @click=${this._close}>
+            ${t('hv.action.close')}
+          </button>
+        </div>
+      `,
+    );
   }
 }
 

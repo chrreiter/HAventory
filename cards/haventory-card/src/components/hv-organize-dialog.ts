@@ -3,10 +3,13 @@ import type { TranslationKey } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
+import { keyed } from 'lit/directives/keyed.js';
+import { ref } from 'lit/directives/ref.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, tagLabel } from '../ui/chip';
-import { onEscape } from '../ui/keyboard';
+import { Modal, modalChrome } from '../ui/modal';
 import { icon } from '../ui/icons';
+import type { IconName } from '../ui/icons';
 import { counted } from '../ui/plural';
 import {
   DEFAULT_STATUS,
@@ -28,8 +31,6 @@ import { areaChangePreview, areaNameById } from '../ui/area';
 import type { AreaChangePreview } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
 import { countLocations } from '../store/location-tree';
-import { nextZBase } from '../utils/zindex';
-import { DialogFocus } from '../ui/dialog-focus';
 import { COPIED_MS, copyText } from '../ui/clipboard';
 import { describeFailure } from './hv-bulk-bar';
 import { makeBulkOp } from '../store/store';
@@ -103,9 +104,9 @@ export class HVOrganizeDialog extends LitElement {
     tokens,
     base,
     chip,
+    modalChrome,
     css`
       :host {
-        display: block;
         /*
          * The vertical padding of every row in this dialog, declared once so
          * the four tabs cannot drift apart: the value rows below read it, and
@@ -115,18 +116,8 @@ export class HVOrganizeDialog extends LitElement {
          */
         --hv-organize-row-pad: 8px;
       }
-      .backdrop {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.4);
-      }
       .wrap {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
         padding: 24px;
-        box-sizing: border-box;
       }
       :host([mobile]) .wrap {
         padding: 0;
@@ -134,16 +125,9 @@ export class HVOrganizeDialog extends LitElement {
       }
       .panel {
         width: 620px;
-        max-width: 100%;
         max-height: 100%;
-        box-sizing: border-box;
         display: flex;
         flex-direction: column;
-        background: var(--hv-surface);
-        color: var(--hv-text);
-        border-radius: var(--hv-radius-dialog);
-        box-shadow: var(--hv-shadow-dialog);
-        overflow: hidden;
       }
       /* Mobile is a full-bleed page, not a floating modal. */
       :host([mobile]) .panel {
@@ -718,7 +702,6 @@ export class HVOrganizeDialog extends LitElement {
   @property({ type: String }) tab: OrganizeTab = 'locations';
   @property({ type: Boolean, reflect: true }) mobile = false;
 
-  @state() private _zBase = 0;
   @state() private _filter = '';
   /** Location being edited, `'new'` for the create row, or null. */
   @state() private _editingLocation: string | 'new' | null = null;
@@ -763,6 +746,8 @@ export class HVOrganizeDialog extends LitElement {
 
   private _storeUnsub?: () => void;
 
+  private _modal = new Modal(this, { open: () => this.open });
+
   private get st(): StoreState | null {
     return this.store?.state.value ?? null;
   }
@@ -801,90 +786,41 @@ export class HVOrganizeDialog extends LitElement {
     }, COPIED_MS);
   }
 
-
-  /** Opening a surface must put focus in it, or Escape never reaches it. */
-  private _dialogFocus = new DialogFocus();
-
-  /** Which disclosure of each kind the last render left on screen. */
-  private _shown = new Map<string, string | null>();
+  /** Whether this update is the one that puts the dialog on screen. */
+  private _opening = false;
 
   /**
-   * Every surface that expands *after* the row that opened it, inside the
-   * scrolling `.body`: what identifies the one currently open, the element to
-   * bring into view, and — for the forms — the field that takes focus.
-   *
-   * A guard is `role="alert"`: it announces where it stands and takes no focus,
-   * because it refuses an action and pulling the caret out of the list would
-   * answer a tap the household did not make. A form opened from a row leaves
-   * the keyboard on that row's button unless its first field claims the caret.
-   * The touch layout's ⋮ sheets are neither — a menu needs showing but claims
-   * no field.
-   */
-  private get _disclosures(): { testid: string; open: string | null; field?: string }[] {
-    const value = this._editingValue;
-    return [
-      { testid: 'location-editor', open: this._editingLocation, field: 'location-name' },
-      { testid: 'location-guard', open: this._guard?.locationId ?? null },
-      // On a phone the ⋮ sheet is the only way into edit, merge and delete, so
-      // it is the tap that has to land somewhere visible for any of them to be
-      // reachable at all.
-      { testid: 'location-sheet', open: this._sheetLocation },
-      { testid: 'value-sheet', open: this._sheetValue },
-      // The mode is half the identity: switching a row from rename to merge
-      // swaps the form under the same element.
-      {
-        testid: 'value-editor',
-        open: value ? `${value.mode}:${value.value}` : null,
-        field: 'value-target',
-      },
-      { testid: 'status-editor', open: this._editingStatus, field: 'status-label' },
-      { testid: 'status-guard', open: this._statusGuard?.slug ?? null },
-    ];
-  }
-
-  /**
-   * Bring a disclosure into view as it opens.
-   *
-   * Every one renders below its trigger inside a pane that scrolls, so one
+   * Bring a disclosure into view as it opens, and hand a form's first field the
+   * caret. Each renders below its trigger inside a pane that scrolls, so one
    * opened from a row near the bottom lands off screen and the tap reads as
-   * having done nothing — worst on the two guards, which stand between a tap
-   * and a batch of items changing. `block: 'nearest'` scrolls only as far as it
-   * must and names no `behavior`, so nothing already on screen moves under the
-   * user and there is no motion to gate on a reduced-motion preference. Keyed
-   * on which disclosure is open rather than on the render, so typing inside an
-   * open editor never moves the pane.
+   * having done nothing. `block: 'nearest'` moves nothing already on screen and
+   * names no `behavior`, so there is no motion to gate on a preference.
+   *
+   * A ref fires when the element is built and not on the re-renders that
+   * follow, which is what "newly open" means — as long as each disclosure is
+   * `keyed` on what it is about, so a second row rebuilds it. Only a form takes
+   * the caret: a guard announces itself through `role="alert"`, and a ⋮ sheet
+   * is a menu, so pulling focus into either answers a tap nobody made.
+   *
+   * Not on the update that opens the dialog, where a disclosure carried over
+   * from last time would scroll a pane nobody has looked at and take focus off
+   * the panel `Modal` just put it on. And a microtask late, because a ref fires
+   * while its subtree is still detached, where a scroll has nothing to act on
+   * and `focus()` is a silent no-op.
    */
-  private _revealDisclosures() {
-    if (!this.open) {
-      this._shown.clear();
-      return;
-    }
-    // A dialog re-opened with a disclosure still expanded is DialogFocus's
-    // moment, not this one's: the first render after open records what is on
-    // screen and moves nothing.
-    const seeding = this._shown.size === 0;
-    for (const disclosure of this._disclosures) {
-      const was = this._shown.get(disclosure.testid) ?? null;
-      this._shown.set(disclosure.testid, disclosure.open);
-      if (seeding || disclosure.open === null || disclosure.open === was) continue;
-      const el = this.renderRoot.querySelector<HTMLElement>(
-        `[data-testid="${disclosure.testid}"]`,
-      );
+  private _reveal = (el?: Element) => {
+    if (!el || this._opening) return;
+    queueMicrotask(() => {
+      if (!el.isConnected) return;
       // Scrolling needs a layout, and an environment that performs none offers
       // no `scrollIntoView` to call.
-      el?.scrollIntoView?.({ block: 'nearest' });
-      if (disclosure.field) {
-        this.renderRoot
-          .querySelector<HTMLElement>(`[data-testid="${disclosure.field}"]`)
-          ?.focus();
-      }
-    }
-  }
+      (el as HTMLElement).scrollIntoView?.({ block: 'nearest' });
+      const field = (el as HTMLElement).dataset.field;
+      if (field) el.querySelector<HTMLElement>(`[data-testid="${field}"]`)?.focus();
+    });
+  };
 
   protected updated() {
-    this._dialogFocus.sync(this.open, () =>
-      this.renderRoot.querySelector<HTMLElement>('[data-testid="organize-dialog"]'),
-    );
     // A native select stops following its options' `selected` attributes once it
     // has been touched, so an area chosen in the parent tree is written to the
     // live element rather than left to the bindings to express.
@@ -892,7 +828,7 @@ export class HVOrganizeDialog extends LitElement {
       '[data-testid="location-area"]',
     );
     if (areaSelect) areaSelect.value = this._locArea ?? '';
-    this._revealDisclosures();
+    this._opening = false;
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
@@ -901,7 +837,7 @@ export class HVOrganizeDialog extends LitElement {
       this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
     }
     if (changed.has('open') && this.open) {
-      this._zBase = nextZBase();
+      this._opening = true;
       this._resetTransient();
     }
     if (changed.has('tab')) this._resetTransient();
@@ -925,9 +861,107 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   private _close = () => {
-    this.open = false;
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
+
+  // ---------- Chrome the four tabs share ----------
+  /**
+   * A tab's head row: what it is filtering, how many there are, and the one
+   * thing this tab creates. Statuses are a fixed vocabulary to scroll rather
+   * than a list to search, so the field is optional.
+   */
+  private _renderToolbar(opts: {
+    search?: { label: string; placeholder: string };
+    count: string;
+    countTestid: string;
+    newTestid: string;
+    newLabel: string;
+    onNew: () => void;
+  }) {
+    return html`<div class="toolbar">
+      ${opts.search
+        ? html`<label class="search">
+            ${icon('magnify', 17)}
+            <span class="hv-sr-only">${opts.search.label}</span>
+            <input
+              data-testid="organize-filter"
+              placeholder=${opts.search.placeholder}
+              .value=${this._filter}
+              @input=${(e: Event) => {
+                this._filter = (e.target as HTMLInputElement).value;
+              }}
+            />
+          </label>`
+        : null}
+      <span class="toolbar-count" data-testid=${opts.countTestid}>${opts.count}</span>
+      <button class="hv-pill" data-testid=${opts.newTestid} @click=${opts.onNew}>
+        ${icon('plus', 15)}${opts.newLabel}
+      </button>
+    </div>`;
+  }
+
+  /**
+   * The commit row every inline form and guard ends with. A guard's commit is a
+   * text button in the error ink: it is the destructive half of a refusal, and
+   * the filled shape would read as the recommended way on.
+   */
+  private _renderFooter(opts: {
+    lead?: unknown;
+    cancelTestid: string;
+    onCancel: () => void;
+    testid: string;
+    label: unknown;
+    onCommit: () => void;
+    disabled?: boolean;
+    danger?: boolean;
+  }) {
+    return html`<div class="actions">
+      ${opts.lead ?? null}
+      <span class="spacer"></span>
+      <button class="hv-text-button" data-testid=${opts.cancelTestid} @click=${opts.onCancel}>
+        ${t('hv.action.cancel')}
+      </button>
+      <button
+        class=${opts.danger ? 'hv-text-button danger' : 'hv-pill'}
+        data-testid=${opts.testid}
+        ?disabled=${opts.disabled ?? false}
+        @click=${opts.onCommit}
+      >
+        ${opts.label}
+      </button>
+    </div>`;
+  }
+
+  /** Touch has no hover, so a row's actions live in a sheet instead of beside it. */
+  private _renderActionSheet(
+    testid: string,
+    key: string,
+    actions: {
+      testid: string;
+      glyph: IconName;
+      label: unknown;
+      trailing?: unknown;
+      danger?: boolean;
+      onPick: () => void;
+    }[],
+  ) {
+    return keyed(
+      key,
+      html`<div class="expander" data-testid=${testid} ${ref(this._reveal)}>
+        <div class="sheet-actions">
+          ${actions.map(
+            (a) => html`<button
+              class=${a.danger ? 'danger' : ''}
+              data-testid=${a.testid}
+              @click=${a.onPick}
+            >
+              ${icon(a.glyph, 20)}${a.label}${a.trailing ?? null}
+            </button>`,
+          )}
+        </div>
+      </div>`,
+    );
+  }
 
   // ---------- Locations ----------
   private _findNode(nodes: LocationTreeNode[], id: string): LocationTreeNode | null {
@@ -1294,168 +1328,171 @@ export class HVOrganizeDialog extends LitElement {
       this._locArea,
     );
 
-    return html`<div class="expander" data-testid="location-editor">
-      <div class="grid2">
-        <div class="cell ${areas.length ? '' : 'wide'}">
-          <label class="hv-label" for="org-loc-name">${t('hv.organize.locationName')}</label>
-          <input
-            id="org-loc-name"
-            class="control"
-            data-testid="location-name"
-            .value=${this._locName}
-            @input=${(e: Event) => {
-              this._locName = (e.target as HTMLInputElement).value;
-            }}
-          />
-        </div>
-        ${
-          // An inventory whose Home Assistant defines no areas has nothing to pick
-          // from, and the select would offer its own empty option alone.
-          areas.length
-            ? html`<div class="cell">
-                <label class="hv-label" for="org-loc-area">${t('hv.organize.locationArea')}</label>
-                <select
-                  id="org-loc-area"
-                  class="control"
-                  data-testid="location-area"
-                  @change=${(e: Event) => {
-                    this._locArea = (e.target as HTMLSelectElement).value || null;
-                  }}
-                >
-                  <option value="" ?selected=${!this._locArea}>${areaDefaultLabel}</option>
-                  ${areas.map(
-                    (a) => html`<option value=${a.id} ?selected=${this._locArea === a.id}>${a.name}</option>`,
-                  )}
-                </select>
-                ${this._renderAreaPreview(preview)}
-              </div>`
-            : null
-        }
-        <div class="cell wide">
-          <span class="hv-label">
-            ${t('hv.organize.parentLocation')}
-            <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--hv-text-tertiary)">
-              ${t('hv.organize.parentLocationNote')}
-            </span>
-          </span>
-          <button
-            class="control"
-            data-testid="location-parent"
-            aria-expanded=${String(this._locParentOpen)}
-            aria-controls=${LOC_PARENT_TREE_ID}
-            @click=${() => {
-              this._locParentOpen = !this._locParentOpen;
-            }}
-          >
-            ${icon('mapMarker', 15)}<span class="value">${this._parentLabel(parent, areas)}</span>
-            ${icon('chevronDown', 15)}
-          </button>
-          <div class="tree-holder" id=${LOC_PARENT_TREE_ID} ?hidden=${!this._locParentOpen}>
-            ${this._locParentOpen
-              ? html`<hv-location-tree
-                  data-testid="location-parent-tree"
-                  .nodes=${tree}
-                  .areas=${areas}
-                  .selectedId=${this._locParent}
-                  .selectedAreaId=${this._locParent === null ? this._locArea : null}
-                  .excludeSubtreeOf=${node?.id ?? null}
-                  showAll
-                  allLabel=${t('hv.organize.topLevel')}
-                  areaSelectable
-                  showEmptyAreas
-                  @select=${(e: CustomEvent) => {
-                    this._locParent = (e.detail as { locationId: string | null }).locationId;
-                    this._locParentOpen = false;
-                  }}
-                  @select-area=${(e: CustomEvent) => {
-                    // An area heads the top level rather than sitting in the
-                    // tree, so picking one is both halves of the move: out to
-                    // the top level, and into that area.
-                    this._locParent = null;
-                    this._locArea = (e.detail as { areaId: string }).areaId;
-                    this._locParentOpen = false;
-                  }}
-                ></hv-location-tree>`
-              : null}
+    return keyed(
+      nodeId,
+      html`<div class="expander" data-testid="location-editor" data-field="location-name" ${ref(this._reveal)}>
+        <div class="grid2">
+          <div class="cell ${areas.length ? '' : 'wide'}">
+            <label class="hv-label" for="org-loc-name">${t('hv.organize.locationName')}</label>
+            <input
+              id="org-loc-name"
+              class="control"
+              data-testid="location-name"
+              .value=${this._locName}
+              @input=${(e: Event) => {
+                this._locName = (e.target as HTMLInputElement).value;
+              }}
+            />
           </div>
-        </div>
-        ${
-          // haventory.item_create and location_create take this string as
-          // location_id / parent_id. A location that has not been saved yet has
-          // none, so the create form says nothing rather than showing a blank.
-          nodeId === 'new'
-            ? null
-            : html`<div class="cell wide">
-                <span class="hv-label">${t('hv.term.id')}</span>
-                <div class="id-row">
-                  <code data-testid="location-id">${nodeId}</code>
-                  <button
-                    class="hv-text-button"
-                    data-testid="location-copy-id"
-                    @click=${() => void this._copyId(nodeId)}
+          ${
+            // An inventory whose Home Assistant defines no areas has nothing to pick
+            // from, and the select would offer its own empty option alone.
+            areas.length
+              ? html`<div class="cell">
+                  <label class="hv-label" for="org-loc-area">${t('hv.organize.locationArea')}</label>
+                  <select
+                    id="org-loc-area"
+                    class="control"
+                    data-testid="location-area"
+                    @change=${(e: Event) => {
+                      this._locArea = (e.target as HTMLSelectElement).value || null;
+                    }}
                   >
-                    ${this._copiedId ? t('hv.action.copied') : t('hv.action.copy')}
-                  </button>
-                </div>
-              </div>`
-        }
-      </div>
-      ${this._locError
-        ? html`<div class="failure" role="alert" data-testid="location-error">${this._locError}</div>`
-        : null}
-      <div class="actions">
-        ${node
-          ? html`<button
-              class="hv-text-button danger"
-              data-testid="location-delete"
-              @click=${() => void this._deleteLocation(node)}
+                    <option value="" ?selected=${!this._locArea}>${areaDefaultLabel}</option>
+                    ${areas.map(
+                      (a) => html`<option value=${a.id} ?selected=${this._locArea === a.id}>${a.name}</option>`,
+                    )}
+                  </select>
+                  ${this._renderAreaPreview(preview)}
+                </div>`
+              : null
+          }
+          <div class="cell wide">
+            <span class="hv-label">
+              ${t('hv.organize.parentLocation')}
+              <span style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--hv-text-tertiary)">
+                ${t('hv.organize.parentLocationNote')}
+              </span>
+            </span>
+            <button
+              class="control"
+              data-testid="location-parent"
+              aria-expanded=${String(this._locParentOpen)}
+              aria-controls=${LOC_PARENT_TREE_ID}
+              @click=${() => {
+                this._locParentOpen = !this._locParentOpen;
+              }}
             >
-              ${t('hv.action.delete')}
-            </button>`
+              ${icon('mapMarker', 15)}<span class="value">${this._parentLabel(parent, areas)}</span>
+              ${icon('chevronDown', 15)}
+            </button>
+            <div class="tree-holder" id=${LOC_PARENT_TREE_ID} ?hidden=${!this._locParentOpen}>
+              ${this._locParentOpen
+                ? html`<hv-location-tree
+                    data-testid="location-parent-tree"
+                    .nodes=${tree}
+                    .areas=${areas}
+                    .selectedId=${this._locParent}
+                    .selectedAreaId=${this._locParent === null ? this._locArea : null}
+                    .excludeSubtreeOf=${node?.id ?? null}
+                    showAll
+                    allLabel=${t('hv.organize.topLevel')}
+                    areaSelectable
+                    showEmptyAreas
+                    @select=${(e: CustomEvent) => {
+                      this._locParent = (e.detail as { locationId: string | null }).locationId;
+                      this._locParentOpen = false;
+                    }}
+                    @select-area=${(e: CustomEvent) => {
+                      // An area heads the top level rather than sitting in the
+                      // tree, so picking one is both halves of the move: out to
+                      // the top level, and into that area.
+                      this._locParent = null;
+                      this._locArea = (e.detail as { areaId: string }).areaId;
+                      this._locParentOpen = false;
+                    }}
+                  ></hv-location-tree>`
+                : null}
+            </div>
+          </div>
+          ${
+            // haventory.item_create and location_create take this string as
+            // location_id / parent_id. A location that has not been saved yet has
+            // none, so the create form says nothing rather than showing a blank.
+            nodeId === 'new'
+              ? null
+              : html`<div class="cell wide">
+                  <span class="hv-label">${t('hv.term.id')}</span>
+                  <div class="id-row">
+                    <code data-testid="location-id">${nodeId}</code>
+                    <button
+                      class="hv-text-button"
+                      data-testid="location-copy-id"
+                      @click=${() => void this._copyId(nodeId)}
+                    >
+                      ${this._copiedId ? t('hv.action.copied') : t('hv.action.copy')}
+                    </button>
+                  </div>
+                </div>`
+          }
+        </div>
+        ${this._locError
+          ? html`<div class="failure" role="alert" data-testid="location-error">${this._locError}</div>`
           : null}
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="location-cancel"
-          @click=${() => {
+        ${this._renderFooter({
+          lead: node
+            ? html`<button
+                class="hv-text-button danger"
+                data-testid="location-delete"
+                @click=${() => void this._deleteLocation(node)}
+              >
+                ${t('hv.action.delete')}
+              </button>`
+            : null,
+          cancelTestid: 'location-cancel',
+          onCancel: () => {
             this._editingLocation = null;
-          }}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button class="hv-pill" data-testid="location-save" @click=${() => void this._saveLocation()}>
-          ${t('hv.action.save')}
-        </button>
-      </div>
-    </div>`;
+          },
+          testid: 'location-save',
+          label: t('hv.action.save'),
+          onCommit: () => void this._saveLocation(),
+        })}
+      </div>`,
+    );
   }
 
-  /** Touch has no hover, so a location's actions live in a sheet — as on the value rows. */
   private _renderLocationSheet(node: LocationTreeNode) {
     const count = node.subtree_item_count ?? 0;
-    return html`<div class="expander" data-testid="location-sheet">
-      <div class="sheet-actions">
-        <button data-testid="location-sheet-show" @click=${() => this._showLocation(node.id)}>
-          ${icon('magnify', 20)}${t('hv.organize.showItems', { items: counted(count, 'item') })}
-        </button>
-        <button data-testid="location-sheet-edit" @click=${() => this._startLocationEdit(node.id)}>
-          ${icon('pencil', 20)}${t('hv.organize.editEllipsis')}
-        </button>
-        <button data-testid="location-sheet-merge" @click=${() => this._startLocationMerge(node.id)}>
-          ${icon('callMerge', 20)}${t('hv.organize.mergeIntoEllipsis')}
-        </button>
-        <button
-          class="danger"
-          data-testid="location-sheet-delete"
-          @click=${() => {
-            this._sheetLocation = null;
-            void this._deleteLocation(node);
-          }}
-        >
-          ${icon('del', 20)}${t('hv.action.delete')}
-        </button>
-      </div>
-    </div>`;
+    return this._renderActionSheet('location-sheet', node.id, [
+      {
+        testid: 'location-sheet-show',
+        glyph: 'magnify',
+        label: t('hv.organize.showItems', { items: counted(count, 'item') }),
+        onPick: () => this._showLocation(node.id),
+      },
+      {
+        testid: 'location-sheet-edit',
+        glyph: 'pencil',
+        label: t('hv.organize.editEllipsis'),
+        onPick: () => this._startLocationEdit(node.id),
+      },
+      {
+        testid: 'location-sheet-merge',
+        glyph: 'callMerge',
+        label: t('hv.organize.mergeIntoEllipsis'),
+        onPick: () => this._startLocationMerge(node.id),
+      },
+      {
+        testid: 'location-sheet-delete',
+        glyph: 'del',
+        label: t('hv.action.delete'),
+        danger: true,
+        onPick: () => {
+          this._sheetLocation = null;
+          void this._deleteLocation(node);
+        },
+      },
+    ]);
   }
 
   /** The merge step: pick where this location's contents should end up. */
@@ -1518,28 +1555,18 @@ export class HVOrganizeDialog extends LitElement {
                 : ''
             }`}
       </span>
-      <div class="actions">
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="merge-cancel"
-          @click=${() => {
-            this._mergingLocation = null;
-          }}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button
-          class="hv-pill"
-          data-testid="merge-apply"
-          ?disabled=${!this._mergeTarget}
-          @click=${() => {
-            if (this._mergeTarget) void this._runLocationMerge(source, this._mergeTarget);
-          }}
-        >
-          ${t('hv.action.merge')}
-        </button>
-      </div>
+      ${this._renderFooter({
+        cancelTestid: 'merge-cancel',
+        onCancel: () => {
+          this._mergingLocation = null;
+        },
+        testid: 'merge-apply',
+        label: t('hv.action.merge'),
+        disabled: !this._mergeTarget,
+        onCommit: () => {
+          if (this._mergeTarget) void this._runLocationMerge(source, this._mergeTarget);
+        },
+      })}
     </div>`;
   }
 
@@ -1551,30 +1578,17 @@ export class HVOrganizeDialog extends LitElement {
     // tabs count their values, so all three tabs state a total in one idiom.
     const count = countLocations(tree, this._filter);
     return html`
-      <div class="toolbar">
-        <label class="search">
-          ${icon('magnify', 17)}
-          <span class="hv-sr-only">${t('hv.organize.filterLocations')}</span>
-          <input
-            data-testid="organize-filter"
-            placeholder=${t('hv.organize.filterLocationsPlaceholder')}
-            .value=${this._filter}
-            @input=${(e: Event) => {
-              this._filter = (e.target as HTMLInputElement).value;
-            }}
-          />
-        </label>
-        <span class="toolbar-count" data-testid="organize-location-count">
-          ${counted(count, 'location')}
-        </span>
-        <button
-          class="hv-pill"
-          data-testid="organize-new-location"
-          @click=${() => this._startLocationEdit('new')}
-        >
-          ${icon('plus', 15)}${t('hv.organize.newLocation')}
-        </button>
-      </div>
+      ${this._renderToolbar({
+        search: {
+          label: t('hv.organize.filterLocations'),
+          placeholder: t('hv.organize.filterLocationsPlaceholder'),
+        },
+        count: counted(count, 'location'),
+        countTestid: 'organize-location-count',
+        newTestid: 'organize-new-location',
+        newLabel: t('hv.organize.newLocation'),
+        onNew: () => this._startLocationEdit('new'),
+      })}
       <div class="body">
         ${this._editingLocation === 'new' ? this._renderLocationEditor('new') : null}
         ${this._rewrite ? this._renderRewrite() : null}
@@ -1609,10 +1623,13 @@ export class HVOrganizeDialog extends LitElement {
           ? this._renderLocationEditor(this._editingLocation)
           : null}
         ${this._guard
-          ? html`<div class="guard" role="alert" data-testid="location-guard">
-              <span class="guard-mark">${icon('alert', 17)}</span>
-              <span>${this._guard.message}</span>
-            </div>`
+          ? keyed(
+              this._guard.locationId,
+              html`<div class="guard" role="alert" data-testid="location-guard" ${ref(this._reveal)}>
+                <span class="guard-mark">${icon('alert', 17)}</span>
+                <span>${this._guard.message}</span>
+              </div>`,
+            )
           : null}
       </div>
     `;
@@ -1697,58 +1714,57 @@ export class HVOrganizeDialog extends LitElement {
       .filter((v) => v !== value);
     const target = this._valueDraft.trim();
 
-    return html`<div class="expander" data-testid="value-editor" data-mode=${editing.mode}>
-      <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
-        ${this._valueChip(value, { style: merging ? 'text-decoration: line-through' : undefined })}
-        <span style="font-size:12.5px;color:var(--hv-text-secondary)">${counted(count, 'item')}</span>
-        ${merging ? icon('arrowRight', 18) : null}
-        <label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
-          <span class="hv-sr-only"
-            >${merging ? t('hv.organize.mergeInto') : t('hv.organize.newName')}</span
-          >
-          <input
-            class="control"
-            data-testid="value-target"
-            list="hv-organize-values"
-            placeholder=${merging
-              ? t('hv.organize.mergeIntoPlaceholder')
-              : t('hv.organize.newNamePlaceholder')}
-            .value=${this._valueDraft}
-            @input=${(e: Event) => {
-              this._valueDraft = (e.target as HTMLInputElement).value;
-            }}
-          />
-        </label>
-        <datalist id="hv-organize-values">
-          ${others.map((v) => html`<option value=${v}></option>`)}
-        </datalist>
-      </div>
-      <span class="note" data-testid="value-effect">
-        ${target
-          ? describeRewrite(this._kind, count, value, target)
-          : t('hv.organize.pickNameToContinue')}
-      </span>
-      <div class="actions">
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="value-cancel"
-          @click=${() => {
+    return keyed(
+      `${editing.mode}:${value}`,
+      html`<div
+        class="expander"
+        data-testid="value-editor"
+        data-mode=${editing.mode}
+        data-field="value-target"
+        ${ref(this._reveal)}
+      >
+        <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
+          ${this._valueChip(value, { style: merging ? 'text-decoration: line-through' : undefined })}
+          <span style="font-size:12.5px;color:var(--hv-text-secondary)">${counted(count, 'item')}</span>
+          ${merging ? icon('arrowRight', 18) : null}
+          <label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
+            <span class="hv-sr-only"
+              >${merging ? t('hv.organize.mergeInto') : t('hv.organize.newName')}</span
+            >
+            <input
+              class="control"
+              data-testid="value-target"
+              list="hv-organize-values"
+              placeholder=${merging
+                ? t('hv.organize.mergeIntoPlaceholder')
+                : t('hv.organize.newNamePlaceholder')}
+              .value=${this._valueDraft}
+              @input=${(e: Event) => {
+                this._valueDraft = (e.target as HTMLInputElement).value;
+              }}
+            />
+          </label>
+          <datalist id="hv-organize-values">
+            ${others.map((v) => html`<option value=${v}></option>`)}
+          </datalist>
+        </div>
+        <span class="note" data-testid="value-effect">
+          ${target
+            ? describeRewrite(this._kind, count, value, target)
+            : t('hv.organize.pickNameToContinue')}
+        </span>
+        ${this._renderFooter({
+          cancelTestid: 'value-cancel',
+          onCancel: () => {
             this._editingValue = null;
-          }}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button
-          class="hv-pill"
-          data-testid="value-apply"
-          ?disabled=${!target || target === value}
-          @click=${() => void this._runRewrite(value, target, merging ? 'merge' : 'rename')}
-        >
-          ${merging ? t('hv.action.merge') : t('hv.action.rename')}
-        </button>
-      </div>
-    </div>`;
+          },
+          testid: 'value-apply',
+          label: merging ? t('hv.action.merge') : t('hv.action.rename'),
+          disabled: !target || target === value,
+          onCommit: () => void this._runRewrite(value, target, merging ? 'merge' : 'rename'),
+        })}
+      </div>`,
+    );
   }
 
   private _renderValueCreator() {
@@ -1773,27 +1789,17 @@ export class HVOrganizeDialog extends LitElement {
         ? html`<div class="failure" role="alert" data-testid="new-value-error">${this._newValueError}</div>`
         : null}
       <span class="note">${t('hv.organize.draftNote', { noun: this._noun })}</span>
-      <div class="actions">
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="new-value-cancel"
-          @click=${() => {
-            this._creatingValue = false;
-            this._newValueError = null;
-          }}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button
-          class="hv-pill"
-          data-testid="new-value-create"
-          ?disabled=${!this._newValue.trim()}
-          @click=${() => this._createValue()}
-        >
-          Create
-        </button>
-      </div>
+      ${this._renderFooter({
+        cancelTestid: 'new-value-cancel',
+        onCancel: () => {
+          this._creatingValue = false;
+          this._newValueError = null;
+        },
+        testid: 'new-value-create',
+        label: 'Create',
+        disabled: !this._newValue.trim(),
+        onCommit: () => this._createValue(),
+      })}
     </div>`;
   }
 
@@ -1926,18 +1932,13 @@ export class HVOrganizeDialog extends LitElement {
   private _renderStatusesTab() {
     const defs = this._statusDefs;
     return html`
-      <div class="toolbar">
-        <span class="toolbar-count" data-testid="organize-status-count"
-          >${counted(defs.length, 'status')}</span
-        >
-        <button
-          class="hv-pill"
-          data-testid="organize-new-status"
-          @click=${() => this._startStatusEdit('new')}
-        >
-          ${icon('plus', 15)}${t('hv.organize.newStatus')}
-        </button>
-      </div>
+      ${this._renderToolbar({
+        count: counted(defs.length, 'status'),
+        countTestid: 'organize-status-count',
+        newTestid: 'organize-new-status',
+        newLabel: t('hv.organize.newStatus'),
+        onNew: () => this._startStatusEdit('new'),
+      })}
       <div class="body">
         ${this._editingStatus === 'new' ? this._renderStatusEditor('new') : null}
         ${defs.map((d, index) => {
@@ -2024,115 +2025,108 @@ export class HVOrganizeDialog extends LitElement {
     const duplicate = this._duplicateLabel;
     const glyph = knownIcon(this._statusIcon);
     const custom = isHexColor(this._statusColor) ? this._statusColor : null;
-    return html`<div class="expander" data-testid="status-editor">
-      <label class="status-name">
-        <span class="hv-sr-only">${t('hv.organize.statusName')}</span>
-        <input
-          class="control"
-          data-testid="status-label"
-          placeholder=${t('hv.organize.statusNamePlaceholder')}
-          .value=${this._statusLabel}
-          @input=${(e: Event) => {
-            this._statusLabel = (e.target as HTMLInputElement).value;
-            this._statusError = null;
-          }}
-          @keydown=${(e: KeyboardEvent) => {
-            if (e.key === 'Enter') void this._saveStatus();
-          }}
-        />
-        <span class="status-slug" data-testid="status-slug-preview" title=${derived}
-          >${derived}</span
-        >
-      </label>
-      ${duplicate
-        ? html`<div class="hint" data-testid="status-duplicate-hint">
-            ${t('hv.organize.statusDuplicate', { label: duplicate })}
-          </div>`
-        : null}
-
-      <span class="hv-label">${t('hv.organize.colour')}</span>
-      <div class="swatches" data-testid="status-colors">
-        ${STATUS_COLORS.map(
-          (c) => html`<button
-            class="swatch hv-status-chip tone-${c.replace(/_/g, '-')} ${this._statusColor === c
-              ? 'on'
-              : ''}"
-            data-testid="status-color"
-            data-value=${c}
-            aria-label=${c.replace(/_/g, ' ')}
-            aria-pressed=${String(this._statusColor === c)}
-            @click=${() => {
-              this._statusColor = c;
-            }}
-          >
-            ${glyph ? icon(glyph, 15) : html`<span class="letters">Aa</span>`}
-          </button>`,
-        )}
-        <label
-          class="swatch custom hv-status-chip ${custom ? 'on' : ''}"
-          style=${ifDefined(custom ? hexToneStyle(custom) : undefined)}
-          data-testid="status-color-custom"
-        >
+    return keyed(
+      slug,
+      html`<div class="expander" data-testid="status-editor" data-field="status-label" ${ref(this._reveal)}>
+        <label class="status-name">
+          <span class="hv-sr-only">${t('hv.organize.statusName')}</span>
           <input
-            type="color"
-            data-testid="status-color-hex"
-            aria-label=${t('hv.organize.customColour')}
-            .value=${custom ?? CUSTOM_COLOR_SEED}
+            class="control"
+            data-testid="status-label"
+            placeholder=${t('hv.organize.statusNamePlaceholder')}
+            .value=${this._statusLabel}
             @input=${(e: Event) => {
-              this._statusColor = (e.target as HTMLInputElement).value.toLowerCase();
+              this._statusLabel = (e.target as HTMLInputElement).value;
+              this._statusError = null;
+            }}
+            @keydown=${(e: KeyboardEvent) => {
+              if (e.key === 'Enter') void this._saveStatus();
             }}
           />
-          ${glyph ? icon(glyph, 15) : html`<span class="letters">Aa</span>`}
-        </label>
-      </div>
-      ${custom
-        ? html`<div class="hint" data-testid="status-color-custom-hint">
-            ${t('hv.organize.customColourHint', { hex: custom })}
-          </div>`
-        : null}
-
-      <span class="hv-label">${t('hv.organize.icon')}</span>
-      <div class="swatches" data-testid="status-icons">
-        ${STATUS_ICONS.map(
-          (name) => html`<button
-            class="glyph ${this._statusIcon === name ? 'on' : ''}"
-            data-testid="status-icon"
-            data-value=${name}
-            aria-label=${name}
-            aria-pressed=${String(this._statusIcon === name)}
-            @click=${() => {
-              this._statusIcon = name;
-            }}
+          <span class="status-slug" data-testid="status-slug-preview" title=${derived}
+            >${derived}</span
           >
-            ${icon(name, 16)}
-          </button>`,
-        )}
-      </div>
+        </label>
+        ${duplicate
+          ? html`<div class="hint" data-testid="status-duplicate-hint">
+              ${t('hv.organize.statusDuplicate', { label: duplicate })}
+            </div>`
+          : null}
 
-      ${this._statusError
-        ? html`<div class="failure" role="alert" data-testid="status-editor-error">
-            ${this._statusError}
-          </div>`
-        : null}
-      <div class="actions">
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="status-cancel"
-          @click=${() => this._cancelStatusEdit()}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button
-          class="hv-pill"
-          data-testid="status-save"
-          ?disabled=${!this._statusLabel.trim()}
-          @click=${() => this._saveStatus()}
-        >
-          ${creating ? t('hv.action.create') : t('hv.action.save')}
-        </button>
-      </div>
-    </div>`;
+        <span class="hv-label">${t('hv.organize.colour')}</span>
+        <div class="swatches" data-testid="status-colors">
+          ${STATUS_COLORS.map(
+            (c) => html`<button
+              class="swatch hv-status-chip tone-${c.replace(/_/g, '-')} ${this._statusColor === c
+                ? 'on'
+                : ''}"
+              data-testid="status-color"
+              data-value=${c}
+              aria-label=${c.replace(/_/g, ' ')}
+              aria-pressed=${String(this._statusColor === c)}
+              @click=${() => {
+                this._statusColor = c;
+              }}
+            >
+              ${glyph ? icon(glyph, 15) : html`<span class="letters">Aa</span>`}
+            </button>`,
+          )}
+          <label
+            class="swatch custom hv-status-chip ${custom ? 'on' : ''}"
+            style=${ifDefined(custom ? hexToneStyle(custom) : undefined)}
+            data-testid="status-color-custom"
+          >
+            <input
+              type="color"
+              data-testid="status-color-hex"
+              aria-label=${t('hv.organize.customColour')}
+              .value=${custom ?? CUSTOM_COLOR_SEED}
+              @input=${(e: Event) => {
+                this._statusColor = (e.target as HTMLInputElement).value.toLowerCase();
+              }}
+            />
+            ${glyph ? icon(glyph, 15) : html`<span class="letters">Aa</span>`}
+          </label>
+        </div>
+        ${custom
+          ? html`<div class="hint" data-testid="status-color-custom-hint">
+              ${t('hv.organize.customColourHint', { hex: custom })}
+            </div>`
+          : null}
+
+        <span class="hv-label">${t('hv.organize.icon')}</span>
+        <div class="swatches" data-testid="status-icons">
+          ${STATUS_ICONS.map(
+            (name) => html`<button
+              class="glyph ${this._statusIcon === name ? 'on' : ''}"
+              data-testid="status-icon"
+              data-value=${name}
+              aria-label=${name}
+              aria-pressed=${String(this._statusIcon === name)}
+              @click=${() => {
+                this._statusIcon = name;
+              }}
+            >
+              ${icon(name, 16)}
+            </button>`,
+          )}
+        </div>
+
+        ${this._statusError
+          ? html`<div class="failure" role="alert" data-testid="status-editor-error">
+              ${this._statusError}
+            </div>`
+          : null}
+        ${this._renderFooter({
+          cancelTestid: 'status-cancel',
+          onCancel: () => this._cancelStatusEdit(),
+          testid: 'status-save',
+          label: creating ? t('hv.action.create') : t('hv.action.save'),
+          disabled: !this._statusLabel.trim(),
+          onCommit: () => this._saveStatus(),
+        })}
+      </div>`,
+    );
   }
 
   private _renderStatusGuard() {
@@ -2141,47 +2135,46 @@ export class HVOrganizeDialog extends LitElement {
     const label = statusLabel(guard.slug, this._statusDefs);
     const targets = this._statusDefs.filter((d) => d.slug !== guard.slug);
     const inUse = guard.count > 0;
-    return html`<div class="expander guard status-guard" data-testid="status-guard" role="alert">
-      <span class="guard-message" data-testid="status-guard-message"
-        >${inUse
-          ? t('hv.organize.statusInUse', { label, items: counted(guard.count, 'item') })
-          : t('hv.organize.statusUnused', { label })}</span
+    return keyed(
+      guard.slug,
+      html`<div
+        class="expander guard status-guard"
+        data-testid="status-guard"
+        role="alert"
+        ${ref(this._reveal)}
       >
-      ${inUse
-        ? html`<label class="guard-target">
-            <span>${t('hv.organize.moveThoseItemsTo')}</span>
-            <select
-              class="control"
-              data-testid="status-reassign"
-              .value=${this._reassignTarget}
-              @change=${(e: Event) => {
-                this._reassignTarget = (e.target as HTMLSelectElement).value;
-              }}
-            >
-              ${targets.map((d) => html`<option value=${d.slug}>${d.label}</option>`)}
-            </select>
-          </label>`
-        : null}
-      <div class="actions">
-        <span class="spacer"></span>
-        <button
-          class="hv-text-button"
-          data-testid="status-guard-cancel"
-          @click=${() => {
+        <span class="guard-message" data-testid="status-guard-message"
+          >${inUse
+            ? t('hv.organize.statusInUse', { label, items: counted(guard.count, 'item') })
+            : t('hv.organize.statusUnused', { label })}</span
+        >
+        ${inUse
+          ? html`<label class="guard-target">
+              <span>${t('hv.organize.moveThoseItemsTo')}</span>
+              <select
+                class="control"
+                data-testid="status-reassign"
+                .value=${this._reassignTarget}
+                @change=${(e: Event) => {
+                  this._reassignTarget = (e.target as HTMLSelectElement).value;
+                }}
+              >
+                ${targets.map((d) => html`<option value=${d.slug}>${d.label}</option>`)}
+              </select>
+            </label>`
+          : null}
+        ${this._renderFooter({
+          cancelTestid: 'status-guard-cancel',
+          onCancel: () => {
             this._statusGuard = null;
-          }}
-        >
-          ${t('hv.action.cancel')}
-        </button>
-        <button
-          class="hv-text-button danger"
-          data-testid="status-guard-confirm"
-          @click=${() => this._deleteStatus(guard.slug, inUse ? this._reassignTarget : undefined)}
-        >
-          ${inUse ? t('hv.organize.reassignAndDelete') : t('hv.action.delete')}
-        </button>
-      </div>
-    </div>`;
+          },
+          testid: 'status-guard-confirm',
+          label: inUse ? t('hv.organize.reassignAndDelete') : t('hv.action.delete'),
+          danger: true,
+          onCommit: () => void this._deleteStatus(guard.slug, inUse ? this._reassignTarget : undefined),
+        })}
+      </div>`,
+    );
   }
 
   private _renderValuesTab() {
@@ -2189,33 +2182,22 @@ export class HVOrganizeDialog extends LitElement {
     const noun =
       this.tab === 'tags' ? t('hv.organize.plural.tags') : t('hv.organize.plural.categories');
     return html`
-      <div class="toolbar">
-        <label class="search">
-          ${icon('magnify', 17)}
-          <span class="hv-sr-only">${t('hv.organize.filterValues', { values: noun })}</span>
-          <input
-            data-testid="organize-filter"
-            placeholder=${t('hv.organize.filterValuesPlaceholder', { values: noun })}
-            .value=${this._filter}
-            @input=${(e: Event) => {
-              this._filter = (e.target as HTMLInputElement).value;
-            }}
-          />
-        </label>
-        <span class="toolbar-count" data-testid="organize-value-count">${counted(values.length, this.tab === 'tags' ? 'tag' : 'category')}</span>
-        <button
-          class="hv-pill"
-          data-testid="organize-new-value"
-          @click=${() => {
-            this._creatingValue = true;
-            this._newValue = '';
-            this._newValueError = null;
-            this._editingValue = null;
-          }}
-        >
-          ${icon('plus', 15)}${t('hv.organize.newValue', { noun: this._noun })}
-        </button>
-      </div>
+      ${this._renderToolbar({
+        search: {
+          label: t('hv.organize.filterValues', { values: noun }),
+          placeholder: t('hv.organize.filterValuesPlaceholder', { values: noun }),
+        },
+        count: counted(values.length, this.tab === 'tags' ? 'tag' : 'category'),
+        countTestid: 'organize-value-count',
+        newTestid: 'organize-new-value',
+        newLabel: t('hv.organize.newValue', { noun: this._noun }),
+        onNew: () => {
+          this._creatingValue = true;
+          this._newValue = '';
+          this._newValueError = null;
+          this._editingValue = null;
+        },
+      })}
       <div class="body">
         ${this._creatingValue ? this._renderValueCreator() : null}
         ${this._rewrite ? this._renderRewrite() : null}
@@ -2300,7 +2282,6 @@ export class HVOrganizeDialog extends LitElement {
     `;
   }
 
-  /** Touch has no hover, so the row's actions live in a sheet. */
   private _renderValueSheet(value: string, count: number) {
     const others = (this.tab === 'tags'
       ? (this.st?.distinctValuesCache?.tags ?? [])
@@ -2309,40 +2290,46 @@ export class HVOrganizeDialog extends LitElement {
       .map((v) => v.value)
       .filter((v) => v !== value);
     const suggestion = closestMatch(value, others);
-    return html`<div class="expander" data-testid="value-sheet">
-      <div class="sheet-actions">
-        <button data-testid="sheet-show" @click=${() => this._showValue(value)}>
-          ${icon('magnify', 20)}${t('hv.organize.showItems', { items: counted(count, 'item') })}
-        </button>
-        <button data-testid="sheet-rename" @click=${() => this._startValueEdit(value, 'rename')}>
-          ${icon('pencil', 20)}${t('hv.organize.renameEllipsis')}
-        </button>
-        <button data-testid="sheet-merge" @click=${() => this._startValueEdit(value, 'merge')}>
-          ${icon('callMerge', 20)}${t('hv.organize.mergeIntoEllipsis')}
-          ${suggestion
-            ? this._valueChip(suggestion, {
-                style: 'margin-left:auto',
-                testid: 'sheet-merge-suggestion',
-              })
-            : null}
-        </button>
-        <button
-          class="danger"
-          data-testid="sheet-remove"
-          @click=${() => {
-            this._sheetValue = null;
-            this._confirmRemove = value;
-          }}
-        >
-          ${icon('del', 20)}${t('hv.organize.removeFromAllItems')}
-        </button>
-      </div>
-    </div>`;
+    return this._renderActionSheet('value-sheet', value, [
+      {
+        testid: 'sheet-show',
+        glyph: 'magnify',
+        label: t('hv.organize.showItems', { items: counted(count, 'item') }),
+        onPick: () => this._showValue(value),
+      },
+      {
+        testid: 'sheet-rename',
+        glyph: 'pencil',
+        label: t('hv.organize.renameEllipsis'),
+        onPick: () => this._startValueEdit(value, 'rename'),
+      },
+      {
+        testid: 'sheet-merge',
+        glyph: 'callMerge',
+        label: t('hv.organize.mergeIntoEllipsis'),
+        trailing: suggestion
+          ? this._valueChip(suggestion, {
+              style: 'margin-left:auto',
+              testid: 'sheet-merge-suggestion',
+            })
+          : null,
+        onPick: () => this._startValueEdit(value, 'merge'),
+      },
+      {
+        testid: 'sheet-remove',
+        glyph: 'del',
+        label: t('hv.organize.removeFromAllItems'),
+        danger: true,
+        onPick: () => {
+          this._sheetValue = null;
+          this._confirmRemove = value;
+        },
+      },
+    ]);
   }
 
   render() {
     if (!this.open) return null;
-    const z = this._zBase || 9998;
     const removeCount =
       this._values.find((v) => v.value === this._confirmRemove)?.count ??
       (this.tab === 'tags'
@@ -2352,16 +2339,9 @@ export class HVOrganizeDialog extends LitElement {
       0;
 
     return html`
-      <div class="backdrop" role="presentation" style="z-index:${z}" @click=${this._close}></div>
-      <div class="wrap" role="none" style="z-index:${z + 1}">
-        <div
-          class="panel"
-          role="dialog"
-          aria-modal="true"
-          aria-label=${t('hv.organize.title')}
-          data-testid="organize-dialog"
-          @keydown=${onEscape(() => this._close())}
-        >
+      ${this._modal.render(
+        { label: t('hv.organize.title'), testid: 'organize-dialog', onClose: this._close },
+        html`
           <div class="head">
             ${this.mobile
               ? html`<button
@@ -2406,8 +2386,8 @@ export class HVOrganizeDialog extends LitElement {
             : this.tab === 'statuses'
               ? this._renderStatusesTab()
               : this._renderValuesTab()}
-        </div>
-      </div>
+        `,
+      )}
 
       <hv-confirm
         data-testid="organize-confirm"

@@ -441,7 +441,6 @@ describe('hv-import-sheet: summary', () => {
 
     (q(el, '[data-testid="import-done"]') as HTMLButtonElement).click();
     expect(cancels).toBe(1);
-    expect(el.open).toBe(false);
   });
 
   // The result sentence has a slot for location updates, or a locations-only
@@ -503,6 +502,5 @@ describe('hv-import-sheet: keyboard and focus', () => {
     await el.updateComplete;
 
     expect(cancels).toBe(1);
-    expect(el.open).toBe(false);
   });
 });

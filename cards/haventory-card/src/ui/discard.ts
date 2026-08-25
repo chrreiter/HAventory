@@ -37,8 +37,8 @@ export function discardPrompt(): {
  * Forms take this as a property instead of owning a dialog: the question has to
  * survive the surface that raised it — a sheet coming down, a row being
  * switched away from — so it is asked by the element hosting the form, which is
- * still there afterwards. `onConfirm` runs on a yes. `onCancel` is for a form
- * that has to put focus back where the question took it from; a caller with
- * nowhere to put it omits it.
+ * still there afterwards. `onConfirm` runs on a yes; a no needs no callback,
+ * because the dialog hands focus back to the control the question was raised
+ * from by itself.
  */
-export type ConfirmDiscard = (onConfirm: () => void, onCancel?: () => void) => void;
+export type ConfirmDiscard = (onConfirm: () => void) => void;

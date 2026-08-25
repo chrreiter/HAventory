@@ -248,9 +248,10 @@ on a desktop monitor whenever the card sits in a normal column, and expanding th
 not change it — the measured element is still the card underneath.
 
 On a phone viewport the four smaller dialogs — column picker, confirm, import, diagnostics —
-rise from the bottom edge like every other phone surface, through the shared
-`ui/dialog-sheet.ts` block rather than four private ones. The organize dialog keeps its
-full-bleed page, which is what a four-tab management surface needs at that width.
+rise from the bottom edge like every other phone surface, through the `modalSheet` block of
+`ui/modal.ts` rather than four private ones. The organize dialog takes the same module's
+chrome without that block and keeps its full-bleed page, which is what a four-tab management
+surface needs at that width.
 
 Inside that dialog one declaration governs row height: `--hv-organize-row-pad` on its host,
 read by its own value rows and inherited through the shadow boundary into the
@@ -479,7 +480,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself, 
 | `icons.ts` | ~30 MDI glyphs as inline path data, rendered as `<svg fill="currentColor">`. See the deviation note below. |
 | `brand-icon.ts` | The HAventory mark as one path, published to HA's icon registry (`window.customIcons`) under the `haventory:` prefix so the sidebar entry can name it. The backend's `PANEL_ICON` is the matching string. |
 | `responsive.ts` | The two phone predicates, both as Lit reactive controllers: `ResponsiveController` drives mobile mode from the card's own measured width (≤600px), and `ViewportNarrow` follows `NARROW_QUERY`, the viewport query every fixed overlay switches on. |
-| `dialog-sheet.ts` | The bottom-sheet presentation the host dialogs share under `mobile`, as one `css` block added to each of their `static styles`. |
+| `modal.ts` | The centred dialogs' chrome, once: the backdrop/centring/panel CSS (`modalChrome`), the phone bottom-sheet restyle of it (`modalSheet`), and the `Modal` controller that owns the stacking base, the focus in and back out, the Escape binding and the panel markup. |
 | `relative-time.ts` | "2 h ago" / "Jul 31" formatting, overdue checks, and the `+N days` arithmetic the check-out chips use. |
 | `day-clock.ts` | `onDayChange(cb)`: one shared timer to the next local midnight, so everything that renders a date re-renders when the day turns. See "The day turning over". |
 | `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the `custom_fields_set` / `custom_fields_unset` diff. |

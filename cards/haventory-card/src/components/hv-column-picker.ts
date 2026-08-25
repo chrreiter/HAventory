@@ -1,12 +1,9 @@
 import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
-import { dialogSheet } from '../ui/dialog-sheet';
-import { onEscape } from '../ui/keyboard';
+import { Modal, modalChrome, modalSheet } from '../ui/modal';
 import { icon } from '../ui/icons';
-import { nextZBase } from '../utils/zindex';
-import { DialogFocus } from '../ui/dialog-focus';
 import type { ColumnKey } from '../store/columns';
 import { COLUMN_DEFS, canonicalOrder, columnLabel, moveColumn, normalizeColumns } from '../store/columns';
 
@@ -31,31 +28,9 @@ export class HVColumnPicker extends LitElement {
   static styles = [
     tokens,
     base,
+    modalChrome,
     css`
-      :host {
-        display: block;
-      }
-      .backdrop {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.35);
-      }
-      .wrap {
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        padding: 16px;
-        box-sizing: border-box;
-      }
       .panel {
-        width: 330px;
-        max-width: 100%;
-        box-sizing: border-box;
-        background: var(--hv-surface);
-        color: var(--hv-text);
-        border-radius: var(--hv-radius-dialog);
-        box-shadow: var(--hv-shadow-dialog);
         padding: 14px 14px 12px;
       }
       h2 {
@@ -150,7 +125,7 @@ export class HVColumnPicker extends LitElement {
         margin-right: auto;
       }
     `,
-    dialogSheet,
+    modalSheet,
   ];
 
   @property({ type: Boolean, reflect: true }) open: boolean = false;
@@ -159,27 +134,10 @@ export class HVColumnPicker extends LitElement {
   @property({ attribute: false }) columns: ColumnKey[] = [];
   @property({ type: String }) heading: string = t('hv.columns.heading');
 
-  @state() private _zBase: number | null = null;
-
-
-  /** Opening a surface must put focus in it, or Escape never reaches it. */
-  private _dialogFocus = new DialogFocus();
-
-  protected updated() {
-    this._dialogFocus.sync(this.open, () =>
-      this.renderRoot.querySelector<HTMLElement>('[role="dialog"]'),
-    );
-  }
-
-  protected willUpdate(changed: Map<string, unknown>) {
-    if (changed.has('open') && this.open) {
-      this._zBase = nextZBase();
-    }
-  }
+  private _modal = new Modal(this, { open: () => this.open });
 
   private _close = () => {
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
-    this.open = false;
   };
 
   private _emit(columns: ColumnKey[]): void {
@@ -226,52 +184,50 @@ export class HVColumnPicker extends LitElement {
     const shown = rows.filter((r) => r.on).length;
     const ordered = normalizeColumns(this.columns);
     const isCanonical = ordered.join() === canonicalOrder(ordered).join();
-    return html`
-      <div class="backdrop" role="presentation" style="z-index: ${this._zBase ?? 9998};" @click=${this._close}></div>
-      <div class="wrap" role="none" style="z-index: ${(this._zBase ?? 9998) + 1};">
-        <div class="panel" role="dialog" aria-modal="true" aria-label=${t('hv.columns.dialogLabel')}
-          @keydown=${onEscape(() => this._close())}>
-          <h2>${this.heading}</h2>
-          <ul data-testid="column-options">
-            ${rows.map(
-              (r, index) => html`
-                <li>
-                  <button
-                    class="option"
-                    role="checkbox"
-                    aria-checked=${String(r.on)}
-                    data-testid="column-option"
-                    data-key=${r.key}
-                    @click=${() => this._toggle(r.key, !r.on)}
-                  >
-                    <span class="box ${r.on ? 'on' : ''}">${r.on ? icon('check', 12) : null}</span>
-                    <span>${r.label}</span>
-                  </button>
-                  ${r.on
-                    ? html`<span class="move">
-                        <button
-                          data-testid="column-up"
-                          data-key=${r.key}
-                          aria-label=${t('hv.columns.moveUp', { column: r.label })}
-                          title=${t('hv.term.moveUp')}
-                          ?disabled=${index === 0}
-                          @click=${() => this._move(r.key, -1)}
-                        >
-                          ${icon('chevronUp', 15)}
-                        </button>
-                        <button
-                          data-testid="column-down"
-                          data-key=${r.key}
-                          aria-label=${t('hv.columns.moveDown', { column: r.label })}
-                          title=${t('hv.term.moveDown')}
-                          ?disabled=${index === shown - 1}
-                          @click=${() => this._move(r.key, 1)}
-                        >
-                          ${icon('chevronDown', 15)}
-                        </button>
-                      </span>`
-                    : null}
-                </li>
+    return this._modal.render(
+      { label: t('hv.columns.dialogLabel'), testid: 'column-picker', onClose: this._close },
+      html`
+        <h2>${this.heading}</h2>
+        <ul data-testid="column-options">
+          ${rows.map(
+            (r, index) => html`
+              <li>
+                <button
+                  class="option"
+                  role="checkbox"
+                  aria-checked=${String(r.on)}
+                  data-testid="column-option"
+                  data-key=${r.key}
+                  @click=${() => this._toggle(r.key, !r.on)}
+                >
+                  <span class="box ${r.on ? 'on' : ''}">${r.on ? icon('check', 12) : null}</span>
+                  <span>${r.label}</span>
+                </button>
+                ${r.on
+                  ? html`<span class="move">
+                      <button
+                        data-testid="column-up"
+                        data-key=${r.key}
+                        aria-label=${t('hv.columns.moveUp', { column: r.label })}
+                        title=${t('hv.term.moveUp')}
+                        ?disabled=${index === 0}
+                        @click=${() => this._move(r.key, -1)}
+                      >
+                        ${icon('chevronUp', 15)}
+                      </button>
+                      <button
+                        data-testid="column-down"
+                        data-key=${r.key}
+                        aria-label=${t('hv.columns.moveDown', { column: r.label })}
+                        title=${t('hv.term.moveDown')}
+                        ?disabled=${index === shown - 1}
+                        @click=${() => this._move(r.key, 1)}
+                      >
+                        ${icon('chevronDown', 15)}
+                      </button>
+                    </span>`
+                  : null}
+              </li>
               `,
             )}
           </ul>
@@ -288,9 +244,8 @@ export class HVColumnPicker extends LitElement {
               ${t('hv.action.done')}
             </button>
           </div>
-        </div>
-      </div>
-    `;
+      `,
+    );
   }
 }
 

@@ -1079,19 +1079,18 @@ export interface DiscardAsker {
  * the real prompt and its wording are asserted.
  */
 export function discardAsker(): DiscardAsker {
-  const pending: { onConfirm: () => void; onCancel?: (() => void) | undefined }[] = [];
+  const pending: (() => void)[] = [];
   return {
-    ask: (onConfirm, onCancel) => {
-      pending.push({ onConfirm, onCancel });
+    ask: (onConfirm) => {
+      pending.push(onConfirm);
     },
     get asked() {
       return pending.length;
     },
     answer(which) {
-      const question = pending.pop();
-      if (!question) throw new Error('nothing was asked');
-      if (which === 'discard') question.onConfirm();
-      else question.onCancel?.();
+      const onConfirm = pending.pop();
+      if (!onConfirm) throw new Error('nothing was asked');
+      if (which === 'discard') onConfirm();
     },
   };
 }
