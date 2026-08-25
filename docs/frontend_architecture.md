@@ -279,7 +279,9 @@ Every string above — and every string in every component — comes out of `src
   defines does not compile at the call site; `de.ts` is a `CompleteDictionary`, so an English
   string added without a German one does not compile either. `catalog.test.ts` holds the rest:
   an `.other` behind every counted key, no orphaned keys, the same placeholders on both sides,
-  and completeness for the languages its `COMPLETE` list names.
+  and completeness for the languages its `COMPLETE` list names. `unused-keys.test.ts` sweeps
+  the sources for a key nothing reads, and names the run-time-completed prefixes it cannot see
+  through.
 - **`t(key, params?)`** fills `{name}` placeholders; a placeholder with no parameter renders
   literally, so a typo shows rather than blanking a word. **`tn(key, count, params?)`** asks
   `Intl.PluralRules` for the language's category and reads `<key>.<category>`, falling back to
