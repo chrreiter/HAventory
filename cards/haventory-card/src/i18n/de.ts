@@ -19,13 +19,15 @@
  * - checking out is **Ausleihen**, checking in **Zurückgeben** — what a
  *   household actually does when someone takes a drill away.
  *
- * Typed as a complete record rather than a `Dictionary`, so an English string
- * added without a German one fails to compile instead of quietly falling back.
+ * Typed complete rather than as a `Dictionary`, so an English string added
+ * without a German one fails to compile instead of quietly falling back. A
+ * counted noun German does not inflect is written once, as `.other`: `tn`
+ * reaches it for every count.
  */
 
-import type { TranslationKey } from './en';
+import type { CompleteDictionary } from './en';
 
-export const de: Record<TranslationKey, string> = {
+export const de: CompleteDictionary = {
   'hv.action.refresh': 'Aktualisieren',
   'hv.action.retry': 'Erneut versuchen',
   'hv.action.dismiss': 'Schließen',
@@ -75,11 +77,9 @@ export const de: Record<TranslationKey, string> = {
   'hv.count.tag.other': '{count} Labels',
   'hv.count.category.one': '{count} Kategorie',
   'hv.count.category.other': '{count} Kategorien',
-  'hv.count.status.one': '{count} Status',
   'hv.count.status.other': '{count} Status',
   'hv.count.field.one': '{count} Feld',
   'hv.count.field.other': '{count} Felder',
-  'hv.count.filter.one': '{count} Filter',
   'hv.count.filter.other': '{count} Filter',
   'hv.count.problem.one': '{count} Problem',
   'hv.count.problem.other': '{count} Probleme',

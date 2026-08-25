@@ -276,15 +276,15 @@ styling.
 Every string above — and every string in every component — comes out of `src/i18n/`.
 
 - **`en.ts` is the key universe.** `TranslationKey` is `keyof typeof en`, so a key nothing
-  defines does not compile at the call site; `de.ts` is a complete
-  `Record<TranslationKey, string>`, so an English string added without a German one does not
-  compile either. `catalog.test.ts` holds the rest: paired plurals, no orphaned keys, the same
-  placeholders on both sides.
+  defines does not compile at the call site; `de.ts` is a `CompleteDictionary`, so an English
+  string added without a German one does not compile either. `catalog.test.ts` holds the rest:
+  an `.other` behind every counted key, no orphaned keys, the same placeholders on both sides,
+  and completeness for the languages its `COMPLETE` list names.
 - **`t(key, params?)`** fills `{name}` placeholders; a placeholder with no parameter renders
-  literally, so a typo shows rather than blanking a word. **`tn(key, count, params?)`** picks
-  between `<key>.one` and `<key>.other` — two forms, which is the split English and German
-  share. `Intl.PluralRules` would add a category axis every dictionary has to fill and answer
-  a question neither language asks.
+  literally, so a typo shows rather than blanking a word. **`tn(key, count, params?)`** asks
+  `Intl.PluralRules` for the language's category and reads `<key>.<category>`, falling back to
+  `<key>.other` and then to English — so a language writes the categories it has and no more,
+  and one that does not inflect the noun writes a single form.
 - **The language is `hass.language`**, read in `index.ts`'s and `haventory-panel.ts`'s
   `set hass` and on `haventory-card-editor`'s first update, resolved exact tag → primary
   subtag → `en`. A key a dictionary has not reached falls through to the **English string**,

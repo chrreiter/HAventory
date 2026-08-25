@@ -12,9 +12,12 @@
  * - Keys are `hv.<area>.<thing>`, lower camel inside a segment.
  * - `{name}` placeholders are filled by `t(key, params)`; a placeholder with no
  *   parameter renders literally, so a typo shows up rather than blanking a word.
- * - A counted string is a pair, `<key>.one` and `<key>.other`, reached through
- *   `tn(key, count)`; `{count}` is passed in for both forms. A form may leave
- *   the number out — German writes "täglich" where English writes "every day".
+ * - A counted string is written here as `<key>.one` and `<key>.other` and
+ *   reached through `tn(key, count)`, which asks `Intl.PluralRules` which form
+ *   the count wants in the language in force. English needs those two; another
+ *   language may need `few` and `many` beside them, or only `other`. `{count}`
+ *   is passed in for every form, and a form may leave the number out — German
+ *   writes "täglich" where English writes "every day".
  * - Whole sentences, not fragments glued at the call site: word order is a
  *   language's own, and a sentence assembled from three keys can only ever be
  *   English word order with foreign words in it.
@@ -803,16 +806,44 @@ export const en = {
 export type TranslationKey = keyof typeof en;
 
 /**
+ * The base of a counted string — everything `tn` may be called with.
+ *
+ * Read off `.other` rather than `.one`, because `.other` is the form every
+ * dictionary carries: it is what `tn` falls back to for a category the
+ * language writes no separate form for.
+ */
+export type PluralKey = {
+  [K in TranslationKey]: K extends `${infer Base}.other` ? Base : never;
+}[TranslationKey];
+
+/**
+ * One counted form: a base and the plural category it answers for.
+ *
+ * The categories are `Intl.PluralRules`', not this file's — English writes two
+ * of them, Polish needs `few` and `many`, and a dictionary that could only
+ * carry the English pair could not spell Polish at all.
+ */
+export type PluralForm = `${PluralKey}.${Intl.LDMLPluralRule}`;
+
+/**
  * A dictionary for one language.
  *
  * Partial on purpose: a community dictionary is incomplete on the day it
  * arrives, and `t` falls through to English for whatever it has not reached
- * yet. `de` is declared complete separately, which is what makes TypeScript
- * itself refuse a German string left behind by a new English one.
+ * yet. Wider than the English key universe by the plural forms, so a language
+ * with more categories than English has somewhere to put them.
  */
-export type Dictionary = Partial<Record<TranslationKey, string>>;
+export type Dictionary = Partial<Record<TranslationKey | PluralForm, string>>;
 
-/** The base of a counted pair — everything `tn` may be called with. */
-export type PluralKey = {
-  [K in TranslationKey]: K extends `${infer Base}.one` ? Base : never;
-}[TranslationKey];
+/**
+ * A dictionary that answers every key.
+ *
+ * What a language is typed as once it is finished: every string English has,
+ * and for a counted one at least `.other`, with the remaining categories
+ * offered rather than demanded — German writes no `.one` for a noun it does
+ * not inflect. This is what makes TypeScript itself refuse a translation left
+ * behind by a new English string.
+ */
+export type CompleteDictionary = Record<Exclude<TranslationKey, PluralForm>, string> &
+  Record<`${PluralKey}.other`, string> &
+  Partial<Record<PluralForm, string>>;

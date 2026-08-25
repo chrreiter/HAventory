@@ -18,10 +18,10 @@
  */
 
 import { en } from './en';
-import type { Dictionary, PluralKey, TranslationKey } from './en';
+import type { CompleteDictionary, Dictionary, PluralForm, PluralKey, TranslationKey } from './en';
 import { de } from './de';
 
-export type { Dictionary, PluralKey, TranslationKey };
+export type { CompleteDictionary, Dictionary, PluralForm, PluralKey, TranslationKey };
 
 /** What a placeholder may be filled with. */
 export type TranslationParams = Readonly<Record<string, string | number>>;
@@ -109,16 +109,20 @@ export function t(key: TranslationKey, params?: TranslationParams): string {
 /**
  * One counted string, in the language in force.
  *
- * Two forms, `<key>.one` and `<key>.other`, because that is the split English
- * and German share for every noun the card counts. `Intl.PluralRules` would add
- * a category axis every dictionary has to fill and answer a question neither of
- * these two languages asks.
+ * Which form a count wants is the language's own business — English and German
+ * split at one, French counts zero as singular, Polish has three forms — so
+ * `Intl.PluralRules` names the category and the dictionary is asked for
+ * `<key>.<category>`. Two fallbacks stand behind that: `<key>.other`, which
+ * every complete dictionary carries, so a language that does not inflect the
+ * noun writes one form and stops; then English, the same fall-through `t` has.
  *
  * `count` is passed through as a parameter, so a form can place the number
  * wherever its language puts it — or leave it out, which is what "täglich" for
  * "every 1 days" does.
  */
 export function tn(key: PluralKey, count: number, params?: TranslationParams): string {
-  const form = `${key}.${count === 1 ? 'one' : 'other'}` as TranslationKey;
-  return t(form, { count, ...params });
+  const form = `${key}.${new Intl.PluralRules(language()).select(count)}` as PluralForm;
+  const other = `${key}.other` as const;
+  const template = active[form] ?? active[other] ?? (en as Dictionary)[form] ?? en[other];
+  return interpolate(template, { count, ...params });
 }
