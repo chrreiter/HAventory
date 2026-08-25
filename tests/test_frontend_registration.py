@@ -39,6 +39,7 @@ from custom_components.haventory.const import (
     STATUS_COLORS,
     STATUS_ICONS,
 )
+from custom_components.haventory.models import seed_status_definitions
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, DATA_PANELS, UrlManager
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -548,6 +549,54 @@ def test_the_card_offers_exactly_the_vocabularies_the_backend_accepts() -> None:
 
     assert declared("STATUS_COLORS") == list(STATUS_COLORS)
     assert declared("STATUS_ICONS") == list(STATUS_ICONS)
+
+
+def test_the_cards_built_in_statuses_are_the_ones_the_backend_seeds() -> None:
+    """``BUILT_IN_STATUSES`` mirrors ``seed_status_definitions()``, label included.
+
+    The card draws that array until ``haventory/config`` answers, so a label
+    that differs reworded three chips for the first moment of every page load.
+    The label carries a second job since #536: a built-in still storing the
+    English the seed wrote is printed in the reader's language, and the card
+    decides that by comparing the stored label against this copy. A seed the
+    card does not know the wording of translates nowhere — every language keeps
+    the English, silently, which is the state that issue was filed about.
+    """
+    source = (REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "status.ts").read_text(
+        encoding="utf-8"
+    )
+    match = re.search(
+        r"export const BUILT_IN_STATUSES: readonly StatusDefinition\[\] = \[(.*?)\n\];",
+        source,
+        re.S,
+    )
+    assert match is not None, "BUILT_IN_STATUSES is no longer declared in status.ts"
+
+    def field(entry: str, name: str) -> str:
+        found = re.search(rf"\b{name}:\s*'([^']*)'", entry)
+        assert found is not None, f"{name} is missing from a BUILT_IN_STATUSES entry"
+        return found.group(1)
+
+    def order(entry: str) -> int:
+        found = re.search(r"\border:\s*(\d+)", entry)
+        assert found is not None, "order is missing from a BUILT_IN_STATUSES entry"
+        return int(found.group(1))
+
+    declared = [
+        (
+            field(entry, "slug"),
+            field(entry, "label"),
+            order(entry),
+            field(entry, "color"),
+            field(entry, "icon"),
+        )
+        for entry in re.findall(r"\{([^{}]*)\}", match.group(1))
+    ]
+    seeded = [
+        (d.slug, d.label, d.order, d.color, d.icon) for d in seed_status_definitions().values()
+    ]
+
+    assert declared == seeded
 
 
 def test_the_options_flow_offers_exactly_the_pills_the_card_draws() -> None:
