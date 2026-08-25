@@ -181,6 +181,10 @@ export const en = {
   'hv.action.open': 'Open',
   'hv.action.repeat': 'Retry',
   'hv.action.clearAll': 'Clear all',
+  // The × on a chip, spoken rather than drawn: the chip's own text is beside
+  // it on screen, and an accessible name has to carry it instead.
+  'hv.action.clearFilter': 'Clear filter {label}',
+  'hv.action.removeTag': 'Remove {tag}',
   'hv.action.deleteItem': 'Delete item',
   'hv.action.editItem': 'Edit item',
   'hv.action.checkIn': 'Check in',

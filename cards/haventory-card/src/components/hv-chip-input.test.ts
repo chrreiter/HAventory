@@ -1,3 +1,4 @@
+import { setLanguage } from '../i18n';
 import './hv-chip-input';
 import type { HVChipInput } from './hv-chip-input';
 import { all, mountComponent, q } from '../test.utils';
@@ -41,6 +42,14 @@ describe('hv-chip-input', () => {
     expect(token.querySelector('.hv-tag-mark')?.getAttribute('aria-hidden')).toBe('true');
     // The remove button is named for the value, not for what is printed on the chip.
     expect(q(el, '[data-testid="chip-remove"]')?.getAttribute('aria-label')).toBe('Remove battery');
+  });
+
+  // The name is spoken and never drawn, which is how it stayed English while
+  // every label around it moved.
+  it('names the remove button in the language in force', async () => {
+    setLanguage('de');
+    const el = await mount({ values: ['werkzeug'] });
+    expect(q(el, '[data-testid="chip-remove"]')?.getAttribute('aria-label')).toBe('werkzeug entfernen');
   });
 
   // A tag someone writes with a # of their own would otherwise read as ##ok.

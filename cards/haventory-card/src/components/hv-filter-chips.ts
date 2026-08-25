@@ -266,7 +266,7 @@ export class HVFilterChips extends LitElement {
             data-testid="filter-chip"
             data-key=${entry.key}
             title=${entry.label}
-            aria-label=${`Clear filter ${entry.label}`}
+            aria-label=${t('hv.action.clearFilter', { label: entry.label })}
             @click=${() =>
               this.dispatchEvent(
                 new CustomEvent('remove-filter', {

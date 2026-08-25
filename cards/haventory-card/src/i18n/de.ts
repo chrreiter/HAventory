@@ -160,6 +160,8 @@ export const de: CompleteDictionary = {
   'hv.action.open': 'Öffnen',
   'hv.action.repeat': 'Wiederholen',
   'hv.action.clearAll': 'Alle zurücksetzen',
+  'hv.action.clearFilter': 'Filter {label} zurücksetzen',
+  'hv.action.removeTag': '{tag} entfernen',
   'hv.action.deleteItem': 'Gegenstand löschen',
   'hv.action.editItem': 'Gegenstand bearbeiten',
   'hv.action.checkIn': 'Zurückgeben',

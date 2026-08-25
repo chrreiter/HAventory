@@ -139,7 +139,7 @@ export class HVChipInput extends LitElement {
               class="hv-icon-button chip-remove"
               data-testid="chip-remove"
               data-value=${tag}
-              aria-label=${`Remove ${tag}`}
+              aria-label=${t('hv.action.removeTag', { tag })}
               @click=${() => this._remove(tag)}
             >
               ${icon('close', 12)}
