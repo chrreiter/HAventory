@@ -3,25 +3,33 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
-import { t, tn } from '../i18n';
-import { counted, showingCount } from '../ui/plural';
+import { t } from '../i18n';
+import { showingCount } from '../ui/plural';
 import { ResponsiveController } from '../ui/responsive';
-import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters, soleLocationId } from '../store/store';
 import { emptyKindFor } from '../ui/empty-state';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
-import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
 import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
 import type { BannerHooks } from '../ui/banners';
+import {
+  priceStaged,
+  renderFilterChips,
+  renderFilterHead,
+  renderFilterPanel,
+  renderSearch,
+  renderStagedFooter,
+  searchBox,
+  searchDebounce,
+  sheetHead,
+} from '../ui/filter-chrome';
+import { renderStatBadges } from '../ui/stat-badges';
 import { HostSurfaces } from '../host-surfaces';
 import { ItemWorkspace } from '../item-workspace';
 import type { Store } from '../store/store';
 import type { StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import './hv-bottom-sheet';
-import './hv-filter-chips';
-import './hv-filter-panel';
 import './hv-list';
 import './hv-full-view';
 import type { OrganizeTab } from './hv-organize-dialog';
@@ -29,7 +37,6 @@ import './hv-overflow-menu';
 import type { HVFilterPanel } from './hv-filter-panel';
 import type { HVItemEditor } from './hv-item-editor';
 
-const SEARCH_DEBOUNCE_MS = 200;
 const FILTER_PANEL_STORAGE_KEY = 'haventory:filter-panel-open:v1';
 
 /**
@@ -63,6 +70,8 @@ export class HVCardShell extends LitElement {
     base,
     chip,
     bannerStack,
+    searchBox,
+    sheetHead,
     css`
       :host {
         display: block;
@@ -182,24 +191,14 @@ export class HVCardShell extends LitElement {
         gap: 8px;
         padding: 4px 16px 10px;
       }
+      /* The card's own fill and gutter for the box; ui/filter-chrome gives it
+         its shape, and the ink here is what a card surface asks for. */
       .search {
-        flex: 1;
-        min-width: 0;
-        display: flex;
-        align-items: center;
-        gap: 8px;
         background: var(--hv-input-bg);
-        border-radius: var(--hv-radius-chip);
         padding: 8px 14px;
         color: var(--hv-text-secondary);
       }
       .search input {
-        flex: 1;
-        min-width: 0;
-        border: none;
-        background: none;
-        outline: none;
-        font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
         color: var(--hv-text);
       }
       /* The input inside the pill is what actually takes the tap, so the field
@@ -279,17 +278,10 @@ export class HVCardShell extends LitElement {
       .sheet-footer .apply {
         flex: 1;
       }
+      /* Inside the sheet's own 16px gutter; ui/filter-chrome gives the row its
+         shape and the two labels in it their sizes. */
       .sheet-head {
-        display: flex;
-        align-items: center;
-        gap: 10px;
         padding: 6px 16px 10px;
-        border-bottom: 1px solid var(--hv-row-divider);
-      }
-      .sheet-head .heading {
-        font-size: 16px;
-        font-weight: 500;
-        color: var(--hv-text);
       }
       /* The footer's way into the expanded view. Sized to the footer it sits in
          rather than to the card's other text buttons, which is why it is not
@@ -425,11 +417,7 @@ export class HVCardShell extends LitElement {
   }
 
   // ---------- Filters ----------
-  private _emitSearch = debounce((q: string) => this.store?.setFilters({ q }), SEARCH_DEBOUNCE_MS);
-
-  private _setFilters(patch: Partial<StoreFilters>) {
-    this.store?.setFilters(patch);
-  }
+  private _emitSearch = searchDebounce(() => this.store);
 
   private _toggleFilterSurface = () => {
     if (this.mobile) {
@@ -443,11 +431,12 @@ export class HVCardShell extends LitElement {
   };
 
   /** Price a staged (not yet applied) filter so the sheet's button can be honest. */
-  private _priceStaged = debounce((filters: StoreFilters) => {
-    void this.store?.countMatching(filters).then((count) => {
+  private _priceStaged = priceStaged(
+    () => this.store,
+    (count) => {
       this._stagedCount = count;
-    });
-  }, 150);
+    },
+  );
 
   // ---------- Inline editing ----------
   private get _editor(): HVItemEditor | null {
@@ -509,86 +498,19 @@ export class HVCardShell extends LitElement {
 
   // ---------- Render helpers ----------
   private _renderBadges() {
-    const st = this.st;
-    const counts = st?.statsCounts;
-    if (!counts) return null;
-    const f = st?.filters;
-    // A pill shows when the dashboard allows it *and* its count clears the gate
-    // it always had — the config decides what is on offer, the count decides
-    // whether there is anything to say.
-    const allows = (key: QuickFilterKey) => quickFilterAllowed(this.quickFilters, key);
-    const lowStock = allows('low_stock') && counts.low_stock_count > 0;
-    const overdue = allows('overdue') && (counts.overdue_count ?? 0) > 0;
-    const inspection = allows('inspection_due') && (counts.inspection_due_count ?? 0) > 0;
-    const reminder = allows('reminder_due') && (counts.reminder_due_count ?? 0) > 0;
-    const checkedOut = allows('checked_out') && counts.checked_out_count > 0;
+    const badges = renderStatBadges(this.st, this.quickFilters, {
+      prefix: 'badge',
+      chipClass: (tone) => `badge toggle ${tone}`,
+      // The total reports rather than filters, and on a phone the row it would
+      // take is the one the toggles need.
+      total: this.mobile ? undefined : 'badge quiet',
+      setFilters: (patch) => this.store?.setFilters(patch),
+    });
+    if (!badges) return null;
     // On mobile the wrapper takes a row of its own, so an empty one would leave
-    // a blank band under the title rather than nothing at all. The total is not
-    // among them: it does not render on a phone at all.
-    const anyBadge = !this.mobile || lowStock || overdue || inspection || reminder || checkedOut;
-    if (!anyBadge) return null;
-    return html`
-      <div class="badges">
-        ${this.mobile || !allows('total')
-          ? null
-          : html`<span class="hv-chip badge quiet" data-testid="badge-total">${counted(counts.items_total, 'item')}</span>`}
-        ${lowStock
-          ? html`<button
-              class="hv-chip badge toggle warning ${f?.lowStockOnly ? 'on' : ''}"
-              data-testid="badge-low"
-              aria-pressed=${String(!!f?.lowStockOnly)}
-              title=${t('hv.card.badge.lowTitle')}
-              @click=${() => this._setFilters({ lowStockOnly: !f?.lowStockOnly })}
-            >
-              ${t('hv.card.badge.low', { count: counts.low_stock_count })}
-            </button>`
-          : null}
-        ${overdue
-          ? html`<button
-              class="hv-chip badge toggle error ${f?.overdueOnly ? 'on' : ''}"
-              data-testid="badge-overdue"
-              aria-pressed=${String(!!f?.overdueOnly)}
-              title=${t('hv.card.badge.overdueTitle')}
-              @click=${() => this._setFilters({ overdueOnly: !f?.overdueOnly })}
-            >
-              ${t('hv.card.badge.overdue', { count: counts.overdue_count ?? 0 })}
-            </button>`
-          : null}
-        ${inspection
-          ? html`<button
-              class="hv-chip badge toggle warning ${f?.inspectionDueOnly ? 'on' : ''}"
-              data-testid="badge-inspection"
-              aria-pressed=${String(!!f?.inspectionDueOnly)}
-              title=${t('hv.card.badge.inspectionTitle')}
-              @click=${() => this._setFilters({ inspectionDueOnly: !f?.inspectionDueOnly })}
-            >
-              ${t('hv.card.badge.inspection', { count: counts.inspection_due_count ?? 0 })}
-            </button>`
-          : null}
-        ${reminder
-          ? html`<button
-              class="hv-chip badge toggle warning ${f?.reminderDueOnly ? 'on' : ''}"
-              data-testid="badge-reminder"
-              aria-pressed=${String(!!f?.reminderDueOnly)}
-              title=${t('hv.card.badge.reminderTitle')}
-              @click=${() => this._setFilters({ reminderDueOnly: !f?.reminderDueOnly })}
-            >
-              ${t('hv.card.badge.reminder', { count: counts.reminder_due_count ?? 0 })}
-            </button>`
-          : null}
-        ${checkedOut
-          ? html`<button
-              class="hv-chip badge toggle state ${f?.checkedOutOnly ? 'on' : ''}"
-              data-testid="badge-out"
-              aria-pressed=${String(!!f?.checkedOutOnly)}
-              title=${t('hv.card.badge.checkedOutTitle')}
-              @click=${() => this._setFilters({ checkedOutOnly: !f?.checkedOutOnly })}
-            >
-              ${t('hv.card.badge.checkedOut', { count: counts.checked_out_count })}
-            </button>`
-          : null}
-      </div>
-    `;
+    // a blank band under the title rather than nothing at all.
+    if (this.mobile && !badges.any) return null;
+    return html`<div class="badges">${badges.total}${badges.pills}</div>`;
   }
 
   private _onEmptyAction = (e: CustomEvent) => {
@@ -600,32 +522,23 @@ export class HVCardShell extends LitElement {
   };
 
   private _renderFilterPanel(mobile: boolean) {
-    const st = this.st;
-    if (!st) return null;
-    return html`<hv-filter-panel
-      .statuses=${st?.statuses ?? null}
-      .filters=${st.filters}
-      .distinct=${st.distinctValuesCache}
-      .areas=${st.areasCache?.areas ?? []}
-      .locations=${st.locationsFlatCache}
-      .locationTree=${st.locationTreeCache ?? []}
-      .total=${st.total}
-      .grandTotal=${st.statsCounts?.items_total ?? null}
-      .counts=${st.statsCounts}
-      ?mobile=${mobile}
-      @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}
-      @stage=${(e: CustomEvent) => {
-        const staged = (e.detail as { filters: StoreFilters }).filters;
+    // Nothing to filter before a store is attached, and an empty panel under
+    // the search row would be a control that answers nothing.
+    if (!this.st) return null;
+    return renderFilterPanel(this.st, {
+      mobile,
+      setFilters: (patch) => this.store?.setFilters(patch),
+      clearFilters: () => this.store?.clearFilters(),
+      onStage: (staged) => {
         this._stagedFilters = staged;
         this._priceStaged(staged);
-      }}
-      @apply=${(e: CustomEvent) => {
-        this._setFilters(e.detail as StoreFilters);
+      },
+      onApply: (filters) => {
+        this.store?.setFilters(filters);
         this._filterSheetOpen = false;
         this._stagedFilters = null;
-      }}
-      @clear-filters=${() => this.store?.clearFilters()}
-    ></hv-filter-panel>`;
+      },
+    });
   }
 
   render() {
@@ -635,9 +548,6 @@ export class HVCardShell extends LitElement {
     const stagedFilterCount = activeFilterCount(this._stagedFilters ?? filters);
     const loaded = st?.items.length ?? 0;
     const total = st?.total;
-    // The placeholder counts the whole inventory, not the filtered result: it is
-    // the same sentence the full view and the panel show, so the search box does
-    // not describe the same store two ways depending on which surface opened it.
     const searchTotal = st?.statsCounts?.items_total ?? null;
     const mobile = this.mobile;
     // The filter button reports the surface its own width uses. The desktop
@@ -679,22 +589,15 @@ export class HVCardShell extends LitElement {
       </div>
 
       <div class="search-row">
-        <label class="search">
-          ${icon('magnify', 18)}
-          <span class="hv-sr-only">${t('hv.card.searchItems')}</span>
-          <input
-            type="search"
-            data-testid="search-input"
-            placeholder=${searchTotal === null
-              ? t('hv.card.searchPlaceholder')
-              : tn('hv.card.searchAllPlaceholder', searchTotal)}
-            .value=${this._searchDraft}
-            @input=${(e: Event) => {
-              this._searchDraft = (e.target as HTMLInputElement).value;
-              this._emitSearch(this._searchDraft);
-            }}
-          />
-        </label>
+        ${renderSearch({
+          testid: 'search-input',
+          draft: this._searchDraft,
+          total: searchTotal,
+          onInput: (q) => {
+            this._searchDraft = q;
+            this._emitSearch(q);
+          },
+        })}
         <button
           class="icon-toggle ${filterSurfaceOpen ? 'on' : ''}"
           data-testid="filter-toggle"
@@ -711,15 +614,10 @@ export class HVCardShell extends LitElement {
 
       ${filterCount > 0
         ? html`<div class="chips-row">
-            <hv-filter-chips
-              .statuses=${st?.statuses ?? null}
-              .filters=${filters}
-              .locations=${st?.locationsFlatCache ?? null}
-              .areas=${st?.areasCache?.areas ?? []}
-              @remove-filter=${(e: CustomEvent) =>
-                this._setFilters((e.detail as { patch: Partial<StoreFilters> }).patch)}
-              @clear-filters=${() => this.store?.clearFilters()}
-            ></hv-filter-chips>
+            ${renderFilterChips(st, {
+              setFilters: (patch) => this.store?.setFilters(patch),
+              clearFilters: () => this.store?.clearFilters(),
+            })}
           </div>`
         : null}
       ${mobile
@@ -804,43 +702,27 @@ export class HVCardShell extends LitElement {
               this._filterPanel?.resetDraft();
             }}
           >
-            <div class="sheet-head">
-              <span class="heading">${t('hv.card.filters')}</span>
-              <span style="font-size:12.5px;color:var(--hv-text-secondary)"
-                >${t('hv.card.filtersActive', { count: stagedFilterCount })}</span
-              >
-              <button
-                class="hv-text-button"
-                style="margin-left:auto"
-                data-testid="sheet-clear-all"
-                @click=${() => this._filterPanel?.clearAll()}
-              >
-                ${t('hv.action.clearAll')}
-              </button>
-            </div>
+            ${renderFilterHead({
+              rowClass: 'sheet-head',
+              testids: { clear: 'sheet-clear-all' },
+              staged: stagedFilterCount,
+              onClear: () => this._filterPanel?.clearAll(),
+            })}
             ${this._renderFilterPanel(true)}
-            <div class="sheet-footer" slot="footer">
-              <button
-                class="cancel"
-                data-testid="sheet-cancel"
-                @click=${() => {
-                  this._filterSheetOpen = false;
-                  this._stagedFilters = null;
-                  this._filterPanel?.resetDraft();
-                }}
-              >
-                ${t('hv.action.cancel')}
-              </button>
-              <button
-                class="hv-pill large apply"
-                data-testid="sheet-apply"
-                @click=${() => this._filterPanel?.apply()}
-              >
-                ${this._stagedCount === null
-                  ? t('hv.card.showItems')
-                  : tn('hv.card.showCount', this._stagedCount)}
-              </button>
-            </div>
+            ${renderStagedFooter({
+              prefix: 'sheet',
+              rowClass: 'sheet-footer',
+              slot: 'footer',
+              cancelClass: 'cancel',
+              applyClass: 'hv-pill large apply',
+              stagedCount: this._stagedCount,
+              panel: () => this._filterPanel,
+              onCancel: () => {
+                this._filterSheetOpen = false;
+                this._stagedFilters = null;
+                this._filterPanel?.resetDraft();
+              },
+            })}
           </hv-bottom-sheet>`
         : null}
 
@@ -851,7 +733,7 @@ export class HVCardShell extends LitElement {
             data-testid="add-sheet"
             @cancel=${() => this._workspace.startEdit(null)}
           >
-            <div class="sheet-head">
+            <div class="hv-sheet-head sheet-head">
               <span class="heading">${t('hv.card.newItem')}</span>
               <button
                 class="hv-icon-button"

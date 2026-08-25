@@ -10,7 +10,6 @@ import { icon } from '../ui/icons';
 import { t, tn } from '../i18n';
 import { counted, showingCount } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
-import { debounce } from '../utils/debounce';
 import { activeFilterCount, defaultFilters, soleLocationId } from '../store/store';
 import { countLocations } from '../store/location-tree';
 import { emptyKindFor, renderEmptyState } from '../ui/empty-state';
@@ -23,11 +22,22 @@ import {
   renderAreaChip,
 } from '../ui/location-path';
 import { DEFAULT_CARD_TITLE } from '../ui/card-title';
-import { quickFilterAllowed } from '../ui/quick-filters';
 import type { QuickFilterKey } from '../ui/quick-filters';
 import type { ConfirmDiscard } from '../ui/discard';
 import { bannerStack, renderDegradedBanners, renderErrorBanners } from '../ui/banners';
 import type { BannerHooks } from '../ui/banners';
+import {
+  priceStaged,
+  renderFilterChips,
+  renderFilterHead,
+  renderFilterPanel,
+  renderSearch,
+  renderStagedFooter,
+  searchBox,
+  searchDebounce,
+  sheetHead,
+} from '../ui/filter-chrome';
+import { renderStatBadges } from '../ui/stat-badges';
 import { ViewportNarrow } from '../ui/responsive';
 import { ItemWorkspace } from '../item-workspace';
 import { statusCount, statusLabel, statusList } from '../ui/status';
@@ -51,15 +61,11 @@ import './hv-bulk-bar';
 import './hv-checkout-popover';
 import './hv-confirm';
 import './hv-data-table';
-import './hv-filter-chips';
-import './hv-filter-panel';
 import './hv-location-tree';
 import './hv-overflow-menu';
 import type { HVItemEditor } from './hv-item-editor';
 import type { HVLocationTree } from './hv-location-tree';
 import type { HVFilterPanel } from './hv-filter-panel';
-
-const SEARCH_DEBOUNCE_MS = 200;
 
 /** The sidebar's collapsible sections, in the order they appear. */
 type SidebarSection = 'locations' | 'status' | 'categories' | 'tags';
@@ -145,6 +151,8 @@ export class HVFullView extends LitElement {
     chip,
     browseRow,
     bannerStack,
+    searchBox,
+    sheetHead,
     css`
       :host {
         display: contents;
@@ -275,32 +283,19 @@ export class HVFullView extends LitElement {
       .appbar .tap:hover {
         background: rgba(255, 255, 255, 0.16);
       }
+      /* The bar's own fill and gutter for the box; ui/filter-chrome gives it
+         its shape, and white ink is what a primary-coloured bar asks for. */
       .appbar .search {
-        flex: 1;
-        /* Without this the field will not shrink below its content width, and
-           a flex item that refuses to shrink pushes everything after it off
-           the end of a narrow bar. */
-        min-width: 0;
         /* A flex-basis is a content-box width by default, so the full-width
            basis it takes on a phone came out 24px wider than the line — its own
            padding — and the bar overflowed its right edge by that much. */
         box-sizing: border-box;
         max-width: 420px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
         background: rgba(255, 255, 255, 0.22);
-        border-radius: var(--hv-radius-chip);
         padding: 7px 14px;
       }
       .appbar .search input {
-        flex: 1;
-        min-width: 0;
-        border: none;
-        background: none;
-        outline: none;
         color: #fff;
-        font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
       }
       .appbar .search input::placeholder {
         color: rgba(255, 255, 255, 0.8);
@@ -776,26 +771,14 @@ export class HVFullView extends LitElement {
            underneath it. */
         overscroll-behavior-y: contain;
       }
-      /* Both only rendered on a phone, where the panel stages its edits. */
+      /* Both only rendered on a phone, where the panel stages its edits. The
+         row's shape and the two labels in it come from ui/filter-chrome; the
+         column around it already has a gutter, so it adds none of its own. */
       .panel-head {
-        display: flex;
         flex: none;
-        align-items: center;
-        gap: 10px;
         padding: 2px 0 8px;
-        border-bottom: 1px solid var(--hv-row-divider);
-      }
-      .panel-head .heading {
-        font-size: 16px;
-        font-weight: 500;
-        color: var(--hv-text);
-      }
-      .panel-head .staged {
-        font-size: 12.5px;
-        color: var(--hv-text-secondary);
       }
       .panel-head .hv-text-button {
-        margin-left: auto;
         flex: none;
       }
       .panel-foot {
@@ -1077,11 +1060,12 @@ export class HVFullView extends LitElement {
   }
 
   /** Price a staged (not yet applied) filter set, so the footer can be honest. */
-  private _priceStaged = debounce((filters: StoreFilters) => {
-    void this.store?.countMatching(filters).then((count) => {
+  private _priceStaged = priceStaged(
+    () => this.store,
+    (count) => {
       this._stagedCount = count;
-    });
-  }, 150);
+    },
+  );
 
   protected willUpdate(changed: Map<string, unknown>) {
     this._workspace.syncPinnedItem();
@@ -1234,11 +1218,7 @@ export class HVFullView extends LitElement {
     list[list.length - 1]?.focus();
   }
 
-  private _emitSearch = debounce((q: string) => this.store?.setFilters({ q }), SEARCH_DEBOUNCE_MS);
-
-  private _setFilters(patch: Partial<StoreFilters>) {
-    this.store?.setFilters(patch);
-  }
+  private _emitSearch = searchDebounce(() => this.store);
 
   /**
    * Show an item: the read sheet on a narrow viewport, the inline form on a
@@ -1454,7 +1434,7 @@ export class HVFullView extends LitElement {
           data-testid="sidebar-tags-mode"
           data-mode=${m}
           title=${m === 'any' ? t('hv.fullView.tagsAnyTitle') : t('hv.fullView.tagsAllTitle')}
-          @click=${() => this._setFilters({ tagsMode: m })}
+          @click=${() => this.store?.setFilters({ tagsMode: m })}
         >
           ${m === 'any' ? t('hv.term.any') : t('hv.term.all')}
         </button>`,
@@ -1519,7 +1499,7 @@ export class HVFullView extends LitElement {
                 tabindex="-1"
                 @click=${() => {
                   this._holdFacetStop('status', facetRowKey('status', s));
-                  this._setFilters({ status: on ? null : s });
+                  this.store?.setFilters({ status: on ? null : s });
                 }}
               >
                 <span class="hv-browse-row-lead ${on ? '' : 'placeholder'}">${icon('check', 15)}</span>
@@ -1671,7 +1651,7 @@ export class HVFullView extends LitElement {
           distinct?.categories ?? [],
           (v) => selectedCategories.has(v),
           (v) =>
-            this._setFilters({
+            this.store?.setFilters({
               categories: selectedCategories.has(v)
                 ? filters.categories.filter((c) => c !== v)
                 : [...filters.categories, v],
@@ -1683,7 +1663,7 @@ export class HVFullView extends LitElement {
           distinct?.tags ?? [],
           (v) => selectedTags.has(v),
           (v) =>
-            this._setFilters({
+            this.store?.setFilters({
               tags: selectedTags.has(v) ? filters.tags.filter((t) => t !== v) : [...filters.tags, v],
             }),
           filters.tags.length > 1 ? this._renderTagsMode(filters.tagsMode) : null,
@@ -1752,13 +1732,13 @@ export class HVFullView extends LitElement {
           .orphanCount=${st?.statsCounts?.no_location_count ?? null}
           .matchingTotalCount=${st?.locationMatchTotal ?? null}
           @select=${(e: CustomEvent) =>
-            this._setFilters({
+            this.store?.setFilters({
               locationIds: this._toggledLocations((e.detail as { locationId: string | null }).locationId),
               orphansOnly: false,
             })}
-          @select-orphans=${() => this._setFilters({ locationIds: [], orphansOnly: true })}
+          @select-orphans=${() => this.store?.setFilters({ locationIds: [], orphansOnly: true })}
           @select-area=${(e: CustomEvent) =>
-            this._setFilters({
+            this.store?.setFilters({
               areaId: (e.detail as { areaId: string }).areaId,
               locationIds: [],
               orphansOnly: false,
@@ -1767,28 +1747,14 @@ export class HVFullView extends LitElement {
     `;
   }
 
-  /**
-   * The phone panel's head row: what the panel is, how much of it is staged,
-   * and the way out of all of it.
-   *
-   * Clear all sits here rather than beside the commit buttons because three
-   * controls do not fit a 375px row in every language: German's
-   * `hv.action.clearAll` broke over two lines and left the button beside it
-   * stacking its count sentence over three. The card's filter sheet has
-   * carried this same head row all along, which is why its footer never had
-   * the problem.
-   */
+  /** The phone panel's head row, which the card's filter sheet has carried all along. */
   private _renderPanelHead(filters: StoreFilters) {
-    const staged = activeFilterCount(this._stagedFilters ?? filters);
-    return html`<div class="panel-head" data-testid="full-panel-head">
-      <span class="heading">${t('hv.card.filters')}</span>
-      <span class="staged" data-testid="full-panel-count">
-        ${t('hv.card.filtersActive', { count: staged })}
-      </span>
-      <button class="hv-text-button" data-testid="full-panel-clear" @click=${() => this._panel()?.clearAll()}>
-        ${t('hv.action.clearAll')}
-      </button>
-    </div>`;
+    return renderFilterHead({
+      rowClass: 'panel-head',
+      testids: { row: 'full-panel-head', count: 'full-panel-count', clear: 'full-panel-clear' },
+      staged: activeFilterCount(this._stagedFilters ?? filters),
+      onClear: () => this._panel()?.clearAll(),
+    });
   }
 
   // Resolved per click, never captured at render time: on the render that first
@@ -1798,35 +1764,26 @@ export class HVFullView extends LitElement {
     return this.renderRoot?.querySelector<HVFilterPanel>('[data-testid="full-filter-panel"]');
   }
 
-  /**
-   * The phone panel's commit row.
-   *
-   * `hv-filter-panel` stages its edits when it is on a phone and drops its own
-   * footer, because its host is expected to provide one — the card's filter
-   * sheet does. This surface had neither, so telling the panel it was on a phone
-   * without this would stage every edit with no way to apply it.
-   */
+  /** The phone panel's commit row, without which its staged edits have no way out. */
   private _renderPanelFoot() {
     const panel = this._panel.bind(this);
-    return html`<div class="panel-foot" data-testid="full-panel-foot">
-      <span class="spacer"></span>
-      <button
-        class="hv-text-button"
-        data-testid="full-panel-cancel"
-        @click=${() => {
-          panel()?.resetDraft();
-          this._filtersOpen = false;
-          this._stagedFilters = null;
-        }}
-      >
-        ${t('hv.action.cancel')}
-      </button>
-      <button class="hv-pill" data-testid="full-panel-apply" @click=${() => panel()?.apply()}>
-        ${this._stagedCount === null
-          ? t('hv.card.showItems')
-          : tn('hv.card.showCount', this._stagedCount)}
-      </button>
-    </div>`;
+    return renderStagedFooter({
+      prefix: 'full-panel',
+      rowClass: 'panel-foot',
+      rowTestid: 'full-panel-foot',
+      cancelClass: 'hv-text-button',
+      applyClass: 'hv-pill',
+      // The row's two controls belong at the far end of it, and one auto margin
+      // is what puts them there.
+      lead: html`<span class="spacer"></span>`,
+      stagedCount: this._stagedCount,
+      panel,
+      onCancel: () => {
+        panel()?.resetDraft();
+        this._filtersOpen = false;
+        this._stagedFilters = null;
+      },
+    });
   }
 
   private _renderEmpty() {
@@ -1885,15 +1842,10 @@ export class HVFullView extends LitElement {
              picker wrapping on its own under the filter button. -->
         <span class="context-actions">
           ${filterCount > 0
-            ? html`<hv-filter-chips
-                .statuses=${this.st?.statuses ?? null}
-                .filters=${filters}
-                .locations=${st?.locationsFlatCache ?? null}
-                .areas=${st?.areasCache?.areas ?? []}
-                @remove-filter=${(e: CustomEvent) =>
-                  this._setFilters((e.detail as { patch: Partial<StoreFilters> }).patch)}
-                @clear-filters=${() => this.store?.clearFilters()}
-              ></hv-filter-chips>`
+            ? renderFilterChips(st, {
+                setFilters: (patch) => this.store?.setFilters(patch),
+                clearFilters: () => this.store?.clearFilters(),
+              })
             : null}
           <button
             class="filters-button ${this._filtersOpen ? 'on' : ''}"
@@ -2058,75 +2010,19 @@ export class HVFullView extends LitElement {
    */
   private _renderAppBar() {
     const st = this.st;
-    const filters = st?.filters ?? defaultFilters();
     const counts = st?.statsCounts;
-    // The dashboard decides what is on offer; the count still decides whether
-    // there is anything to say. Same vocabulary the card's badges read.
-    const allowsPill = (key: QuickFilterKey) => quickFilterAllowed(this.quickFilters, key);
     // The narrow branch dresses these same controls its own way, on its own
     // breakpoint, so the measured steps stand aside for it.
     const steps = this._viewport.narrow ? '' : this._barSteps;
     const addLabelClass = steps.includes('tight') ? 'add-label hv-sr-only' : 'add-label';
-    // One strip, so the pills are what gives when the bar runs out of room —
-    // and no strip at all when nothing is flagged, because an empty one is
-    // still a flex item with a gap in front of it.
-    const pills = [
-      allowsPill('low_stock') && counts && counts.low_stock_count > 0
-        ? html`<button
-            class="hv-chip pill warning ${filters.lowStockOnly ? 'on' : ''}"
-            data-testid="full-badge-low"
-            aria-pressed=${String(filters.lowStockOnly)}
-            title=${t('hv.card.badge.lowTitle')}
-            @click=${() => this._setFilters({ lowStockOnly: !filters.lowStockOnly })}
-          >
-            ${t('hv.card.badge.low', { count: counts.low_stock_count })}
-          </button>`
-        : null,
-      allowsPill('overdue') && counts && (counts.overdue_count ?? 0) > 0
-        ? html`<button
-            class="hv-chip pill error ${filters.overdueOnly ? 'on' : ''}"
-            data-testid="full-badge-overdue"
-            aria-pressed=${String(filters.overdueOnly)}
-            title=${t('hv.card.badge.overdueTitle')}
-            @click=${() => this._setFilters({ overdueOnly: !filters.overdueOnly })}
-          >
-            ${t('hv.card.badge.overdue', { count: counts.overdue_count ?? 0 })}
-          </button>`
-        : null,
-      allowsPill('inspection_due') && counts && (counts.inspection_due_count ?? 0) > 0
-        ? html`<button
-            class="hv-chip pill warning ${filters.inspectionDueOnly ? 'on' : ''}"
-            data-testid="full-badge-inspection"
-            aria-pressed=${String(filters.inspectionDueOnly)}
-            title=${t('hv.card.badge.inspectionTitle')}
-            @click=${() => this._setFilters({ inspectionDueOnly: !filters.inspectionDueOnly })}
-          >
-            ${t('hv.card.badge.inspection', { count: counts.inspection_due_count ?? 0 })}
-          </button>`
-        : null,
-      allowsPill('reminder_due') && counts && (counts.reminder_due_count ?? 0) > 0
-        ? html`<button
-            class="hv-chip pill warning ${filters.reminderDueOnly ? 'on' : ''}"
-            data-testid="full-badge-reminder"
-            aria-pressed=${String(filters.reminderDueOnly)}
-            title=${t('hv.card.badge.reminderTitle')}
-            @click=${() => this._setFilters({ reminderDueOnly: !filters.reminderDueOnly })}
-          >
-            ${t('hv.card.badge.reminder', { count: counts.reminder_due_count ?? 0 })}
-          </button>`
-        : null,
-      allowsPill('checked_out') && counts && counts.checked_out_count > 0
-        ? html`<button
-            class="hv-chip pill ${filters.checkedOutOnly ? 'on' : ''}"
-            data-testid="full-badge-out"
-            aria-pressed=${String(filters.checkedOutOnly)}
-            title=${t('hv.card.badge.checkedOutTitle')}
-            @click=${() => this._setFilters({ checkedOutOnly: !filters.checkedOutOnly })}
-          >
-            ${t('hv.card.badge.checkedOut', { count: counts.checked_out_count })}
-          </button>`
-        : null,
-    ];
+    const badges = renderStatBadges(st, this.quickFilters, {
+      prefix: 'full-badge',
+      // The bar substitutes its own solid fills for the card's pale tints, and
+      // has no blue to spare on a blue bar — so the checked-out pill, which is
+      // the card's one blue badge, takes no hue here.
+      chipClass: (tone) => (tone === 'state' ? 'pill' : `pill ${tone}`),
+      setFilters: (patch) => this.store?.setFilters(patch),
+    });
     return html`
         <div class="appbar ${steps}">
           ${this.embedded
@@ -2140,24 +2036,20 @@ export class HVFullView extends LitElement {
                 ${icon('close', 20)}
               </button>`}
           <h2>${this.heading}</h2>
-          <label class="search">
-            ${icon('magnify', 18)}
-            <span class="hv-sr-only">${t('hv.card.searchItems')}</span>
-            <input
-              type="search"
-              data-testid="full-search"
-              placeholder=${counts
-                ? tn('hv.card.searchAllPlaceholder', counts.items_total)
-                : t('hv.card.searchPlaceholder')}
-              .value=${this._searchDraft}
-              @input=${(e: Event) => {
-                this._searchDraft = (e.target as HTMLInputElement).value;
-                this._emitSearch(this._searchDraft);
-              }}
-            />
-          </label>
-          ${pills.some((pill) => pill !== null)
-            ? html`<div class="pills" data-testid="full-pills">${pills}</div>`
+          ${renderSearch({
+            testid: 'full-search',
+            draft: this._searchDraft,
+            total: counts?.items_total ?? null,
+            onInput: (q) => {
+              this._searchDraft = q;
+              this._emitSearch(q);
+            },
+          })}
+          <!-- One strip, so the pills are what gives when the bar runs out of
+               room — and no strip at all when nothing is flagged, because an
+               empty one is still a flex item with a gap in front of it. -->
+          ${badges?.any
+            ? html`<div class="pills" data-testid="full-pills">${badges.pills}</div>`
             : null}
           <!-- On a phone the bar's first row holds the menu, this button, the
                organize pin and the overflow, and only the heading can shrink.
@@ -2211,7 +2103,6 @@ export class HVFullView extends LitElement {
   private _renderBody() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
-    const counts = st?.statsCounts;
     const loaded = st?.items.length ?? 0;
     const selection = st?.selection ?? new Set<string>();
 
@@ -2231,31 +2122,21 @@ export class HVFullView extends LitElement {
                 ? html`
                   ${this._viewport.narrow ? this._renderPanelHead(filters) : null}
                   <div class="panel-scroll">
-                  <hv-filter-panel
-                    .statuses=${this.st?.statuses ?? null}
-                    data-testid="full-filter-panel"
-                    .filters=${filters}
-                    .distinct=${st?.distinctValuesCache ?? null}
-                    .areas=${st?.areasCache?.areas ?? []}
-                    .locations=${st?.locationsFlatCache ?? null}
-                    .locationTree=${st?.locationTreeCache ?? []}
-                    .total=${st?.total ?? null}
-                    .grandTotal=${counts?.items_total ?? null}
-                    .counts=${counts ?? null}
-                    ?mobile=${this._viewport.narrow}
-                    @change=${(e: CustomEvent) => this._setFilters(e.detail as Partial<StoreFilters>)}
-                    @stage=${(e: CustomEvent) => {
-                      const staged = (e.detail as { filters: StoreFilters }).filters;
+                  ${renderFilterPanel(st, {
+                    testid: 'full-filter-panel',
+                    mobile: this._viewport.narrow,
+                    setFilters: (patch) => this.store?.setFilters(patch),
+                    clearFilters: () => this.store?.clearFilters(),
+                    onStage: (staged) => {
                       this._stagedFilters = staged;
                       this._priceStaged(staged);
-                    }}
-                    @apply=${(e: CustomEvent) => {
-                      this._setFilters(e.detail as StoreFilters);
+                    },
+                    onApply: (applied) => {
+                      this.store?.setFilters(applied);
                       this._filtersOpen = false;
                       this._stagedFilters = null;
-                    }}
-                    @clear-filters=${() => this.store?.clearFilters()}
-                  ></hv-filter-panel>
+                    },
+                  })}
                   </div>
                   ${this._viewport.narrow ? this._renderPanelFoot() : null}
                 `
@@ -2293,7 +2174,7 @@ export class HVFullView extends LitElement {
               ?selectable=${this._selecting}
               ?narrow=${this._viewport.narrow}
               .selection=${selection}
-              @sort-change=${(e: CustomEvent) => this._setFilters({ sort: (e.detail as { sort: Sort }).sort })}
+              @sort-change=${(e: CustomEvent) => this.store?.setFilters({ sort: (e.detail as { sort: Sort }).sort })}
               @near-end=${(e: CustomEvent) =>
                 void this.store?.prefetchIfNeeded((e.detail as { ratio: number }).ratio)}
               @increment=${(e: CustomEvent) => this._workspace.onRowEvent('increment', e.detail)}
