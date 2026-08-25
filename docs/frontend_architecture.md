@@ -189,8 +189,9 @@ kept per section in `_facetStop` and reconciled against the rendered rows after 
 render: a held row drawn away — a narrowed vocabulary, a cleared filter — hands the stop to
 the selected row, or to the first one. The section heading, its "+" and the tags any/all
 pair are ordinary tab stops, so a section is still reached, opened and added to without the
-arrows. `ui/roving-list.ts` holds the walk and the key handling; `hv-location-tree` runs the
-same shape for the Locations section behind its own shadow boundary.
+arrows. `ui/roving-list.ts` holds the walk and the key handling, and `hv-location-tree` reads
+the Locations section's from the same module — one level deeper, because a tree's rows also
+open and close.
 
 `hv-filter-panel` answers the same problem by showing less rather than by moving the stop:
 its category and tag groups draw the first `CATEGORY_CHIP_LIMIT` (4) and `TAG_CHIP_LIMIT`
@@ -494,7 +495,10 @@ re-render it — so each container subscribes to `store.state.onChange` itself, 
 | `downscale.ts` | Re-encoding an oversized photo in the browser before it is uploaded: the size and type rules, the capped-edge arithmetic, and the decode/encode seam. Fails open — anything that does not work hands the original file back. |
 | `status.ts` | The item-status vocabulary: the definitions a surface renders from (backend's, or the built-in three until `haventory/config` answers), the label / tone-class / glyph lookups with their fallbacks, the colour and glyph vocabularies the management picker offers, and `renderStatusChip` — one renderer so the mark cannot drift between a table cell and a detail sheet. |
 | `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
-| `roving-list.ts` | A long list of rows as one tab stop: which row holds `tabindex="0"` after a redraw (`syncRovingTabindex`), and which row an Arrow, Home or End press moves to (`rovingTarget`). Used by the sidebar's three facet lists; `hv-location-tree` carries its own copy of the pattern, since a tree also has to open and close nodes. |
+| `roving-list.ts` | A long list of rows as one tab stop: which row holds `tabindex="0"` after a redraw (`syncRovingTabindex`), and which row an Arrow, Home or End press moves to (`rovingTarget`). Used by the sidebar's three facet lists and by `hv-location-tree`, which also passes a `Disclosure` — Right and Left then work the twisties and step out to a parent, which is what keeps the twisties out of the tab order. |
+| `day-offsets.ts` | The quick jumps a forward date is set by: three presets, the "+X days" box, and the rule that an empty box means no date rather than the last one. Drawn by the check-out popover and the editor's inspection field. |
+| `location-picker.ts` | The disclosure around `hv-location-tree`: the trigger, its `aria-expanded` / `aria-controls` pair, the holder, and closing on a pick — with `keepOpenOnSelect` for a surface that picks a set. The trigger's classes and contents and the tree's own properties stay with the host. |
+| `attachments.ts` | The photo figure, the document row and the lightbox host the item editor and the detail sheet share — in particular the one answer both give to a reference whose file the backend does not have. |
 | `plural.ts` | Count agreement for every count string in the card. |
 | `theme.ts` | Whether the card is painted on a light or dark surface, read from HA's own theme variables rather than `prefers-color-scheme`. |
 
