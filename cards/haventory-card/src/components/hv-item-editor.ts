@@ -1193,6 +1193,16 @@ export class HVItemEditor extends LitElement {
    * form, a real id every other case.
    */
   private _formItemId: string | null | undefined;
+  /**
+   * The item behind that id, as it stood when the form was filled from it.
+   *
+   * Moves with `_formItemId` and only with it, because it is what a save is
+   * measured against: `item` is re-bound from a fresh lookup on every store
+   * broadcast, so by the time Save is pressed it can already carry another
+   * member's edit. Diffing against this copy is what keeps their field out of
+   * the payload.
+   */
+  private _formItem: Item | null = null;
 
   /** The item to save against: whatever the last upload returned, else the input. */
   private get _current(): Item | null {
@@ -1224,6 +1234,7 @@ export class HVItemEditor extends LitElement {
     const id = this.item?.id ?? null;
     if (id !== this._formItemId) {
       this._formItemId = id;
+      this._formItem = this.item ?? null;
       this._model = formFromItem(this.item);
       this._errors = [];
       this._showErrors = false;
@@ -1278,7 +1289,11 @@ export class HVItemEditor extends LitElement {
       ? {
           itemId: current.id,
           expectedVersion: current.version,
-          changes: toUpdatePayload(this._model, current),
+          // The version is the newest copy's; the diff is against the copy the
+          // form was filled from. Measuring the change against `current` would
+          // read another member's edit as one of this form's own and send it
+          // back — which is the whole thing this payload is shaped to avoid.
+          changes: toUpdatePayload(this._model, this._formItem ?? current),
         }
       : { itemId: null, expectedVersion: undefined, create: toCreatePayload(this._model) };
     this.dispatchEvent(new CustomEvent('save', { detail, bubbles: true, composed: true }));

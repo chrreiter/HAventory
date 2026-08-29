@@ -1302,6 +1302,46 @@ describe('hv-full-view: editing', () => {
     expect(editor.shadowRoot?.textContent).toContain('Wood Glue — editing');
   });
 
+  // What reaches the server is the whole point of the diff: the household's
+  // ordinary case is two members on one item, and the frame is where the other
+  // one's change is either kept or quietly written back.
+  it('sends the edited field and the version it was checked against, nothing more', async () => {
+    const { el, store, hass, sr } = await mount({
+      items: [makeItem({ id: '1', name: 'Wood Glue', quantity: 10, version: 2 })],
+    });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
+    const description = editor.shadowRoot?.querySelector(
+      '[data-testid="editor-description"]',
+    ) as HTMLTextAreaElement;
+    description.value = 'mine';
+    description.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    // The other member bumps the quantity from their own phone, and the event
+    // reaches this card while the form is open.
+    const bumped = makeItem({ id: '1', name: 'Wood Glue', quantity: 15, version: 3 });
+    hass.__setItems([bumped]);
+    hass.__emit('items', 'updated', { item: bumped });
+    await settle(el);
+
+    (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    const frame = hass.__messages.filter((m) => m.type === 'haventory/item/update').at(-1);
+    expect(frame).toEqual({
+      type: 'haventory/item/update',
+      item_id: '1',
+      description: 'mine',
+      expected_version: 3,
+    });
+    expect(store.state.value.items.find((i) => i.id === '1')?.quantity).toBe(15);
+  });
+
   it('adds an item from the app bar', async () => {
     const { el, store, sr } = await mount({ items: [] });
     (q(sr, '[data-testid="full-add-item"]') as HTMLButtonElement).click();
@@ -2361,6 +2401,41 @@ describe('hv-full-view: failures are visible here too', () => {
 
     expect(store.state.value.items.find((i) => i.id === '1')?.name).toBe('B');
     expect(banner(sr, 'banner-entry')).toBe(null);
+  });
+
+  // Re-apply resends what the refused save carried, on whatever version the
+  // server now holds. That payload is the diff, so the retry lands the typed
+  // field and leaves the change that caused the conflict standing.
+  it('re-applies only the field the refused save changed', async () => {
+    const { el, store, hass, sr } = await mount({
+      items: [makeItem({ id: '1', name: 'A', quantity: 10, version: 2 })],
+    });
+    hass.__setConflict(true);
+
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
+    const description = editor.shadowRoot?.querySelector(
+      '[data-testid="editor-description"]',
+    ) as HTMLTextAreaElement;
+    description.value = 'mine';
+    description.dispatchEvent(new Event('input'));
+    await settle(el);
+    (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    // The change this card never saw is what the conflict was about, and it is
+    // still on the server when the retry goes out.
+    hass.__setItems([makeItem({ id: '1', name: 'A', quantity: 15, version: 3 })]);
+    hass.__setConflict(false);
+    (banner(sr, 'banner-reapply') as HTMLButtonElement).click();
+    await settle(el);
+
+    const frame = hass.__messages.filter((m) => m.type === 'haventory/item/update').at(-1);
+    expect(frame).toEqual({ type: 'haventory/item/update', item_id: '1', description: 'mine' });
+    expect(store.state.value.items.find((i) => i.id === '1')?.quantity).toBe(15);
   });
 
   it('dismisses a plain error, which carries no conflict actions', async () => {
