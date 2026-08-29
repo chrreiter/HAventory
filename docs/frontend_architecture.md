@@ -495,7 +495,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself, 
 | `modal.ts` | The centred dialogs' chrome, once: the backdrop/centring/panel CSS (`modalChrome`), the phone bottom-sheet restyle of it (`modalSheet`), and the `Modal` controller that owns the stacking base, the focus in and back out, the Escape binding and the panel markup. |
 | `relative-time.ts` | "2 h ago" / "Jul 31" formatting, overdue checks, and the `+N days` arithmetic the check-out chips use. |
 | `day-clock.ts` | `onDayChange(cb)`: one shared timer to the next local midnight, so everything that renders a date re-renders when the day turns. See "The day turning over". |
-| `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the `custom_fields_set` / `custom_fields_unset` diff. |
+| `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the save diff — an update names only the fields the edit changed, including the `custom_fields_set` / `custom_fields_unset` halves. |
 | `value-rewrite.ts` | Tag/category rename, merge and removal as batches of item updates. |
 | `fuzzy.ts` | Nearest-existing-value suggestion for the merge flow. |
 | `empty-state.ts` | The four empty-list situations: which one applies (`emptyKindFor`), its copy and offered actions, and the markup. |
@@ -698,6 +698,12 @@ Any other key in that record is ignored, so an older or newer payload never brea
   404 counts as missing; an inconclusive probe leaves the picture alone.
 - **Optimistic writes** stay as they were; a rejected save keeps the expander open with the
   user's text in it, and conflicts render as a banner with *View latest* / *Re-apply*.
+- **An item save carries only what the edit changed**, measured against the copy of the item
+  the form was filled from. The form stays open across live events, so by the time Save is
+  pressed the version it writes against can already carry another member's edit — sending
+  the whole form would put their field back the way this form found it, on a version fresh
+  enough for the write to be accepted. *Re-apply* resends that same diff, which is what lets
+  it land on top of the change that caused the conflict instead of over it.
 - **Bulk work is chunked**, so progress is determinate and cancel stops cleanly after the
   in-flight chunk. Nothing is rolled back — the endpoint is not transactional, and the UI
   says so.

@@ -454,6 +454,25 @@ describe('hv-item-editor: saving', () => {
     expect(saves[0].changes?.name).toBe('B');
   });
 
+  // The row under the form is live: another member's quantity change arrives as
+  // a fresh `item` while the description is being typed, and the version it
+  // carries is the one the save is checked against. So the save must send what
+  // was typed here and nothing else — the form's own copy of their field would
+  // be accepted and would undo them.
+  it('sends the field the edit touched, not the copy the form was opened on', async () => {
+    const el = await mount(makeItem({ id: 'item-1', name: 'A', quantity: 10, version: 2 }));
+    const saves = onSave(el);
+
+    await type(el, 'editor-description', 'mine');
+    el.item = makeItem({ id: 'item-1', name: 'A', quantity: 15, version: 3 });
+    await el.updateComplete;
+
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+
+    expect(saves[0]).toMatchObject({ itemId: 'item-1', expectedVersion: 3 });
+    expect(saves[0].changes).toEqual({ description: 'mine' });
+  });
+
   it('blocks the save and shows the problem on the offending field', async () => {
     const el = await mount(null);
     const saves = onSave(el);
@@ -971,7 +990,7 @@ describe('hv-item-editor: typed custom fields', () => {
     expect((q(el, '[data-testid="editor-cf-key"]') as HTMLInputElement).value).toBe('serial');
   });
 
-  it('sends set and unset so a removed key is actually cleared', async () => {
+  it('sends the unset so a removed key is actually cleared, and leaves the rest alone', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A', custom_fields: { serial: 'x', gone: 'y' } }));
     const saves = onSave(el);
 
@@ -980,8 +999,8 @@ describe('hv-item-editor: typed custom fields', () => {
     await el.updateComplete;
 
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
-    expect(saves[0].changes?.custom_fields_set).toEqual({ serial: 'x' });
     expect(saves[0].changes?.custom_fields_unset).toEqual(['gone']);
+    expect(saves[0].changes?.custom_fields_set).toBeUndefined();
   });
 
   it('refuses to save a number field holding text', async () => {
@@ -2812,8 +2831,9 @@ describe('hv-item-editor: reminders', () => {
     await type(el, 'editor-reminder-date', '2026-09-01');
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
 
-    expect(saves[0].changes?.reminder_date).toBe('2026-09-01');
-    expect(saves[0].changes?.reminder_interval).toBe(null);
+    // The item had no interval, so there is none to clear: the date alone says
+    // one-off, and the write names only what this edit moved.
+    expect(saves[0].changes).toEqual({ reminder_date: '2026-09-01' });
   });
 
   it('clears both halves when the date is cleared', async () => {
