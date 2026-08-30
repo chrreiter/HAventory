@@ -194,13 +194,16 @@ the Locations section's from the same module — one level deeper, because a tre
 open and close.
 
 `hv-filter-panel` answers the same problem by showing less rather than by moving the stop:
-its category and tag groups draw the first `CATEGORY_CHIP_LIMIT` (4) and `TAG_CHIP_LIMIT`
-(8) chips and collapse the rest behind a "More…" chip carrying the hidden tally, so the
-group costs a fixed handful of tab stops whatever the household has named. A selected value
-past the cut is drawn anyway — the chip that says the filter is on must not be the one
-"More…" hides — and the expansion is per mount, left alone by "Clear all" and by the sheet's
-Cancel. Both lists arrive from `distinct_values` sorted alphabetically, so the cut is the
-head of the alphabet, not the most-used values; the tag group's add field takes any label as
+its category and tag groups draw `CATEGORY_CHIP_LIMIT` (4) and `TAG_CHIP_LIMIT` (8) chips and
+collapse the rest behind a "More…" chip carrying the hidden tally, so the group costs a fixed
+handful of tab stops whatever the household has named. A selected value past the cut is drawn
+anyway — the chip that says the filter is on must not be the one "More…" hides — and the
+expansion is per mount, left alone by "Clear all" and by the sheet's Cancel. Both lists arrive
+from `distinct_values` sorted alphabetically, which would spend those chips on whichever
+labels a household happens to have named first, so the cut is taken over `count` — ties by
+value, and never over the filter-priced `matching_count`, which moves as a filter is built and
+would reshuffle the row under the pointer. Expanding hands back the answer's own alphabetical
+order, which is what a long list is read in; the tag group's add field takes any label as
 typed, so nothing has to be expanded to reach one.
 
 Each of the four headings offers a create action, and the three that can be counted state
