@@ -148,7 +148,7 @@
         },
         "low_stock_threshold": {
           "name": "Schwelle für niedrigen Bestand",
-          "description": "Ab dieser Menge abwärts gilt der Gegenstand als niedriger Bestand; ganze Zahl ab 0. Ohne Angabe gibt es keine Schwelle."
+          "description": "Unterhalb dieser Menge gilt der Bestand als niedrig; ganze Zahl ab 0. Ohne Angabe gibt es keine Schwelle."
         },
         "custom_fields": {
           "name": "Eigene Felder",
@@ -218,7 +218,7 @@
         },
         "low_stock_threshold": {
           "name": "Schwelle für niedrigen Bestand",
-          "description": "Ab dieser Menge abwärts gilt der Gegenstand als niedriger Bestand; ganze Zahl ab 0. Null entfernt die Schwelle."
+          "description": "Unterhalb dieser Menge gilt der Bestand als niedrig; ganze Zahl ab 0. Null entfernt die Schwelle."
         },
         "custom_fields_set": {
           "name": "Eigene Felder setzen",

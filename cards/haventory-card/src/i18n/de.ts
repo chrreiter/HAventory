@@ -617,7 +617,7 @@ export const de: CompleteDictionary = {
   'hv.import.updated': '{what} aktualisiert',
   'hv.import.and': ' und ',
   'hv.import.holdsNow':
-    'Das Inventar umfasst jetzt {items} und {locations}. Jede verbundene Karte hat neu geladen.',
+    'Das Inventar umfasst jetzt {items} und {locations}. Jede verbundene Karte wurde neu geladen.',
 
   'hv.organize.title': 'Verwalten',
   'hv.organize.noun.tag': 'Label',
@@ -681,7 +681,7 @@ export const de: CompleteDictionary = {
   'hv.organize.areaClearOne': 'Entfernt den Bereich von diesem Ort.',
   'hv.organize.areaInherited': 'Erbt {chip} von seinem Ortsbaum.',
   'hv.organize.mergeEffect':
-    'Der Inhalt ({contents}) wandert nach „{target}“, danach wird „{source}“ gelöscht. Gegenstände in Unterorten bleiben, wo sie sind; nur ihre Pfade ändern sich.',
+    'Der Inhalt ({contents}) wird nach „{target}“ verschoben. Danach wird „{source}“ gelöscht. Gegenstände in Unterorten bleiben, wo sie sind; nur ihre Pfade ändern sich.',
   'hv.organize.mergePickLocation': 'Wähle einen Ort, um fortzufahren.',
   'hv.organize.mergeAreasNote':
     ' Bereiche gruppieren Ortsbäume und halten selbst keine Gegenstände, der Inhalt braucht also einen Ort – um diesen Ort stattdessen in einen Bereich zu verschieben, bearbeite ihn und wähle den Bereich als übergeordnet.',
@@ -708,7 +708,7 @@ export const de: CompleteDictionary = {
   'hv.organize.moveThoseItemsTo': 'Diese Gegenstände umstellen auf',
   'hv.organize.reassignAndDelete': 'Umstellen und löschen',
   'hv.organize.rewriteNote':
-    'Wird als ein Stapelaufruf gesendet · schon geänderte Gegenstände behalten den neuen Wert – ein Abbruch oder Fehler unterwegs macht nichts rückgängig.',
+    'Wird als ein gesammelter Aufruf gesendet · bereits geänderte Gegenstände behalten den neuen Wert. Kann durch Abbruch oder Fehler nicht rückgängig gemacht werden.',
   'hv.organize.rewriteFailure': '{itemId} – {reason}',
   'hv.organize.rewrite.running.merge': 'Zusammenführen: {done} von {total}',
   'hv.organize.rewrite.running.rename': 'Umbenennen: {done} von {total}',
