@@ -297,7 +297,7 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - "today" in those five is the day Home Assistant is configured for, read once per query — the same day the counts, the calendar entity and the card's chips use
   - `location_id?: uuid-v4|null`
   - `location_ids?: uuid-v4[]` (multi-select beside `location_id`; see the union rule below)
-  - `area_id?: string`
+  - `area_id?: string|null` (`null`, like an omitted key, is no area filter at all)
   - `include_subtree?: boolean` (governs the whole `location_id` + `location_ids` selection, not one entry)
   - `low_stock_first?: boolean`
   - `updated_after?: ISO8601Z` (strictly greater-than)
@@ -347,6 +347,15 @@ only predicate returns the whole inventory, and nothing in the reply says the fi
 apply. `sort` accepts `field` and `order` and nothing else. The accepted filter key set is
 exactly the list above, and it is read off the filter type itself, so a filter key added later
 is accepted the moment it is declared.
+
+**`area_id` is checked on its value too**, for the same reason: it is the one filter key
+answered by an index alone — an item's area is resolved from its location tree, which the
+item-by-item pass cannot walk — so a value that names no area would narrow nothing at all.
+Anything other than `null` or a string with non-whitespace in it is `validation_error`
+("area_id must be a non-empty string or null"), on `item/list` and on `haventory/subscribe`
+alike. Leading and trailing whitespace is trimmed off the rest. A well-formed `area_id` that
+no location resolves to is a normal empty answer, not a refusal — the integration reads Home
+Assistant's area registry and never decides what an area id may look like.
 
 ### Pagination
 
@@ -565,7 +574,7 @@ Subscription filters (`haventory/subscribe`) are matched against the payload abo
 against the repository:
 
 - `location_id` / `location_ids` / `include_subtree` read the item's `location_path.id_path` (or the location's own `path.id_path`). The scalar and the list are unioned exactly as `ItemFilter` unions them, and `include_subtree` (defaulting to **true** here, unlike the list filter) applies to the whole selection.
-- `area_id` reads the item's `effective_area_id`, so it selects the same area `ItemFilter.area_id` does. An item with no location carries `effective_area_id: null` and matches no area filter; a `null` or omitted `area_id` on the subscription means no area filter at all. `area_id` applies to the `items` topic only.
+- `area_id` reads the item's `effective_area_id`, so it selects the same area `ItemFilter.area_id` does — and is refused on the same terms: anything but `null` or a string with non-whitespace in it answers `validation_error` when the subscription is opened. An item with no location carries `effective_area_id: null` and matches no area filter; a `null` or omitted `area_id` on the subscription means no area filter at all. `area_id` applies to the `items` topic only.
 - Filters combine with AND, and every one of them is applied to the payload as it stands *after* the mutation. An item that leaves a filtered set produces no event for that subscription, so a client tracking one re-lists rather than waiting for a departure event — including after a `locations` `moved` event, which is the only signal that a subtree's `effective_area_id` was rewritten.
 
 ### Home Assistant bus events

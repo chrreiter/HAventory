@@ -487,7 +487,9 @@ class ItemFilter(TypedDict, total=False):
     # Multi-select beside the scalar above, unioned the same way — see
     # `selected_location_ids`. `include_subtree` governs the whole selection.
     location_ids: list[str]
-    area_id: str
+    # `None` is the way to say "no area filter", as omitting the key is; every
+    # other value has to name an area — see `validate_area_filter`.
+    area_id: str | None
     include_subtree: bool
     updated_after: str
     created_after: str
@@ -859,6 +861,27 @@ SORT_ORDERS: Final[frozenset[str]] = frozenset({"asc", "desc"})
 SORT_KEYS: Final[frozenset[str]] = frozenset({"field", "order"})
 
 
+def validate_area_filter(value: object) -> str | None:
+    """Return the area an ``area_id`` filter selects, or ``None`` for no filter.
+
+    Shared by ``item/list``'s filter and by a ``haventory/subscribe`` opener, so
+    one value cannot be refused by one door and absorbed by the other. ``None``
+    means "no area filter", the same as omitting the key; anything else has to
+    name an area.
+
+    A blank string and a non-string are refused rather than trimmed away: the
+    area index is the only place a filter's area is applied — the scan behind it
+    carries no area predicate — so a value that names no bucket narrows nothing
+    and answers the whole inventory labelled as one area's.
+    """
+
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError("area_id must be a non-empty string or null")
+    return value.strip()
+
+
 def validate_item_filter(flt: object) -> None:
     """Reject a filter object carrying keys no filter understands.
 
@@ -866,6 +889,9 @@ def validate_item_filter(flt: object) -> None:
     ``search`` or ``query`` in place of ``q`` returns the *whole* inventory
     labelled as a filtered result. Naming the offending key is the only way a
     caller finds that out.
+
+    ``area_id`` is checked on its value too, because it is the one key a scan
+    cannot answer — see :func:`validate_area_filter`.
     """
 
     if flt is None:
@@ -875,6 +901,8 @@ def validate_item_filter(flt: object) -> None:
     unknown = sorted(str(key) for key in flt if key not in ITEM_FILTER_KEYS)
     if unknown:
         raise ValidationError(f"unknown filter key(s): {', '.join(unknown)}")
+    if "area_id" in flt:
+        validate_area_filter(flt["area_id"])
 
 
 def validate_sort(sort: object) -> None:

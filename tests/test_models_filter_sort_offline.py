@@ -18,6 +18,7 @@ from custom_components.haventory.models import (
     create_item_from_create,
     filter_items,
     sort_items,
+    validate_area_filter,
     validate_item_filter,
     validate_sort,
 )
@@ -552,6 +553,25 @@ def test_validate_item_filter_rejects_a_non_object(bad: object) -> None:
 
 def test_validate_item_filter_passes_none_through() -> None:
     validate_item_filter(None)
+
+
+@pytest.mark.parametrize("degenerate", ["", " ", "\t\n", 5, [], {}, True])
+def test_validate_item_filter_refuses_an_area_that_names_no_area(degenerate: object) -> None:
+    """The one key whose value is checked here: no scan predicate answers it.
+
+    Every other filter key is applied over the items themselves, so a value the
+    index cannot use still narrows. An area is applied by the index alone.
+    """
+
+    with pytest.raises(ValidationError, match=r"area_id must be a non-empty string or null"):
+        validate_item_filter({"area_id": degenerate})
+
+
+def test_validate_area_filter_accepts_null_and_trims_the_rest() -> None:
+    """`None` is no area filter; a named area is returned as the index keys it."""
+
+    assert validate_area_filter(None) is None
+    assert validate_area_filter(" kitchen ") == "kitchen"
 
 
 def test_validate_sort_accepts_the_vocabulary_and_rejects_the_rest() -> None:
