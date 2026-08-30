@@ -1,9 +1,11 @@
 # V0.8.0 — session plan
 
-Status: **planned** (2026-08-22, re-planned 2026-08-23 after the 0.7.1 release). Assigns
-the milestone's eleven issues to six master sessions, two local validation sessions, one
-wording session and the closing pass; states the rules each runs under; fixes the model
-each runs on; and ends with the paste-ready prompt each is started from (§8). The issues'
+Status: **in flight** (planned 2026-08-22, re-planned 2026-08-23 after the 0.7.1 release
+and again 2026-08-30, when the owner scheduled seven further issues into the milestone —
+M1–M7 and L1 had run by then, so §6.M8 is the only session the addition creates). Assigns
+the milestone's eighteen issues to seven master sessions, two local validation sessions,
+one wording session and the closing pass; states the rules each runs under; fixes the
+model each runs on; and ends with the paste-ready prompt each is started from (§8). The issues'
 implementation notes are the design where they are still right; where the tree has moved
 under them, §1 says what was measured and §6 says what the session does instead, and the
 session records the rest in its PR body.
@@ -18,8 +20,9 @@ name and three of which they now meet (§1.2) — **grep for the symbol, never t
 
 **The milestone in one sentence:** subtraction with the behaviour held still, a
 translation layer that a third language can join without touching code, the schema
-collapsed to v1 at the end, and the German wording corrected last, from the owner's own
-read of the finished screens.
+collapsed to v1 at the end, the German wording corrected from the owner's own read of
+the finished screens, and the seven findings the 08-25 review and L1 surfaced fixed
+last, before the closing pass (§6.M8).
 
 **How the work runs** (§3 has the rules): one **master session** at a time — a Claude
 Code session, cloud by default — spawns one **subagent per pull request**, each on Opus 5
@@ -36,7 +39,7 @@ The owner's total involvement, by design:
 
 1. **Pre-flight** (§2) — eight decisions, all taken on 2026-08-23; the verdicts are in
    the file, so no session has to ask.
-2. **Paste one prompt per session** — ten pastes: M1–M6, L1, M7, L2, Z.
+2. **Paste one prompt per session** — eleven pastes: M1–M6, L1, M7, L2, M8, Z.
 3. **Read each handover** (the last message of the session and the comment it leaves on
    #236) and run its hand-test list.
 4. **Read the German screens once**, after the key consolidation, and mark up #540 — the
@@ -169,9 +172,9 @@ repeat the gate in five places and the two test modes in four (§6.M6 carries th
   would close it; not a household's daily case); `hv-list-row` subscribing to the day
   clock per row (#588 — one `requestUpdate` per row per day); the `20ch` filter-chip cap
   counting no overflow (#587); the filter panel's eight labels being alphabetical rather
-  than most-used (#585 — L1 judges it on the seeded household and files it if the first
-  eight are useless); desktop rows growing with a deep path (#604 — the path is on screen
-  there); the selection bar wrapping above 701 px (#611); a `tags_any` filter given a bare
+  than most-used (#585 — L1 judged it on the seeded household, found the first eight
+  useless, and filed #660, which is §6.M8's now); desktop rows growing with a deep path
+  (#604 — the path is on screen there); the selection bar wrapping above 701 px (#611); a `tags_any` filter given a bare
   string matching letters (#591 — a wrong answer to a wrong query, nothing written; the
   uniform-typing PR in §6.M1 refuses it anyway); core logging its own ERROR on a refused
   service call (#594); two copies of the `hassTokens` init script in the skill harnesses
@@ -416,18 +419,22 @@ M6  docs + CI (#497, #514, #331, one home per fact, scripts);    5 PRs   cloud
 M7  #540: apply the owner's mark-up (owner merges)               1 PR    cloud, Opus 5 xhigh, no subagents
 L2  local: M6's and M7's blocks; the collapse rehearsal on a              local, Fable 5
     copy of the production store; D7/D8/E3/E4 against v1
+M8  the 08-30 additions: the area filter that filters nothing;   5 PRs   cloud
+    the repository's index list, gates and clock; Organize's
+    cancel and tab order; the most-used chips first
 Z   the online regression / usability pass; sums the counts;             local, Fable 5
     deletes this file and the agent definition; then the release PR
 ```
 
-Serial order: **M1, M2, M3, M4, M5, L1, M6, M7, L2, Z.** With pre-flight item 8 at
+Serial order: **M1, M2, M3, M4, M5, L1, M6, M7, L2, M8, Z.** With pre-flight item 8 at
 "two": M1 ‖ M3, then M2 ‖ M4, then M5 — the card sessions never touch a backend file and
 the three cross-lane PRs check before opening. M7 needs the owner's mark-up on #540,
-which L1 makes possible; it can run before, beside or after M6. Thirty-six planned PRs
+which L1 makes possible; it can run before, beside or after M6. Forty-one planned PRs
 plus whatever L1, L2 and Z ship. A session starts when the previous one in the order has
 merged everything (or the owner has merged what it left open); M6's collapse PR opens
 last in that session so the collapse lands on a tree that has stopped moving, per
-#229's own rule; Z after the owner has merged it.
+#229's own rule; M8 after the owner has merged the collapse and the wording, so that
+rule survives the 08-30 additions; Z after M8.
 
 ## 5. Rules every session follows
 
@@ -1164,6 +1171,98 @@ green, M7's PR open if the owner's mark-up existed in time. Local session, Fable
    collapse PR and, after the release, the watch window (#229 step 5, with the exit
    condition its 2026-08-21 comment states).
 
+### 6.M8 — the 08-30 additions: the review findings and L1's defects
+
+Five PRs, in order. Seven issues joined the milestone on 2026-08-30: four from the
+owner's 2026-08-25 review of `models.py` / `repository.py` (#649, #650, #651, #652) and
+the three card defects L1 filed (#660, #661, #663). M6 had re-milestoned the card three
+to V0.9.0 as pre-existing on 0.7.1; the owner moved them back — that decision is taken,
+nobody re-litigates it. Start condition: the owner has merged the collapse (#669 with
+#670 stacked) and the wording (#671); no V0.8.0 PR is open. Every issue's claim was
+re-checked against the tree on 2026-08-30 (`main` at `2aaf7a3`) and holds; the notes
+below are what the re-check added. Every fix here is a behaviour change under §5's rule
+— its own commit, its own test, closes its own issue — and Z walks the "Validate
+locally" blocks: there is no local session between M8 and Z.
+
+1. **"fix(models): a degenerate area filter is refused, never ignored"** — **closes
+   #649**. The issue's trace holds, and the guard it could not find guards a different
+   door: `ws.py`'s `_require_known_area` runs on `location/create` and
+   `location/update` only, so `item/list`'s filter reaches the repository unchecked and
+   `haventory/subscribe` stores `msg["area_id"]` raw (its fan-out's truthy match then
+   skips everything — the safer wrong answer, but still wrong). And `""`, being falsy,
+   skips the area block entirely and degrades exactly as `" "` does — the issue's "``""``
+   correctly returns nothing" is optimistic; pin both. The fix follows §6.M1 PR 6's
+   rule — `validation_error` is the model's answer to every value: `validate_item_filter`
+   grows the one value check the key needs (a non-string, or a string that strips to
+   empty, refused with the write side's "must be a non-empty string" wording), and the
+   subscribe opener gets the same refusal (it does not call `validate_item_filter`
+   today). That makes `_get_filtered_candidates`' area block total — a valid `area_id`
+   always appends a candidate set or returns `[]` — so the scan path still needs no
+   area predicate, and must not grow one: `filter_items` is a pure function over items,
+   and `effective_area_id` lives in the repository. Tests: `{"area_id": " "}` and
+   `{"area_id": ""}` answer `validation_error` over WS on `item/list` and on
+   `subscribe`; a real-but-empty area still answers `[]`; a valid `area_id` combined
+   with `q` never falls through to an area-less scan. The refusal is a contract change:
+   `docs/backend_api_contract.md` and `docs/data_shapes.md` move in the same PR.
+2. **"refactor(repository): one index-field list, gated rebuilds, an honest clock"** —
+   **closes #650, #651, #652**, one commit each. `__init__` delegates to
+   `_reset_state()`, which gains `_last_load_report = LoadReport()` — `load_state`
+   overwrites it at the end, and its early return for a non-dict payload then reports
+   empty instead of stale, the truthful answer for a repository that was just reset.
+   `_rebuild_paths_for_subtree` and `_rebuild_location_hierarchy_indexes` join
+   `_update_items_location_paths_for_locations` behind `if parent_changed or
+   name_changed` (#651's own acceptance); the test is an area-only `update_location`
+   answering byte-identical locations, paths and subtree indexes, plus the three change
+   kinds each answering exactly as before. `monotonic_timestamp_after` loses `now_ts`:
+   no caller ever passed it, which is this milestone's own definition of machinery to
+   shed, and the docstring promise goes with it (#652's other option — honouring it on
+   the slow path — keeps an untested contract for a batch caller that does not exist;
+   whoever needs it brings it back with the behaviour it promises).
+3. **"fix(card): cancelling a value-tab delete confirmation keeps Organize open"** —
+   **closes #661**. The issue's trace is the design: the value tabs' confirmation emits
+   `cancel` composed and bubbling, and the dialog's modal chrome reads it as its own
+   close, while the Locations tab behaves because `hv-location-tree`'s guard stops at
+   its boundary. Stop the confirmation's `cancel` — Cancel-click and Escape both — at
+   the confirmation's boundary and return focus to the ✕; sweep the dialog's other
+   nested cancels (merge, new-value, status, status-guard) for the same leak. Tests in
+   `hv-organize-dialog.test.ts`: raise the Tags delete confirmation, cancel by click
+   and by Escape, the dialog is still open and focus is on the ✕; one case per other
+   nested cancel found leaking.
+4. **"fix(card): the tree row's actions join the tab order; the count leaves it"** —
+   **closes #663**. `ui/roving-list.ts` already promises it — the `riders` comment says
+   the row's controls are "in tab order only while their row holds the stop" — and the
+   sync leaves them at `-1` on the active row too; the fix makes the comment true. The
+   active row's rename/merge/delete get `tabindex="0"` while the row holds the stop and
+   `-1` when it moves; the count button leaves the tab order (`-1`, reachable through
+   the row's own keys). Tests in `hv-location-tree.test.ts` per the issue: focus a
+   manage-mode row, Tab → rename → merge → delete → out of the tree; the count of
+   `tabindex="0"` elements inside the tree is one plus the active row's actions.
+   #641's "Validate locally" step 8 becomes true; #575's keyboard tests stay green.
+5. **"feat(card): the filter panel shows the most-used tags and categories first"** —
+   **closes #660**. The shown chips sort by `count` descending, ties by value, before
+   the `slice`; the "More…" tail stays alphabetical and complete; a selected value past
+   the cut stays visible (it already does — the slice's second half keeps it); sort on
+   `count`, never `matching_count`, so the row holds still while a filter is built.
+   Card-only: the WS answer and its documented order do not move. Tests in
+   `hv-filter-panel.test.ts` per the issue: the eight shown are the eight most-used, a
+   tie is alphabetical, a selected rare value still shows, the "More…" tally is
+   unchanged.
+
+phacc for PRs 1 and 2. **Live checks the master runs** on its HA: `item/list` with
+`filter: {"area_id": " "}` answers `validation_error` and with a real area answers that
+area's items; Organize → Tags — delete → Cancel and delete → Escape both keep the
+dialog open; Tab from a focused tree row walks the row's three actions and leaves;
+the seeded household's panel opens on the most-used tags (compare #660's screenshot).
+L1's probes (`_l1_organize_cancel_probe.mjs`, `_l1_tree_tab_probe.mjs`) live in L1's
+session scratchpad, not the repo — re-script them from the issues' measured output.
+
+**Validate locally** (Z walks it): `[browser]` Organize → Tags → a row's ✕ → Cancel,
+then again with Escape — the dialog stays open both times, focus back on the ✕;
+`[browser]` keyboard-only in Organize → Locations: Tab from a focused row reaches
+rename, merge and delete, then leaves the tree; `[browser]` the filter panel's first
+chips are the household's most-used; `[dev-ha]` a WS `item/list` carrying
+`filter: {"area_id": " "}` answers `validation_error`.
+
 ### 6.Z — the online regression, jank and usability pass (Fable 5, local)
 
 Start condition: the collapse PR is merged (after the owner's go and L2's rehearsal),
@@ -1176,8 +1275,10 @@ backend and a tenth of its card: a clean, realistic instance seeded through
 `import/execute`; every automated regimen the repo has, stopping to file on the first
 red; the product driven the way a household uses it at desktop and 375 px, English and
 German, light and dark — with **0.7.1 as the control** and the question for every screen
-"does anything look or behave differently, and was that intended by a §6 package?"; then
-D7/D8/E3/E4 against v1 if L2 left them open.
+"does anything look or behave differently, and was that intended by a §6 package?"
+(#660's most-used ordering is one such intended difference — §6.M8's); M8's "Validate
+locally" blocks, which no earlier local session covers; then D7/D8/E3/E4 against v1 if
+L2 left them open.
 
 Outputs: every finding is an issue (bug template, reproduction, screenshot), milestoned
 V0.8.0 if it should ship in 0.8.0, V0.9.0 if it is the clean candidate's, otherwise
@@ -1218,6 +1319,10 @@ spot-checks, export diff) and the watch window's start.
 - **Two masters side by side only across lanes**: the card sessions never touch a
   backend file; the three PRs that cross check before opening; everything else is
   disjoint, and a second master costs the owner one paste.
+- **M8 after the owner's merges, before Z**: the seven 08-30 additions arrived with the
+  collapse PR already open, and its rule — a tree that has stopped moving — outranks
+  landing them sooner; after the merges they land on v1, and Z's regression pass is
+  their local validation, so nothing waits open on M8's account.
 
 ## 8. The prompts
 
@@ -1442,15 +1547,36 @@ that PR. Restore the dev HA and say so.
 End with the six-part handover as your last message and as a comment on #236.
 ```
 
+### 8.M8
+
+```
+Model: Fable 5, effort xhigh. Cloud session. Master.
+
+You are master session M8 of the V0.8.0 plan, dev/V0_8_0_implementation.md — read it in
+full (§3, §5, §6.M8, §8.S), then CLAUDE.md and CONTRIBUTING.md, then the seven issues in
+full (#649, #650, #651, #652, #660, #661, #663) and L2's comment on #236. Start
+condition: the owner has merged the collapse (#669, #670) and the wording (#671); no
+V0.8.0 PR is open. If the condition fails, stop and say what you found.
+
+Re-run §3's HA recipe. Then the five PRs of §6.M8 in order, one subagent each, one at a
+time, under §3's review and §5's merge rule. Every fix is a behaviour change: its own
+commit, its own test, closes its own issue. Run the live checks §6.M8 names on your HA;
+the "Validate locally" blocks are Z's to walk, so fill them in and merge — nothing
+waits open in this session.
+
+End with the six-part handover as your last message and as a comment on #236.
+```
+
 ### 8.Z
 
 ```
 Model: Fable 5, effort xhigh. Local session.
 
 You are session Z of the V0.8.0 plan, dev/V0_8_0_implementation.md — read it in full
-(§6.Z, §5), then CLAUDE.md, CONTRIBUTING.md and dev/release_testing_plan.md. Start
-condition: every V0.8.0 issue is closed or re-milestoned with a reason, every V0.8.0 PR
-including the collapse and the wording is merged, no Dependabot PR is open against the
+(§6.Z, §5), then CLAUDE.md, CONTRIBUTING.md and dev/release_testing_plan.md, then M8's
+comment on #236 (its "Validate locally" blocks are yours). Start condition: every
+V0.8.0 issue is closed or re-milestoned with a reason, every V0.8.0 PR including the
+collapse, the wording and M8's five is merged, no Dependabot PR is open against the
 milestone; release-please's 0.8.0 PR may be open and is not merged.
 
 Deploy main to a clean dev Home Assistant and spend the whole session finding what is

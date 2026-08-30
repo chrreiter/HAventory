@@ -1765,6 +1765,25 @@ describe('hv-organize-dialog: the language in force', () => {
     await settle(el);
     expect(q(sr, '[data-testid="new-value-create"]')?.textContent?.trim()).toBe('Erstellen');
   });
+
+  it('composes the {noun} strings without an article, so both genders read right', async () => {
+    // "Kategorie" is feminine and "Label" neuter; a German value carrying
+    // "Ein …" or "Neues …" in front of the placeholder is wrong for one of
+    // the two. The categories tab is the one that broke, so it is the pin.
+    setLanguage('de');
+    const { el, sr } = await mount({ tab: 'categories' });
+    (q(sr, '[data-testid="organize-new-value"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const input = q(sr, '[data-testid="new-value-name"]') as HTMLInputElement;
+    expect(input.placeholder).toBe('Kategorie hinzufügen …');
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await settle(el);
+    expect(q(sr, '[data-testid="new-value-error"]')?.textContent?.trim()).toBe(
+      'Kategorie braucht einen Namen.',
+    );
+  });
 });
 
 // The store keeps the built-in three in English because they are data a
