@@ -115,9 +115,8 @@ jobs:
       issues: write
     steps:
       - name: Open, update or close the drift issue
-        # The preinstalled `gh` CLI rather than a third-party action: no new
-        # dependency to digest-pin, which keeps Scorecard's pinned-dependencies
-        # check where it is.
+        # The preinstalled `gh` CLI rather than a third-party action: nothing
+        # new to digest-pin, and nothing new to keep current.
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

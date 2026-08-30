@@ -163,9 +163,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: actionlint
-        # Digest-pinned: a tag can be moved, and Scorecard's pinned-dependencies
-        # check reads a tag pin as unpinned. The trailing comment is where the
-        # version lives, and `tests/test_toolchain_pins.py` ties it to the
+        # Digest-pinned: a tag can be repointed by whoever owns it, so only a
+        # digest names one immutable image, and
+        # `tests/test_repo_hardening_offline.py` requires that of every
+        # third-party action. The trailing comment is where the version lives,
+        # and `tests/test_toolchain_pins.py` ties it to the
         # `.pre-commit-config.yaml` rev so the hook and the job stay one release.
         uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667  # v1.7.12
         with:
