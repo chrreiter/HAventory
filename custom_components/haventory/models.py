@@ -1370,8 +1370,10 @@ class _ItemWrite:
 def _write_name(write: _ItemWrite) -> None:
     """Required on a create; a null on an update leaves the stored name alone.
 
-    The field is non-nullable and the card's editor sends every field it holds,
-    so a null has to read as "this write does not name the name".
+    The field is non-nullable, so a null cannot mean "clear it". On an update it
+    means "this write does not name the name" — which is what lets any client
+    hand back a payload carrying every field it knows about and change one of
+    them.
     """
 
     value = write.payload.get("name")
@@ -1445,12 +1447,13 @@ def _write_reminder(write: _ItemWrite) -> None:
     Writing a *different* date re-anchors the series on it: the payloads carry
     no anchor of their own, deliberately, because a household picking a date is
     saying where the series starts. Re-sending the date the item already carries
-    says nothing, so it must not move the anchor — the card's editor puts every
-    field in every payload, changed or not, and re-anchoring on presence alone
-    would let an ordinary save walk a month-end series off its day one short
-    month at a time. `Repository.bump_reminder` is the one path that moves the
-    date and keeps the anchor, which is what makes a bumped month-end series stay
-    on its own day.
+    says nothing, so it must not move the anchor. A client may legally send a
+    field it did not change — a service call built from a template, a script
+    handing an item back, a WebSocket client that posts every field it holds —
+    and re-anchoring on the key's presence alone would let one of those walk a
+    month-end series off its day, one short month at a time.
+    `Repository.bump_reminder` is the one path that moves the date and keeps the
+    anchor, which is what makes a bumped month-end series stay on its own day.
     """
 
     payload = write.payload
