@@ -57,13 +57,13 @@ A worked example — tell whoever is home when something runs low:
 ```yaml
 automation:
   - alias: Notify when stock runs low
-    trigger:
-      platform: event
-      event_type: haventory_low_stock
-      event_data:
-        action: entered
-    action:
-      - service: notify.notify
+    triggers:
+      - trigger: event
+        event_type: haventory_low_stock
+        event_data:
+          action: entered
+    actions:
+      - action: notify.notify
         data:
           title: Running low
           message: >-
@@ -77,14 +77,14 @@ And the other direction — react to a specific item being checked out:
 ```yaml
 automation:
   - alias: Media room lights when the projector goes out
-    trigger:
-      platform: event
-      event_type: haventory_item_changed
-      event_data:
-        action: checked_out
-    condition: "{{ trigger.event.data.name == 'Projector' }}"
-    action:
-      - service: light.turn_on
+    triggers:
+      - trigger: event
+        event_type: haventory_item_changed
+        event_data:
+          action: checked_out
+    conditions: "{{ trigger.event.data.name == 'Projector' }}"
+    actions:
+      - action: light.turn_on
         target:
           entity_id: light.media_room
 ```
@@ -136,12 +136,12 @@ birthday:
 ```yaml
 automation:
   - alias: Say what the inventory wants today
-    trigger:
-      platform: calendar
-      event: start
-      entity_id: calendar.haventory
-    action:
-      - service: notify.notify
+    triggers:
+      - trigger: calendar
+        event: start
+        entity_id: calendar.haventory
+    actions:
+      - action: notify.notify
         data:
           title: HAventory
           message: >-
@@ -184,15 +184,15 @@ is done:
 ```yaml
 automation:
   - alias: The filter has been changed
-    trigger:
-      platform: state
-      entity_id: input_button.hvac_filter_changed
-    action:
-      - service: haventory.reminder_bump
+    triggers:
+      - trigger: state
+        entity_id: input_button.hvac_filter_changed
+    actions:
+      - action: haventory.reminder_bump
         data:
           item_id: "0f2c…"
         response_variable: bumped
-      - service: notify.notify
+      - action: notify.notify
         data:
           message: "Next filter change: {{ bumped.item.reminder_date }}"
 ```
@@ -202,7 +202,7 @@ Setting and clearing a reminder are ordinary field writes, so they ride the item
 `reminder_interval`, and `null` for either clears it.
 
 ```yaml
-      - service: haventory.item_update
+      - action: haventory.item_update
         data:
           item_id: "0f2c…"
           reminder_date: "2026-09-01"
