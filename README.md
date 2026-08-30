@@ -37,7 +37,8 @@ cloud, no external service. Minimum Home Assistant **2026.6.0**.
   scheduled and nothing to drift.
 - **Bulk operations and an organize dialog**: move, retag, recategorise, check out or delete
   a whole selection, and rename or merge locations, categories, tags and statuses in one
-  place.
+  place. The **statuses** are your own vocabulary — *OK*, *Missing* and *Needs repair* to
+  begin with, and you add, rename, recolour or retire them from that same dialog.
 - **One page and any number of cards.** A sidebar entry opens the full workspace; the same
   bundle draws a card on any dashboard you like.
 
@@ -130,13 +131,13 @@ Tell whoever is home when something runs low:
 ```yaml
 automation:
   - alias: Notify when stock runs low
-    trigger:
-      platform: event
-      event_type: haventory_low_stock
-      event_data:
-        action: entered
-    action:
-      - service: notify.notify
+    triggers:
+      - trigger: event
+        event_type: haventory_low_stock
+        event_data:
+          action: entered
+    actions:
+      - action: notify.notify
         data:
           title: Running low
           message: >-
@@ -150,11 +151,11 @@ And write back to the inventory — a button by the coffee machine that books on
 ```yaml
 automation:
   - alias: One bag of coffee used
-    trigger:
-      platform: state
-      entity_id: input_button.coffee_used
-    action:
-      - service: haventory.item_adjust_quantity
+    triggers:
+      - trigger: state
+        entity_id: input_button.coffee_used
+    actions:
+      - action: haventory.item_adjust_quantity
         data:
           item_id: "0f2c…"
           delta: -1
@@ -166,7 +167,7 @@ A script that files a delivery, with every field the card's editor offers:
 script:
   file_the_coffee_delivery:
     sequence:
-      - service: haventory.item_create
+      - action: haventory.item_create
         data:
           name: Coffee beans
           quantity: 2

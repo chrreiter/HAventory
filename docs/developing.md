@@ -229,14 +229,18 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
   `checked_out_due_count` / `checked_out_due_only` and `inspection_due_count` /
   `inspection_due_only`. All of them move with the calendar and emit no event when the date
   rolls over.
-- A stored per-item **status** — `ok` / `missing` / `needs_repair`, always exactly one,
-  `ok` being the default and the way a flagged state clears. Filterable via the
-  `item/list` `status` filter, counted on `haventory/stats` as `missing_count` /
-  `needs_repair_count` (stored state, so unlike the calendar counts every change emits
-  an event), and settable everywhere an item is written — WS create/update, the
-  `haventory.item_create` / `haventory.item_update` services, and import. A store written
-  before the field existed is migrated on load (schema v5 backfills `ok`); an export
-  without it reads as `ok` too.
+- A stored per-item **status** — exactly one slug from the store's `statuses` collection,
+  which is seeded with the built-in `ok` / `missing` / `needs_repair` and is the
+  household's from there: `status/create`, `status/update`, `status/reorder` and
+  `status/delete` maintain the vocabulary, and the card's organize dialog is where it is
+  edited. `ok` is the fixed default and the way a flagged state clears. Filterable via the `item/list`
+  `status` filter, counted on `haventory/stats` as `missing_count` / `needs_repair_count`
+  and as `status_counts` for every defined slug (stored state, so unlike the calendar
+  counts every change emits an event), and settable everywhere an item is written — WS
+  create/update, the `haventory.item_create` / `haventory.item_update` services, and
+  import. A store written before the field existed is migrated on load (schema v5
+  backfills `ok`); an export without it reads as `ok` too, and one without a `statuses`
+  section means the built-in three.
 - **JSON import/export (data safety)** via `haventory/export`, `haventory/import/preview`,
   and `haventory/import/execute`: back up to a versioned document before a breaking update
   and restore afterwards. Preview reports would-be adds/updates/conflicts without touching
