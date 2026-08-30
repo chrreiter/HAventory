@@ -1,8 +1,17 @@
-"""Schema migrations for HAventory persistent storage.
+"""Schema handling for HAventory persistent storage.
 
-Forward-only, idempotent migration steps. Each step receives and returns the
-entire persisted dict payload. Steps must tolerate being applied more than once
-without changing the outcome.
+Two things live here. ``migrate`` is the forward-only driver the storage layer
+calls for a payload stamped below the current version. ``adopt_dev_schema`` is
+the one-release amnesty: it fills in everything a store written before the
+schema was collapsed to 1 may not carry, so such a store can be read and
+restamped instead of refused.
+
+Both are idempotent — they receive and return the entire persisted dict payload,
+and applying either twice leaves what the first pass produced.
+
+The module deliberately imports no model or constant: what it fills in has to
+keep meaning what it meant for the stores it is fed, and the live vocabulary is
+free to grow past it.
 """
 
 from __future__ import annotations
@@ -12,146 +21,136 @@ from typing import Any, Final
 
 from .exceptions import SchemaDowngradeError
 
+# The stamps `adopt_dev_schema` is allowed to take in. Each of them names a
+# schema this project shipped to itself before the collapse, so a store carrying
+# one reads as *newer* than this build and would otherwise hit the downgrade
+# refusal. The set is closed — exactly those numbers, never `> CURRENT` — so a
+# store from a genuinely newer build is still refused, and it exists for one
+# release: it is deleted once the store it was written for has crossed.
+ADOPTABLE_SCHEMA_VERSIONS: Final[frozenset[int]] = frozenset(range(2, 10))
+
+# The three statuses every store carries whatever else the household has added.
+# Frozen here rather than read from models, for the reason the module docstring
+# gives.
+_BUILT_IN_ITEM_STATUSES: Final[tuple[str, ...]] = ("ok", "missing", "needs_repair")
+
+# The status definitions a store that predates the collection is given, and the
+# appearance a definition carrying none reads as.
+_SEED_STATUS_DEFINITIONS: Final[tuple[tuple[str, str, str, str], ...]] = (
+    ("ok", "OK", "green", "check"),
+    ("missing", "Missing", "amber", "alert"),
+    ("needs_repair", "Needs repair", "amber", "wrench"),
+)
+_DEFAULT_STATUS_COLOR: Final[str] = "neutral"
+_DEFAULT_STATUS_ICON: Final[str] = "check"
+
 
 def migrate(payload: dict[str, Any], *, from_version: int, to_version: int) -> dict[str, Any]:
     """Migrate ``payload`` from ``from_version`` to ``to_version``.
 
-    Steps are applied sequentially: vN -> vN+1 -> ... -> vM.
+    With the schema collapsed to a single version there is no step to run
+    between the two: a store below the current version is one written before any
+    of the fields existed, and ``adopt_dev_schema`` is what gives it them. What
+    is left here is the stamp and the guard.
 
     Raises ``SchemaDowngradeError`` when asked to go backwards.
     """
 
     if from_version > to_version:
-        # Steps are forward-only, so a downgrade would run none of them and still
-        # leave the loop stamping ``to_version`` on data written by a schema this
-        # build cannot read — relabelling it for whoever saves the result. The
-        # storage layer refuses newer payloads before it ever calls this, and the
-        # refusal it raises is the one users see; this guard is what stops a
-        # second caller from reintroducing the silent relabel.
+        # A downgrade would leave the payload untouched and still stamp
+        # ``to_version`` on data written by a schema this build cannot read —
+        # relabelling it for whoever saves the result. The storage layer refuses
+        # newer payloads before it ever calls this, and the refusal it raises is
+        # the one users see; this guard is what stops a second caller from
+        # reintroducing the silent relabel.
         raise SchemaDowngradeError(
             f"refusing to migrate schema version {from_version} down to {to_version}: "
             "migrations are forward-only"
         )
 
-    data: dict[str, Any] = deepcopy(payload)
-    version = int(from_version)
-    while version < to_version:
-        next_version = version + 1
-        step_name = f"migrate_{version}_to_{next_version}"
-        step = globals().get(step_name)
-        if callable(step):
-            data = step(data)  # type: ignore[misc]
-        # If no step is defined, assume no-op for this transition
-        version = next_version
-
+    data: dict[str, Any] = deepcopy(payload) if isinstance(payload, dict) else {}
     data["schema_version"] = to_version
     return data
 
 
-def migrate_0_to_1(payload: dict[str, Any]) -> dict[str, Any]:
-    """Initial migration to v1.
+def adopt_dev_schema(payload: dict[str, Any]) -> dict[str, Any]:
+    """Fill in every field a store may predate, leaving what it holds alone.
 
-    Ensures required top-level keys exist and drops nothing.
-    Idempotent: re-applying yields same result.
+    One function stands in for what was a chain of steps because each of them
+    only ever filled in an absent field: the per-item status, the seeded status
+    definitions and the per-item attachment list, the two reminder fields, and
+    the reminder's series anchor. Nothing here rewrites a value that is there,
+    so it is safe to run on a store that already has all of it — which is what
+    lets it run on every payload this build reads rather than only on the stamps
+    ``ADOPTABLE_SCHEMA_VERSIONS`` names. A store stamped 1 before the collapse
+    gave 1 its meaning predates all of these fills and reads as current, so it
+    needs them as much as an adopted one does.
     """
 
-    data = deepcopy(payload) if isinstance(payload, dict) else {}
+    data: dict[str, Any] = deepcopy(payload) if isinstance(payload, dict) else {}
     data.setdefault("items", {})
     data.setdefault("locations", {})
-    # schema_version will be set by the driver after the loop
-    return data
 
+    if "statuses" not in data:
+        # Seeded only for a store that carries no collection at all — one
+        # written before the vocabulary became the household's. A store that has
+        # one keeps exactly it: every built-in but the default can be deleted,
+        # and seeding into an existing collection would put back what someone
+        # removed, on every boot.
+        data["statuses"] = {
+            slug: {"slug": slug, "label": label, "order": order, "color": color, "icon": icon}
+            for order, (slug, label, color, icon) in enumerate(_SEED_STATUS_DEFINITIONS)
+        }
 
-def migrate_1_to_2(payload: dict[str, Any]) -> dict[str, Any]:
-    """Ensure items/locations keys exist for schema v2."""
+    statuses = data["statuses"]
+    if isinstance(statuses, dict):
+        for definition in statuses.values():
+            if isinstance(definition, dict):
+                definition.setdefault("color", _DEFAULT_STATUS_COLOR)
+                definition.setdefault("icon", _DEFAULT_STATUS_ICON)
 
-    data = deepcopy(payload) if isinstance(payload, dict) else {}
-    data.setdefault("items", {})
-    data.setdefault("locations", {})
-    return data
+    # An item's status is rewritten only to a slug the store itself cannot name.
+    # The collection is what names them, so a household's own status survives —
+    # the same rule the repository applies as it reads each row.
+    nameable = set(_BUILT_IN_ITEM_STATUSES) | _defined_slugs(statuses)
 
-
-def migrate_2_to_3(payload: dict[str, Any]) -> dict[str, Any]:
-    """No-op migration to v3 (inspection_date is optional)."""
-    return deepcopy(payload) if isinstance(payload, dict) else {}
-
-
-# The item statuses as schema v5 defines them. Frozen here rather than read
-# from models so this step keeps its meaning if the live set grows later.
-_V5_ITEM_STATUSES: Final[tuple[str, ...]] = ("ok", "missing", "needs_repair")
-
-
-def migrate_4_to_5(payload: dict[str, Any]) -> dict[str, Any]:
-    """Backfill the per-item ``status`` field for schema v5.
-
-    From v5 every item carries exactly one status; an item written before the
-    field existed — or holding a value v5 does not know — becomes ``"ok"``.
-    Idempotent: an item already carrying a known status is left untouched.
-    """
-
-    data = deepcopy(payload) if isinstance(payload, dict) else {}
     items = data.get("items")
     if isinstance(items, dict):
         for item in items.values():
-            if isinstance(item, dict) and item.get("status") not in _V5_ITEM_STATUSES:
+            if not isinstance(item, dict):
+                continue
+            if item.get("status") not in nameable:
                 item["status"] = "ok"
+            item.setdefault("attachments", [])
+            _backfill_attachment_fields(item.get("attachments"))
+            item.setdefault("reminder_date", None)
+            item.setdefault("reminder_interval", None)
+            # The anchor of a series nobody has bumped is its own date, and a
+            # store written before the anchor existed holds only such series.
+            item.setdefault("reminder_anchor", item.get("reminder_date"))
     return data
 
 
-# The status definitions v6 seeds. Frozen literals rather than a read from
-# models, for the same reason as ``_V5_ITEM_STATUSES``: this step must keep
-# seeding exactly these three once the live set can grow.
-_V6_SEED_STATUSES: Final[tuple[tuple[str, str, str, str], ...]] = (
-    ("ok", "OK", "green", "check"),
-    ("missing", "Missing", "amber", "alert"),
-    ("needs_repair", "Needs repair", "amber", "wrench"),
-)
+def _defined_slugs(statuses: object) -> set[str]:
+    """Every status slug a stored collection names, in either shape it can hold.
 
-# Frozen here rather than imported from `const`: a migration step has to keep
-# meaning what it meant when it was written, and the live vocabulary is free to
-# grow past it.
-_V6_DEFAULT_STATUS_COLOR: Final[str] = "neutral"
-_V6_DEFAULT_STATUS_ICON: Final[str] = "check"
-
-
-def migrate_5_to_6(payload: dict[str, Any]) -> dict[str, Any]:
-    """Seed the ``statuses`` collection and backfill per-item ``attachments``.
-
-    One step for both, so a v0.4.0 install crosses exactly one version.
-
-    * ``statuses`` becomes a slug-keyed map of definitions, seeded with the
-      three built-ins and their appearance. A definition already present —
-      including one a later release or a hand edit added — keeps every field it
-      carries and is only completed where one is absent.
-    * every item gains ``attachments: []`` unless it already carries the field,
-      and every entry in an existing list gains ``title`` and ``order``.
-      ``order`` follows stored position, because position 0 is the cover.
-
-    Idempotent throughout: re-applying only ever fills in what is absent.
+    The store writes a slug-keyed map; the load path also accepts the list an
+    export document carries, so a file restored by hand can hold either. A shape
+    it is neither names nothing.
     """
 
-    data = deepcopy(payload) if isinstance(payload, dict) else {}
-
-    statuses = data.get("statuses")
-    if not isinstance(statuses, dict):
-        statuses = {}
-    for order, (slug, label, color, icon) in enumerate(_V6_SEED_STATUSES):
-        statuses.setdefault(
-            slug, {"slug": slug, "label": label, "order": order, "color": color, "icon": icon}
-        )
-    for definition in statuses.values():
-        if isinstance(definition, dict):
-            definition.setdefault("color", _V6_DEFAULT_STATUS_COLOR)
-            definition.setdefault("icon", _V6_DEFAULT_STATUS_ICON)
-    data["statuses"] = statuses
-
-    items = data.get("items")
-    if isinstance(items, dict):
-        for item in items.values():
-            if isinstance(item, dict):
-                item.setdefault("attachments", [])
-                _backfill_attachment_fields(item.get("attachments"))
-    return data
+    entries: list[object]
+    if isinstance(statuses, dict):
+        entries = list(statuses.values())
+    elif isinstance(statuses, list):
+        entries = list(statuses)
+    else:
+        return set()
+    return {
+        entry["slug"]
+        for entry in entries
+        if isinstance(entry, dict) and isinstance(entry.get("slug"), str)
+    }
 
 
 def _backfill_attachment_fields(attachments: object) -> None:
@@ -173,81 +172,3 @@ def _backfill_attachment_fields(attachments: object) -> None:
         placed[kind] = position + 1
         entry.setdefault("title", "")
         entry.setdefault("order", position)
-
-
-def migrate_6_to_7(payload: dict[str, Any]) -> dict[str, Any]:
-    """Mark the store as one whose status colours a v6 build cannot read.
-
-    Nothing in the payload changes, and nothing needs to: every v6 document is
-    already a valid v7 one. The version exists for the shape v7 *admits* — a
-    status definition's ``color`` may be a ``#rrggbb`` literal, where v6 accepts
-    only the ten tone tokens.
-
-    The bump is what stops the two shapes sharing a stamp. Under one stamp a v6
-    build reads a store holding a literal, cannot validate the definition, and —
-    because an unreadable status definition is skipped rather than fatal — drops
-    it and rewrites every item carrying that slug to the default status,
-    persisting the loss on the next save. Stamped 7, the same build refuses the
-    store outright and the data waits for one that understands it.
-    """
-
-    return deepcopy(payload) if isinstance(payload, dict) else {}
-
-
-def migrate_7_to_8(payload: dict[str, Any]) -> dict[str, Any]:
-    """Give every item the two reminder fields, both empty.
-
-    v8 is the version at which an item may carry a recurring reminder —
-    ``reminder_date`` as the anchor and ``reminder_interval`` as
-    ``{unit, count}``. Nothing existing gains a reminder: an item written before
-    the fields existed had none, and null is what that means.
-
-    Writing the keys rather than leaving them absent is what makes the bump
-    worth having. A v7 build reading a v8 store would otherwise find items it
-    can parse, keep them, and rewrite them on the next save with every reminder
-    dropped; stamped 8, that build refuses the store and the reminders wait for
-    one that understands them.
-
-    Idempotent: an item already carrying either key keeps what it holds,
-    including a reminder a later release wrote.
-    """
-
-    data = deepcopy(payload) if isinstance(payload, dict) else {}
-    items = data.get("items")
-    if isinstance(items, dict):
-        for item in items.values():
-            if isinstance(item, dict):
-                item.setdefault("reminder_date", None)
-                item.setdefault("reminder_interval", None)
-    return data
-
-
-def migrate_8_to_9(payload: dict[str, Any]) -> dict[str, Any]:
-    """Give every reminder the anchor its series is measured from.
-
-    v9 splits the one stored reminder date in two: ``reminder_date`` stays the
-    next occurrence nobody has marked done, and ``reminder_anchor`` is what the
-    month arithmetic counts from. Before this, a bump wrote the occurrence back
-    as the anchor, so a series on the 31st settled on the 30th — then the 28th —
-    the first time it was bumped through a short month, permanently.
-
-    Every existing reminder is one nobody has bumped *under the new rule*, and
-    for those the two are the same date. An item with no reminder gets ``None``,
-    which is what "no reminder" means in both fields.
-
-    Written rather than left absent, for the reason ``migrate_7_to_8`` gives: a
-    v8 build reading a v9 store would parse these items, keep them, and rewrite
-    them on the next save with every anchor dropped. Stamped 9, it refuses the
-    store instead and the anchors wait for a build that understands them.
-
-    Idempotent: an item already carrying the key keeps what it holds, including
-    an anchor a bump has since moved away from its date.
-    """
-
-    data = deepcopy(payload) if isinstance(payload, dict) else {}
-    items = data.get("items")
-    if isinstance(items, dict):
-        for item in items.values():
-            if isinstance(item, dict):
-                item.setdefault("reminder_anchor", item.get("reminder_date"))
-    return data

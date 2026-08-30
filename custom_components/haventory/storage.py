@@ -9,8 +9,11 @@ Data shape persisted (Phase 1):
         "locations": {id -> LocationDict},
     }
 
-The manager ensures first load initializes an empty dataset and applies
-forward-only migrations when an older schema payload is encountered.
+The manager ensures first load initializes an empty dataset, fills in the fields
+a payload predates, and refuses a payload written by a schema version this build
+does not know. The one exception is the closed set of versions this project
+stamped before the schema was collapsed to 1: those are taken in for one release
+and restamped rather than refused.
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ from .runtime import find_runtime
 _LOGGER = context_logger(__name__)
 
 # Current schema version for persisted payloads
-CURRENT_SCHEMA_VERSION: Final[int] = 9
+CURRENT_SCHEMA_VERSION: Final[int] = 1
 
 # Storage key under which the persisted dataset is saved
 STORAGE_KEY: Final[str] = "haventory_store"
@@ -217,15 +220,7 @@ class DomainStore:
         if raw is None:
             return _empty_payload()
 
-        # Defensive: missing schema_version means treat as version 0
-        from_version = read_schema_version(raw, missing=0) if isinstance(raw, dict) else 0
-
-        if from_version != self._schema_version:
-            data = await self.async_migrate_if_needed(raw)
-        else:
-            data = _normalized(
-                raw if isinstance(raw, dict) else {}, schema_version=self._schema_version
-            )
+        data = await self.async_migrate_if_needed(raw)
 
         # A hand-edited file can hold anything under these keys, and the
         # repository walks them as maps of rows.
@@ -242,16 +237,44 @@ class DomainStore:
         )
         await self._store.async_save(payload)
 
+    async def _async_adopted(
+        self, payload: dict[str, Any], *, from_version: int, to_version: int
+    ) -> dict[str, Any]:
+        """Fill in what ``payload`` predates, writing it back when that changed it.
+
+        Every payload this build accepts comes through here, the ones already
+        stamped ``to_version`` included: a store stamped 1 before the collapse
+        gave 1 its meaning carries none of the fields the fills provide and
+        reads as current, so the fills have to reach it too. Writing the result
+        back is what keeps that a one-time cost rather than one paid on every
+        boot; a payload the fills left alone at the version it already carries is
+        handed back without touching the file.
+        """
+
+        adopted = migrations.adopt_dev_schema(payload)
+        filled = adopted != payload
+        # The version is this build's, not whatever the payload carried: a
+        # payload saved under a version it does not carry is one nothing can read
+        # back correctly.
+        adopted["schema_version"] = to_version
+        normalized = _normalized(adopted, schema_version=to_version)
+        if filled or from_version != to_version:
+            await self._store.async_save(normalized)
+        return normalized
+
     async def async_migrate_if_needed(self, raw: dict[str, Any]) -> dict[str, Any]:
-        """Migrate ``raw`` payload to the current schema iff needed.
+        """Bring ``raw`` to the current schema, or refuse it.
 
-        If a migration occurs, persist the migrated payload back to storage.
-        Returns the migrated (or original) payload.
+        A payload at or below the current version is filled in where it predates
+        a field and persisted back. So is one carrying a schema version the
+        project used before the collapse: ``migrations.ADOPTABLE_SCHEMA_VERSIONS``
+        names exactly those, and they are taken in for one release rather than
+        refused, because the shapes underneath are the shapes this build reads.
 
-        Raises ``SchemaDowngradeError`` when ``raw`` was written by a newer schema
-        version than this build supports, and ``CorruptSchemaVersionError`` when
-        it carries no readable version at all. Both leave the stored payload
-        untouched.
+        Raises ``SchemaDowngradeError`` when ``raw`` was written by a schema
+        version above that set — a genuinely newer build — and
+        ``CorruptSchemaVersionError`` when it carries no readable version at all.
+        Both leave the stored payload untouched.
         """
 
         if not isinstance(raw, dict):  # Corrupted or unexpected
@@ -271,7 +294,24 @@ class DomainStore:
         from_version = read_schema_version(raw, missing=0)
         to_version = self._schema_version
         if from_version == to_version:
-            return _normalized(raw, schema_version=to_version)
+            return await self._async_adopted(raw, from_version=from_version, to_version=to_version)
+
+        if from_version in migrations.ADOPTABLE_SCHEMA_VERSIONS and to_version == 1:
+            # The literal is deliberate: the amnesty belongs to the collapsed
+            # version and must not be inherited by whatever schema comes after
+            # it. A store stamped above the set still falls through to the
+            # refusal below.
+            _LOGGER.warning(
+                "Adopting a store stamped with a schema version from before the collapse",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "migrate",
+                    "from_version": from_version,
+                    "to_version": to_version,
+                    "storage_key": self.key,
+                },
+            )
+            return await self._async_adopted(raw, from_version=from_version, to_version=to_version)
 
         if from_version > to_version:
             # Migrations are forward-only, so a newer payload would pass through
@@ -322,14 +362,7 @@ class DomainStore:
                 },
             )
             raise StorageError("storage migration returned non-dict payload")
-        # The version is this build's, not whatever the last step left behind: a
-        # payload saved under a version it does not carry is one nothing can read
-        # back correctly.
-        migrated["schema_version"] = to_version
-        normalized = _normalized(migrated, schema_version=to_version)
-
-        await self._store.async_save(normalized)
-        return normalized
+        return await self._async_adopted(migrated, from_version=from_version, to_version=to_version)
 
 
 async def async_persist_repo(hass: HomeAssistant) -> None:
