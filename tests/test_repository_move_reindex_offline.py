@@ -8,13 +8,22 @@ These tests pin the invariants that must survive:
 - rewriting the derived ``location_path`` leaves ``version`` and ``updated_at``
   alone, so optimistic-concurrency tokens held by clients stay valid
 - effective-area buckets follow the subtree to its new ancestry
+- an edit that changes neither the name nor the parent link rebuilds nothing,
+  and each edit that does leaves the derived state a full rebuild would leave
 """
 
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.models import ItemCreate, ItemFilter, ItemUpdate
+from custom_components.haventory.models import (
+    ItemCreate,
+    ItemFilter,
+    ItemUpdate,
+    build_location_path_from_map,
+)
 from custom_components.haventory.repository import Repository
+
+from repository_invariants import internal_indexes
 
 
 def _build_tree() -> tuple[Repository, dict[str, object]]:
@@ -148,3 +157,65 @@ async def test_effective_area_rebuckets_on_subtree_move() -> None:
     res = repo.list_items(flt=ItemFilter(area_id="area-attic"))
     assert [i.name for i in res["items"]] == ["Hammer"]
     assert repo.get_item(item.id).version == item.version
+
+
+@pytest.mark.asyncio
+async def test_an_area_only_edit_rebuilds_no_path_and_no_subtree_index() -> None:
+    """A path is built from the name and the parent link; the index from the link.
+
+    An edit that moves neither leaves both as they stand, which is what saves a
+    deep tree a full walk per area reassignment. Identity is the assertion a
+    rebuild would fail: it replaces every location in the subtree and every
+    bucket of the subtree index with an equal object.
+    """
+
+    repo, t = _build_tree()
+    box_before = repo.get_location(t["box"].id)
+    attic_before = repo.get_location(t["attic"].id)
+    paths_before = {str(loc.id): loc.path for loc in repo.iter_locations()}
+    subtrees_before = dict(internal_indexes(repo)["items_in_subtree"])
+
+    repo.update_location(t["shelf"].id, area_id="area-garage")
+
+    assert repo.get_location(t["box"].id) is box_before
+    assert repo.get_location(t["attic"].id) is attic_before
+    subtrees_after = internal_indexes(repo)["items_in_subtree"]
+    assert subtrees_after.keys() == subtrees_before.keys()
+    assert all(subtrees_after[key] is bucket for key, bucket in subtrees_before.items())
+    assert {str(loc.id): loc.path for loc in repo.iter_locations()} == paths_before
+
+    # The area still lands where an area belongs — on the root of the tree.
+    assert repo.get_location(t["garage"].id).area_id == "area-garage"
+    res = repo.list_items(flt=ItemFilter(area_id="area-garage"))
+    assert {i.name for i in res["items"]} == {"Hammer", "Garage opener"}
+
+
+@pytest.mark.parametrize("kind", ["rename", "move", "area"])
+@pytest.mark.asyncio
+async def test_every_edit_leaves_the_derived_state_a_full_rebuild_would_leave(kind: str) -> None:
+    """Each of the three change kinds answers what building from scratch answers.
+
+    The oracle for a location's path is the chain it sits in, and the oracle for
+    the subtree index is a repository loaded from the same content: a load
+    rebuilds that index unconditionally.
+    """
+
+    repo, t = _build_tree()
+    edits = {
+        "rename": {"name": "Rack Beta"},
+        "move": {"new_parent_id": t["attic"].id},
+        "area": {"area_id": "area-garage"},
+    }
+
+    repo.update_location(t["shelf"].id, **edits[kind])
+
+    locations_by_id = internal_indexes(repo)["locations_by_id"]
+    for loc_id, loc in locations_by_id.items():
+        assert loc.path == build_location_path_from_map(loc_id, locations_by_id=locations_by_id)
+    for item in (repo.get_item(i.id) for i in t["items"]):
+        assert item.location_path == locations_by_id[str(item.location_id)].path
+
+    reloaded = Repository.from_state(repo.export_state())
+    assert (
+        internal_indexes(repo)["items_in_subtree"] == internal_indexes(reloaded)["items_in_subtree"]
+    )

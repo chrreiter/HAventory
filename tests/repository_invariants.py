@@ -40,6 +40,7 @@ class InternalIndexes(TypedDict):
     items_by_location_id: dict[str, set[str]]
     locations_by_area_id: dict[str, set[str]]
     items_by_area_id: dict[str, set[str]]
+    items_in_subtree: dict[str, set[str]]
 
 
 def internal_indexes(repo: Repository) -> InternalIndexes:
@@ -56,6 +57,7 @@ def internal_indexes(repo: Repository) -> InternalIndexes:
         "items_by_location_id": repo._items_by_location_id,
         "locations_by_area_id": repo._locations_by_area_id,
         "items_by_area_id": repo._items_by_area_id,
+        "items_in_subtree": repo._items_in_subtree,
     }
 
 

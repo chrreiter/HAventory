@@ -30,6 +30,7 @@ from custom_components.haventory.models import (
     build_location_path,
     build_location_path_from_map,
     create_item_from_create,
+    is_canonical_utc_timestamp,
     iso_utc_now,
     load_attachments,
     load_reminder_interval,
@@ -229,6 +230,35 @@ async def test_monotonic_timestamp_after_strictly_increases() -> None:
     nxt = monotonic_timestamp_after(prev)
     assert nxt.endswith("Z")
     assert nxt > prev
+
+
+@pytest.mark.asyncio
+async def test_monotonic_timestamp_after_steps_past_a_timestamp_in_the_future() -> None:
+    """A stamp the clock has not reached is stepped past by one second.
+
+    The path a store written on a machine whose clock ran ahead reaches, and the
+    one an item edited twice in the same second reaches.
+    """
+
+    ahead = "2999-01-01T00:00:00Z"
+
+    nxt = monotonic_timestamp_after(ahead)
+
+    assert nxt == "2999-01-01T00:00:01Z"
+    assert is_canonical_utc_timestamp(nxt)
+
+
+@pytest.mark.asyncio
+async def test_monotonic_timestamp_after_reads_the_clock_itself() -> None:
+    """One argument, so there is no clock the function can be told and ignore.
+
+    A caller-supplied "now" was read on the fast path only and dropped on the
+    other — exactly the input a caller passing it would be trying to control.
+    Whoever needs one brings it back with the behaviour on both paths.
+    """
+
+    with pytest.raises(TypeError):
+        monotonic_timestamp_after("2026-07-23T10:00:00Z", now_ts="2026-07-23T11:00:00Z")  # type: ignore[call-arg]
 
 
 @pytest.mark.asyncio
