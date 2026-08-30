@@ -1682,17 +1682,15 @@ def apply_item_update(
 _CANONICAL_TS_LENGTH = 20
 
 
-def monotonic_timestamp_after(previous_ts: str, *, now_ts: str | None = None) -> str:
+def monotonic_timestamp_after(previous_ts: str) -> str:
     """Return a UTC ISO-8601 'Z' timestamp strictly after previous_ts.
 
-    If the current time is not greater than the previous timestamp (due to
-    second resolution), bump by one second to maintain monotonicity. Batch
-    callers may pass a precomputed ``now_ts`` (from :func:`iso_utc_now`) to
-    avoid re-reading the clock per item.
+    The clock is read here, and read at second resolution: a reading that is not
+    past the previous timestamp is bumped by one second so the two never compare
+    equal.
     """
 
-    if now_ts is None:
-        now_ts = iso_utc_now()
+    now_ts = iso_utc_now()
     # Fast path: canonical fixed-width timestamps compare lexicographically,
     # so the common case (time moved on) needs no parsing at all.
     if _looks_canonical_utc(previous_ts) and now_ts > previous_ts:
