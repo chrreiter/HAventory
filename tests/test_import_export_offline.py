@@ -23,6 +23,7 @@ import pytest
 from custom_components.haventory import import_export as ie
 from custom_components.haventory import media
 from custom_components.haventory.exceptions import StorageError, ValidationError
+from custom_components.haventory.migrations import ADOPTABLE_SCHEMA_VERSIONS
 from custom_components.haventory.models import (
     CATEGORY_MAX_LENGTH,
     CUSTOM_FIELD_KEY_MAX_LENGTH,
@@ -46,6 +47,10 @@ from ws_helpers import ws_send
 # The `_seed` helper always creates exactly this many items and locations.
 SEEDED_ITEMS = 2
 SEEDED_LOCATIONS = 2
+
+#: One above everything the import side takes in: a document from a build that
+#: knows a shape this one does not.
+BEYOND_THE_ADOPTABLE_RANGE = max(ADOPTABLE_SCHEMA_VERSIONS) + 1
 
 
 def _new_hass() -> HomeAssistant:
@@ -351,13 +356,38 @@ def test_preview_schema_version_newer_than_supported() -> None:
     repo = Repository()
     doc = {
         "haventory_export_version": 1,
-        "schema_version": CURRENT_SCHEMA_VERSION + 5,
+        "schema_version": BEYOND_THE_ADOPTABLE_RANGE,
         "items": [],
         "locations": [],
     }
     report, _ = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
     assert report["valid"] is False
     assert any(e["path"] == "schema_version" for e in report["errors"])
+
+
+@pytest.mark.parametrize("stamped", sorted(ADOPTABLE_SCHEMA_VERSIONS))
+def test_a_document_stamped_before_the_collapse_previews_and_imports(stamped: int) -> None:
+    """Every export in the wild carries such a stamp, the pre-upgrade one included.
+
+    The document's number is above this build's, so without the same closed set
+    the storage side uses, the backup a user is told to take before upgrading
+    would be the one document the upgraded build refuses.
+    """
+
+    source = Repository()
+    _seed(source)
+    doc = {**_doc_from(source), "schema_version": stamped}
+
+    target = Repository()
+    report, payload = ie.plan_import(
+        target, doc, policy="merge", current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert report["valid"] is True, report["errors"]
+    assert report["counts"]["items"]["add"] == SEEDED_ITEMS
+    assert payload is not None
+    target.load_state(payload)
+    assert len(target.list_items()["items"]) == SEEDED_ITEMS
 
 
 def test_plan_import_rejects_unknown_policy() -> None:

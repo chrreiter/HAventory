@@ -8,6 +8,7 @@ is reproduced — the real-HA counterpart to the offline round-trip unit test.
 
 from __future__ import annotations
 
+from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from homeassistant.core import HomeAssistant
 
 
@@ -90,7 +91,7 @@ async def test_import_preview_reports_errors_without_mutating(
 
     bad_document = {
         "haventory_export_version": 1,
-        "schema_version": 4,
+        "schema_version": CURRENT_SCHEMA_VERSION,
         "items": [{"id": "not-a-uuid", "name": ""}],
         "locations": [],
     }
@@ -131,7 +132,7 @@ async def test_import_preview_name_collision_survives_the_wire(
 
     document = {
         "haventory_export_version": 1,
-        "schema_version": 4,
+        "schema_version": CURRENT_SCHEMA_VERSION,
         # A hand-rebuilt "Hammer": the same name under an id this install has
         # never seen, which import adds rather than merges.
         "items": [
