@@ -485,11 +485,12 @@ async def test_a_bump_answers_conflict_on_a_stale_version() -> None:
 async def test_an_edit_that_resends_the_same_date_leaves_the_anchor_alone(monkeypatch) -> None:
     """The whole walk: a series on the 31st survives edits landing between bumps.
 
-    The card's editor puts `reminder_date` in every payload it builds, changed or
-    not, so an item saved after a quantity edit re-sends whatever the last bump
-    left. Re-anchoring on presence of the key would move the anchor to that
-    occurrence, and the day of the month would decay one short month at a time
-    with nothing in the card showing it.
+    A client may send `reminder_date` unchanged — a service call built from a
+    template, a script handing an item back, a WebSocket client that posts every
+    field it holds — so a write that meant to change the quantity can still carry
+    whatever the last bump left. Re-anchoring on presence of the key would move
+    the anchor to that occurrence, and the day of the month would decay one short
+    month at a time with nothing on screen showing it.
     """
 
     hass = ws_hass()

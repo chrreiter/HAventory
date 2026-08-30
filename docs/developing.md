@@ -36,30 +36,13 @@ Run any Python tool through uv (`uv run <tool>`), so it uses the locked dev envi
 - **TypeScript** `6`, **Vite** `8`, **Vitest** `4` (+ `@vitest/coverage-v8`) for the card.
 - **pre-commit** — ruff, codespell, basic hooks.
 
-## The gate (run before every commit — both halves must be green)
+## The gate
 
-```bash
-# Backend
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
-uv run ruff check .
-uv run ruff format --check .   # CI fails on formatting alone; `ruff check` does not cover it
-uv run mypy
-
-# Frontend (in cards/haventory-card)
-npm audit --audit-level=high
-npx eslint .
-npm run typecheck
-npx vitest run
-npm run build
-```
-
-The audit is the only place a development-scope npm vulnerability becomes visible: the
-repository's Dependabot auto-triage rule dismisses dev-scope alerts, so the alert
-dashboard is not ground truth for the card's lockfile — CI is.
+Both halves have to be green before every commit. The commands, and why `npm audit` is one
+of them, are in [CONTRIBUTING.md](../CONTRIBUTING.md#the-gate).
 
 Or all at once: `scripts/ci_local.sh` (backend lint + types + tests w/ coverage, then
-frontend install + audit + lint + types + test + build). Lint only: `scripts/lint.sh`. Backend tests
-only: `scripts/test.sh`. Frontend tests: `scripts/test_frontend.sh [--coverage|--watch]`.
+frontend install + audit + lint + types + test + build).
 
 ## Testing
 
@@ -73,15 +56,19 @@ There are two backend test modes, kept deliberately separate:
   PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
   ```
 
+  The stub **records** what `services.setup()` registers, so which services exist, with
+  which schema and which response mode, is asserted here. How HA *dispatches* to a
+  handler is asserted in the other mode or it is not asserted at all.
+
 - **In-process HA integration (opt-in).** Runs the integration inside a *real* Home
   Assistant core via [`pytest-homeassistant-custom-component`][phacc] (phacc), catching
   drift against real HA APIs the stubs can't see. See below.
 
 Every feature/fix ships with tests — happy path plus at least one edge/error case.
 
-Timings are measured where the load is real — `scripts/stress_test.py` against a live
-Home Assistant (see [Backend stress testing](#backend-stress-testing)). A budget asserted
-inside the offline suite would only be measuring the runner it happened to land on.
+Timings are measured where the load is real — the `test-haventory` skill's `stress.py`
+against a live Home Assistant. A budget asserted inside the offline suite would only be
+measuring the runner it happened to land on.
 
 [phacc]: https://github.com/MatthewFlamm/pytest-homeassistant-custom-component
 
@@ -114,6 +101,21 @@ registration — one file per subject under `tests/integration/`.
 > Restricted-egress environments (e.g. sandboxes that can't fetch Python 3.14 or the HA
 > core) can't run this mode — CI provisions Python 3.14 and runs it in its own job.
 
+Build the card first, or `tests/integration/test_frontend.py` skips half its cases.
+
+`scripts/test_integration.sh` **cannot run on a Windows host**: it builds a POSIX venv path
+and HA core imports `fcntl`. Run it in a container with the venv on a named volume — the
+first run takes about three minutes, re-runs about thirty seconds, and host edits are picked
+up through the mount. The script installs its own interpreter, so the image needs uv and
+nothing else:
+
+```bash
+MSYS_NO_PATHCONV=1 docker run -d --name hav-int -v "$(pwd):/work" \
+  -v hav-int-venv:/work/.venv-integration -w /work \
+  ghcr.io/astral-sh/uv:bookworm sleep 7200
+MSYS_NO_PATHCONV=1 docker exec hav-int bash -lc 'cd /work && bash scripts/test_integration.sh'
+```
+
 ### Online smoke tests (opt-in)
 
 These hit a real Home Assistant instance over WebSocket. Require env vars:
@@ -141,7 +143,7 @@ export HA_ALLOW_AREA_MUTATIONS=1       # unlocks the area-registry e2e test
 # entry, so the instance matches the local CURRENT_SCHEMA_VERSION:
 scripts/reload_addon.sh --container "$HA_CONTAINER"
 
-scripts/test_online.sh                 # pytest -q -m online (all three online files)
+uv run pytest -q -m online             # all three online files
 ```
 
 Run the suite sequentially (no `-n`/xdist): destructive tests purge and then
@@ -191,7 +193,7 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
 ### Coverage
 
 - Backend: `scripts/ci_local.sh` produces `coverage.xml` + browsable `htmlcov/index.html`.
-- Frontend: `scripts/test_frontend.sh --coverage` (report at `cards/haventory-card/coverage/`).
+- Frontend: `npx vitest run --coverage` (report at `cards/haventory-card/coverage/`).
 
 ## Backend (custom component)
 
@@ -499,52 +501,38 @@ tree, run `bash .devcontainer/develop.sh` (needs network; provisions Python 3.14
 ## Dev helper scripts
 
 All scripts are Linux/bash under `scripts/`, and the Python helpers assume a UTF-8
-terminal. There is no Windows host support — use WSL2.
+terminal. There is no Windows host support — use WSL2. This is the whole list; a helper
+that is not here does not exist.
 
-### Reload into a running HA dev container
+| Script | What it does |
+|---|---|
+| `setup.sh` | the one-shot bootstrap under [Setup](#setup-linuxbash) |
+| `ci_local.sh` | the whole gate in one run, with coverage |
+| `test_integration.sh` | provisions `.venv-integration` and runs the in-process HA suite |
+| `reload_addon.sh` | deploys the working tree into a running HA dev container |
+| `smoke_online.sh` | the online WebSocket smoke; purges the store first when `HA_CONTAINER` is set |
+| `ws_init_haventory.py` | creates the config entry over WebSocket |
+| `ci_provision_ha.py` | onboards a fresh Home Assistant over REST — what `card-smoke` uses |
+| `probe_attachments.py`, `probe_fixtures.py` | the attachment path against a live instance (below) |
+| `render_brand_assets.py`, `brand_wordmark.py` | regenerate `custom_components/haventory/brand/` |
+| `check_version_consistency.py`, `check_release_zip.py` | the release checks CI runs |
+| `dev_env.py` | which instance a helper is about to talk to (below); imported, never run |
+| `common.sh` | the shared bash helpers every `.sh` here sources |
 
-```bash
-scripts/reload_addon.sh --container <your_container> --tail-logs
-```
+Driving the WebSocket API by hand is the `run-haventory` skill's `driver.py`, which holds
+one authenticated connection for a whole sequence: `status`, `send`, `watch` and `smoke`.
 
-### WebSocket helper scripts (cross-platform Python)
+### Which instance a helper talks to
 
-Quick probes/subscriptions without writing test code. Run via `uv run python scripts/<name>.py`.
-
-They take `HA_BASE_URL`/`HA_TOKEN` from a `.env` at the root of the checkout they are run
-from, which **wins over an inherited export** (`HAVENTORY_IGNORE_ENV_FILE=1` hands the
-decision back to the environment), and each prints the instance it resolved — plus the
-store's item and location totals — on stderr before it acts.
-
-`scripts/ws_probe.py` — send a single WS command and print the first reply:
-
-```bash
-export HAV_MSG='{"id":1,"type":"haventory/ping","echo":"hi"}'
-uv run python scripts/ws_probe.py
-```
-
-`scripts/ws_subscribe.py` — subscribe to a topic (`items` | `locations` | `stats`) and
-print events. Optional: `HAV_LOCATION_ID`, `HAV_INCLUDE_SUBTREE`, `HAV_MAX_EVENTS`,
-`HAV_MUTATIONS` (JSON array of WS messages to send after subscribing):
-
-```bash
-export HAV_TOPIC=items HAV_MAX_EVENTS=3
-uv run python scripts/ws_subscribe.py
-```
-
-### Backend stress testing
-
-`scripts/stress_test.py` validates persistence/concurrency against a Docker-based HA
-instance. Requires `HA_CONTAINER`, `HA_BASE_URL`, `HA_TOKEN`:
-
-```bash
-export HA_CONTAINER=home-assistant HA_BASE_URL=http://localhost:8123 HA_TOKEN=<token>
-uv run python scripts/stress_test.py                          # full run (deploy + test)
-uv run python scripts/stress_test.py --skip-deploy --skip-confirm  # quick re-run
-```
-
-Scenarios: rapid sequential mutations, concurrent burst, bulk-under-load, mixed workload,
-persistence-across-restart. Exit codes: `0` pass, `1` failures, `2` setup error.
+Every Python helper takes `HA_BASE_URL` / `HA_TOKEN` from the `.env` at the root of the
+checkout it is run from, and that file **wins over an inherited export** — a worktree
+carrying its own `.env` names the instance that worktree is for, whatever a shell profile
+exported. `HAVENTORY_IGNORE_ENV_FILE=1` hands the decision back to the environment for one
+run, which is how a recipe points a helper at a remote instance while a dev `.env` sits in
+the tree. Each helper prints the resolved target — the base URL, where that value came
+from, and the store's item and location totals — on stderr before it acts, so a run against
+the wrong inventory shows up in the first line of output instead of in a number that looks
+off later. `scripts/dev_env.py` is where both rules are implemented.
 
 ### Attachment probes
 

@@ -564,8 +564,8 @@ against the repository:
 ### Home Assistant bus events
 
 Fired on the HA bus after the durable write, from WebSocket mutations and `haventory.*`
-service calls alike. Separate from the WebSocket events above and unaffected by the rate
-limiter; see the API contract's "Home Assistant bus events".
+service calls alike. Separate from the WebSocket events above; see the API contract's
+"Home Assistant bus events".
 
 `haventory_item_changed`:
 ```json

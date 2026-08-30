@@ -426,11 +426,11 @@ async def ws_config(
 ) -> None:
     """Return the settings the frontend renders, not the whole options set.
 
-    Rate-limit tunables stay server-side. What is here is what the card cannot
-    know on its own: the configured heading, which quick-filter pills to offer,
-    the status vocabulary items are labelled with, and the attachment caps —
-    reported so the picker can refuse an oversized file before it is sent, never
-    so the backend can trust that it did.
+    What is here is what the card cannot know on its own: the configured
+    heading, which quick-filter pills to offer, the status vocabulary items are
+    labelled with, and the attachment caps — reported so the picker can refuse
+    an oversized file before it is sent, never so the backend can trust that it
+    did. An option the card does not draw stays server-side.
     """
     runtime = loaded_runtime(hass)
     title = runtime.card_title

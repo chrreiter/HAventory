@@ -157,7 +157,7 @@ haventory-card                     Lovelace element; store owner
     ├── hv-checkout-popover        desktop: anchored due-date step
     ├── hv-organize-dialog         Locations / Categories / Tags / Statuses
     ├── hv-import-sheet            input → preview → summary (+ invalid-document state)
-    ├── hv-diagnostics-panel       counts, drop counters, subscriptions, copy report
+    ├── hv-diagnostics-panel       subscriptions, counts, version, copy report
     ├── hv-confirm                 in-app confirmation (replaces window.confirm)
     ├── hv-banner                  the one alert treatment; the degraded and error
     │                              stacks are built in ui/banners.ts and rendered
@@ -772,15 +772,8 @@ Things jsdom cannot do, and how the tests handle it:
   changes through the item editor or the bulk bar's Move action, never by dragging the row
   onto a node of the sidebar tree.
 
-Run:
-
-```bash
-cd cards/haventory-card
-npx eslint .
-npm run typecheck
-npx vitest run
-npm run build
-```
+The frontend half of the gate is what runs them; the commands are in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-gate).
 
 ---
 

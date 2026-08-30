@@ -95,12 +95,11 @@ export function resolveTarget({ envText, env, envFile }) {
 /**
  * HA base URL + long-lived token, and the target named out loud.
  *
- * The `.env` beside this checkout wins over an inherited export: a worktree
- * carrying its own `.env` names the instance that worktree is for, and a shell
- * profile exporting `HA_BASE_URL` for a different one must not silently outrank
- * it. `HAVENTORY_IGNORE_ENV_FILE=1` hands the decision back to the environment
- * for one run. The resolved target goes to stderr, which every harness keeps
- * free of its own output.
+ * The same rule `scripts/dev_env.py` implements for the Python helpers, in
+ * JavaScript because a Node harness cannot import it: the `.env` beside this
+ * checkout wins over an inherited export, `HAVENTORY_IGNORE_ENV_FILE=1` hands
+ * the decision back for one run. The resolved target goes to stderr, which every
+ * harness keeps free of its own output.
  */
 export function haConfig() {
   if (cachedConfig) return cachedConfig;

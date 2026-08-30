@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import { haConfig } from "./card_views.mjs";
+import { LOGIN_REJECTED, atLoginPage, signIn } from "./login.mjs";
 
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -42,29 +43,13 @@ page.on("console", (m) => {
   if (m.type() === "error") console.error(`console: ${m.text()}`);
 });
 
-await page.addInitScript(
-  ([hassUrl, accessToken]) => {
-    localStorage.setItem(
-      "hassTokens",
-      JSON.stringify({
-        access_token: accessToken,
-        token_type: "Bearer",
-        refresh_token: "unused-long-lived",
-        expires_in: 1800,
-        expires: Date.now() + 365 * 24 * 3600 * 1000,
-        hassUrl,
-        clientId: hassUrl + "/",
-      }),
-    );
-  },
-  [base, token],
-);
+await signIn(page, { base, token });
 
 await page.goto(base + "/_my_redirect/config_flow_start?domain=haventory", {
   waitUntil: "domcontentloaded",
 });
-if (page.url().includes("/auth/authorize")) {
-  console.error("Redirected to the login page — is HA_TOKEN valid?");
+if (atLoginPage(page)) {
+  console.error(LOGIN_REJECTED);
   await browser.close();
   process.exit(1);
 }

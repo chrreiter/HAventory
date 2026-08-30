@@ -30,12 +30,10 @@ Usage (from the repo root):
   uv run python .claude/skills/run-haventory/lifecycle_probe.py entry --yes
   uv run python .claude/skills/run-haventory/lifecycle_probe.py all --yes
 
-HA_BASE_URL / HA_TOKEN come from the `.env` beside this checkout, which wins over
-an inherited export -- a worktree's .env names the instance that worktree is for.
-HAVENTORY_IGNORE_ENV_FILE=1 hands the decision back to the environment for one run.
-The target and the store's counts print on stderr before anything is restarted or
-rewritten. HA_CONTAINER (default "home-assistant") names the container the docker
-exec calls go to.
+HA_BASE_URL / HA_TOKEN are resolved by `dev_env`, which decides between the `.env`
+beside this checkout and an inherited export and names the instance on stderr
+before anything is restarted or rewritten. HA_CONTAINER (default "home-assistant")
+names the container the docker exec calls go to.
 """
 # Dev/agent harness script. Driving the container means shelling out to `docker`
 # on PATH (S603/S607), and the restart has to block the loop while it runs
