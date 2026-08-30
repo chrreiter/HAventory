@@ -367,7 +367,7 @@ async def test_prefilter_by_area_with_non_uuid_ids_and_update_rebuckets() -> Non
 
 @pytest.mark.asyncio
 async def test_an_area_that_names_no_bucket_matches_nothing() -> None:
-    """The area block answers every value: no bucket means no items.
+    """The area block answers every present value but `None`: no bucket, no items.
 
     The WebSocket refuses a blank area before it reaches here, so this is the
     repository's own door — a caller that skips the validator gets the empty
@@ -379,10 +379,13 @@ async def test_an_area_that_names_no_bucket_matches_nothing() -> None:
     kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
     repo.create_item(ItemCreate(name="Whisk", location_id=str(kitchen.id)))
 
-    for degenerate in (" ", "\t\n", "no-such-area"):
+    for degenerate in ("", " ", "\t\n", "no-such-area"):
         out = repo.list_items(flt=ItemFilter(area_id=degenerate))
         assert out["items"] == []
         assert out["total"] == 0
+
+    # `None` is the one value that means no area filter, so it lists everything.
+    assert len(repo.list_items(flt=ItemFilter(area_id=None))["items"]) == 1
 
 
 @pytest.mark.asyncio

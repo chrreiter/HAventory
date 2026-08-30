@@ -1155,12 +1155,14 @@ class Repository:
         has_indexed_filter = False
 
         # 1. Area Index
-        # Total, deliberately: an area is applied here and nowhere else —
-        # `filter_items` is a pure function over items and cannot resolve one —
-        # so a value that names no bucket has to answer with no items rather
-        # than fall through to a scan that would ignore the area entirely.
+        # `None` — an absent key, or an explicit null — is the one value that
+        # means no area filter; every other one is answered here, `""`
+        # included. An area is applied here and nowhere else, `filter_items`
+        # being a pure function over items that cannot resolve one, so a value
+        # naming no bucket has to answer with no items rather than fall through
+        # to a scan that would ignore the area entirely.
         area_id = flt.get("area_id")
-        if area_id:
+        if area_id is not None:
             has_indexed_filter = True
             in_area = self._items_by_area_id.get(str(area_id).strip(), set())
             if not in_area:
