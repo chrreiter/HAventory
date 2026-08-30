@@ -29,10 +29,10 @@ from .exceptions import SchemaDowngradeError
 # release: it is deleted once the store it was written for has crossed.
 ADOPTABLE_SCHEMA_VERSIONS: Final[frozenset[int]] = frozenset(range(2, 10))
 
-# The three statuses every store carries whatever else the household has added.
-# Frozen here rather than read from models, for the reason the module docstring
-# gives.
-_BUILT_IN_ITEM_STATUSES: Final[tuple[str, ...]] = ("ok", "missing", "needs_repair")
+# What an item with no readable status becomes. It is the one slug that cannot
+# be deleted, so it names something in every store. Frozen here rather than read
+# from models, for the reason the module docstring gives.
+_DEFAULT_ITEM_STATUS: Final[str] = "ok"
 
 # The status definitions a store that predates the collection is given, and the
 # appearance a definition carrying none reads as.
@@ -109,10 +109,10 @@ def adopt_dev_schema(payload: dict[str, Any]) -> dict[str, Any]:
                 definition.setdefault("color", _DEFAULT_STATUS_COLOR)
                 definition.setdefault("icon", _DEFAULT_STATUS_ICON)
 
-    # An item's status is rewritten only to a slug the store itself cannot name.
-    # The collection is what names them, so a household's own status survives —
-    # the same rule the repository applies as it reads each row.
-    nameable = set(_BUILT_IN_ITEM_STATUSES) | _defined_slugs(statuses)
+    # An item's status is rewritten only when nothing in the store names it. The
+    # collection above is what names them, so a household's own status survives
+    # — the same rule the repository applies as it reads each row.
+    nameable = {_DEFAULT_ITEM_STATUS} | _defined_slugs(statuses)
 
     items = data.get("items")
     if isinstance(items, dict):
@@ -120,7 +120,7 @@ def adopt_dev_schema(payload: dict[str, Any]) -> dict[str, Any]:
             if not isinstance(item, dict):
                 continue
             if item.get("status") not in nameable:
-                item["status"] = "ok"
+                item["status"] = _DEFAULT_ITEM_STATUS
             item.setdefault("attachments", [])
             _backfill_attachment_fields(item.get("attachments"))
             item.setdefault("reminder_date", None)
