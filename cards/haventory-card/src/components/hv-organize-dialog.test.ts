@@ -946,6 +946,63 @@ describe('hv-organize-dialog: tags and categories', () => {
     expect(store.state.value.items.flatMap((i) => i.tags)).not.toContain('batery');
   });
 
+  // The confirmation is a dialog inside this one and reports its own dismissal
+  // as `cancel` — the same event, on the same element, that tells the host to
+  // take this dialog down. Backing out of one tag's delete must not read as
+  // "Organize was dismissed".
+  it('keeps Organize open when the remove confirmation is cancelled', async () => {
+    for (const how of ['click', 'escape'] as const) {
+      const { el, sr } = await mount({ items, tab: 'tags' });
+      let dismissed = 0;
+      el.addEventListener('cancel', () => {
+        dismissed += 1;
+      });
+
+      const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'batery')!;
+      const remove = row.querySelector('[data-testid="value-remove"]') as HTMLButtonElement;
+      remove.focus();
+      remove.click();
+      await settle(el);
+
+      const confirm = q(sr, '[data-testid="organize-confirm"]') as HTMLElement & { open: boolean };
+      expect(confirm.open, how).toBe(true);
+      if (how === 'click') {
+        (confirm.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
+      } else {
+        (confirm.shadowRoot?.querySelector('[data-testid="confirm-dialog"]') as HTMLElement).dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        );
+      }
+      await settle(el);
+
+      expect(dismissed, how).toBe(0);
+      expect(confirm.open, how).toBe(false);
+      expect(q(sr, '[data-testid="organize-dialog"]'), how).toBeTruthy();
+      // Back where the question was asked from, so the next key press acts on
+      // the row rather than on whatever the browser fell back to.
+      expect(sr.activeElement, how).toBe(remove);
+      el.remove();
+    }
+  });
+
+  it('keeps an accepted removal from reading as this dialog answering', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+    let answered = 0;
+    el.addEventListener('confirm', () => {
+      answered += 1;
+    });
+
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'batery')!;
+    (row.querySelector('[data-testid="value-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+    (q(sr, '[data-testid="organize-confirm"]') as HTMLElement).shadowRoot
+      ?.querySelector<HTMLButtonElement>('[data-testid="confirm-accept"]')
+      ?.click();
+    await settle(el);
+
+    expect(answered).toBe(0);
+  });
+
   it('says so when there is nothing to organize', async () => {
     const { sr } = await mount({ items: [], tab: 'tags' });
     expect(q(sr, '[data-testid="organize-empty"]')?.textContent).toContain('No tags in use yet');

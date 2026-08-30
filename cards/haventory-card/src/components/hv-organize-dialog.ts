@@ -2407,6 +2407,11 @@ export class HVOrganizeDialog extends LitElement {
         `,
       )}
 
+      <!-- The confirmation answers to this dialog, and its answer stops here: it
+           reports a dismissal as a cancel event, which is what a host listening
+           on this element reads as "close Organize". Unstopped, backing out of
+           one tag's delete takes the whole dialog down with it, and the caret
+           the confirmation hands back lands behind a surface that is gone. -->
       <hv-confirm
         data-testid="organize-confirm"
         ?open=${this._confirmRemove !== null}
@@ -2418,12 +2423,14 @@ export class HVOrganizeDialog extends LitElement {
         .message=${t('hv.organize.removeMessage')}
         .confirmLabel=${t('hv.action.remove')}
         destructive
-        @confirm=${() => {
+        @confirm=${(e: Event) => {
+          e.stopPropagation();
           const value = this._confirmRemove;
           this._confirmRemove = null;
           if (value) void this._runRewrite(value, null, 'remove');
         }}
-        @cancel=${() => {
+        @cancel=${(e: Event) => {
+          e.stopPropagation();
           this._confirmRemove = null;
         }}
       ></hv-confirm>
