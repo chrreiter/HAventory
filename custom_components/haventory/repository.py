@@ -180,33 +180,11 @@ class Repository:
     # -----------------------------
 
     def __init__(self) -> None:
-        # Primary stores
-        self._items_by_id: dict[str, Item] = {}
-        self._locations_by_id: dict[str, Location] = {}
-        # Status definitions, keyed by their immutable slug. Seeded with the
-        # built-ins, which is also what a store carrying no section means.
-        self._statuses_by_slug: dict[str, StatusDefinition] = seed_status_definitions()
-
-        # Item indexes
-        self._tags_to_item_ids: dict[str, set[str]] = {}
-        self._category_to_item_ids: dict[str, set[str]] = {}
-        # Only non-default statuses are bucketed: "ok" is the overwhelming
-        # majority, so a bucket for it would mirror the whole item map.
-        self._status_to_item_ids: dict[str, set[str]] = {}
-        self._checked_out_item_ids: set[str] = set()
-        self._low_stock_item_ids: set[str] = set()
-        self._items_by_location_id: dict[str, set[str]] = {}
-        # Area indexes
-        self._locations_by_area_id: dict[str, set[str]] = {}
-        self._items_by_area_id: dict[str, set[str]] = {}
-        # Location tree indexes
-        self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
-
-        # O(1) subtree lookup: loc_id -> every item id in that subtree
-        self._items_in_subtree: dict[str, set[str]] = {}
-
-        # What the last load_state could not make sense of; empty on a fresh repo.
-        self._last_load_report = LoadReport()
+        # A fresh repository is a reset one: _reset_state is the single list of
+        # fields, so a new index cannot reach one construction path and miss the
+        # other — which reads as an AttributeError before the first load, or as a
+        # stale index surviving one.
+        self._reset_state()
 
     @property
     def last_load_report(self) -> LoadReport:
@@ -2023,21 +2001,41 @@ class Repository:
         self._rebuild_location_hierarchy_indexes()
 
     def _reset_state(self) -> None:
-        """Drop every primary store and index, back to a fresh repository."""
+        """Drop every primary store and index, back to a fresh repository.
 
-        self._items_by_id = {}
-        self._locations_by_id = {}
-        self._statuses_by_slug = seed_status_definitions()
-        self._tags_to_item_ids = {}
-        self._category_to_item_ids = {}
-        self._status_to_item_ids = {}
-        self._checked_out_item_ids = set()
-        self._low_stock_item_ids = set()
-        self._items_by_location_id = {}
-        self._locations_by_area_id = {}
-        self._items_by_area_id = {}
-        self._children_ids_by_parent_id = {}
-        self._items_in_subtree = {}
+        The only place the repository's fields are listed; ``__init__`` calls it
+        too, so a load starts from exactly what construction leaves behind.
+        """
+
+        # Primary stores
+        self._items_by_id: dict[str, Item] = {}
+        self._locations_by_id: dict[str, Location] = {}
+        # Status definitions, keyed by their immutable slug. Seeded with the
+        # built-ins, which is also what a store carrying no section means.
+        self._statuses_by_slug: dict[str, StatusDefinition] = seed_status_definitions()
+
+        # Item indexes
+        self._tags_to_item_ids: dict[str, set[str]] = {}
+        self._category_to_item_ids: dict[str, set[str]] = {}
+        # Only non-default statuses are bucketed: "ok" is the overwhelming
+        # majority, so a bucket for it would mirror the whole item map.
+        self._status_to_item_ids: dict[str, set[str]] = {}
+        self._checked_out_item_ids: set[str] = set()
+        self._low_stock_item_ids: set[str] = set()
+        self._items_by_location_id: dict[str, set[str]] = {}
+        # Area indexes
+        self._locations_by_area_id: dict[str, set[str]] = {}
+        self._items_by_area_id: dict[str, set[str]] = {}
+        # Location tree indexes
+        self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
+
+        # O(1) subtree lookup: loc_id -> every item id in that subtree
+        self._items_in_subtree: dict[str, set[str]] = {}
+
+        # What the last load_state could not make sense of; empty on a fresh
+        # repository, and empty again for a load that refuses its payload
+        # outright — the content it reported on is gone either way.
+        self._last_load_report = LoadReport()
 
     def _load_statuses(self, raw: object) -> None:
         """Read the ``statuses`` collection out of a persisted payload.

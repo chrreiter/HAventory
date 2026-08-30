@@ -258,6 +258,51 @@ def test_has_corruption_covers_every_kind(report: LoadReport, expected: bool) ->
 
 
 # --------------------------------------------------------------------------- #
+# The reset a load starts from
+# --------------------------------------------------------------------------- #
+
+
+def test_a_reload_leaves_exactly_what_a_fresh_repository_holds() -> None:
+    """One list of fields, so neither construction path can outgrow the other.
+
+    A field only ``__init__`` sets survives a reload carrying the previous
+    load's content; a field only the reset sets is missing until the first
+    load. Both show up here as a difference between the two repositories.
+    """
+
+    used = Repository()
+    where = used.create_location(name="Garage")
+    used.create_item(ItemCreate(name="Drill", location_id=str(where.id)))
+
+    used.load_state({"schema_version": CURRENT_SCHEMA_VERSION, "locations": {}, "items": {}})
+
+    assert vars(used) == vars(Repository())
+
+
+def test_a_payload_that_is_not_a_dict_reports_an_empty_load() -> None:
+    """The content is gone by the time the payload is refused, so the report is too.
+
+    ``load_state`` resets before it reads, and a caller that hands it something
+    other than a mapping is left with an empty repository — a report still
+    naming the previous load's damage would describe rows this repository no
+    longer holds.
+    """
+
+    payload = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "locations": {},
+        "items": {"not-a-uuid": {"id": "not-a-uuid", "name": "Broken"}},
+    }
+    repo = Repository.from_state(payload)
+    assert repo.last_load_report.has_corruption is True
+
+    repo.load_state("not a payload")  # type: ignore[arg-type]
+
+    assert repo.last_load_report == LoadReport()
+    assert repo.export_state()["items"] == {}
+
+
+# --------------------------------------------------------------------------- #
 # Names the load path used to invent
 # --------------------------------------------------------------------------- #
 
