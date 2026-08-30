@@ -622,10 +622,12 @@ The repository's test surfaces are the sibling `/test-haventory` skill's job: th
 gate and its expected counts, the stress regimen, the browser smoke and the online pytest
 smokes. The in-process HA suite and its container recipe are in `docs/developing.md`.
 
-What lives here is the harness's own unit cover for the parts that decide where a run looks and which
-instance it looks at: `card_views.mjs` (which views hold the card, which URL addresses them,
-what `--path` and `--dashboard` asked for, which `.env` wins), `probe.mjs` (which actions
-run in which order, and which screen a measurement was taken on) and `surfaces.mjs`, whose
+What lives here is the harness's own unit cover for the parts that decide where a run looks,
+which instance it looks at and whether it is signed in: `card_views.mjs` (which views hold
+the card, which URL addresses them, what `--path` and `--dashboard` asked for, which `.env`
+wins), `login.mjs` (the shape Home Assistant accepts the injected token in), `probe.mjs`
+(which actions run in which order, and which screen a measurement was taken on) and
+`surfaces.mjs`, whose
 tables are checked about themselves — every selector a desktop surface asserts **absent** has
 to be one a narrow surface asserts present, so a typo cannot leave a `hidden` check passing
 vacuously. No HA and no dependency beyond Node:
@@ -711,8 +713,10 @@ clean-start mode), then `Online smoke test completed successfully.`
   `docs/data_shapes.md`) — not `names`/`ids`.
 - **Login bypass**: the HA frontend accepts an injected `hassTokens` localStorage entry
   with the long-lived token as `access_token`, a future `expires`, and
-  `clientId === origin + "/"` (what `screenshot.mjs` does). No password needed, no
-  login form automation.
+  `clientId === origin + "/"`. No password needed, no login form automation. Every
+  harness gets it from `login.mjs` (`signIn(page|context, {base, token, dark})`), and
+  asks `atLoginPage(page)` right after its first navigation — a refused token is not an
+  error anywhere, it is a page where every selector times out.
 - **Playwright selectors pierce shadow DOM but text extraction does not** —
   `haventory-card` and its inner `input[placeholder="Search"]` are directly selectable
   despite Lit shadow roots, yet `locator.innerText()` on a shadow host reads its *light*

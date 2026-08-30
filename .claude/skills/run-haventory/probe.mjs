@@ -3,10 +3,9 @@
 //
 // screenshot.mjs answers "what does it look like"; this answers "what are the
 // numbers" — the rect a chip really occupies, the computed style a rule really
-// produced, the state a component really holds. It logs in the same way
-// (the long-lived token injected into `hassTokens` before any page script runs)
-// and takes the same shape of arguments, so a measurement and a screenshot of
-// the same screen are two commands that differ in one flag.
+// produced, the state a component really holds. It logs in the same way (through
+// login.mjs) and takes the same shape of arguments, so a measurement and a
+// screenshot of the same screen are two commands that differ in one flag.
 //
 // Usage (from the skill dir, .claude/skills/run-haventory/):
 //   node probe.mjs [--path <ha-url-path>] [--element <selector>]
@@ -52,6 +51,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import { cardPath, haConfig } from "./card_views.mjs";
+import { LOGIN_REJECTED, atLoginPage, signIn } from "./login.mjs";
 
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -335,33 +335,12 @@ async function main() {
     if (msg.type() === "error") consoleErrors.push(msg.text());
   });
 
-  // The HA frontend trusts hassTokens if `expires` is in the future; the
-  // long-lived token works as access_token and clientId must be `${origin}/`.
-  // HA's own dark mode is independent of the OS colour scheme — it reads the
-  // `selectedTheme` entry — so a dark probe sets both.
-  await page.addInitScript(
-    ([hassUrl, accessToken, dark]) => {
-      localStorage.setItem(
-        "hassTokens",
-        JSON.stringify({
-          access_token: accessToken,
-          token_type: "Bearer",
-          refresh_token: "unused-long-lived",
-          expires_in: 1800,
-          expires: Date.now() + 365 * 24 * 3600 * 1000,
-          hassUrl,
-          clientId: hassUrl + "/",
-        }),
-      );
-      if (dark) localStorage.setItem("selectedTheme", JSON.stringify({ dark: true }));
-    },
-    [base, token, options.dark],
-  );
+  await signIn(page, { base, token, dark: options.dark });
 
   console.error(`[probe] ${base}${urlPath} root=${rootElement} [${label}, scheme=${contextOptions.colorScheme}]`);
   await page.goto(base + urlPath, { waitUntil: "domcontentloaded" });
-  if (page.url().includes("/auth/authorize")) {
-    console.error("Redirected to the login page — hassTokens injection was rejected. Is HA_TOKEN valid?");
+  if (atLoginPage(page)) {
+    console.error(LOGIN_REJECTED);
     await browser.close();
     process.exit(1);
   }

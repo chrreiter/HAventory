@@ -40,6 +40,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import { cardPath, haConfig, parsePathOverrides } from "./card_views.mjs";
+import { LOGIN_REJECTED, atLoginPage, signIn } from "./login.mjs";
 import {
   CARD,
   DESKTOP_SURFACES,
@@ -188,32 +189,13 @@ for (const pass of PASSES) {
     if (res.status() === 404) notFound.push(res.url());
   });
 
-  // The HA frontend trusts hassTokens if `expires` is in the future. HA's own
-  // dark mode is a separate switch from the OS colour scheme, so --dark sets both.
-  await page.addInitScript(
-    ([hassUrl, accessToken, dark]) => {
-      localStorage.setItem(
-        "hassTokens",
-        JSON.stringify({
-          access_token: accessToken,
-          token_type: "Bearer",
-          refresh_token: "unused-long-lived",
-          expires_in: 1800,
-          expires: Date.now() + 365 * 24 * 3600 * 1000,
-          hassUrl,
-          clientId: hassUrl + "/",
-        }),
-      );
-      if (dark) localStorage.setItem("selectedTheme", JSON.stringify({ dark: true }));
-    },
-    [base, token, haDark],
-  );
+  await signIn(page, { base, token, dark: haDark });
 
   const url = base + pass.urlPath;
   const loadRoot = async () => {
     await page.goto(url, { waitUntil: "domcontentloaded" });
-    if (page.url().includes("/auth/authorize")) {
-      console.error("Redirected to the login page — hassTokens injection was rejected. Is HA_TOKEN valid?");
+    if (atLoginPage(page)) {
+      console.error(LOGIN_REJECTED);
       await browser.close();
       process.exit(1);
     }
