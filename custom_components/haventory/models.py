@@ -1359,11 +1359,8 @@ def validate_low_stock_threshold(value: object) -> int | None:
     """Return the low-stock threshold, or refuse the value with the one message.
 
     Nullable where the quantity is not: an item with no threshold is never low
-    on stock. Public for the same reason :func:`validate_quantity` is — the
-    import path holds a document's field to the rule without holding an item.
-
-    Spelled out rather than through ``_is_int_not_bool`` so the comparison and
-    the return narrow to ``int``.
+    on stock. Public, and spelled out, for the reasons :func:`validate_quantity`
+    is.
     """
 
     if value is None:
