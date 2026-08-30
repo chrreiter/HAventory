@@ -1647,16 +1647,19 @@ class Repository:
         # The area is left as it stands: it belongs to the root of a tree, and
         # a requested change is propagated there once the node has moved.
         self._locations_by_id[key] = replace(loc, name=updated_name, parent_id=target_parent_id)
-        self._rebuild_paths_for_subtree(key)
 
-        # Update affected items (now that live maps are consistent)
-        affected = {key}
-        affected.update(self._collect_descendant_ids(key))
-        # Only rebuild item location_path when the path can actually change:
-        # - name change affects display paths
-        # - parent change affects ancestry
+        # A location's path is built from its name and its ancestry, and the
+        # subtree index from the parent links alone, so an edit that moves
+        # neither leaves both where they are. Everything under this gate walks
+        # the whole subtree — the cost a large tree must not pay per area
+        # reassignment. The item paths are rewritten here too, and for the same
+        # reason: only these two changes can move one.
         if parent_changed or name_changed:
+            self._rebuild_paths_for_subtree(key)
+            affected = {key}
+            affected.update(self._collect_descendant_ids(key))
             self._update_items_location_paths_for_locations(affected)
+            self._rebuild_location_hierarchy_indexes()
 
         # Handle area change: propagate to root of tree
         if area_change_requested:
@@ -1674,7 +1677,6 @@ class Repository:
                 "moved": bool(parent_changed),
             },
         )
-        self._rebuild_location_hierarchy_indexes()
         return self._locations_by_id[key]
 
     def _rebucket_items_for_subtree_area_change(self, root_key: str) -> None:
