@@ -27,7 +27,7 @@ One HAventory device under Settings → Devices & services, carrying:
 *Due* includes today and *overdue* does not, here and everywhere else in HAventory — so
 each *due* count is its *overdue* twin plus whatever falls today, and never smaller than it.
 
-They update the moment something changes — a card edit, a `haventory.*` service call, an
+They update the moment something changes — a card edit, a `haventory.*` action, an
 import — with no polling interval to tune. The four date-derived ones also roll over at
 midnight, so "Checked out overdue count" grows overnight without anybody touching the
 inventory.
@@ -97,9 +97,9 @@ Services work the other way round: every `haventory.*` service returns the entit
 touched, so a script can chain calls through `response_variable` — see the same document's
 "Service responses".
 
-A service mutation also reaches any card left open, the same way a card's own edit does: an
-automation that restocks something repaints the list and the counts on every screen showing
-them, with nobody touching anything.
+A mutation made that way also reaches any card left open, the same way a card's own edit
+does: an automation that restocks something repaints the list and the counts on every
+screen showing them, with nobody touching anything.
 
 ## The calendar
 
@@ -178,7 +178,7 @@ has to pass before anything is late.
 
 When you have actually changed the filter, **bump** the reminder and the whole series moves
 on one step. That is what **Mark done** does; from an automation or a script it is one
-service call — say, when the smart plug on the boiler reports the service engineer's visit
+action — say, when the smart plug on the boiler reports the service engineer's visit
 is done:
 
 ```yaml
