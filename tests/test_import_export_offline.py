@@ -313,6 +313,30 @@ def test_preview_invalid_envelope_reports_errors(doc) -> None:
     assert report["errors"]
 
 
+@pytest.mark.parametrize("section", ["items", "locations", "statuses"])
+def test_a_section_keyed_by_id_is_not_a_document(section: str) -> None:
+    """The stored payload's shape is not a document's, and never was one.
+
+    ``build_export_document`` writes every document a user holds, and it writes
+    arrays. A map read as a section would take the payload of an in-process
+    snapshot as a backup, entity ids silently dropped.
+    """
+
+    repo = Repository()
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [],
+        section: {"22222222-2222-4222-8222-222222222222": {"name": "Ghost"}},
+    }
+
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert target is None
+    assert _only_error(report) == (section, f"{section} must be an array of objects")
+
+
 def test_preview_invalid_entity_reports_paths() -> None:
     repo = Repository()
     doc = {

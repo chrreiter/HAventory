@@ -236,16 +236,17 @@ def _warn(code: str, path: str, message: str, **fields: Any) -> dict[str, Any]:
     return {"code": code, "path": path, "message": message, **fields}
 
 
-def _coerce_entity_list(value: Any) -> list[dict[str, Any]] | None:
-    """Accept the document list form (preferred) or a legacy id->dict mapping."""
+def _entity_array(value: Any) -> list[dict[str, Any]] | None:
+    """One of the document's entity sections, or ``None`` when it is not one.
 
-    if isinstance(value, list):
-        if all(isinstance(v, dict) for v in value):
-            return list(value)
-        return None
-    if isinstance(value, dict):
-        # Tolerate {id: entity} maps produced by repository.export_state.
-        return [v for v in value.values() if isinstance(v, dict)]
+    An array of objects is the only shape a section has ever been written in:
+    the stored payload keys entities by id, but nothing hands that form to an
+    import — ``build_export_document`` is what writes every document a user
+    holds, and it writes arrays.
+    """
+
+    if isinstance(value, list) and all(isinstance(v, dict) for v in value):
+        return list(value)
     return None
 
 
@@ -265,7 +266,7 @@ def _parse_status_section(
             for slug, definition in seed_status_definitions().items()
         }
 
-    entries = _coerce_entity_list(raw)
+    entries = _entity_array(raw)
     if entries is None:
         errors.append(_err("statuses", "statuses must be an array of objects"))
         return {}
@@ -328,10 +329,10 @@ def _parse_envelope(
             )
         )
 
-    items = _coerce_entity_list(doc.get("items", []))
+    items = _entity_array(doc.get("items", []))
     if items is None:
         errors.append(_err("items", "items must be an array of objects"))
-    locations = _coerce_entity_list(doc.get("locations", []))
+    locations = _entity_array(doc.get("locations", []))
     if locations is None:
         errors.append(_err("locations", "locations must be an array of objects"))
 
