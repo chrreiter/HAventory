@@ -1,7 +1,7 @@
 # HAventory
 
 [![CI](https://github.com/chrreiter/HAventory/actions/workflows/ci.yml/badge.svg)](https://github.com/chrreiter/HAventory/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/chrreiter/HAventory)](https://github.com/chrreiter/HAventory/releases)
+[![Release](https://img.shields.io/github/v/release/chrreiter/HAventory?include_prereleases)](https://github.com/chrreiter/HAventory/releases)
 [![HACS: Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![License: Apache-2.0](https://img.shields.io/github/license/chrreiter/HAventory)](LICENSE)
 
