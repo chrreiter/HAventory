@@ -304,7 +304,6 @@ NODE_PROSE_SITES: tuple[str, ...] = (
     "CONTRIBUTING.md",
     "docs/developing.md",
     "scripts/setup.sh",
-    "scripts/test_frontend.sh",
     ".claude/skills/run-haventory/SKILL.md",
     ".claude/skills/test-haventory/SKILL.md",
 )

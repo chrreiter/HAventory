@@ -2,10 +2,10 @@
 # Exploratory agent stress harness — deliberately NOT held to the product lint gate.
 r"""HAventory online stress-test regimen (adversarial "break-it" driver).
 
-Robust, connection-per-worker WS client (applies the scripts/stress_test.py review
-guardrails: one connection per concurrent task; send_no_wait + dedup-by-id for
-in-flight bursts; no count-tolerance oracles; every send wrapped). Every
-scenario prefixes its data with `stress_test_` so `cleanup` can sweep it, and
+Robust, connection-per-worker WS client: one connection per concurrent task;
+send_no_wait + dedup-by-id for in-flight bursts; no count-tolerance oracles;
+every send wrapped. Every scenario prefixes its data with `stress_test_` so
+`cleanup` can sweep it, and
 cross-checks `haventory/health` counts against `haventory/stats` before/after
 as the pass gate.
 

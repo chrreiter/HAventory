@@ -115,9 +115,9 @@ integration: the sidebar panel is registered in code, a dashboard is user data. 
 
 ### WebSocket driver — status / arbitrary commands / smoke
 
-`driver.py` holds **one authenticated WS connection** for a whole command sequence
-(so item `version`s and ids flow between steps — `scripts/ws_probe.py` is one message
-per connection and can't do that).
+`driver.py` holds **one authenticated WS connection** for a whole command sequence, so
+item `version`s and ids flow between steps and a subscription stays open while another
+window mutates.
 
 ```bash
 uv run python .claude/skills/run-haventory/driver.py status
@@ -139,8 +139,9 @@ mutate in another, and read what came out. It only subscribes, so it is safe aga
 any instance.
 
 Command catalog + payload shapes: `docs/backend_api_contract.md` and `docs/data_shapes.md`.
-Subscriptions (watch events while mutating): `uv run python scripts/ws_subscribe.py`
-(env-driven, see its docstring). Seed data: `uv run python scripts/create_test_items.py`.
+Seeding an instance is one `haventory/import/execute` of a generated document — `driver.py
+send`, or `drive_import.mjs` below when the import sheet is what you want exercised — which
+creates the locations along with the items rather than one WS call per row.
 
 ### Screenshot / drive the card or panel in the real HA frontend
 
