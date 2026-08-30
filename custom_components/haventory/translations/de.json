@@ -36,7 +36,7 @@
         "data_description": {
           "card_title": "Überschrift auf der HAventory-Karte. Eine Dashboard-Karte mit eigener Option „title:“ behält ihre eigene. Lade das Dashboard neu, um eine Änderung zu sehen.",
           "sidebar_panel_enabled": "Gibt HAventory eine eigene Seite, benannt nach dem Kartentitel oben. Das gilt für alle, die dieses Home Assistant nutzen; jeder Benutzer kann den Eintrag weiterhin über den Bearbeitungsmodus der Seitenleiste ausblenden. Der Eintrag erscheint und verschwindet, während du dieses Formular speicherst – ohne Neustart. Auf der Übersichtsseite kann HAventory über Bearbeiten und dann Verknüpfung hinzufügen auch als Kachel angeheftet werden.",
-          "quick_filters": "Die Ein-Tipp-Filter über der Gegenstandsliste, hier und auf der Seite in der Seitenleiste. Eine Pille erscheint weiterhin nur, wenn sie etwas zu zählen hat – ein Haushalt, der nie etwas ausleiht, sieht also so oder so keine Ausleih-Pille. „Gegenstände gesamt“ ist noch auf eine zweite Art die Ausnahme: Nur die Karte zeichnet sie als Pille, und nur in voller Breite – die Seite in der Seitenleiste und die volle Ansicht schreiben die Gesamtzahl stattdessen in ihre Kopfzeile, ob sie hier angehakt ist oder nicht. Eine Dashboard-Karte mit eigener Option „quick_filters:“ behält ihre eigene. Lade das Dashboard neu, um eine Änderung zu sehen."
+          "quick_filters": "Die Ein-Tipp-Filter über der Gegenstandsliste, hier und auf der Seite in der Seitenleiste. Eine Pille erscheint weiterhin nur, wenn sie etwas zu zählen hat – ein Haushalt, der nie etwas ausleiht, sieht also so oder so keine Ausleih-Pille. „Gegenstände gesamt“ fällt noch auf eine zweite Art aus der Reihe: Nur die Karte zeichnet sie als Pille, und nur in voller Breite – die Seite in der Seitenleiste und die Vollansicht schreiben die Gesamtzahl stattdessen in ihre Kopfzeile, ob sie hier angehakt ist oder nicht. Eine Dashboard-Karte mit eigener Option „quick_filters:“ behält ihre eigene. Lade das Dashboard neu, um eine Änderung zu sehen."
         },
         "sections": {
           "todo": {
@@ -148,7 +148,7 @@
         },
         "low_stock_threshold": {
           "name": "Schwelle für niedrigen Bestand",
-          "description": "Bei welcher Menge und darunter der Gegenstand als niedriger Bestand gilt, als ganze Zahl ab 0. Ohne Angabe gibt es keine Schwelle."
+          "description": "Ab dieser Menge abwärts gilt der Gegenstand als niedriger Bestand; ganze Zahl ab 0. Ohne Angabe gibt es keine Schwelle."
         },
         "custom_fields": {
           "name": "Eigene Felder",
@@ -166,7 +166,7 @@
         },
         "expected_version": {
           "name": "Erwartete Version",
-          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+          "description": "Die erwartete Version des Gegenstands. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
         },
         "name": {
           "name": "Name",
@@ -218,7 +218,7 @@
         },
         "low_stock_threshold": {
           "name": "Schwelle für niedrigen Bestand",
-          "description": "Bei welcher Menge und darunter der Gegenstand als niedriger Bestand gilt, als ganze Zahl ab 0. Null entfernt die Schwelle."
+          "description": "Ab dieser Menge abwärts gilt der Gegenstand als niedriger Bestand; ganze Zahl ab 0. Null entfernt die Schwelle."
         },
         "custom_fields_set": {
           "name": "Eigene Felder setzen",
@@ -240,7 +240,7 @@
         },
         "expected_version": {
           "name": "Erwartete Version",
-          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+          "description": "Die erwartete Version des Gegenstands. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
         }
       }
     },
@@ -258,7 +258,7 @@
         },
         "expected_version": {
           "name": "Erwartete Version",
-          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+          "description": "Die erwartete Version des Gegenstands. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
         }
       }
     },
@@ -276,7 +276,7 @@
         },
         "expected_version": {
           "name": "Erwartete Version",
-          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+          "description": "Die erwartete Version des Gegenstands. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
         }
       }
     },
@@ -294,7 +294,7 @@
         },
         "expected_version": {
           "name": "Erwartete Version",
-          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+          "description": "Die erwartete Version des Gegenstands. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
         }
       }
     },
@@ -312,7 +312,7 @@
         },
         "expected_version": {
           "name": "Erwartete Version",
-          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+          "description": "Die erwartete Version des Gegenstands. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
         }
       }
     },
@@ -326,7 +326,7 @@
         },
         "expected_version": {
           "name": "Erwartete Version",
-          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+          "description": "Die erwartete Version des Gegenstands. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
         }
       }
     },
@@ -340,7 +340,7 @@
         },
         "expected_version": {
           "name": "Erwartete Version",
-          "description": "Die Version, auf der der Gegenstand stehen soll. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
+          "description": "Die erwartete Version des Gegenstands. Hat er sich seitdem geändert, wird der Aufruf als Konflikt abgelehnt, statt die fremde Änderung zu überschreiben."
         }
       }
     },
