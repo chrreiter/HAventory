@@ -60,8 +60,7 @@ import dev_env
 
 # Every command mutates the instance except these two: `baseline` reads health and
 # version, `subteardown` only subscribes and unsubscribes. The rest create or delete
-# stress_test_-prefixed fixtures, rewrite the rate-limit options through the config
-# flow, or restart the container.
+# stress_test_-prefixed fixtures, or restart the container.
 READ_ONLY_COMMANDS = frozenset({"baseline", "subteardown"})
 
 

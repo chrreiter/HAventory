@@ -157,7 +157,7 @@ haventory-card                     Lovelace element; store owner
     ├── hv-checkout-popover        desktop: anchored due-date step
     ├── hv-organize-dialog         Locations / Categories / Tags / Statuses
     ├── hv-import-sheet            input → preview → summary (+ invalid-document state)
-    ├── hv-diagnostics-panel       counts, drop counters, subscriptions, copy report
+    ├── hv-diagnostics-panel       subscriptions, counts, version, copy report
     ├── hv-confirm                 in-app confirmation (replaces window.confirm)
     ├── hv-banner                  the one alert treatment; the degraded and error
     │                              stacks are built in ui/banners.ts and rendered

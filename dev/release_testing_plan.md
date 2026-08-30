@@ -87,19 +87,21 @@ aggregates over the **in-memory** repository. Called *after a restart* they desc
 was rehydrated from disk, which makes them the corruption check for this plan — a count
 that dropped is data that did not come back. Prefer it over eyeballing the JSON. The
 index cross-checks that used to ride along here run in the test suite instead
-(`tests/repository_invariants.py`), so `issues` is empty on every build and says nothing:
+(`tests/repository_invariants.py`), so `issues` is empty on every build and `healthy` is
+always `true`: **the counts are the whole oracle**, and a scenario that says "healthy"
+means nothing. Read `counts` and compare the numbers.
 
 ```bash
 HAVENTORY_IGNORE_ENV_FILE=1 HA_BASE_URL=http://<host>:8123 HA_TOKEN=<token> \
-  HAV_MSG='{"id":1,"type":"haventory/health"}' uv run python scripts/ws_probe.py
+  uv run python .claude/skills/run-haventory/driver.py send '{"type":"haventory/health"}'
 ```
 
 Pass = `counts` matching what the card shows.
 
 `HAVENTORY_IGNORE_ENV_FILE=1` is what makes the two variables beside it win: without it
-the `.env` in the checkout takes precedence, and the probe would answer for the local dev
-instance instead of the release-test host. The probe prints the target it resolved on
-stderr — read that line before reading the result.
+the `.env` in the checkout takes precedence, and the driver would answer for the local dev
+instance instead of the release-test host. It prints the target it resolved on stderr —
+read that line before reading the result.
 
 **3. Store snapshots.** Before and after every destructive scenario:
 
@@ -132,7 +134,7 @@ client + OS version, date. Put it in the results log.
 | A2 | Card resource auto-registration (storage-mode Lovelace) | `/haventory_static/haventory-card.js?v=<version>` present exactly once in `.storage/lovelace_resources`; `curl -I` on it returns 200 with **no** `Cache-Control` header; card loads without a manual step | ✅ |
 | A3 | YAML-mode Lovelace (ENV-B, `lovelace: mode: yaml`) | Resource registration is skipped with a clear log line, and the card still loads — the frontend extra-module URL covers YAML mode, so there is no manual step here either | ✅ |
 | A4 | Attempt a second config entry | HAventory is absent from the "Add integration" picker while an entry exists, so the attempt cannot start; a flow initiated outside the picker aborts with "Already configured. Only a single configuration is possible." No duplicate storage or resource | |
-| A5 | First-run with a pre-existing store (upgrade-in-place from a dev instance) | Existing items/locations load; `health` healthy | ✅ |
+| A5 | First-run with a pre-existing store (upgrade-in-place from a dev instance) | Existing items/locations load; `haventory/health`'s `counts` match the store they came from | ✅ |
 | A6 | Attachment round trip, automated: `RUN_ONLINE=1 HA_TOKEN=<token> uv run --group probes python scripts/probe_attachments.py` | All probes pass. The stored bytes on HA's disk — not what the card reported — match what the card's re-encode should have produced: 4032×3024 JPEG capped at 2048, transparent PNG stored as WebP with its alpha, animated GIF untouched with all 24 frames, sub-2 MiB JPEG byte-identical | ✅ |
 | A7 | EXIF orientation, from the same run (case "EXIF Orientation=6 is applied before the re-encode") | The stored frame is upright — portrait 1536×2048, not landscape. This is the one attachment defect that looks correct in every automated test and wrong on every phone, so read this line even when the run is green overall | ✅ |
 | A8 | Attachment liveness and naming, from the same run | The presence probe answers `206` with `Content-Length: 1` on a live file, `404` on a deleted one, and nothing at all on an unreachable host; a manual is served `inline` under its title (its filename when untitled), non-ASCII intact | |
@@ -177,13 +179,13 @@ store around D7–D9.
 
 | ID | Scenario | Pass criteria | Blocker |
 |----|----------|---------------|---------|
-| D1 | Clean HA restart | Data intact; `health` healthy; item counts unchanged | ✅ |
-| D2 | Hard kill mid-write (`docker kill` during a bulk operation) | Store file is valid JSON, not truncated; at most the in-flight mutation is lost; `health` healthy | ✅ |
+| D1 | Clean HA restart | Data intact; `haventory/health`'s `counts` unchanged | ✅ |
+| D2 | Hard kill mid-write (`docker kill` during a bulk operation) | Store file is valid JSON, not truncated; at most the in-flight mutation is lost; `haventory/health`'s `counts` are the pre-kill numbers or one less | ✅ |
 | D3 | Config-entry reload (no HA restart) | Reload succeeds; subscriptions re-established; no duplicate WS handler registration | ✅ |
 | D4 | HA minor update (current stable → next stable) with HAventory installed | Setup succeeds; no deprecation warnings from `custom_components.haventory` | ✅ |
 | D5 | HA **next beta** | Same; any breakage is filed before it reaches stable | |
 | D6 | Minimum supported HA, the `hacs.json` floor (ENV-C). The phacc suite already runs the integration in-process at that version in CI; D6 is the live counterpart — a real container, the card, and the browser | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
-| D7 | Integration update N → N+1 **with real data**, including a schema migration | Migration runs once, is idempotent on a second restart, data intact, `health` healthy | ✅ |
+| D7 | Integration update N → N+1 **with real data**, including a schema migration | Migration runs once, is idempotent on a second restart, data intact, `haventory/health`'s `counts` unchanged | ✅ |
 | D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is **refused loudly**: setup fails with `ConfigEntryError` naming both versions and the store file is left byte-identical — never migrated down, never silently relabeled (decided; item 25 fixed by #120) | ✅ |
 | D9 | Card update with a warm browser cache: update the integration, then reload normally (no hard refresh), on desktop **and** in the companion app | New card version actually loads; check `haventory/version` vs. the card build. The resource is now registered as `…haventory-card.js?v=<manifest version>` and a stale entry is rewritten in place (item 26, fixed by #122) | ✅ |
 
@@ -192,8 +194,8 @@ store around D7–D9.
 | ID | Scenario | Pass criteria | Blocker |
 |----|----------|---------------|---------|
 | E1 | Take a full HA backup; inspect the archive | Contains `.storage/haventory_store`, `.storage/lovelace_resources`, and `custom_components/haventory/www/haventory-card.js` | ✅ |
-| E2 | Backup taken **while HAventory is being written to** (run a bulk import during the backup), restore into ENV-D | Restored store is valid JSON; `health` healthy; item count matches the pre-backup count ±the in-flight batch | ✅ |
-| E3 | Restore an **older** backup into the **current** integration (ENV-D) | Forward migration runs on load; data intact; `health` healthy | ✅ |
+| E2 | Backup taken **while HAventory is being written to** (run a bulk import during the backup), restore into ENV-D | Restored store is valid JSON; `haventory/health`'s `counts` match the pre-backup numbers ±the in-flight batch | ✅ |
+| E3 | Restore an **older** backup into the **current** integration (ENV-D) | Forward migration runs on load; data intact; `haventory/health`'s `counts` unchanged | ✅ |
 | E4 | Restore a **newer-schema** backup into an **older** integration (ENV-D) | Same expectation as D8 — refuse loudly; never migrate down, never silently relabel (item 25, fixed by #120) | ✅ |
 | E5 | Partial/selective backup | Document the minimum set a user must select to fully restore HAventory. The card bundle now rides inside `custom_components/haventory/`, so the set is the store plus the integration folder — or "reinstall the integration and restore only the store". The Lovelace resource is rebuilt on setup and no longer has to be backed up | ✅ |
 
@@ -202,10 +204,10 @@ store around D7–D9.
 | ID | Scenario | Pass criteria | Blocker |
 |----|----------|---------------|---------|
 | F1 | Structural audit of the store after a mixed workload (creates, moves, renames, deletes, bulk ops) | `jq` parses it; no duplicate ids; every `item.location_id` resolves to an existing location; every `location_path` matches the current tree; every `version` ≥ 1 | ✅ |
-| F2 | `health` after each of D1–D9 and E2–E4 | `counts` match the pre-scenario numbers, allowing for what the scenario changed | ✅ |
+| F2 | `haventory/health`'s `counts` after each of D1–D9 and E2–E4 | `counts` match the pre-scenario numbers, allowing for what the scenario changed | ✅ |
 | F3 | Scale on **real** hardware: load ~2× the real inventory and measure create/update/list latency | Latency is acceptable at the target size; record the size at which it degrades and publish it as a supported ceiling. Known: whole-dataset rewrite per mutation, ~200 ms/create @1000 items (open item 19) | ✅ |
 | F4 | Store file size across the run | Growth is proportional to content — no unbounded growth from repeated edits | |
-| F5 | Rename a location near the root of a deep tree | All descendant items' `location_path` rewritten; their `version` and `updated_at` unchanged (item 23); `health` healthy | |
+| F5 | Rename a location near the root of a deep tree | All descendant items' `location_path` rewritten; their `version` and `updated_at` unchanged (item 23); `haventory/health`'s `counts` unchanged | |
 
 ### G — Multi-client & permissions
 
