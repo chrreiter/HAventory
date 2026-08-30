@@ -41,7 +41,7 @@ command is in the gate, are in `CONTRIBUTING.md`. Backend, from the repo root:
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --no-project --python 3.14 \
   --with pytest --with pytest-asyncio --with voluptuous --with aiohttp \
   python -m pytest -q
-# → 1311 passed, 27 skipped
+# → 1322 passed, 27 skipped
 
 uv run --no-project --python 3.14 --with ruff==0.16.3 ruff check custom_components tests
 # → All checks passed!

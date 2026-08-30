@@ -123,13 +123,20 @@ per connection and can't do that).
 uv run python .claude/skills/run-haventory/driver.py status
 uv run python .claude/skills/run-haventory/driver.py smoke
 uv run python .claude/skills/run-haventory/driver.py send '{"type":"haventory/ping","echo":"hi"}' '{"type":"haventory/stats"}'
+uv run python .claude/skills/run-haventory/driver.py watch --count 3
+uv run python .claude/skills/run-haventory/driver.py watch items stats --timeout 60
 ```
 
 | command | what it does |
 |---|---|
 | `status` | HA version/state + `haventory/version`, `/health`, `/stats` in one JSON blob |
 | `send <json>...` | send frames sequentially on one connection; ids auto-assigned; prints each result frame; exit 1 if any `success: false` |
+| `watch [topic...]` | subscribe to `items`, `locations`, `stats`, `statuses` — or to the ones named — and print every event frame as it arrives. Runs until interrupted; `--count N` stops after N events, `--timeout SECONDS` after that much wall clock. A refused subscribe prints and exits 1 |
 | `smoke` | full CRUD user flow: create location → create item → case-insensitive search → `expected_version` update → stale-version `conflict` check → adjust quantity → delete both (self-cleaning, safe alongside existing data). Prints `[PASS]`/`[FAIL]` per step, ends `SMOKE OK` |
+
+`watch` is the "did that mutation actually broadcast?" tool: start it in one shell,
+mutate in another, and read what came out. It only subscribes, so it is safe against
+any instance.
 
 Command catalog + payload shapes: `docs/backend_api_contract.md` and `docs/data_shapes.md`.
 Subscriptions (watch events while mutating): `uv run python scripts/ws_subscribe.py`
