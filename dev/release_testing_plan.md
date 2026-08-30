@@ -185,8 +185,8 @@ store around D7–D9.
 | D4 | HA minor update (current stable → next stable) with HAventory installed | Setup succeeds; no deprecation warnings from `custom_components.haventory` | ✅ |
 | D5 | HA **next beta** | Same; any breakage is filed before it reaches stable | |
 | D6 | Minimum supported HA, the `hacs.json` floor (ENV-C). The phacc suite already runs the integration in-process at that version in CI; D6 is the live counterpart — a real container, the card, and the browser | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
-| D7 | Integration update N → N+1 **with real data**, including a schema migration | Migration runs once, is idempotent on a second restart, data intact, `haventory/health`'s `counts` unchanged | ✅ |
-| D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is **refused loudly**: setup fails with `ConfigEntryError` naming both versions and the store file is left byte-identical — never migrated down, never silently relabeled (decided; item 25 fixed by #120) | ✅ |
+| D7 | Integration update N → N+1 **with real data**, across the collapse to schema v1 | The store is adopted once — one `warning` naming the stamp it came from — lands stamped 1 with every field filled in, and a second restart writes nothing further; data intact, `haventory/health`'s `counts` unchanged | ✅ |
+| D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is **refused loudly**: setup fails with `ConfigEntryError` naming both versions and the store file is left byte-identical — never migrated down, never silently relabeled (decided; item 25 fixed by #120). Rolling back *across* the collapse is the one case that is not a refusal: a pre-collapse build reads the adopted v1 store and steps it back up through fills that change nothing | ✅ |
 | D9 | Card update with a warm browser cache: update the integration, then reload normally (no hard refresh), on desktop **and** in the companion app | New card version actually loads; check `haventory/version` vs. the card build. The resource is now registered as `…haventory-card.js?v=<manifest version>` and a stale entry is rewritten in place (item 26, fixed by #122) | ✅ |
 
 ### E — Backup & restore
@@ -195,8 +195,8 @@ store around D7–D9.
 |----|----------|---------------|---------|
 | E1 | Take a full HA backup; inspect the archive | Contains `.storage/haventory_store`, `.storage/lovelace_resources`, and `custom_components/haventory/www/haventory-card.js` | ✅ |
 | E2 | Backup taken **while HAventory is being written to** (run a bulk import during the backup), restore into ENV-D | Restored store is valid JSON; `haventory/health`'s `counts` match the pre-backup numbers ±the in-flight batch | ✅ |
-| E3 | Restore an **older** backup into the **current** integration (ENV-D) | Forward migration runs on load; data intact; `haventory/health`'s `counts` unchanged | ✅ |
-| E4 | Restore a **newer-schema** backup into an **older** integration (ENV-D) | Same expectation as D8 — refuse loudly; never migrate down, never silently relabel (item 25, fixed by #120) | ✅ |
+| E3 | Restore an **older** backup into the **current** integration (ENV-D) | Whatever the backup is stamped — anything from no stamp to 9 — it loads, lands at v1 with the fields filled in, and the data is intact; `haventory/health`'s `counts` unchanged | ✅ |
+| E4 | Restore a backup stamped **above the adoptable set** into the current integration, and a v1 backup into a build older than the collapse (ENV-D) | The first is refused loudly, as D8 — never migrated down, never silently relabeled (item 25, fixed by #120). The second is the rollback path: the older build reads it and steps it back up | ✅ |
 | E5 | Partial/selective backup | Document the minimum set a user must select to fully restore HAventory. The card bundle now rides inside `custom_components/haventory/`, so the set is the store plus the integration folder — or "reinstall the integration and restore only the store". The Lovelace resource is rebuilt on setup and no longer has to be backed up | ✅ |
 
 ### F — Data integrity & scale
@@ -226,7 +226,7 @@ store around D7–D9.
 | H2 | Round trip: export → wipe → import | Resulting dataset is equivalent to the original (ids, quantities, locations, custom fields, check-out state) | ✅ |
 | H3 | Import onto a **non-empty** store under each policy — `merge`, `replace`, `skip` | Preview matches the executed result for each policy; `add`/`update`/`conflict` classifications are correct | ✅ |
 | H4 | Import malformed input: truncated JSON, valid JSON of the wrong shape, a foreign export, an empty file | Rejected with actionable validation errors; **store untouched** (verify by snapshot diff) | ✅ |
-| H5 | Import an export whose `schema_version` is newer than the running build | Refused with a clear "upgrade HAventory" message (already implemented — confirm the card shows it) | |
+| H5 | Import an export whose `schema_version` is newer than the running build — above the adoptable set, since a document stamped 2–9 is accepted while the adopter lives | Refused with a clear "upgrade HAventory" message (already implemented — confirm the card shows it). Also import an export taken *before* the collapse: it must preview and apply cleanly | |
 | H6 | Export + re-import the **full real inventory** from the phone | Completes without timeout; see also B10 | ✅ |
 
 ### I — Services & automations

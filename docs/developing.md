@@ -198,10 +198,13 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
 ## Backend (custom component)
 
 - `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`.
-- Store: `entry.runtime_data.store` with versioned schema and safe writes. Migrations are
-  forward-only: a store written by a **newer** HAventory version is refused (setup fails with
-  an "upgrade HAventory" message) and never rewritten, so a rollback cannot relabel data the
-  running build cannot read.
+- Store: `entry.runtime_data.store` with a versioned schema and safe writes. The schema is
+  at **1**, and the load fills in every field a store predates rather than stepping it
+  through versions. A store written by a **newer** version is refused (setup fails with an
+  "upgrade HAventory" message) and never rewritten, so a rollback cannot relabel data the
+  running build cannot read. The one exception is a closed set — the stamps 2 through 9,
+  used before the collapse to 1 — which `migrations.adopt_dev_schema` takes in and
+  restamps for one release; `import_export` accepts the same set, and both go together.
 - Persistence architecture:
   - **WebSocket / service handlers**: immediate saves via `async_persist_repo` — storage
     errors propagate to clients as `storage_error`.
@@ -240,9 +243,9 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
   and as `status_counts` for every defined slug (stored state, so unlike the calendar
   counts every change emits an event), and settable everywhere an item is written — WS
   create/update, the `haventory.item_create` / `haventory.item_update` services, and
-  import. A store written before the field existed is migrated on load (schema v5
-  backfills `ok`); an export without it reads as `ok` too, and one without a `statuses`
-  section means the built-in three.
+  import. A store written before the field existed has it filled in on load; an export
+  without it reads as `ok` too, and one without a `statuses` section means the built-in
+  three.
 - **JSON import/export (data safety)** via `haventory/export`, `haventory/import/preview`,
   and `haventory/import/execute`: back up to a versioned document before a breaking update
   and restore afterwards. Preview reports would-be adds/updates/conflicts without touching
