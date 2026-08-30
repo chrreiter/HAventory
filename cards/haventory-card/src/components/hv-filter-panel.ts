@@ -10,7 +10,7 @@ import { LocationPicker } from '../ui/location-picker';
 import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { DEFAULT_STATUS, statusCount, statusLabel, statusList, statusTone } from '../ui/status';
-import type { DistinctValues, Location, LocationTreeNode, SortField, StatsCounts, StatusDefinition, StoreFilters } from '../store/types';
+import type { DistinctValue, DistinctValues, Location, LocationTreeNode, SortField, StatsCounts, StatusDefinition, StoreFilters } from '../store/types';
 
 /** Sort fields the backend supports, in the order the menu lists them. */
 const SORT_FIELDS: readonly SortField[] = [
@@ -34,6 +34,35 @@ const CATEGORY_CHIP_LIMIT = 4;
  * between the sort controls and whatever follows the panel.
  */
 const TAG_CHIP_LIMIT = 8;
+
+/**
+ * Which values of a facet the panel draws, and in which order.
+ *
+ * `distinct_values` answers alphabetically, so a cut taken in that order spends
+ * the group's handful of chips on whatever the household named first —
+ * singletons at the head of the alphabet, while the labels on a hundred items
+ * sit behind "More…". The cut is taken over `count` instead, ties by value so
+ * two equally used labels keep one order whichever way the answer arrived.
+ * Never over `matching_count`: that number moves with every edit of a filter
+ * being built, and the chips would reshuffle under the pointer.
+ *
+ * A selected value past the cut is drawn anyway — the chip that says the filter
+ * is on must not be the one "More…" hides. Expanded, the group draws the
+ * answer's own order: a long list is read alphabetically, which is how a value
+ * is looked up in it.
+ */
+const cutChips = (
+  all: readonly DistinctValue[],
+  limit: number,
+  selected: ReadonlySet<string>,
+  showAll: boolean,
+): readonly DistinctValue[] => {
+  if (showAll) return all;
+  const ranked = [...all].sort(
+    (a, b) => b.count - a.count || a.value.toLowerCase().localeCompare(b.value.toLowerCase()),
+  );
+  return [...ranked.slice(0, limit), ...ranked.slice(limit).filter((v) => selected.has(v.value))];
+};
 
 /**
  * The element the location chip discloses, named so `aria-controls` can point at
@@ -560,14 +589,7 @@ export class HVFilterPanel extends LitElement {
     const f = this.working;
     const all = this.distinct?.categories ?? [];
     const selected = new Set(f.categories);
-    // A selected category stays on screen even when it falls past the cut, or
-    // the chip that says the filter is on would be the one hidden by "More…".
-    const shown = this._showAllCategories
-      ? all
-      : [
-          ...all.slice(0, CATEGORY_CHIP_LIMIT),
-          ...all.slice(CATEGORY_CHIP_LIMIT).filter((c) => selected.has(c.value)),
-        ];
+    const shown = cutChips(all, CATEGORY_CHIP_LIMIT, selected, this._showAllCategories);
     const hidden = all.length - shown.length;
     if (!all.length) return null;
     return html`
@@ -613,14 +635,7 @@ export class HVFilterPanel extends LitElement {
     // Always show selected tags, even ones typed in that no item carries yet.
     const known = all.map((t) => t.value);
     const extras = f.tags.filter((t) => !known.includes(t));
-    // The category group's cut, with the same rule for a selection past it: the
-    // chip that says the filter is on must not be the one "More…" hides.
-    const shown = this._showAllTags
-      ? all
-      : [
-          ...all.slice(0, TAG_CHIP_LIMIT),
-          ...all.slice(TAG_CHIP_LIMIT).filter((t) => selected.has(t.value)),
-        ];
+    const shown = cutChips(all, TAG_CHIP_LIMIT, selected, this._showAllTags);
     const hidden = all.length - shown.length;
     return html`
       <div class="group">
