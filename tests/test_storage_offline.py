@@ -24,6 +24,7 @@ from custom_components.haventory.exceptions import (
     SchemaDowngradeError,
     StorageError,
 )
+from custom_components.haventory.migrations import ADOPTABLE_SCHEMA_VERSIONS
 from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import (
@@ -35,15 +36,20 @@ from custom_components.haventory.storage import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
 
-#: Schema versions that introduced each backfill, so a payload stored below one
-#: is the payload that step rewrites.
-_STATUS_BACKFILL_VERSION = 5
-_ATTACHMENTS_BACKFILL_VERSION = 6
-_REMINDER_BACKFILL_VERSION = 8
-_REMINDER_ANCHOR_BACKFILL_VERSION = 9
-#: The version from which a status ``color`` may be a ``#rrggbb`` literal rather
-#: than one of the ten tone tokens. Builds below it reject the literal.
-_HEX_STATUS_COLOUR_VERSION = 7
+#: What the load path fills in on an item that carries none of it — the fields a
+#: store written before each of them existed lacks. A fixture naming them is one
+#: the load hands back unchanged, which is what makes a roundtrip an equality.
+_STORED_ITEM_FIELDS: dict[str, Any] = {
+    "status": "ok",
+    "attachments": [],
+    "reminder_date": None,
+    "reminder_interval": None,
+    "reminder_anchor": None,
+}
+
+#: One above everything the amnesty covers: a store no build of this project
+#: wrote, and the only kind the downgrade refusal is left for.
+BEYOND_THE_ADOPTABLE_RANGE = max(ADOPTABLE_SCHEMA_VERSIONS) + 1
 
 #: A counter value no fresh load could reach, so reading it back would be visible.
 STALE_GENERATION = 17
@@ -76,7 +82,7 @@ async def test_save_then_load_roundtrip() -> None:
     store = DomainStore(hass, key="test_store_roundtrip")
     payload = {
         "schema_version": CURRENT_SCHEMA_VERSION,
-        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 50}},
+        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 50, **_STORED_ITEM_FIELDS}},
         "locations": {"l1": {"id": "l1", "name": "Garage"}},
         # Save backfills any collection the caller omits, so naming every one
         # of them is what keeps this an equality test rather than a subset one.
@@ -207,11 +213,16 @@ async def test_migration_failure_raises_and_does_not_persist(monkeypatch) -> Non
 
 
 @pytest.mark.asyncio
-async def test_migration_from_v1_to_current_preserves_payload() -> None:
-    """v1 payload migrates to current schema and persists updated version."""
+async def test_a_store_stamped_before_the_collapse_gave_v1_its_meaning_is_filled_in() -> None:
+    """A store stamped 1 by an early build reads as current and predates every field.
+
+    Nothing about the number says which of the two v1s it is, so the load fills
+    in what is absent either way. Without that, such a store reaches the
+    repository with no ``statuses`` collection and no per-item status.
+    """
 
     hass = HomeAssistant()
-    key = "test_store_migrate_v1_to_current"
+    key = "test_store_early_v1"
     store = DomainStore(hass, key=key)
 
     pre_payload = {
@@ -220,37 +231,61 @@ async def test_migration_from_v1_to_current_preserves_payload() -> None:
         "locations": {"l1": {"id": "l1", "name": "Garage"}},
     }
     raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
-    await raw_store.async_save(pre_payload)
+    await raw_store.async_save(deepcopy(pre_payload))
 
-    migrated = await store.async_load()
+    loaded = await store.async_load()
 
-    assert migrated["schema_version"] == CURRENT_SCHEMA_VERSION
-    # v4 -> v5 backfills the per-item status, v5 -> v6 the attachment list,
-    # v7 -> v8 the two reminder fields and v8 -> v9 the reminder's anchor;
-    # everything else passes through.
-    expected_items = {
-        "i1": {
-            **pre_payload["items"]["i1"],
-            "status": "ok",
-            "attachments": [],
-            "reminder_date": None,
-            "reminder_interval": None,
-            "reminder_anchor": None,
-        }
-    }
-    assert migrated["items"] == expected_items
-    assert migrated["locations"] == pre_payload["locations"]
-    # v6 seeds the status definitions the items' slugs resolve against.
-    assert sorted(migrated["statuses"]) == ["missing", "needs_repair", "ok"]
-    # on-disk should be updated to current schema_version
+    assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert loaded["items"] == {"i1": {**pre_payload["items"]["i1"], **_STORED_ITEM_FIELDS}}
+    assert loaded["locations"] == pre_payload["locations"]
+    assert sorted(loaded["statuses"]) == ["missing", "needs_repair", "ok"]
+
+    # Written back, so the next boot is the ordinary one.
     persisted = await raw_store.async_load()
-    assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert persisted["items"]["i1"]["status"] == "ok"
+    assert sorted(persisted["statuses"]) == ["missing", "needs_repair", "ok"]
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stored_version", range(CURRENT_SCHEMA_VERSION + 1))
-async def test_equal_and_older_versions_still_load(stored_version: int) -> None:
-    """Every version up to and including the current one loads and ends up current."""
+async def test_a_store_already_holding_everything_is_not_rewritten(monkeypatch) -> None:
+    """A current store that needs no fill is handed back without touching the file.
+
+    Every boot reads the store; a load that wrote it back unconditionally would
+    rewrite the whole inventory on each of them for nothing.
+    """
+
+    hass = HomeAssistant()
+    key = "test_store_current_untouched"
+    store = DomainStore(hass, key=key)
+
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Screws"))
+    stored = {"schema_version": CURRENT_SCHEMA_VERSION, **repo.export_state()}
+    await raw_store.async_save(deepcopy(stored))
+
+    writes: list[dict[str, Any]] = []
+
+    async def _record(payload: dict[str, Any]) -> None:
+        writes.append(payload)
+
+    monkeypatch.setattr(store._store, "async_save", _record)
+    loaded = await store.async_load()
+
+    assert writes == []
+    assert loaded == stored
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored_version", [0, *sorted(ADOPTABLE_SCHEMA_VERSIONS)])
+async def test_every_version_this_build_accepts_lands_at_v1(stored_version: int) -> None:
+    """A store from anywhere in the project's history loads, intact, stamped v1.
+
+    The versions above the current one are the ones the amnesty takes in; 0 is a
+    store with no stamp at all. Both end up at the collapsed version with the
+    same fields filled in, because what a store carries is what it was written
+    with, not what its number claims.
+    """
 
     hass = HomeAssistant()
     key = f"test_store_forward_load_v{stored_version}"
@@ -267,33 +302,32 @@ async def test_equal_and_older_versions_still_load(stored_version: int) -> None:
     loaded = await store.async_load()
 
     assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
-    # Each step only runs for a payload below it: migrate_4_to_5 backfills the
-    # status, migrate_5_to_6 the attachment list, migrate_7_to_8 the reminder
-    # pair. A payload already at the current version is normalized, never
-    # migrated.
-    expected_items = deepcopy(pre_payload["items"])
-    if stored_version < _STATUS_BACKFILL_VERSION:
-        expected_items["i1"]["status"] = "ok"
-    if stored_version < _ATTACHMENTS_BACKFILL_VERSION:
-        expected_items["i1"]["attachments"] = []
-    if stored_version < _REMINDER_BACKFILL_VERSION:
-        expected_items["i1"]["reminder_date"] = None
-        expected_items["i1"]["reminder_interval"] = None
-    if stored_version < _REMINDER_ANCHOR_BACKFILL_VERSION:
-        expected_items["i1"]["reminder_anchor"] = None
-    assert loaded["items"] == expected_items
+    assert loaded["items"] == {"i1": {**pre_payload["items"]["i1"], **_STORED_ITEM_FIELDS}}
     assert loaded["locations"] == pre_payload["locations"]
+    assert sorted(loaded["statuses"]) == ["missing", "needs_repair", "ok"]
+
+    # Restamped on disk, so the crossing happens once.
+    persisted = await raw_store.async_load()
+    assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
+
+    # And a second load is the first one again.
+    assert await store.async_load() == loaded
 
 
 @pytest.mark.asyncio
 async def test_newer_schema_version_is_refused_and_store_untouched() -> None:
-    """A payload from a newer build is refused; the store is left byte-for-byte intact."""
+    """A payload from a newer build is refused; the store is left byte-for-byte intact.
+
+    "Newer" is anything above the amnesty, which is the only kind of newer left:
+    the versions inside it were written by this project before the collapse and
+    are taken in instead.
+    """
 
     hass = HomeAssistant()
     key = "test_store_newer_schema_refused"
     store = DomainStore(hass, key=key)
 
-    newer_version = CURRENT_SCHEMA_VERSION + 1
+    newer_version = BEYOND_THE_ADOPTABLE_RANGE
     pre_payload = {
         "schema_version": newer_version,
         "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5, "future_field": True}},
@@ -318,22 +352,21 @@ async def test_newer_schema_version_is_refused_and_store_untouched() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_hex_status_colour_is_stamped_beyond_the_builds_that_refuse_it() -> None:
-    """The colour shape and the stamp have to move together.
+async def test_a_store_stamped_above_the_amnesty_is_refused_whatever_it_holds() -> None:
+    """The amnesty is a membership test, never "anything above the current one".
 
-    A status ``color`` may be a ``#rrggbb`` literal, which earlier builds
-    validate against the ten tone tokens and reject. Rejecting a status
-    definition is not fatal there — it is skipped, and every item carrying its
-    slug reads back as the default status — so the store has to announce itself
-    as one those builds cannot read. Stamping the wider shape at a version they
-    accept is what turns a refusal into silent data loss.
+    A build that stamped something past the project's own range knows a shape
+    this one does not — a status ``color`` outside the vocabulary it validates,
+    say, whose definition would be skipped on load and every item carrying its
+    slug rewritten to the default on the next save. Refusing without a rewrite
+    is what leaves that data for a build that understands it.
     """
 
     hass = HomeAssistant()
-    key = "test_store_hex_status_colour_is_stamped"
+    key = "test_store_above_the_amnesty"
 
-    written_by_this_build = {
-        "schema_version": CURRENT_SCHEMA_VERSION,
+    written_by_a_newer_build = {
+        "schema_version": BEYOND_THE_ADOPTABLE_RANGE,
         "items": {"i1": {"id": "i1", "name": "Drill", "status": "loaned", "attachments": []}},
         "locations": {},
         "statuses": {
@@ -347,17 +380,12 @@ async def test_a_hex_status_colour_is_stamped_beyond_the_builds_that_refuse_it()
         },
     }
     raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
-    await raw_store.async_save(deepcopy(written_by_this_build))
-
-    # The last version whose colour vocabulary is tokens only.
-    reader = DomainStore(hass, key=key, version=_HEX_STATUS_COLOUR_VERSION - 1)
+    await raw_store.async_save(deepcopy(written_by_a_newer_build))
 
     with pytest.raises(SchemaDowngradeError):
-        await reader.async_load()
+        await DomainStore(hass, key=key).async_load()
 
-    # Refused without a rewrite: the colour and the item's status both survive
-    # for whichever build the user runs next.
-    assert await raw_store.async_load() == written_by_this_build
+    assert await raw_store.async_load() == written_by_a_newer_build
 
 
 @pytest.mark.asyncio
@@ -370,7 +398,7 @@ async def test_newer_schema_version_never_reaches_migrations(monkeypatch) -> Non
 
     raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
     await raw_store.async_save(
-        {"schema_version": CURRENT_SCHEMA_VERSION + 3, "items": {}, "locations": {}}
+        {"schema_version": BEYOND_THE_ADOPTABLE_RANGE + 2, "items": {}, "locations": {}}
     )
 
     def _fail(_payload, *, from_version, to_version):  # type: ignore[no-untyped-def]

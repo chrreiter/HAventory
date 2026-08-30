@@ -20,17 +20,13 @@ CALENDAR = "calendar.haventory"
 PLAIN_ITEM_ID = str(uuid.uuid4())
 REMINDER_ITEM_ID = str(uuid.uuid4())
 
-# The version the reminder's stored anchor introduces, spelled out so the
-# assertion below reads as "v9, and CURRENT_SCHEMA_VERSION agrees" rather than as
-# a bare number.
-REMINDER_SCHEMA_VERSION = 9
 _HAMMER_QUANTITY = 2
 _EVERY_THREE_MONTHS = 3
 _OCCURRENCES_IN_A_YEAR = 4
 
 
-def _v7_store_data() -> dict:
-    """A production-shaped v7 payload: no item carries either reminder field."""
+def _store_without_the_reminder_fields() -> dict:
+    """A production-shaped payload from before either reminder field existed."""
 
     return {
         "schema_version": 7,
@@ -56,17 +52,21 @@ def _v7_store_data() -> dict:
     }
 
 
-async def test_a_v7_store_boots_to_the_current_version_with_the_fields_backfilled(
+async def test_a_store_without_the_reminder_fields_boots_with_them_filled_in(
     hass: HomeAssistant, hass_storage: dict, setup_entry
 ) -> None:
     """The upgrade an existing install takes, against a real `Store`."""
 
-    hass_storage[STORAGE_KEY] = {"version": 1, "key": STORAGE_KEY, "data": _v7_store_data()}
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": _store_without_the_reminder_fields(),
+    }
 
     await setup_entry()
 
     persisted = hass_storage[STORAGE_KEY]["data"]
-    assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION == REMINDER_SCHEMA_VERSION
+    assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
     for item_id in (PLAIN_ITEM_ID, REMINDER_ITEM_ID):
         assert persisted["items"][item_id]["reminder_date"] is None
         assert persisted["items"][item_id]["reminder_anchor"] is None
@@ -251,18 +251,18 @@ async def test_an_evening_bump_west_of_greenwich_keeps_the_calendar_day(
     assert result["result"]["reminder_date"] == "2026-08-15"
 
 
-async def test_a_v8_store_gains_an_anchor_for_every_reminder_it_holds(
+async def test_a_store_without_anchors_gains_one_for_every_reminder_it_holds(
     hass: HomeAssistant, hass_storage: dict, setup_entry
 ) -> None:
-    """The upgrade the release before this one leaves behind, through a real `Store`.
+    """The upgrade an install with reminders on it takes, through a real `Store`.
 
-    A v8 store's `reminder_date` was both the next occurrence and the series
-    origin, because a bump wrote one over the other. Nothing can recover how far
+    Before the anchor was stored, `reminder_date` was both the next occurrence
+    and the series origin, because a bump wrote one over the other. Nothing can recover how far
     such a series had already drifted, and nothing needs to: from here on it is
     measured from wherever it currently stands.
     """
 
-    data = _v7_store_data()
+    data = _store_without_the_reminder_fields()
     data["schema_version"] = 8
     data["items"][REMINDER_ITEM_ID]["reminder_date"] = "2026-09-30"
     data["items"][REMINDER_ITEM_ID]["reminder_interval"] = {"unit": "months", "count": 1}

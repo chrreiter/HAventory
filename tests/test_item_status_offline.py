@@ -1,10 +1,10 @@
 """Offline tests for the per-item status field (ok / missing / needs_repair).
 
 What the field means, wherever the meaning is decided rather than served: the
-model's creation defaults, validation and filtering, the v4 -> v5 migration that
-backfills it, tolerant loading of payloads written before it existed, the
-repository round-trip, import/export, the service schemas, and the live status
-set a household can extend. The repository and WebSocket layers keep their own
+model's creation defaults, validation and filtering, the load-time fill that
+gives it to an item written before it existed, tolerant loading of such
+payloads, the repository round-trip, import/export, the service schemas, and the
+live status set a household can extend. The repository and WebSocket layers keep their own
 homes in ``test_repository_statuses_offline.py`` and
 ``test_ws_statuses_offline.py``.
 """
@@ -142,11 +142,11 @@ def test_load_state_tolerates_missing_and_unknown_status() -> None:
 
 
 # -----------------------------
-# Migration (v4 -> v5)
+# The load-time fill
 # -----------------------------
 
 
-def _v4_payload() -> dict:
+def _payload_written_before_the_field() -> dict:
     return {
         "schema_version": 4,
         "items": {
@@ -158,44 +158,47 @@ def _v4_payload() -> dict:
     }
 
 
-def test_migrate_4_to_5_backfills_and_coerces_status() -> None:
-    migrated = migrations.migrate_4_to_5(_v4_payload())
-    items = migrated["items"]
+def test_adopt_backfills_and_coerces_status() -> None:
+    adopted = migrations.adopt_dev_schema(_payload_written_before_the_field())
+    items = adopted["items"]
     assert items["a"]["status"] == "ok"
     assert items["b"]["status"] == "needs_repair"
+    # Nothing in the store names this one, so it reads as the default.
     assert items["c"]["status"] == "ok"
 
 
-def test_migrate_4_to_5_is_idempotent() -> None:
-    once = migrations.migrate_4_to_5(_v4_payload())
-    twice = migrations.migrate_4_to_5(once)
+def test_adopt_is_idempotent() -> None:
+    once = migrations.adopt_dev_schema(_payload_written_before_the_field())
+    twice = migrations.adopt_dev_schema(once)
     assert twice == once
 
 
-def test_migrate_chain_from_v0_stamps_status_and_version() -> None:
+def test_a_store_with_no_stamp_arrives_with_a_status_and_a_version() -> None:
     payload = {"schema_version": 0, "items": {"a": {"id": "a", "name": "Hammer"}}}
-    migrated = migrations.migrate(payload, from_version=0, to_version=CURRENT_SCHEMA_VERSION)
+    migrated = migrations.adopt_dev_schema(
+        migrations.migrate(payload, from_version=0, to_version=CURRENT_SCHEMA_VERSION)
+    )
     assert migrated["schema_version"] == CURRENT_SCHEMA_VERSION
     assert migrated["items"]["a"]["status"] == "ok"
     assert migrated["locations"] == {}
 
 
 @pytest.mark.asyncio
-async def test_domain_store_migrates_v4_store_on_load() -> None:
-    """A store written at v4 loads at v5 with every item's status backfilled."""
+async def test_domain_store_fills_in_the_status_on_load() -> None:
+    """A store written before the field existed loads with every status filled in."""
 
     hass = HomeAssistant()
-    key = "test_status_migration_v4_store"
+    key = "test_status_fill_on_load"
     store = DomainStore(hass, key=key)
     raw_store = HAStore(hass, 1, key)
-    await raw_store.async_save(_v4_payload())
+    await raw_store.async_save(_payload_written_before_the_field())
 
     loaded = await store.async_load()
     assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
     assert loaded["items"]["a"]["status"] == "ok"
     assert loaded["items"]["b"]["status"] == "needs_repair"
 
-    # The migrated payload was persisted back, not just returned.
+    # The filled-in payload was persisted back, not just returned.
     on_disk = await raw_store.async_load()
     assert on_disk["schema_version"] == CURRENT_SCHEMA_VERSION
     assert on_disk["items"]["a"]["status"] == "ok"
@@ -288,7 +291,7 @@ def test_service_schemas_accept_status_passthrough() -> None:
 
 
 # -----------------------------
-# The live status set (schema v6)
+# The live status set
 # -----------------------------
 
 

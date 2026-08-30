@@ -30,6 +30,7 @@ from custom_components.haventory.const import (
     CONF_SIDEBAR_PANEL_ENABLED,
     DOMAIN,
 )
+from custom_components.haventory.migrations import ADOPTABLE_SCHEMA_VERSIONS
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
@@ -329,9 +330,13 @@ async def _setup_expecting_failure(hass: HomeAssistant) -> MockConfigEntry:
 async def test_a_store_from_a_newer_build_stops_the_entry_rather_than_retrying(
     hass: HomeAssistant, hass_storage: dict
 ) -> None:
-    """The refusal reaches the user as an error state carrying both versions."""
+    """The refusal reaches the user as an error state carrying both versions.
 
-    newer = CURRENT_SCHEMA_VERSION + 1
+    "Newer" means above the closed set the amnesty covers: the versions inside
+    it were stamped by this project before the collapse and are taken in.
+    """
+
+    newer = max(ADOPTABLE_SCHEMA_VERSIONS) + 1
     _seed_store(hass_storage, {"schema_version": newer, "items": {}, "locations": {}})
 
     entry = await _setup_expecting_failure(hass)

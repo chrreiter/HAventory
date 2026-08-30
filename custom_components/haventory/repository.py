@@ -1952,7 +1952,7 @@ class Repository:
         # only the built-ins and rewrite every item on a custom status to "ok"
         # — silently, on the first restart after the upgrade that added it. An
         # absent or unreadable section means the built-ins, which is what a
-        # pre-v6 store carries.
+        # store written before the collection existed carries.
         self._load_statuses(data.get("statuses"))
 
         # Load locations first so items can reference them
