@@ -71,6 +71,7 @@ from .models import (
     new_uuid4,
     normalize_string_list,
     serialize_status_definition,
+    validate_area_filter,
     validate_attachment_meta,
     validate_item_filter,
     validate_sort,
@@ -543,7 +544,7 @@ async def ws_subscribe(
             msg.get("location_ids"), field_name="location_ids"
         )
     if "area_id" in msg:
-        sub["area_id"] = msg.get("area_id")
+        sub["area_id"] = validate_area_filter(msg.get("area_id"))
     if "include_subtree" in msg:
         sub["include_subtree"] = bool(msg.get("include_subtree"))
     if "inspection_overdue_only" in msg:

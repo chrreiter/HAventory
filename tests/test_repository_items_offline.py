@@ -366,6 +366,26 @@ async def test_prefilter_by_area_with_non_uuid_ids_and_update_rebuckets() -> Non
 
 
 @pytest.mark.asyncio
+async def test_an_area_that_names_no_bucket_matches_nothing() -> None:
+    """The area block answers every value: no bucket means no items.
+
+    The WebSocket refuses a blank area before it reaches here, so this is the
+    repository's own door — a caller that skips the validator gets the empty
+    answer rather than an unfiltered one, because nothing further down applies
+    an area at all.
+    """
+
+    repo = Repository()
+    kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
+    repo.create_item(ItemCreate(name="Whisk", location_id=str(kitchen.id)))
+
+    for degenerate in (" ", "\t\n", "no-such-area"):
+        out = repo.list_items(flt=ItemFilter(area_id=degenerate))
+        assert out["items"] == []
+        assert out["total"] == 0
+
+
+@pytest.mark.asyncio
 async def test_low_stock_and_checked_out_counts_update() -> None:
     """Derived counts reflect item state and update on writes."""
 

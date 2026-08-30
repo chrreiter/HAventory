@@ -1155,14 +1155,17 @@ class Repository:
         has_indexed_filter = False
 
         # 1. Area Index
-        if flt.get("area_id"):
+        # Total, deliberately: an area is applied here and nowhere else —
+        # `filter_items` is a pure function over items and cannot resolve one —
+        # so a value that names no bucket has to answer with no items rather
+        # than fall through to a scan that would ignore the area entirely.
+        area_id = flt.get("area_id")
+        if area_id:
             has_indexed_filter = True
-            area_key = str(flt["area_id"]).strip()
-            if area_key:
-                s = self._items_by_area_id.get(area_key, set())
-                if not s:
-                    return []
-                candidate_sets.append(s)
+            in_area = self._items_by_area_id.get(str(area_id).strip(), set())
+            if not in_area:
+                return []
+            candidate_sets.append(in_area)
 
         # 2. Location Index
         # A multi-select unions its buckets, the way tags_any does below; the
