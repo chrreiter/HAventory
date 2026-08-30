@@ -37,7 +37,8 @@ cloud, no external service. Minimum Home Assistant **2026.6.0**.
   scheduled and nothing to drift.
 - **Bulk operations and an organize dialog**: move, retag, recategorise, check out or delete
   a whole selection, and rename or merge locations, categories, tags and statuses in one
-  place.
+  place. The **statuses** are your own vocabulary — *OK*, *Missing* and *Needs repair* to
+  begin with, and you add, rename, recolour or retire them from that same dialog.
 - **One page and any number of cards.** A sidebar entry opens the full workspace; the same
   bundle draws a card on any dashboard you like.
 
