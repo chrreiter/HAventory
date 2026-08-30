@@ -896,6 +896,88 @@ describe('hv-location-tree: one tab stop', () => {
   });
 });
 
+// Renaming, merging and deleting a location happen on the row and nowhere
+// else, so a keyboard has to arrive at them: they ride with the stop, and the
+// count stays out of the way — it repeats what the row's own Enter does, and a
+// stop per count would make the tree one stop per location again.
+describe('hv-location-tree: the managed row carries its actions', () => {
+  // What Tab would land on, in the order it would reach them. A control with no
+  // tabindex attribute is still a stop when the browser makes it one, so the
+  // property is what counts here rather than the attribute.
+  const stops = (el: HVLocationTree) =>
+    [...(el.shadowRoot?.querySelectorAll<HTMLElement>('[role="tree"] *') ?? [])]
+      .filter((n) => n.tabIndex >= 0)
+      .map((n) => `${n.dataset.testid ?? n.localName}@${n.dataset.id ?? n.dataset.area ?? ''}`);
+
+  const press = async (el: HVLocationTree, target: Element, key: string) => {
+    target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+    await el.updateComplete;
+    await el.updateComplete;
+  };
+
+  it('puts the active row and its three actions in the tab order, and nothing else', async () => {
+    const el = await mount({ manage: true, showCounts: true });
+
+    expect(stops(el)).toEqual([
+      'tree-row@garage',
+      'tree-merge@garage',
+      'tree-edit@garage',
+      'tree-delete@garage',
+    ]);
+  });
+
+  it('takes the actions with the stop when it moves', async () => {
+    const el = await mount({ manage: true, showCounts: true });
+    const garage = q(el, '[data-testid="tree-row"][data-id="garage"]') as HTMLElement;
+    garage.focus();
+
+    await press(el, garage, 'ArrowDown');
+
+    expect(stops(el)).toEqual([
+      'tree-row@kitchen',
+      'tree-merge@kitchen',
+      'tree-edit@kitchen',
+      'tree-delete@kitchen',
+    ]);
+    expect(q(el, '[data-testid="tree-merge"][data-id="garage"]')?.getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('keeps the count out of the tab order, the row answering for it', async () => {
+    const el = await mount({ manage: true, showCounts: true });
+    const row = q(el, '[data-testid="tree-row"][data-id="kitchen"]') as HTMLElement;
+    const count = row.querySelector('[data-testid="tree-count"]') as HTMLButtonElement;
+    const seen: (string | null)[] = [];
+    el.addEventListener('select', (e) => seen.push((e as CustomEvent).detail.locationId));
+
+    expect(count.getAttribute('tabindex')).toBe('-1');
+    // Still the pointer's way into the items, and the row's Enter is the
+    // keyboard's — the same event either way.
+    count.click();
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+
+    expect(seen).toEqual(['kitchen', 'kitchen']);
+  });
+
+  it('gives the touch layout the same ride for its one action', async () => {
+    const el = await mount({ manage: true, mobile: true, showCounts: true });
+
+    expect(stops(el)).toEqual(['tree-row@garage', 'tree-more@garage']);
+  });
+
+  // An area heads a group rather than being one, so it carries no actions: while
+  // it holds the stop the tree is that one stop and nothing else.
+  it('offers only itself while an area head holds the stop', async () => {
+    const el = await mount({
+      manage: true,
+      showCounts: true,
+      areas: [{ id: 'area-garage', name: 'Garage' }],
+      nodes: [node('bench', 'Bench', null, [2, 2], [], 'area-garage')],
+    });
+
+    expect(stops(el)).toEqual(['tree-area-head@area-garage']);
+  });
+});
+
 describe('hv-location-tree: one tab stop across area bands', () => {
   const AREAS = [
     { id: 'area-kitchen', name: 'Kitchen' },

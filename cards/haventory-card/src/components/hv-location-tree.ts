@@ -513,10 +513,16 @@ export class HVLocationTree extends LitElement {
         >${matching === undefined ? count : `${matching} / ${count}`}</span
       >`;
     }
+    // Out of the tab order, like the twisty: the tree is one stop with the
+    // arrows moving inside it, and a count that took a stop of its own would
+    // put every location between the toolbar above the tree and whatever
+    // follows it. The row's own Enter emits this same select, so a keyboard
+    // reaches the items without it.
     return html`<button
       class="count link"
       data-testid="tree-count"
       data-id=${node.id}
+      tabindex="-1"
       ?disabled=${excluded}
       @click=${(e: Event) => {
         e.stopPropagation();
