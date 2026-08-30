@@ -1308,7 +1308,7 @@ def _is_int_not_bool(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _validate_optional_text(
+def validate_optional_text(
     value: object, field_name: str, *, max_length: int | None = None, previous: str | None = None
 ) -> None:
     """Ensure an optional free-text field is a string or None, within its cap.
@@ -1320,6 +1320,11 @@ def _validate_optional_text(
     *growth* past it: a value over the cap but no longer than the stored one is
     accepted, so an item that predates the cap can still be edited — including
     by the edit that trims the excess without clearing it in one go.
+
+    No ``max_length`` is the restore mode, and the type check is then the whole
+    rule: an import document is held to what every release has enforced, not to
+    the free-text caps, which bind what an edit may add rather than what a store
+    may hold (``docs/data_shapes.md`` → "Input caps").
     """
     if value is None:
         return
@@ -1347,6 +1352,24 @@ def validate_quantity(value: object) -> int:
 
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValidationError("quantity must be an integer >= 0")
+    return value
+
+
+def validate_low_stock_threshold(value: object) -> int | None:
+    """Return the low-stock threshold, or refuse the value with the one message.
+
+    Nullable where the quantity is not: an item with no threshold is never low
+    on stock. Public for the same reason :func:`validate_quantity` is — the
+    import path holds a document's field to the rule without holding an item.
+
+    Spelled out rather than through ``_is_int_not_bool`` so the comparison and
+    the return narrow to ``int``.
+    """
+
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValidationError("low_stock_threshold must be an integer >= 0 or null")
     return value
 
 
@@ -1395,7 +1418,7 @@ def _write_optional_text(write: _ItemWrite, *, key: str, max_length: int) -> Non
     if key not in write.payload:
         return
     value = write.payload[key]
-    _validate_optional_text(value, key, max_length=max_length, previous=getattr(write.draft, key))
+    validate_optional_text(value, key, max_length=max_length, previous=getattr(write.draft, key))
     setattr(write.draft, key, value)
 
 
@@ -1510,12 +1533,10 @@ def _write_tags(write: _ItemWrite) -> None:
 
 
 def _write_low_stock_threshold(write: _ItemWrite) -> None:
-    if "low_stock_threshold" not in write.payload:
-        return
-    threshold = write.payload["low_stock_threshold"]
-    if threshold is not None and (not _is_int_not_bool(threshold) or threshold < 0):
-        raise ValidationError("low_stock_threshold must be an integer >= 0 or null")
-    write.draft.low_stock_threshold = threshold
+    if "low_stock_threshold" in write.payload:
+        write.draft.low_stock_threshold = validate_low_stock_threshold(
+            write.payload["low_stock_threshold"]
+        )
 
 
 def _write_custom_fields(write: _ItemWrite) -> None:
