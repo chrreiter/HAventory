@@ -313,6 +313,30 @@ def test_preview_invalid_envelope_reports_errors(doc) -> None:
     assert report["errors"]
 
 
+@pytest.mark.parametrize("section", ["items", "locations", "statuses"])
+def test_a_section_keyed_by_id_is_not_a_document(section: str) -> None:
+    """The stored payload's shape is not a document's, and never was one.
+
+    ``build_export_document`` writes every document a user holds, and it writes
+    arrays. A map read as a section would take the payload of an in-process
+    snapshot as a backup, entity ids silently dropped.
+    """
+
+    repo = Repository()
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [],
+        section: {"22222222-2222-4222-8222-222222222222": {"name": "Ghost"}},
+    }
+
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert target is None
+    assert _only_error(report) == (section, f"{section} must be an array of objects")
+
+
 def test_preview_invalid_entity_reports_paths() -> None:
     repo = Repository()
     doc = {
@@ -899,6 +923,192 @@ def test_preview_accepts_an_item_at_every_cap() -> None:
 
     assert report["valid"] is True, report["errors"]
     assert target is not None
+
+
+def _location_doc(**overrides: object) -> dict:
+    doc = {
+        "id": "33333333-3333-4333-8333-333333333333",
+        "name": "Garage",
+        "parent_id": None,
+    }
+    doc.update(overrides)
+    return doc
+
+
+def _only_error(report: dict) -> tuple[str, str]:
+    """The one refusal a document earned, as the sheet prints it."""
+
+    assert len(report["errors"]) == 1, report["errors"]
+    entry = report["errors"][0]
+    return entry["path"], entry["message"]
+
+
+#: Every field-level refusal an item document can earn, spelled the way the
+#: import sheet prints it. The card renders each entry as "path: message"
+#: verbatim, so both halves are the contract — a validator moved behind one of
+#: these rows has to keep saying the same sentence about the same field, and a
+#: row changing is a user-visible change whether or not the code still refuses.
+_ITEM_REFUSALS: tuple[tuple[dict, str, str], ...] = (
+    ({"id": None}, "items[0].id", "must be a non-empty UUID v4 string"),
+    ({"id": "not-a-uuid"}, "items[0].id", "items[0].id must be a UUID v4 string"),
+    ({"name": "   "}, "items[0].name", "name is required and must be a non-empty string"),
+    (
+        {"name": "n" * (NAME_MAX_LENGTH + 1)},
+        "items[0].name",
+        "name must be at most 120 characters",
+    ),
+    ({"description": 5}, "items[0].description", "description must be a string or null"),
+    ({"category": []}, "items[0].category", "category must be a string or null"),
+    ({"quantity": "two"}, "items[0].quantity", "quantity must be an integer >= 0"),
+    ({"quantity": -1}, "items[0].quantity", "quantity must be an integer >= 0"),
+    (
+        {"low_stock_threshold": "x"},
+        "items[0].low_stock_threshold",
+        "low_stock_threshold must be an integer >= 0 or null",
+    ),
+    ({"tags": "kitchen"}, "items[0].tags", "tags must be an array of strings"),
+    ({"custom_fields": []}, "items[0].custom_fields", "custom_fields must be an object"),
+    (
+        {"custom_fields": {"": 1}},
+        "items[0].custom_fields",
+        "custom_fields keys must be non-empty strings",
+    ),
+    (
+        {"custom_fields": {"k": [1]}},
+        "items[0].custom_fields.k",
+        "custom_fields values must be scalar",
+    ),
+    ({"status": "nope"}, "items[0].status", "status must be one of: missing, needs_repair, ok"),
+    (
+        {"created_at": "2026-01-01"},
+        "items[0].created_at",
+        "created_at must be an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)",
+    ),
+    ({"attachments": {}}, "items[0].attachments", "attachments must be an array of objects"),
+    (
+        {"attachments": [{"id": "x"}]},
+        "items[0].attachments[0]",
+        "attachment.id must be a UUID v4 string",
+    ),
+    (
+        {"due_date": "2026-01-01"},
+        "items[0].due_date",
+        "due_date is only valid when checked_out is true",
+    ),
+    (
+        {"due_date": "soon", "checked_out": True},
+        "items[0].due_date",
+        "due_date must be in 'YYYY-MM-DD' format",
+    ),
+    (
+        {"inspection_date": "2026-02-30"},
+        "items[0].inspection_date",
+        "inspection_date must be a valid calendar date (YYYY-MM-DD)",
+    ),
+    (
+        {"reminder_date": "next week"},
+        "items[0].reminder_date",
+        "reminder_date must be in 'YYYY-MM-DD' format",
+    ),
+    (
+        {"reminder_anchor": "2026-01-01"},
+        "items[0].reminder_anchor",
+        "reminder_anchor requires a reminder_date to lead to",
+    ),
+    (
+        {"reminder_date": "2026-01-01", "reminder_anchor": "2026-02-01"},
+        "items[0].reminder_anchor",
+        "reminder_anchor must not be later than reminder_date",
+    ),
+    (
+        {"reminder_date": "2026-09-01", "reminder_interval": {"unit": "month", "count": 3}},
+        "items[0].reminder_interval",
+        "reminder_interval.unit must be one of days, weeks, months",
+    ),
+    (
+        {"reminder_interval": {"unit": "months", "count": 3}},
+        "items[0].reminder_interval",
+        "reminder_interval requires a reminder_date to count from",
+    ),
+    (
+        {"location_id": "nope"},
+        "items[0].location_id",
+        "items[0].location_id must be a UUID v4 string",
+    ),
+)
+
+#: The same contract for a location document.
+_LOCATION_REFUSALS: tuple[tuple[dict, str, str], ...] = (
+    ({"id": "x"}, "locations[0].id", "locations[0].id must be a UUID v4 string"),
+    ({"name": ""}, "locations[0].name", "name is required and must be a non-empty string"),
+    (
+        {"name": "l" * (NAME_MAX_LENGTH + 1)},
+        "locations[0].name",
+        "name must be at most 120 characters",
+    ),
+    (
+        {"parent_id": "x"},
+        "locations[0].parent_id",
+        "locations[0].parent_id must be a UUID v4 string",
+    ),
+    ({"area_id": 3}, "locations[0].area_id", "area_id must be a string or null"),
+)
+
+
+@pytest.mark.parametrize(("overrides", "path", "message"), _ITEM_REFUSALS)
+def test_an_item_refusal_names_the_field_and_says_what_it_says(
+    overrides: dict, path: str, message: str
+) -> None:
+    """The whole of what a user gets back about a row is these two strings."""
+
+    repo = Repository()
+    report, target = ie.plan_import(
+        repo, _envelope(_item_doc(**overrides)), current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+
+    assert target is None
+    assert _only_error(report) == (path, message)
+
+
+@pytest.mark.parametrize(("overrides", "path", "message"), _LOCATION_REFUSALS)
+def test_a_location_refusal_names_the_field_and_says_what_it_says(
+    overrides: dict, path: str, message: str
+) -> None:
+    repo = Repository()
+    doc = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [],
+        "locations": [_location_doc(**overrides)],
+    }
+
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert target is None
+    assert _only_error(report) == (path, message)
+
+
+@pytest.mark.parametrize(
+    ("section", "path", "message"),
+    [
+        (5, "statuses", "statuses must be an array of objects"),
+        (
+            [{"slug": "!!"}],
+            "statuses[0]",
+            "status slug must be 1-64 characters of lowercase letters, digits or underscores",
+        ),
+    ],
+)
+def test_a_status_section_refusal_names_the_entry_and_says_what_it_says(
+    section: object, path: str, message: str
+) -> None:
+    repo = Repository()
+    doc = {**_envelope(_item_doc()), "statuses": section}
+
+    report, target = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
+
+    assert target is None
+    assert _only_error(report) == (path, message)
 
 
 def test_a_clean_round_trip_still_imports() -> None:
