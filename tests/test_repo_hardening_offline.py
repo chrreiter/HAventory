@@ -44,8 +44,8 @@ SCHEDULED_WORKFLOWS = ((HA_LATEST_PATH, "0 5 8 * *"), (CARD_SMOKE_PATH, "0 6 8 *
 
 # `actions/*` is GitHub's own namespace, and this repository pins it by tag on
 # purpose; everything else names an immutable revision, because a tag can be
-# repointed by whoever owns it and Scorecard's pinned-dependencies check reads a
-# tag as unpinned. A `docker://` image counts as third party too.
+# repointed by whoever owns it and a moved tag runs code nobody here reviewed.
+# A `docker://` image counts as third party too.
 FIRST_PARTY_ACTION = re.compile(r"^actions/")
 IMMUTABLE_REVISION = re.compile(r"@(?:[0-9a-f]{40}|sha256:[0-9a-f]{64})$")
 

@@ -433,7 +433,7 @@ throughout.
 - GitHub Actions (`ubuntu-latest`): backend (uv, ruff + mypy + pytest w/ coverage, Python
   3.14), a dedicated **integration** job (in-process HA via phacc, Python 3.14),
   frontend (npm audit + eslint + tsc + vitest + build, Node 22/24 matrix), actionlint,
-  hassfest + HACS validation, CodeQL, OpenSSF Scorecard, and dependency review.
+  hassfest + HACS validation, CodeQL, and dependency review.
   Third-party actions are SHA-pinned; first-party `actions/*` use `@v7`.
 - **`ha-latest`** runs the same integration suite against the *newest* Home Assistant on
   the 8th of each month (and on demand via *Run workflow*). The `integration` job above

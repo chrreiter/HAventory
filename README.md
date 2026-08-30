@@ -1,8 +1,7 @@
 # HAventory
 
 [![CI](https://github.com/chrreiter/HAventory/actions/workflows/ci.yml/badge.svg)](https://github.com/chrreiter/HAventory/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/chrreiter/HAventory/actions/workflows/codeql.yml/badge.svg)](https://github.com/chrreiter/HAventory/actions/workflows/codeql.yml)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/chrreiter/HAventory/badge)](https://securityscorecards.dev/viewer/?uri=github.com/chrreiter/HAventory)
+[![Release](https://img.shields.io/github/v/release/chrreiter/HAventory)](https://github.com/chrreiter/HAventory/releases)
 [![HACS: Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 [![License: Apache-2.0](https://img.shields.io/github/license/chrreiter/HAventory)](LICENSE)
 
@@ -52,9 +51,11 @@ language is two files — see [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-languag
 
 ## Install
 
-HAventory isn't in the HACS default store yet, so add it as a custom repository:
-
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=chrreiter&repository=HAventory&category=integration)
+
+HAventory isn't in the HACS default store yet, so it goes in as a custom repository. That
+button hands it to your own Home Assistant in one click; steps 1 and 2 are the same thing
+by hand.
 
 1. In Home Assistant, open **HACS → ⋮ → Custom repositories**.
 2. Add `https://github.com/chrreiter/HAventory` with category **Integration**.
