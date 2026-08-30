@@ -14,9 +14,8 @@ Options:
 Environment variables:
 - RUN_ONLINE: must be `1`. Nothing here mocks anything and it writes to a real
   inventory, so it never runs by accident.
-- HA_BASE_URL / HA_TOKEN: taken from the `.env` beside this checkout, which wins
-  over an inherited export; HAVENTORY_IGNORE_ENV_FILE=1 hands the decision back
-  to the environment. The resolved target and the store's counts print on stderr
+- HA_BASE_URL / HA_TOKEN: resolved by `dev_env`, which decides between the `.env`
+  beside this checkout and an inherited export and names the instance on stderr
   before the first upload. A token is required.
 - HA_CONFIG_DIR: the Home Assistant config directory as this host sees it. Set
   it when the config lives on a bind mount; leave it unset to read the stored

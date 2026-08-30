@@ -41,19 +41,13 @@ current floor is still right. `hacs.json` is the one place the floor is declared
 drifts, and `dependency-review` fails CI if `requirements-integration.txt` is
 pinned below it.
 
-```bash
-# One-shot bootstrap: uv env + card deps + pre-commit hooks
-scripts/setup.sh
+[`docs/developing.md`](docs/developing.md) is the rest of it: the one-shot bootstrap
+(`scripts/setup.sh`) and the two commands it stands for, the full toolchain, both
+backend test modes, the online smokes and the helper scripts.
 
-# ...or manually:
-uv sync
-(cd cards/haventory-card && npm ci)
-```
+## The gate
 
-See [`docs/developing.md`](docs/developing.md) for the full toolchain, both test
-modes and the helper scripts.
-
-## The gate (run before every commit — both halves must be green)
+Run it before every commit — both halves must be green.
 
 ```bash
 # Backend
@@ -69,6 +63,11 @@ npm run typecheck
 npx vitest run
 npm run build
 ```
+
+The audit is the only place a development-scope npm vulnerability becomes
+visible: the repository's Dependabot auto-triage rule dismisses dev-scope
+alerts, so the alert dashboard is not ground truth for the card's lockfile —
+CI is.
 
 Or run everything at once with `scripts/ci_local.sh`. CI runs the same checks
 plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.

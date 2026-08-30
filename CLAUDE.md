@@ -70,9 +70,9 @@ and a `dev/` document that disagrees with an issue is stale.
 
 ## Running tests / lint / build
 
-Backend at the repo root, frontend in `cards/haventory-card`; bootstrap with `uv sync` and
-`npm ci`. Convenience wrappers are in `scripts/*.sh`; the online smokes (`tests/*_online.py`)
-need `RUN_ONLINE=1`, `HA_BASE_URL` and `HA_TOKEN` — see `docs/developing.md`.
+Backend at the repo root, frontend in `cards/haventory-card`. `docs/developing.md` carries
+the bootstrap, the helper scripts and the online smokes; this is the gate, which runs
+before every commit.
 
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
@@ -84,31 +84,12 @@ npm audit --audit-level=high   # dev-scope alerts are auto-dismissed on GitHub; 
 npx eslint . && npm run typecheck && npx vitest run && npm run build
 ```
 
-In-process HA tests are a **second, separate mode** — the integration inside a real HA core via
-`pytest-homeassistant-custom-component`, installed from `requirements-integration.txt` (kept out
-of `pyproject`/`uv.lock`/the offline `.venv` so the fast suite stays lean). Three things about it
-are not discoverable from the code:
-
-- **Do not set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` here** — phacc must load. `tests/conftest.py`
-  stubs HA only when the real package is absent, so the offline run stays byte-identical and
-  never collects `tests/integration/`.
-- The offline `HomeAssistant` stub **records** what `services.setup()` registers, so which
-  services exist, with which schema and response mode, is asserted offline. How HA *dispatches*
-  to a handler is asserted in this mode or it is not asserted at all.
-- `scripts/test_integration.sh` **cannot run on a Windows host** (POSIX venv layout, and HA core
-  imports `fcntl`). Run it in a container with the venv on a named volume — first run about
-  three minutes, re-runs about thirty seconds, host edits picked up through the mount. The
-  script installs its own interpreter, so the image needs uv and nothing else. Build the card
-  first, or `tests/integration/test_frontend.py` skips half its cases.
-
-```bash
-scripts/test_integration.sh          # Linux: provisions .venv-integration
-
-MSYS_NO_PATHCONV=1 docker run -d --name hav-int -v "$(pwd):/work" \
-  -v hav-int-venv:/work/.venv-integration -w /work \
-  ghcr.io/astral-sh/uv:bookworm sleep 7200
-MSYS_NO_PATHCONV=1 docker exec hav-int bash -lc 'cd /work && bash scripts/test_integration.sh'
-```
+In-process HA tests are a **second, separate mode** — the integration inside a real HA core
+via `pytest-homeassistant-custom-component`, run with `scripts/test_integration.sh`. What it
+installs, what it covers, the container recipe a Windows host needs and the traps that are
+not discoverable from the code are in `docs/developing.md` → "In-process HA integration
+tests". The one that bites hardest: **do not set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` for that
+mode** — phacc must load, and the flag makes it silently collect nothing.
 
 Everything else is Linux/bash: `scripts/` holds no `.ps1`, CI runs on `ubuntu-latest`, and the
 helpers assume a UTF-8 terminal. Develop on Windows through WSL2.

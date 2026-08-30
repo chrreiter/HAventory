@@ -21,13 +21,12 @@ Subcommands (run one at a time; non-destructive first, `restart` last):
   restart      DESTRUCTIVE: mid-load storm + docker restart + on-disk store cross-check
   cleanup      delete everything with the stress_test_ prefix
 
-Config from the .env beside this checkout (HA_BASE_URL, HA_TOKEN), which wins over
-an inherited export -- a worktree's .env names the instance that worktree is for.
-HAVENTORY_IGNORE_ENV_FILE=1 hands the decision back to the environment for one run.
-Every command prints the resolved target and the store's counts before it acts, and
-a command that writes says so and proceeds without prompting. HA_CONTAINER (default
-"home-assistant") is only needed by `restart`. Set HAVENTORY_REPO to override which
-checkout's .env is read (otherwise derived from this file's location).
+HA_BASE_URL / HA_TOKEN are resolved by `dev_env`, which decides between the .env
+beside this checkout and an inherited export and names the instance before every
+command acts; a command that writes says so and proceeds without prompting.
+HA_CONTAINER (default "home-assistant") is only needed by `restart`. Set
+HAVENTORY_REPO to override which checkout's .env is read (otherwise derived from
+this file's location).
 
 Run:  uv run --no-project --with aiohttp python .claude/skills/test-haventory/stress.py <cmd> [args]
 """

@@ -30,13 +30,10 @@ Docker and filesystem through Git Bash instead; nothing else here depends on the
   HA_TOKEN=<long-lived access token>
   ```
 
-  It **wins over an inherited export**: a worktree carrying its own `.env` names the
-  instance that worktree is for, whatever a shell profile exported.
-  `HAVENTORY_IGNORE_ENV_FILE=1` hands the decision back to the environment for one run.
-  Every driver and harness prints the resolved target on stderr before it acts
-  (`[target] HA_BASE_URL=…`), and the Python ones print the store's counts with it — so
-  a run against the wrong inventory shows up in the first line instead of in a number
-  that looks off later.
+  Which instance that resolves to, and how to override it for one run, is
+  `scripts/dev_env.py`'s rule — written out in `docs/developing.md` → "Which instance a
+  helper talks to". Every driver and harness prints the resolved target on stderr before
+  it acts (`[target] HA_BASE_URL=…`), the Python ones with the store's counts.
 
   Do **not** put `HA_CONTAINER` in `.env` — `scripts/smoke_online.sh` purges the
   HAventory store from that container whenever it's set (see Gotchas).
@@ -46,12 +43,8 @@ Docker and filesystem through Git Bash instead; nothing else here depends on the
 
 ## Setup
 
-Once per clone (the SessionStart hook already does the first two):
-
-```bash
-uv sync
-(cd cards/haventory-card && npm ci)
-```
+The repository's own bootstrap is `docs/developing.md` → "Setup"; the SessionStart hook
+already runs it.
 
 One-time for the screenshot harness (installs Playwright + Chromium into the skill dir;
 `node_modules/` and `*.png` there are gitignored):
@@ -617,19 +610,11 @@ the disposable dev instance.
 
 ## Test
 
-Offline suites (no HA needed — full gate incl. lint is in CLAUDE.md):
+The repository's test surfaces are the sibling `/test-haventory` skill's job: the offline
+gate and its expected counts, the stress regimen, the browser smoke and the online pytest
+smokes. The in-process HA suite and its container recipe are in `docs/developing.md`.
 
-```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
-(cd cards/haventory-card && npx vitest run)
-```
-
-As of v0.3.1: backend 540 passed / 22 skipped; frontend 1094 passed across 51 files. Both
-counts only grow — a *smaller* one than the last release's means collection broke, not that
-tests were removed — so treat them as a floor, and re-pin them when a release moves them.
-The full gate, with the numbers kept next to it, is the sibling `/test-haventory` skill.
-
-The harness has its own unit cover for the parts that decide where a run looks and which
+What lives here is the harness's own unit cover for the parts that decide where a run looks and which
 instance it looks at: `card_views.mjs` (which views hold the card, which URL addresses them,
 what `--path` and `--dashboard` asked for, which `.env` wins), `probe.mjs` (which actions
 run in which order, and which screen a measurement was taken on) and `surfaces.mjs`, whose
@@ -641,13 +626,6 @@ vacuously. No HA and no dependency beyond Node:
 cd .claude/skills/run-haventory && node --test
 ```
 
-The in-process HA integration suite (`scripts/test_integration.sh`, real HA core via phacc)
-runs directly on Linux/WSL2. It cannot run on a Windows host at all — the script builds a
-POSIX venv path and HA core imports `fcntl` — and a throwaway `python:3.14-slim` container is
-the proven way to get it there: one `docker run` with the repo bind-mounted, `pip install -r
-requirements-integration.txt`, then `pytest -o asyncio_mode=auto tests/integration`. That
-container path also covers a WSL install whose DNS is broken.
-
 Online smoke against the running container (non-destructive as long as
 `HA_CONTAINER` is unset — verify with `echo $HA_CONTAINER` first):
 
@@ -656,8 +634,8 @@ set -a; . ./.env; set +a
 RUN_ONLINE=1 bash scripts/smoke_online.sh
 ```
 
-Expected as of v0.3.1: `8 passed, 13 skipped` (the skips need `HA_CONTAINER`, i.e. the
-destructive clean-start mode), then `Online smoke test completed successfully.`
+Expected: `8 passed, 13 skipped` (the skips need `HA_CONTAINER`, i.e. the destructive
+clean-start mode), then `Online smoke test completed successfully.`
 
 ## Gotchas
 

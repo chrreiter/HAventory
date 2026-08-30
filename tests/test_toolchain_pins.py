@@ -108,7 +108,7 @@ PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
     (".devcontainer/develop.sh", 2, 0),
     (".devcontainer/post-create.sh", 1, 0),
     (".claude/hooks/session-start.sh", 8, 0),
-    (".claude/skills/run-haventory/SKILL.md", 2, 0),
+    (".claude/skills/run-haventory/SKILL.md", 1, 0),
     (".claude/skills/test-haventory/SKILL.md", 7, 0),
 )
 

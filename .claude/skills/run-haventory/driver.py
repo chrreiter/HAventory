@@ -5,11 +5,9 @@ haventory integration loaded. Complements scripts/ws_probe.py (single message)
 by holding ONE authenticated connection for a whole command sequence, so ids
 and item versions can flow between steps.
 
-Config: HA_BASE_URL / HA_TOKEN come from the `.env` beside this checkout, which
-wins over an inherited export -- a worktree's .env names the instance that worktree
-is for. HAVENTORY_IGNORE_ENV_FILE=1 hands the decision back to the environment for
-one run. Every command prints the resolved target and the store's counts on stderr
-before it acts, and `smoke` (which creates and deletes) says that it writes.
+Config: HA_BASE_URL / HA_TOKEN are resolved by `dev_env`, which decides between the
+`.env` beside this checkout and an inherited export and names the instance on stderr
+before every command acts; `smoke` (which creates and deletes) says that it writes.
 
 Usage (from repo root):
   uv run python .claude/skills/run-haventory/driver.py status

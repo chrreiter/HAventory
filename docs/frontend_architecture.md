@@ -772,15 +772,8 @@ Things jsdom cannot do, and how the tests handle it:
   changes through the item editor or the bulk bar's Move action, never by dragging the row
   onto a node of the sidebar tree.
 
-Run:
-
-```bash
-cd cards/haventory-card
-npx eslint .
-npm run typecheck
-npx vitest run
-npm run build
-```
+The frontend half of the gate is what runs them; the commands are in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-gate).
 
 ---
 

@@ -4,10 +4,8 @@ Usage:
   uv run python scripts/ws_init_haventory.py
 
 Target:
-  HA_BASE_URL / HA_TOKEN come from the .env beside this checkout, which wins over an
-  inherited export -- a worktree's .env names the instance that worktree is for. Set
-  HAVENTORY_IGNORE_ENV_FILE=1 to hand the decision back to the environment for one
-  run. The resolved base URL prints on stderr before anything is written.
+  Resolved by `dev_env`, which decides between the .env beside this checkout and an
+  inherited export and names the instance on stderr before anything is written.
 
 Behavior:
 - Starts the HAventory config flow (domain "haventory").
