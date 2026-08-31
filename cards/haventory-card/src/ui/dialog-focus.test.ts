@@ -168,6 +168,46 @@ describe('DialogFocus', () => {
     expect(rescue).not.toHaveBeenCalled();
   });
 
+  // A hover-revealed opener is still connected but no longer drawn once the
+  // pointer sits on the dialog it opened, and a real browser silently refuses
+  // to focus it. jsdom performs no layout and accepts any focus, so the
+  // refusal is modelled by stubbing the opener's `focus`.
+  it('rescues focus when a connected opener refuses the return', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const p = panel();
+    const f = new DialogFocus();
+    f.sync(true, () => p);
+
+    trigger.focus = () => undefined;
+    p.remove();
+    const rescue = vi.fn();
+    f.sync(false, () => p, rescue);
+    expect(rescue).toHaveBeenCalledOnce();
+  });
+
+  it('leaves a refused return alone when the user already moved on', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const p = panel();
+    const f = new DialogFocus();
+    f.sync(true, () => p);
+
+    trigger.focus = () => undefined;
+    const elsewhere = document.createElement('input');
+    document.body.appendChild(elsewhere);
+    elsewhere.focus();
+
+    const rescue = vi.fn();
+    f.sync(false, () => p, rescue);
+    expect(rescue).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(elsewhere);
+  });
+
   // Closing a dialog whose opener is gone is not on its own a reason to move
   // focus: the user may already be typing somewhere else entirely.
   it('does not yank focus away from wherever it already went', () => {

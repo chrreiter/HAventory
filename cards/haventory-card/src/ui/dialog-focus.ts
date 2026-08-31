@@ -100,11 +100,14 @@ export class DialogFocus {
    * panel. Acts only on the open/close transitions, so re-renders never pull
    * focus away from whatever the user is typing in.
    *
-   * `onOpenerGone` answers a close whose opener is gone — a row deleted by the
-   * action, a photo removed from under the lightbox. Focus sits on the panel
-   * leaving the document, so the browser drops it on `<body>`: outside the
-   * surface still on screen and out of reach of its Escape. Only the caller
-   * knows where focus belongs instead, so it acts rather than naming an element.
+   * `onOpenerGone` answers a close whose opener cannot take focus back — one
+   * gone from the document (a row deleted by the action, a photo removed from
+   * under the lightbox), or one still there that the browser is not drawing (a
+   * hover-revealed ✕ with the pointer on the dialog it opened). Focus sits on
+   * the panel leaving the document, so the browser drops it on `<body>`:
+   * outside the surface still on screen and out of reach of its Escape. Only
+   * the caller knows where focus belongs instead, so it acts rather than
+   * naming an element.
    */
   sync(
     open: boolean,
@@ -139,9 +142,13 @@ export class DialogFocus {
     this._returnTo = null;
     if (back?.isConnected) {
       back.focus({ preventScroll: true });
-      return;
+      // A connected opener can still refuse the return: a hover-revealed
+      // control is `visibility: hidden` again once the pointer sits on the
+      // dialog, and `.focus()` on one is the same silent no-op the trap knows
+      // about. Only reading focus back says whether the return landed.
+      if (deepActiveElement() === back) return;
     }
-    // Nothing to return to. Rescue focus only if it really was stranded: a
+    // Nothing took the return. Rescue focus only if it really was stranded: a
     // close that happened while the user was already somewhere else must not
     // have focus yanked out from under them.
     if (focusStranded()) onOpenerGone?.();
