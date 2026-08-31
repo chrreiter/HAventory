@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/chrreiter/HAventory/compare/v0.8.0...v0.8.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **card:** show every editor field on a phone and add a clear button for the inspection date ([#682](https://github.com/chrreiter/HAventory/issues/682)) ([d7dd726](https://github.com/chrreiter/HAventory/commit/d7dd7266d46b558f7191460ba2990e73a70fa90d))
+
 ## [0.8.0](https://github.com/chrreiter/HAventory/compare/v0.7.1...v0.8.0) (2026-08-31)
 
 
