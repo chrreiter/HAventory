@@ -97,12 +97,12 @@ rejected, so a stale dashboard config never breaks the card — and the same hol
 `quick_filters`: an unknown pill name is dropped, and a value that is not a list reads as
 the key being absent.
 
-Adding the card from the card picker opens a **visual editor** for `title`; the YAML above
-stays equivalent, and switching to it shows the same config. The editor covers `title`
-only — the pill choice that reaches every surface (the sidebar panel included) belongs to
-the integration's options rather than one dashboard's card, and `quick_filters` above is
-the per-dashboard exception to it, set in YAML. Editing a card that carries
-`quick_filters` through the visual editor leaves that key exactly as it was.
+Adding the card from the card picker opens a **visual editor**, which covers `title` only;
+switching to the YAML view shows the same config. `quick_filters` is set in YAML: the pill
+choice meant to reach every surface (the sidebar panel included) belongs in the
+integration's options, and the per-dashboard key exists for the one dashboard that should
+differ. Editing a card through the visual editor leaves an existing `quick_filters` key
+exactly as it was.
 
 Without `title`, the card uses the name set under Settings → Devices & services →
 HAventory → **Configure** (asked for at setup too, and defaulting to "HAventory"), so one
@@ -124,7 +124,7 @@ Leave both unset — a fresh install, or any dashboard written before either opt
 
 ## Removing HAventory
 
-Deleting the integration under **Settings → Devices & Services** takes back both loaders —
+Deleting the integration under **Settings → Devices & services** takes back both loaders —
 the Lovelace resource entry and the extra-module URL — plus the sidebar entry, so nothing
 is left pointing at a card that is about to disappear. (If your Lovelace runs in YAML mode
 any entry is yours, in `configuration.yaml` — delete the `resources:` line by hand. An

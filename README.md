@@ -6,8 +6,8 @@
 [![License: Apache-2.0](https://img.shields.io/github/license/chrreiter/HAventory)](LICENSE)
 
 **A household asset inventory that lives inside Home Assistant.** Where is the good drill,
-how much coffee is left, who took the ladder, when was the fire extinguisher last checked —
-HAventory answers those on the same screen as everything else in the house.
+how much coffee is left, is the ladder back yet, when is the fire extinguisher due for its
+next check — HAventory answers those on the same screen as everything else in the house.
 
 It is a custom integration (domain `haventory`) plus a Lovelace card. Everything is stored
 locally in Home Assistant's own store and pushed live to every open screen; no account, no
@@ -20,12 +20,12 @@ cloud, no external service. Minimum Home Assistant **2026.6.0**.
 - **A location tree as deep as your house is.** Home Assistant stops at floor → area;
   HAventory files a thing in *Garage › Shelving unit › Top box* and counts every level.
   An item's **area** is inherited from the top of its tree, so HAventory's places and Home
-  Assistant's areas stay one thing.
+  Assistant's areas never drift apart.
 - **Search that finds it anyway.** Case-insensitive and accent-insensitive, next to filters
   for location, area, category, tags, status, low stock, check-outs, overdue dates and
   date windows — each showing how many items it would keep before you apply it.
-- **Check out what leaves the house**, with a due date, so "who has the ladder" has an
-  answer and an overdue one is marked.
+- **Check out what leaves the house**, with a due date, so the card shows what is out and
+  marks it overdue once the date passes.
 - **Photos and PDF manuals** on the item itself, stored inside your config directory and
   served through Home Assistant's authenticated view — never from `/local`. On a phone the
   picker opens the companion app's camera.
@@ -54,9 +54,8 @@ language is two files — see [CONTRIBUTING.md](CONTRIBUTING.md#adding-a-languag
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=chrreiter&repository=HAventory&category=integration)
 
-HAventory isn't in the HACS default store yet, so it goes in as a custom repository. That
-button hands it to your own Home Assistant in one click; steps 1 and 2 are the same thing
-by hand.
+HAventory isn't in the HACS default store yet, so it goes in as a custom repository. The
+button above opens your own Home Assistant and does steps 1 and 2 for you.
 
 1. In Home Assistant, open **HACS → ⋮ → Custom repositories**.
 2. Add `https://github.com/chrreiter/HAventory` with category **Integration**.
@@ -68,22 +67,22 @@ by hand.
 5. Reload the browser page once (Ctrl/Cmd+Shift+R), so the card reaches the tab you already
    had open.
 
-**Upgrading an install from before 0.8.0?** The stored schema is renumbered to 1 in this
-release, and an existing store is taken over in place on the first start — there is nothing
-to export, import or convert. Take a JSON export first anyway (⋮ → **Export backup**):
-HAventory refuses to read a store written by a schema it does not know, so an export is the
-way back if the crossing surprises you.
+**Upgrading an install from before 0.8.0?** The stored schema was renumbered to 1 in that
+release. Your existing data is adopted in place on the first start — there is nothing to
+export, import or convert. Still, take a JSON export first (⋮ → **Export backup**): if
+anything about the upgrade surprises you, the export is your way back, because HAventory
+refuses to read a store written by a schema it does not know.
 
 HACS installs **released versions only**: it downloads the `haventory.zip` attached to a
 GitHub release, which already contains the built card. Installing from the default branch is
 deliberately not offered — the card bundle is a build artifact and is not in git, so a
 branch install would come up without a card and report success.
 
-Minimum Home Assistant version: **2026.6.0** — one declared floor, and this is it: the
-oldest release that both runs the integration and carries no known unpatched high or
-critical security advisory. The integration is verified against older releases as well, but
-a declared minimum is also a recommendation about what to run, and this project will not
-point it at a release with a known hole.
+Minimum Home Assistant version: **2026.6.0**. It is the oldest release that both runs the
+integration and carries no known unpatched high or critical security advisory. The
+integration also works on some older releases, but the declared minimum doubles as a
+recommendation about what to run, and this project will not point it at a release with a
+known security hole.
 
 Where HAventory then appears, how the card reaches YAML-mode dashboards, and how to remove
 it again — including what removal keeps: [`docs/installing.md`](docs/installing.md).
@@ -183,10 +182,10 @@ script:
           location_id: "8a11…"
 ```
 
-To read an id: open an item from the card and its **ID** is on it, with **Copy** beside it —
-the last fact on the detail sheet a narrow surface opens, the last row of the edit form
-everywhere else. A location's is in its editor, under ⋮ → **Organize** → Locations → ✎. A JSON
-export (⋮ → **Export backup**) carries both as well.
+To find an item's id, open the item in the card: the **ID** row, with a **Copy** button
+beside it, sits at the bottom of the detail sheet (on narrow screens) or of the edit form.
+A location's id is in its editor, under ⋮ → **Organize** → Locations → ✎. A JSON export
+(⋮ → **Export backup**) carries both as well.
 
 Every action returns the entity it touched, so a script can chain calls through
 `response_variable`. The sensors and what each one counts, the event payloads, the calendar,
@@ -208,8 +207,8 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   items at a time do not multiply the cost. Reads don't share the problem (query paths are
   benchmarked at 10 000 items), correctness is unaffected at any size, and no limit is
   enforced. Several thousand items is comfortable; past that, an edit starts to be
-  something you notice. The ceiling above a few thousand items is measured on real hardware
-  and published in [#277](https://github.com/chrreiter/HAventory/issues/277).
+  something you notice. Measuring the exact ceiling on real hardware is still open work,
+  tracked in [#277](https://github.com/chrreiter/HAventory/issues/277).
 - **No admin gating.** Neither a WebSocket command nor a `haventory.*` service asks whether
   the caller is an administrator, so any logged-in Home Assistant user — not only
   administrators — can read and mutate the whole inventory. It is a household-wide tool,
@@ -233,24 +232,25 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   WebSocket result the card writes to a file, so it cannot carry binaries; photos and
   manuals live on disk under `<config>/haventory/attachments/`. Importing a document onto
   an install that does not hold those files keeps the references and shows a "file
-  missing" state — the preview reports how many before you write anything, and the card
-  marks each affected entry rather than offering a link to a 404 or a broken image: the
-  Documents list on the row, the photo where its tile would be, wherever the card draws one.
+  missing" state — the import preview reports how many before you write anything, and the
+  card marks each affected photo or document as missing instead of showing a broken image
+  or a dead link.
   **Home Assistant's own backups are the full-fidelity path**: the media directory sits
   inside the config directory, so a backup and restore carries the files and the store
   together and consistently.
-- **Nothing is resized or thumbnailed on the server.** Server-side resizing would mean a
-  Pillow dependency in a local-push integration — install size, wheel availability on every
-  HA architecture, and CPU on a Pi. The *card* re-encodes a photo over 2 MB before it
-  uploads, capped at 2048px on the longest edge, which is what keeps a phone frame under
-  the 8 MB per-file cap; the file that arrives is the one that is stored, and a re-encode
-  that fails or comes out larger simply uploads the original. Lists still load the stored
-  file at full size, leaning on `loading="lazy"` and `decoding="async"`.
+- **Photos are stored as uploaded; small versions are best-effort.** The *card* re-encodes
+  a photo over 2 MB before it uploads, capped at 2048px on the longest edge — which is what
+  keeps a phone photo under the 8 MB per-file cap — and a re-encode that fails or comes out
+  larger uploads the original. The file that arrives is the one that is stored. For list
+  rows the backend writes a small 256px tile beside the original, but only where the Pillow
+  library happens to be installed: HAventory deliberately does not require it (install
+  size, wheel availability on every HA architecture, CPU on a Pi), so on an install
+  without it the rows load the full-size file and the page is slower rather than broken.
 
 Every one of these is a decision rather than an oversight, and the reasoning is with the
-bullet. Two of them are also open work and say so above, linking the issue that carries the
-measurements and the proposed fix; the rest are settled, and the
-[issue tracker](https://github.com/chrreiter/HAventory/issues) is where that would change.
+bullet. The scale ceiling is also open work and links the issue tracking it; the rest are
+settled, and the [issue tracker](https://github.com/chrreiter/HAventory/issues) is where
+that would change.
 
 ## Troubleshooting
 
@@ -282,9 +282,9 @@ Three messages are worth recognising, all three of which also appear in **Repair
   remainder, because HAventory saves on every change and a partial load would make the loss
   permanent on the first edit. The message names the first few affected ids. This one
   offers a **Fix** button in Repairs: it copies the store to `haventory_store_corrupt_backup`
-  and starts with everything it could read, leaving the unreadable entries out — take that
-  only if you would rather have the remainder than repair the file, and note that the offer
-  applies to one start.
+  and starts with everything it could read, leaving the unreadable entries out. Take that
+  only if you would rather have the readable remainder than repair the file; the
+  permission it grants covers the next start only.
 
 ## Where next
 
