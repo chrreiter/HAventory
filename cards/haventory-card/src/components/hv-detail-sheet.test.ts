@@ -243,8 +243,6 @@ describe('hv-detail-sheet: read view', () => {
     const editor = el.shadowRoot?.querySelector('hv-item-editor') as HTMLElement & {
       updateComplete: Promise<unknown>;
     };
-    // On a phone the custom fields sit behind the editor's "More" disclosure.
-    (editor.shadowRoot?.querySelector('[data-testid="editor-more-toggle"]') as HTMLButtonElement).click();
     await editor.updateComplete;
 
     const keys = [...(editor.shadowRoot?.querySelectorAll('[data-testid="editor-cf-key"]') ?? [])].map(

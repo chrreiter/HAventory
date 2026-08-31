@@ -57,8 +57,8 @@ import './hv-checkout-popover';
 
 /**
  * Why the due date is dead until the item is out. Shown as a note under the
- * checkout, and as the field's `title` — a tooltip alone never reaches a phone,
- * which is where the whole block hides behind a disclosure to begin with.
+ * checkout, and as the field's `title` — a phone has no pointer to hover with,
+ * so a tooltip alone reaches nobody there.
  */
 const dueDateHint = () => t('hv.editor.dueDateHint');
 
@@ -77,7 +77,7 @@ const customFieldTypes = (): { value: CustomFieldType; label: string }[] => [
 ];
 
 /**
- * What the form's three disclosures open, named so `aria-controls` can point at
+ * What the form's two disclosures open, named so `aria-controls` can point at
  * them. Each target stays in the tree whether or not it is open — an
  * `aria-controls` that resolves to nothing announces the control as controlling
  * nothing — and only the contents come and go, so closing still discards the
@@ -85,7 +85,6 @@ const customFieldTypes = (): { value: CustomFieldType; label: string }[] => [
  */
 const LOCATION_TREE_ID = 'editor-location-tree-holder';
 const CATEGORY_LIST_ID = 'editor-category-list';
-const MORE_FIELDS_ID = 'editor-more-fields';
 
 /**
  * One file the picker is working through, and how it ended up.
@@ -129,8 +128,8 @@ function errorText(err: unknown, fallback = t('hv.editor.upload.failed')): strin
  * picking a location never stacks a second modal over the edit surface. Every
  * editable field lives here: name, description, quantity, low-stock threshold,
  * category (with suggestions), tags, location, checked-out plus due date,
- * inspection date and typed custom fields — on mobile the rarely-touched half
- * collapses behind one "More fields" disclosure rather than being dropped.
+ * inspection date and typed custom fields — mobile stacks that same set into
+ * one column, so the form reads top to bottom and holds nothing back.
  */
 @customElement('hv-item-editor')
 export class HVItemEditor extends LitElement {
@@ -282,6 +281,17 @@ export class HVItemEditor extends LitElement {
         display: grid;
         gap: 12px;
         min-width: 0;
+      }
+      /* The date and the button that empties it are one control on one line:
+         the button takes the width every icon button in the card takes and the
+         field takes the rest. Neither width makes the row taller — 34 against a
+         36px input on a pointer, 44 against 48 on a phone — which is what keeps
+         this box level with the check-out box beside it. */
+      .inspection-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) var(--hv-tap-min, 34px);
+        align-items: center;
+        gap: 8px;
       }
       /* Shut, the popover renders nothing but still takes a row of the box and
          the gap above it — nine invisible pixels that decided how tall the row
@@ -656,32 +666,6 @@ export class HVItemEditor extends LitElement {
         align-items: center;
         min-height: var(--hv-tap-min, auto);
         padding: 0 8px;
-      }
-      /* The fields it holds are cells of the form's grid, and a box around them
-         would take their place in it and collapse the gaps between them. This
-         element exists only to carry the id the More fields toggle names, so it
-         lays nothing out — empty, it takes no room either. */
-      .more-fields {
-        display: contents;
-      }
-      .more-toggle {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        width: 100%;
-        min-height: var(--hv-tap-min, auto);
-        border: none;
-        border-top: 1px solid var(--hv-divider);
-        background: none;
-        padding: 12px 0 0;
-        font: 500 14.5px var(--hv-font);
-        color: var(--hv-text);
-        text-align: left;
-      }
-      .more-toggle .summary {
-        margin-left: auto;
-        font: 400 12px var(--hv-font);
-        color: var(--hv-text-secondary);
       }
       /* The id is not read, it is pasted: user-select: all takes the whole uuid
          from a single click or long-press, which is the copy route left when
@@ -1131,7 +1115,6 @@ export class HVItemEditor extends LitElement {
   @state() private _model: ItemFormModel = formFromItem(null);
   @state() private _errors: FieldError[] = [];
   @state() private _showErrors = false;
-  @state() private _moreOpen = false;
   @state() private _categoryOpen = false;
   /** Opened from the arrow: list everything, ignoring what is already typed. */
   @state() private _categoryShowAll = false;
@@ -1239,7 +1222,6 @@ export class HVItemEditor extends LitElement {
       this._errors = [];
       this._showErrors = false;
       this._location.close();
-      this._moreOpen = false;
       this._checkoutOpen = false;
       this._uploads = [];
       this._uploaded = null;
@@ -1388,6 +1370,26 @@ export class HVItemEditor extends LitElement {
         }}
       />
       ${error ? html`<span class="field-error" data-testid=${`${opts.testid}-error`}>${error}</span>` : null}
+    </div>`;
+  }
+
+  /**
+   * The description, which sits at a different point in the grid on each width:
+   * beside the status field where there are three columns, and below the
+   * attachments in the single-column stack, where a textarea high up the form
+   * would push the fields most edits are about below the fold. One renderer for
+   * both, so the field keeps one id and its label keeps pointing at it.
+   */
+  private _renderDescriptionField() {
+    return html`<div class="cell span2">
+      <label class="hv-label" for="editor-description">${t('hv.field.description')}</label>
+      <textarea
+        id="editor-description"
+        class="hv-input"
+        data-testid="editor-description"
+        .value=${this._model.description}
+        @input=${(e: Event) => this._patch({ description: (e.target as HTMLTextAreaElement).value })}
+      ></textarea>
     </div>`;
   }
 
@@ -1788,14 +1790,29 @@ export class HVItemEditor extends LitElement {
             ${icon('calendar', 14)} ${t('hv.field.inspection_date')}
           </label>
           <div class="group-body">
-            <input
-              id="editor-inspection"
-              class="hv-input"
-              type="date"
-              data-testid="editor-inspection-date"
-              .value=${model.inspectionDate}
-              @input=${(e: Event) => this._patch({ inspectionDate: (e.target as HTMLInputElement).value })}
-            />
+            <div class="inspection-row">
+              <input
+                id="editor-inspection"
+                class="hv-input"
+                type="date"
+                data-testid="editor-inspection-date"
+                .value=${model.inspectionDate}
+                @input=${(e: Event) =>
+                  this._patch({ inspectionDate: (e.target as HTMLInputElement).value })}
+              />
+              <!-- Dead rather than gone on an empty field, the way the due date
+                   and the repeat are: the row keeps its height, so pressing the
+                   button is never a race against the box resizing. -->
+              <button
+                class="hv-icon-button"
+                data-testid="editor-inspection-clear"
+                aria-label=${t('hv.editor.clearInspectionDate')}
+                ?disabled=${!model.inspectionDate}
+                @click=${this._clearInspection}
+              >
+                ${icon('close', 16)}
+              </button>
+            </div>
             ${this._renderInspectionOffsets(model.inspectionDate)}
           </div>
         </div>
@@ -1913,6 +1930,21 @@ export class HVItemEditor extends LitElement {
       },
     );
   }
+
+  /**
+   * Take the inspection date off, from the button beside the field.
+   *
+   * The custom row goes with it: it is open because an interval of somebody's
+   * own is in force, and over an empty field its chip would still be lit as the
+   * one that set the date. Focus moves onto the field, because the button
+   * disables itself the moment the date is gone and a disabled control hands
+   * its focus to the page body.
+   */
+  private _clearInspection = () => {
+    this._inspectionCustomOpen = false;
+    this._patch({ inspectionDate: '' });
+    this.renderRoot.querySelector<HTMLElement>('[data-testid="editor-inspection-date"]')?.focus();
+  };
 
   private _onCheckoutPressed = (e: Event) => {
     if (this._model.checkedOut) {
@@ -2636,57 +2668,6 @@ export class HVItemEditor extends LitElement {
     </ul>`;
   }
 
-  private _renderMoreFields() {
-    const model = this._model;
-    const summary = [
-      model.description ? t('hv.editor.summary.description') : null,
-      model.dueDate || model.inspectionDate ? t('hv.editor.summary.dates') : null,
-      // Named separately from the dates: a reminder is the one thing in here a
-      // household set deliberately, and folding it into "dates" would hide it
-      // behind a word that is already true of half the items.
-      model.reminderDate ? t('hv.editor.summary.reminder') : null,
-      model.customFields.length
-        ? t('hv.editor.summary.custom', { count: model.customFields.length })
-        : null,
-    ]
-      .filter(Boolean)
-      .join(' · ');
-    return html`
-      <button
-        class="more-toggle"
-        data-testid="editor-more-toggle"
-        aria-expanded=${String(this._moreOpen)}
-        aria-controls=${MORE_FIELDS_ID}
-        @click=${() => {
-          this._moreOpen = !this._moreOpen;
-        }}
-      >
-        ${icon(this._moreOpen ? 'chevronDown' : 'chevronRight', 19)} ${t('hv.editor.moreFields')}
-        <span class="summary">${summary || t('hv.editor.moreSummaryFallback')}</span>
-      </button>
-      <div class="more-fields" id=${MORE_FIELDS_ID}>
-        ${this._moreOpen
-          ? html`
-              <div class="cell span3">
-                <label class="hv-label" for="editor-description"
-                  >${t('hv.field.description')}</label
-                >
-                <textarea
-                  id="editor-description"
-                  class="hv-input"
-                  data-testid="editor-description"
-                  .value=${model.description}
-                  @input=${(e: Event) =>
-                    this._patch({ description: (e.target as HTMLTextAreaElement).value })}
-                ></textarea>
-              </div>
-              ${this._renderStateFields()} ${this._renderCustomFields()}
-            `
-          : null}
-      </div>
-    `;
-  }
-
   render() {
     const model = this._model;
     const creating = this.item === null;
@@ -2749,19 +2730,7 @@ export class HVItemEditor extends LitElement {
           })}
           ${this.mobile
             ? null
-            : html`<div class="cell span2">
-                  <label class="hv-label" for="editor-description-desktop"
-                    >${t('hv.field.description')}</label
-                  >
-                  <textarea
-                    id="editor-description-desktop"
-                    class="hv-input"
-                    data-testid="editor-description"
-                    .value=${model.description}
-                    @input=${(e: Event) => this._patch({ description: (e.target as HTMLTextAreaElement).value })}
-                  ></textarea>
-                </div>
-                ${this._renderStatusField()}`}
+            : html`${this._renderDescriptionField()} ${this._renderStatusField()}`}
           ${this._renderLocationField()} ${this._renderCategoryField()}
           ${this.mobile ? this._renderStatusField() : null}
           <div class="cell span3">
@@ -2777,9 +2746,8 @@ export class HVItemEditor extends LitElement {
             ></hv-chip-input>
           </div>
           ${this._renderPictures()} ${this._renderDocuments()} ${this._renderCreateAttachmentHint()}
-          ${this.mobile
-            ? html`<div class="cell span3">${this._renderMoreFields()}</div>`
-            : html`${this._renderStateFields()} ${this._renderCustomFields()}`}
+          ${this.mobile ? this._renderDescriptionField() : null} ${this._renderStateFields()}
+          ${this._renderCustomFields()}
 
           ${this._renderIdRow()}
 

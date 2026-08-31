@@ -278,6 +278,7 @@ export const en = {
   'hv.editor.checkOutCaption': 'Check out',
   'hv.editor.dueDateHint': 'A due date applies while the item is checked out.',
   'hv.editor.thisItem': 'this item',
+  'hv.editor.clearInspectionDate': 'Clear inspection date',
   'hv.editor.reminderDate': 'Reminder date',
   'hv.editor.repeatEvery': 'Repeat every',
   'hv.editor.repeatUnit': 'Repeat unit',
@@ -339,12 +340,6 @@ export const en = {
   'hv.editor.removePhoto.message': 'The photo file is deleted with it, and there is no way back.',
   'hv.editor.removeDocument.heading': 'Remove this document?',
   'hv.editor.removeDocument.message': 'The document file is deleted with it, and there is no way back.',
-  'hv.editor.moreFields': 'More fields',
-  'hv.editor.moreSummaryFallback': 'description · dates · custom fields',
-  'hv.editor.summary.description': 'description',
-  'hv.editor.summary.dates': 'dates',
-  'hv.editor.summary.reminder': 'reminder',
-  'hv.editor.summary.custom': '{count} custom',
   'hv.editor.keyHint': 'Esc closes · {chord} saves',
 
   // hv-checkout-popover.

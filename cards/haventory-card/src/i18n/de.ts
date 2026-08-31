@@ -246,6 +246,7 @@ export const de: CompleteDictionary = {
   'hv.editor.checkOutCaption': 'Ausleihe',
   'hv.editor.dueDateHint': 'Ein Rückgabedatum gilt, solange der Gegenstand ausgeliehen ist.',
   'hv.editor.thisItem': 'diesen Gegenstand',
+  'hv.editor.clearInspectionDate': 'Prüfdatum entfernen',
   'hv.editor.reminderDate': 'Erinnerungsdatum',
   'hv.editor.repeatEvery': 'Wiederholen alle',
   'hv.editor.repeatUnit': 'Einheit der Wiederholung',
@@ -311,12 +312,6 @@ export const de: CompleteDictionary = {
   'hv.editor.removeDocument.heading': 'Dieses Dokument entfernen?',
   'hv.editor.removeDocument.message':
     'Die Dokumentdatei wird mit entfernt, und es gibt keinen Weg zurück.',
-  'hv.editor.moreFields': 'Weitere Felder',
-  'hv.editor.moreSummaryFallback': 'Beschreibung · Termine · eigene Felder',
-  'hv.editor.summary.description': 'Beschreibung',
-  'hv.editor.summary.dates': 'Termine',
-  'hv.editor.summary.reminder': 'Erinnerung',
-  'hv.editor.summary.custom': '{count} eigene',
   'hv.editor.keyHint': 'Esc schließt · {chord} speichert',
 
   'hv.checkout.setDueDate': 'Rückgabedatum setzen',
