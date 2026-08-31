@@ -985,6 +985,28 @@ describe('hv-organize-dialog: tags and categories', () => {
     }
   });
 
+  // What a real browser does with that return: the ✕ sits in row actions that
+  // are `visibility: hidden` again once the pointer is on the confirmation,
+  // and focusing an undrawn element is a silent no-op — jsdom lays nothing out
+  // and accepts it, so the refusal is modelled by stubbing the button's
+  // `focus`. The rescue lands on the row, whose `:focus-within` re-reveals the
+  // actions, and Tab continues from the user's place in the list (#678).
+  it('lands focus on the row when the browser refuses the hidden ✕', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'batery')!;
+    const remove = row.querySelector('[data-testid="value-remove"]') as HTMLButtonElement;
+    remove.focus();
+    remove.click();
+    await settle(el);
+
+    remove.focus = () => undefined;
+    const confirm = q(sr, '[data-testid="organize-confirm"]') as HTMLElement;
+    (confirm.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(sr.activeElement).toBe(row);
+  });
+
   it('keeps an accepted removal from reading as this dialog answering', async () => {
     const { el, sr } = await mount({ items, tab: 'tags' });
     let answered = 0;
