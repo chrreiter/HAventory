@@ -178,8 +178,7 @@ has to pass before anything is late.
 
 When you have actually changed the filter, **bump** the reminder and the whole series moves
 on one step. That is what **Mark done** does; from an automation or a script it is one
-action — say, when the smart plug on the boiler reports the service engineer's visit
-is done:
+action — say, wired to a button you press by the furnace once the filter is in:
 
 ```yaml
 automation:
