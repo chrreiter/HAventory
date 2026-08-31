@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.8.0](https://github.com/chrreiter/HAventory/compare/v0.7.1...v0.8.0) (2026-08-31)
+
+
+### Features
+
+* **card:** the built-in statuses in the reader's language ([#648](https://github.com/chrreiter/HAventory/issues/648)) ([94025f4](https://github.com/chrreiter/HAventory/commit/94025f48e1960a63257eed4cb100a9f5d9149c96))
+* **card:** the filter panel shows the most-used tags and categories first ([#677](https://github.com/chrreiter/HAventory/issues/677)) ([a937439](https://github.com/chrreiter/HAventory/commit/a937439f80ed9299f79918a5da75c8b280315608)), closes [#660](https://github.com/chrreiter/HAventory/issues/660)
+* **storage:** collapse the schema to v1 with a one-release adopter ([#669](https://github.com/chrreiter/HAventory/issues/669)) ([24f89e3](https://github.com/chrreiter/HAventory/commit/24f89e311b770a57c657b67e40b843be69c0c165))
+
+
+### Bug Fixes
+
+* **card:** accessible names and the conflict banner through the catalog ([#647](https://github.com/chrreiter/HAventory/issues/647)) ([1e2ae93](https://github.com/chrreiter/HAventory/commit/1e2ae93f98ac9141658c8044dd89705b0bd2360e))
+* **card:** cancelling a value delete no longer drops keyboard focus to body ([#680](https://github.com/chrreiter/HAventory/issues/680)) ([883985d](https://github.com/chrreiter/HAventory/commit/883985d079dec8441cd89a92e2e2a589c47a9bdf)), closes [#678](https://github.com/chrreiter/HAventory/issues/678)
+* **card:** cancelling a value-tab delete confirmation keeps Organize open ([#675](https://github.com/chrreiter/HAventory/issues/675)) ([8f30511](https://github.com/chrreiter/HAventory/commit/8f3051198cc2e9b61b068e3c7aa2cdf42bfe26ef)), closes [#661](https://github.com/chrreiter/HAventory/issues/661)
+* **card:** the item editor saves only the fields the edit changed ([#662](https://github.com/chrreiter/HAventory/issues/662)) ([1c51b6f](https://github.com/chrreiter/HAventory/commit/1c51b6fdca9cab532a2395ef5caf0bab11301a06)), closes [#659](https://github.com/chrreiter/HAventory/issues/659)
+* **card:** the tree row's actions join the tab order; the count leaves it ([#676](https://github.com/chrreiter/HAventory/issues/676)) ([1fe93aa](https://github.com/chrreiter/HAventory/commit/1fe93aac537c73d2d79adf5a639a34b4882f8411)), closes [#663](https://github.com/chrreiter/HAventory/issues/663)
+* **i18n:** the German wording corrections ([#671](https://github.com/chrreiter/HAventory/issues/671)) ([b4c61c9](https://github.com/chrreiter/HAventory/commit/b4c61c9b38625d75fd8166cda35d1093981170e9))
+* **media:** remove an item's attachment directory once its last file is gone ([#630](https://github.com/chrreiter/HAventory/issues/630)) ([4a22bf4](https://github.com/chrreiter/HAventory/commit/4a22bf41613600e11f8c1ab82275f1e0abf85417)), closes [#333](https://github.com/chrreiter/HAventory/issues/333)
+* **models:** a degenerate area filter is refused, never ignored ([#673](https://github.com/chrreiter/HAventory/issues/673)) ([7c1a5ac](https://github.com/chrreiter/HAventory/commit/7c1a5ac7afaa6c22157a6bd1ccabe9ea290cb80f)), closes [#649](https://github.com/chrreiter/HAventory/issues/649)
+* **models:** a filter's tags_any and tags_all are lists of strings ([f1f6d9b](https://github.com/chrreiter/HAventory/commit/f1f6d9b328675864f5c11ee08de4d047b04a6fd8))
+* **repository:** search finds a mid-word match even when another item's word starts with the query ([#623](https://github.com/chrreiter/HAventory/issues/623)) ([ef0924c](https://github.com/chrreiter/HAventory/commit/ef0924cb182b75576b74bf4fbac9df0c4da0fb51))
+* **services:** an item_update carrying a location announces the move ([53725d6](https://github.com/chrreiter/HAventory/commit/53725d628a07a642e8d0f806fe7415df3b15d2d2))
+* **services:** one selector per field, and an example on every one ([53725d6](https://github.com/chrreiter/HAventory/commit/53725d628a07a642e8d0f806fe7415df3b15d2d2))
+* **ws:** a bulk delete frees the item's attachment files at once ([06592f5](https://github.com/chrreiter/HAventory/commit/06592f5e679800f61be9f9a1d440a343061cac3d))
+* **ws:** answer a refused quantity the same way from the command and from a bulk row ([06592f5](https://github.com/chrreiter/HAventory/commit/06592f5e679800f61be9f9a1d440a343061cac3d))
+* **ws:** haventory/subscribe refuses a location id that is not a string ([f1f6d9b](https://github.com/chrreiter/HAventory/commit/f1f6d9b328675864f5c11ee08de4d047b04a6fd8))
+
+
+### Documentation
+
+* add the V0.8.0 session plan ([#570](https://github.com/chrreiter/HAventory/issues/570)) ([324f1dc](https://github.com/chrreiter/HAventory/commit/324f1dca3df4ed9557d7234e7a5415f2d86ee638))
+* **card:** comments that state the rule, not the measurement ([#634](https://github.com/chrreiter/HAventory/issues/634)) ([5469995](https://github.com/chrreiter/HAventory/commit/5469995507fd2735ce3f867adc11506191b200b9))
+* correct outdated claims and simplify wording in user-facing docs ([#681](https://github.com/chrreiter/HAventory/issues/681)) ([61f536d](https://github.com/chrreiter/HAventory/commit/61f536d245b98fe0c36d98f27fa5368c7177b73e))
+* one home per fact; scripts nothing calls ([#667](https://github.com/chrreiter/HAventory/issues/667)) ([2aaf7a3](https://github.com/chrreiter/HAventory/commit/2aaf7a31dce30dca05575149a7dbf3a35d0bbc13))
+* **readme:** the Release badge counts pre-releases ([#672](https://github.com/chrreiter/HAventory/issues/672)) ([fdc4c66](https://github.com/chrreiter/HAventory/commit/fdc4c66cd602f458c109325049b7082555ce8c30))
+* the status vocabulary is the household's; triggers are `trigger:` ([#666](https://github.com/chrreiter/HAventory/issues/666)) ([815986d](https://github.com/chrreiter/HAventory/commit/815986d64e539c217aa66d3f5c29018f34d66600))
+* the V0.8.0 plan shipped; delete the plan and its implementer agent ([#679](https://github.com/chrreiter/HAventory/issues/679)) ([9b1d1d5](https://github.com/chrreiter/HAventory/commit/9b1d1d5cb18220baab5dd6eda1ba88ca3293eb1b))
+
 ## [0.7.1](https://github.com/chrreiter/HAventory/compare/v0.7.0...v0.7.1) (2026-08-23)
 
 
