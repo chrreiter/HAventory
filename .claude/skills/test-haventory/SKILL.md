@@ -16,8 +16,8 @@ supported path is WSL2 (`CONTRIBUTING.md`). A handful of notes are tagged
 **[Windows/Git Bash]**: they are workarounds for driving a Windows host's Docker and
 filesystem through Git Bash instead, and nothing else here depends on them. Plain `uv run`
 works against the project `.venv` — the `--no-project` form below is still correct and is
-what to fall back to if the venv is ever unusable, but it is no longer required. Canonical
-clean-Linux/CI commands live in the README ("The gate").
+what to fall back to if the venv is ever unusable, but it is no longer required. The
+canonical clean-Linux/CI spelling of the gate is in `CONTRIBUTING.md` → "The gate".
 
 ## Prerequisites
 
@@ -26,30 +26,28 @@ clean-Linux/CI commands live in the README ("The gate").
   Bash] **Git Bash** for the `.sh`/`.py` helpers.
 - `pre-commit` on PATH (the git hook needs it): `uv tool install pre-commit`.
 - A `.env` at the root of **the checkout you are standing in** with `HA_BASE_URL` +
-  `HA_TOKEN` (a long-lived token; per session, never committed). The online surfaces read
-  it directly, and it **wins over an inherited export** — a worktree carrying its own
-  `.env` names the instance that worktree is for, whatever a shell profile exported.
-  `HAVENTORY_IGNORE_ENV_FILE=1` hands the decision back to the environment for one run
-  (that is how a recipe points a helper at a remote instance while a dev `.env` sits in
-  the tree).
+  `HA_TOKEN` (a long-lived token; per session, never committed). Which instance that
+  resolves to, and how to override it for one run, is `scripts/dev_env.py`'s rule —
+  written out in `docs/developing.md` → "Which instance a helper talks to".
 - For the browser smoke: Chromium for Playwright — `npx playwright install chromium`. It
   caches under `~/.cache/ms-playwright`; [Windows/Git Bash] `~/AppData/Local/ms-playwright`.
 
 ## The commit gate (offline — run before every commit)
 
-Both halves must be green. Backend, from the repo root:
+Both halves must be green. This is the `--no-project` spelling; the plain one, and why each
+command is in the gate, are in `CONTRIBUTING.md`. Backend, from the repo root:
 
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --no-project --python 3.14 \
   --with pytest --with pytest-asyncio --with voluptuous --with aiohttp \
   python -m pytest -q
-# → 540 passed, 22 skipped
+# → 1322 passed, 27 skipped
 
 uv run --no-project --python 3.14 --with ruff==0.16.3 ruff check custom_components tests
 # → All checks passed!
 
 uv run --no-project --python 3.14 --with mypy --with voluptuous mypy
-# → Success: no issues found in 14 source files
+# → Success: no issues found in 25 source files
 ```
 
 Frontend, from `cards/haventory-card`:
@@ -58,16 +56,15 @@ Frontend, from `cards/haventory-card`:
 npm ci            # first run, or if node_modules is partial (missing rolldown binding)
 npm run lint      # eslint  → clean
 npm run typecheck # tsc --noEmit → clean
-npm test          # vitest  → 1094 passed across 51 files
+npm test          # vitest  → 2023 passed across 79 files
 npm run build     # vite → ../../custom_components/haventory/www/ (git-ignored)
 ```
 
-Those counts are **as of v0.3.1** and are a collection oracle, not a target: TDD means every
-release adds tests, so a number *larger* than the one printed here is the normal result. A
-number **smaller** than the last release's — fewer tests, fewer vitest files, fewer mypy
-source files — means collection broke and half the suite silently did not run. Re-pin them
-whenever a release moves them; a stale figure read as an exact expectation misdiagnoses a
-healthy run.
+Those counts are a collection oracle, not a target: TDD means every release adds tests, so a
+number *larger* than the one printed here is the normal result. A number **smaller** — fewer
+tests, fewer vitest files, fewer mypy source files — means collection broke and half the
+suite silently did not run. Re-pin them whenever a release moves them; a stale figure read
+as an exact expectation misdiagnoses a healthy run.
 
 Warm the hooks before committing (never `--no-verify`):
 
@@ -188,13 +185,13 @@ set -a; source .env; set +a
 RUN_ONLINE=1 uv run --no-project --python 3.14 \
   --with pytest --with pytest-asyncio --with aiohttp --with voluptuous \
   python -m pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
-# → 8 passed, 13 skipped (as of v0.3.1; the skips need the destructive/area gates)
+# → 8 passed, 13 skipped (the skips need the destructive/area gates)
 ```
 
 The full online gate (adds destructive + area-registry tests, double-gated by
 `HAV_ONLINE_DESTRUCTIVE=1` / `HA_ALLOW_AREA_MUTATIONS=1`) and the in-process HA integration
-suite (`scripts/test_integration.sh`, phacc, real HA core) are documented in the README —
-not re-verified here.
+suite (`scripts/test_integration.sh`, phacc, real HA core) are documented in
+`docs/developing.md` — not re-verified here.
 
 ## Gotchas
 

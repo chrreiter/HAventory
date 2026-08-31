@@ -17,6 +17,7 @@ from custom_components.haventory.const import (
     ISSUE_CORRUPT_STORE,
     ISSUE_SCHEMA_DOWNGRADE,
 )
+from custom_components.haventory.migrations import ADOPTABLE_SCHEMA_VERSIONS
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.components.repairs import repairs_flow_manager
@@ -29,6 +30,11 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 READABLE_ITEM_ID = str(uuid.uuid4())
 NAMELESS_ITEM_ID = str(uuid.uuid4())
+ADOPTED_ITEM_ID = str(uuid.uuid4())
+
+#: One above everything the amnesty covers: a store no build of this project
+#: wrote, and the only kind that reaches the schema-downgrade card.
+BEYOND_THE_ADOPTABLE_RANGE = max(ADOPTABLE_SCHEMA_VERSIONS) + 1
 
 
 def _stored(data: dict) -> dict:
@@ -59,7 +65,7 @@ async def test_a_newer_store_leaves_a_non_fixable_issue(
 ) -> None:
     """The refusal reaches Settings → Repairs, and the file it refuses is untouched."""
 
-    stored = _stored({"schema_version": CURRENT_SCHEMA_VERSION + 1, "items": {}, "locations": {}})
+    stored = _stored({"schema_version": BEYOND_THE_ADOPTABLE_RANGE, "items": {}, "locations": {}})
     hass_storage[STORAGE_KEY] = stored
     before = dict(stored["data"])
 
@@ -72,7 +78,38 @@ async def test_a_newer_store_leaves_a_non_fixable_issue(
     assert issue is not None
     assert issue.is_fixable is False
     assert issue.severity is ir.IssueSeverity.ERROR
+    # The card quotes the refusal, so the number this build supports reaches the
+    # user through it.
+    assert f"({CURRENT_SCHEMA_VERSION})" in issue.translation_placeholders["error"]
     assert hass_storage[STORAGE_KEY]["data"] == before
+
+
+async def test_a_store_from_before_the_collapse_sets_up_instead_of_carding(
+    hass: HomeAssistant, hass_storage: dict
+) -> None:
+    """The amnesty has to be told apart from the refusal here, or an upgrade stops.
+
+    Both stamps are above this build's, and the refusal path ends on a card the
+    user cannot clear. A store the amnesty covers has to reach the inventory
+    instead — with no card left behind.
+    """
+
+    hass_storage[STORAGE_KEY] = _stored(
+        {
+            "schema_version": max(ADOPTABLE_SCHEMA_VERSIONS),
+            "items": {ADOPTED_ITEM_ID: {"id": ADOPTED_ITEM_ID, "name": "Hammer", "quantity": 2}},
+            "locations": {},
+        }
+    )
+
+    entry = await _added_entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id) is True
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_SCHEMA_DOWNGRADE) is None
+    assert find_runtime(hass).repository.get_item(ADOPTED_ITEM_ID).name == "Hammer"
+    assert hass_storage[STORAGE_KEY]["data"]["schema_version"] == CURRENT_SCHEMA_VERSION
 
 
 async def test_a_corrupt_row_offers_a_fix_that_backs_up_reloads_and_clears(

@@ -738,6 +738,12 @@ export class HVOrganizeDialog extends LitElement {
   @state() private _valueDraft = '';
   @state() private _rewrite: RewriteState | null = null;
   @state() private _confirmRemove: string | null = null;
+  /**
+   * Which value the last delete confirmation was about, kept past the close so
+   * the focus rescue can still find its row: nulling `_confirmRemove` is what
+   * closes the confirmation, and the rescue runs after that re-render.
+   */
+  private _lastConfirmValue: string | null = null;
   @state() private _sheetValue: string | null = null;
   /** The "New category"/"New tag" row, open with the name being typed. */
   @state() private _editingStatus: string | 'new' | null = null;
@@ -2346,6 +2352,30 @@ export class HVOrganizeDialog extends LitElement {
     ]);
   }
 
+  /**
+   * Focus for a closed delete confirmation whose ✕ refused the return: the ✕
+   * sits in hover-revealed row actions and the pointer is on the confirmation
+   * at that moment, so a real browser will not focus it. The row takes the
+   * focus instead — `:focus-within` re-reveals its actions, and Tab continues
+   * from the user's place in the list. The panel catches the row being gone,
+   * which is what a confirmed removal leaves behind.
+   */
+  private _refocusConfirmRow = () => {
+    const value = this._lastConfirmValue;
+    // Matched on `dataset` rather than an attribute selector: a tag is free
+    // text, and a quote in one ends the selector early.
+    const row =
+      value === null
+        ? null
+        : (Array.from(
+            this.renderRoot.querySelectorAll<HTMLElement>('[data-testid="value-row"]'),
+          ).find((r) => r.dataset.value === value) ?? null);
+    const target = row ?? this.renderRoot.querySelector<HTMLElement>('[data-testid="organize-dialog"]');
+    if (!target) return;
+    if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+    target.focus({ preventScroll: true });
+  };
+
   render() {
     if (!this.open) return null;
     const removeCount =
@@ -2407,6 +2437,11 @@ export class HVOrganizeDialog extends LitElement {
         `,
       )}
 
+      <!-- The confirmation answers to this dialog, and its answer stops here: it
+           reports a dismissal as a cancel event, which is what a host listening
+           on this element reads as "close Organize". Unstopped, backing out of
+           one tag's delete takes the whole dialog down with it, and the caret
+           the confirmation hands back lands behind a surface that is gone. -->
       <hv-confirm
         data-testid="organize-confirm"
         ?open=${this._confirmRemove !== null}
@@ -2418,12 +2453,17 @@ export class HVOrganizeDialog extends LitElement {
         .message=${t('hv.organize.removeMessage')}
         .confirmLabel=${t('hv.action.remove')}
         destructive
-        @confirm=${() => {
+        .onOpenerGone=${this._refocusConfirmRow}
+        @confirm=${(e: Event) => {
+          e.stopPropagation();
           const value = this._confirmRemove;
+          this._lastConfirmValue = value;
           this._confirmRemove = null;
           if (value) void this._runRewrite(value, null, 'remove');
         }}
-        @cancel=${() => {
+        @cancel=${(e: Event) => {
+          e.stopPropagation();
+          this._lastConfirmValue = this._confirmRemove;
           this._confirmRemove = null;
         }}
       ></hv-confirm>

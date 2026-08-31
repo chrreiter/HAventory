@@ -369,7 +369,7 @@ describe('hv-filter-chips', () => {
     setLanguage('de');
     const el = await mount({ filters: { ...defaultFilters(), overdueOnly: true } });
     const chip = el.shadowRoot?.querySelector('[data-testid="filter-chip"]') as HTMLElement;
-    expect(chip.getAttribute('aria-label')).toBe('Filter Überfällig zurücksetzen');
+    expect(chip.getAttribute('aria-label')).toBe('Filter Überfällig entfernen');
   });
 
   // A search term, a list of tags or a nested location path has no length this

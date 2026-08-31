@@ -60,11 +60,19 @@ export class HVConfirm extends LitElement {
   @property({ type: String }) confirmLabel = t('hv.action.confirm');
   @property({ type: String }) cancelLabel = t('hv.action.cancel');
   @property({ type: Boolean }) destructive = false;
+  /**
+   * The host's answer when focus cannot go back to what raised the question —
+   * the opener the confirmed action removed, or a hover-revealed control the
+   * browser is no longer drawing. Called only when focus would otherwise be
+   * stranded on `<body>`.
+   */
+  @property({ attribute: false }) onOpenerGone: (() => void) | null = null;
 
   private _modal = new Modal(this, {
     open: () => this.open,
     // Land focus on the confirm action so Enter completes and Escape aborts.
     initialFocus: () => this.renderRoot.querySelector<HTMLButtonElement>('[data-testid="confirm-accept"]'),
+    onOpenerGone: () => this.onOpenerGone?.(),
   });
 
   private _cancel = () => {

@@ -487,7 +487,9 @@ class ItemFilter(TypedDict, total=False):
     # Multi-select beside the scalar above, unioned the same way — see
     # `selected_location_ids`. `include_subtree` governs the whole selection.
     location_ids: list[str]
-    area_id: str
+    # `None` is the way to say "no area filter", as omitting the key is; every
+    # other value has to name an area — see `validate_area_filter`.
+    area_id: str | None
     include_subtree: bool
     updated_after: str
     created_after: str
@@ -859,6 +861,27 @@ SORT_ORDERS: Final[frozenset[str]] = frozenset({"asc", "desc"})
 SORT_KEYS: Final[frozenset[str]] = frozenset({"field", "order"})
 
 
+def validate_area_filter(value: object) -> str | None:
+    """Return the area an ``area_id`` filter selects, or ``None`` for no filter.
+
+    Shared by ``item/list``'s filter and by a ``haventory/subscribe`` opener, so
+    one value cannot be refused by one door and absorbed by the other. ``None``
+    means "no area filter", the same as omitting the key; anything else has to
+    name an area.
+
+    A blank string and a non-string are refused rather than trimmed away: the
+    area index is the only place a filter's area is applied — the scan behind it
+    carries no area predicate — so a value that names no bucket narrows nothing
+    and answers the whole inventory labelled as one area's.
+    """
+
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError("area_id must be a non-empty string or null")
+    return value.strip()
+
+
 def validate_item_filter(flt: object) -> None:
     """Reject a filter object carrying keys no filter understands.
 
@@ -866,6 +889,9 @@ def validate_item_filter(flt: object) -> None:
     ``search`` or ``query`` in place of ``q`` returns the *whole* inventory
     labelled as a filtered result. Naming the offending key is the only way a
     caller finds that out.
+
+    ``area_id`` is checked on its value too, because it is the one key a scan
+    cannot answer — see :func:`validate_area_filter`.
     """
 
     if flt is None:
@@ -875,6 +901,8 @@ def validate_item_filter(flt: object) -> None:
     unknown = sorted(str(key) for key in flt if key not in ITEM_FILTER_KEYS)
     if unknown:
         raise ValidationError(f"unknown filter key(s): {', '.join(unknown)}")
+    if "area_id" in flt:
+        validate_area_filter(flt["area_id"])
 
 
 def validate_sort(sort: object) -> None:
@@ -1308,7 +1336,7 @@ def _is_int_not_bool(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _validate_optional_text(
+def validate_optional_text(
     value: object, field_name: str, *, max_length: int | None = None, previous: str | None = None
 ) -> None:
     """Ensure an optional free-text field is a string or None, within its cap.
@@ -1320,6 +1348,11 @@ def _validate_optional_text(
     *growth* past it: a value over the cap but no longer than the stored one is
     accepted, so an item that predates the cap can still be edited — including
     by the edit that trims the excess without clearing it in one go.
+
+    No ``max_length`` is the restore mode, and the type check is then the whole
+    rule: an import document is held to what every release has enforced, not to
+    the free-text caps, which bind what an edit may add rather than what a store
+    may hold (``docs/data_shapes.md`` → "Input caps").
     """
     if value is None:
         return
@@ -1350,6 +1383,21 @@ def validate_quantity(value: object) -> int:
     return value
 
 
+def validate_low_stock_threshold(value: object) -> int | None:
+    """Return the low-stock threshold, or refuse the value with the one message.
+
+    Nullable where the quantity is not: an item with no threshold is never low
+    on stock. Public, and spelled out, for the reasons :func:`validate_quantity`
+    is.
+    """
+
+    if value is None:
+        return None
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        raise ValidationError("low_stock_threshold must be an integer >= 0 or null")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class _ItemWrite:
     """One item write in progress, as the field rules see it.
@@ -1370,8 +1418,10 @@ class _ItemWrite:
 def _write_name(write: _ItemWrite) -> None:
     """Required on a create; a null on an update leaves the stored name alone.
 
-    The field is non-nullable and the card's editor sends every field it holds,
-    so a null has to read as "this write does not name the name".
+    The field is non-nullable, so a null cannot mean "clear it". On an update it
+    means "this write does not name the name" — which is what lets any client
+    hand back a payload carrying every field it knows about and change one of
+    them.
     """
 
     value = write.payload.get("name")
@@ -1393,7 +1443,7 @@ def _write_optional_text(write: _ItemWrite, *, key: str, max_length: int) -> Non
     if key not in write.payload:
         return
     value = write.payload[key]
-    _validate_optional_text(value, key, max_length=max_length, previous=getattr(write.draft, key))
+    validate_optional_text(value, key, max_length=max_length, previous=getattr(write.draft, key))
     setattr(write.draft, key, value)
 
 
@@ -1445,12 +1495,13 @@ def _write_reminder(write: _ItemWrite) -> None:
     Writing a *different* date re-anchors the series on it: the payloads carry
     no anchor of their own, deliberately, because a household picking a date is
     saying where the series starts. Re-sending the date the item already carries
-    says nothing, so it must not move the anchor — the card's editor puts every
-    field in every payload, changed or not, and re-anchoring on presence alone
-    would let an ordinary save walk a month-end series off its day one short
-    month at a time. `Repository.bump_reminder` is the one path that moves the
-    date and keeps the anchor, which is what makes a bumped month-end series stay
-    on its own day.
+    says nothing, so it must not move the anchor. A client may legally send a
+    field it did not change — a service call built from a template, a script
+    handing an item back, a WebSocket client that posts every field it holds —
+    and re-anchoring on the key's presence alone would let one of those walk a
+    month-end series off its day, one short month at a time.
+    `Repository.bump_reminder` is the one path that moves the date and keeps the
+    anchor, which is what makes a bumped month-end series stay on its own day.
     """
 
     payload = write.payload
@@ -1507,12 +1558,10 @@ def _write_tags(write: _ItemWrite) -> None:
 
 
 def _write_low_stock_threshold(write: _ItemWrite) -> None:
-    if "low_stock_threshold" not in write.payload:
-        return
-    threshold = write.payload["low_stock_threshold"]
-    if threshold is not None and (not _is_int_not_bool(threshold) or threshold < 0):
-        raise ValidationError("low_stock_threshold must be an integer >= 0 or null")
-    write.draft.low_stock_threshold = threshold
+    if "low_stock_threshold" in write.payload:
+        write.draft.low_stock_threshold = validate_low_stock_threshold(
+            write.payload["low_stock_threshold"]
+        )
 
 
 def _write_custom_fields(write: _ItemWrite) -> None:
@@ -1633,17 +1682,15 @@ def apply_item_update(
 _CANONICAL_TS_LENGTH = 20
 
 
-def monotonic_timestamp_after(previous_ts: str, *, now_ts: str | None = None) -> str:
+def monotonic_timestamp_after(previous_ts: str) -> str:
     """Return a UTC ISO-8601 'Z' timestamp strictly after previous_ts.
 
-    If the current time is not greater than the previous timestamp (due to
-    second resolution), bump by one second to maintain monotonicity. Batch
-    callers may pass a precomputed ``now_ts`` (from :func:`iso_utc_now`) to
-    avoid re-reading the clock per item.
+    The clock is read here, and read at second resolution: a reading that is not
+    past the previous timestamp is bumped by one second so the two never compare
+    equal.
     """
 
-    if now_ts is None:
-        now_ts = iso_utc_now()
+    now_ts = iso_utc_now()
     # Fast path: canonical fixed-width timestamps compare lexicographically,
     # so the common case (time moved on) needs no parsing at all.
     if _looks_canonical_utc(previous_ts) and now_ts > previous_ts:

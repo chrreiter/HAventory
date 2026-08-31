@@ -180,33 +180,11 @@ class Repository:
     # -----------------------------
 
     def __init__(self) -> None:
-        # Primary stores
-        self._items_by_id: dict[str, Item] = {}
-        self._locations_by_id: dict[str, Location] = {}
-        # Status definitions, keyed by their immutable slug. Seeded with the
-        # built-ins, which is also what a store carrying no section means.
-        self._statuses_by_slug: dict[str, StatusDefinition] = seed_status_definitions()
-
-        # Item indexes
-        self._tags_to_item_ids: dict[str, set[str]] = {}
-        self._category_to_item_ids: dict[str, set[str]] = {}
-        # Only non-default statuses are bucketed: "ok" is the overwhelming
-        # majority, so a bucket for it would mirror the whole item map.
-        self._status_to_item_ids: dict[str, set[str]] = {}
-        self._checked_out_item_ids: set[str] = set()
-        self._low_stock_item_ids: set[str] = set()
-        self._items_by_location_id: dict[str, set[str]] = {}
-        # Area indexes
-        self._locations_by_area_id: dict[str, set[str]] = {}
-        self._items_by_area_id: dict[str, set[str]] = {}
-        # Location tree indexes
-        self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
-
-        # O(1) subtree lookup: loc_id -> every item id in that subtree
-        self._items_in_subtree: dict[str, set[str]] = {}
-
-        # What the last load_state could not make sense of; empty on a fresh repo.
-        self._last_load_report = LoadReport()
+        # A fresh repository is a reset one: _reset_state is the single list of
+        # fields, so a new index cannot reach one construction path and miss the
+        # other — which reads as an AttributeError before the first load, or as a
+        # stale index surviving one.
+        self._reset_state()
 
     @property
     def last_load_report(self) -> LoadReport:
@@ -1155,14 +1133,19 @@ class Repository:
         has_indexed_filter = False
 
         # 1. Area Index
-        if flt.get("area_id"):
+        # `None` — an absent key, or an explicit null — is the one value that
+        # means no area filter; every other one is answered here, `""`
+        # included. An area is applied here and nowhere else, `filter_items`
+        # being a pure function over items that cannot resolve one, so a value
+        # naming no bucket has to answer with no items rather than fall through
+        # to a scan that would ignore the area entirely.
+        area_id = flt.get("area_id")
+        if area_id is not None:
             has_indexed_filter = True
-            area_key = str(flt["area_id"]).strip()
-            if area_key:
-                s = self._items_by_area_id.get(area_key, set())
-                if not s:
-                    return []
-                candidate_sets.append(s)
+            in_area = self._items_by_area_id.get(str(area_id).strip(), set())
+            if not in_area:
+                return []
+            candidate_sets.append(in_area)
 
         # 2. Location Index
         # A multi-select unions its buckets, the way tags_any does below; the
@@ -1664,16 +1647,19 @@ class Repository:
         # The area is left as it stands: it belongs to the root of a tree, and
         # a requested change is propagated there once the node has moved.
         self._locations_by_id[key] = replace(loc, name=updated_name, parent_id=target_parent_id)
-        self._rebuild_paths_for_subtree(key)
 
-        # Update affected items (now that live maps are consistent)
-        affected = {key}
-        affected.update(self._collect_descendant_ids(key))
-        # Only rebuild item location_path when the path can actually change:
-        # - name change affects display paths
-        # - parent change affects ancestry
+        # A location's path is built from its name and its ancestry, and the
+        # subtree index from the parent links alone, so an edit that moves
+        # neither leaves both where they are. Everything under this gate walks
+        # the whole subtree — the cost a large tree must not pay per area
+        # reassignment. The item paths are rewritten here too, and for the same
+        # reason: only these two changes can move one.
         if parent_changed or name_changed:
+            self._rebuild_paths_for_subtree(key)
+            affected = {key}
+            affected.update(self._collect_descendant_ids(key))
             self._update_items_location_paths_for_locations(affected)
+            self._rebuild_location_hierarchy_indexes()
 
         # Handle area change: propagate to root of tree
         if area_change_requested:
@@ -1691,7 +1677,6 @@ class Repository:
                 "moved": bool(parent_changed),
             },
         )
-        self._rebuild_location_hierarchy_indexes()
         return self._locations_by_id[key]
 
     def _rebucket_items_for_subtree_area_change(self, root_key: str) -> None:
@@ -1952,7 +1937,7 @@ class Repository:
         # only the built-ins and rewrite every item on a custom status to "ok"
         # — silently, on the first restart after the upgrade that added it. An
         # absent or unreadable section means the built-ins, which is what a
-        # pre-v6 store carries.
+        # store written before the collection existed carries.
         self._load_statuses(data.get("statuses"))
 
         # Load locations first so items can reference them
@@ -2018,21 +2003,41 @@ class Repository:
         self._rebuild_location_hierarchy_indexes()
 
     def _reset_state(self) -> None:
-        """Drop every primary store and index, back to a fresh repository."""
+        """Drop every primary store and index, back to a fresh repository.
 
-        self._items_by_id = {}
-        self._locations_by_id = {}
-        self._statuses_by_slug = seed_status_definitions()
-        self._tags_to_item_ids = {}
-        self._category_to_item_ids = {}
-        self._status_to_item_ids = {}
-        self._checked_out_item_ids = set()
-        self._low_stock_item_ids = set()
-        self._items_by_location_id = {}
-        self._locations_by_area_id = {}
-        self._items_by_area_id = {}
-        self._children_ids_by_parent_id = {}
-        self._items_in_subtree = {}
+        The only place the repository's fields are listed; ``__init__`` calls it
+        too, so a load starts from exactly what construction leaves behind.
+        """
+
+        # Primary stores
+        self._items_by_id: dict[str, Item] = {}
+        self._locations_by_id: dict[str, Location] = {}
+        # Status definitions, keyed by their immutable slug. Seeded with the
+        # built-ins, which is also what a store carrying no section means.
+        self._statuses_by_slug: dict[str, StatusDefinition] = seed_status_definitions()
+
+        # Item indexes
+        self._tags_to_item_ids: dict[str, set[str]] = {}
+        self._category_to_item_ids: dict[str, set[str]] = {}
+        # Only non-default statuses are bucketed: "ok" is the overwhelming
+        # majority, so a bucket for it would mirror the whole item map.
+        self._status_to_item_ids: dict[str, set[str]] = {}
+        self._checked_out_item_ids: set[str] = set()
+        self._low_stock_item_ids: set[str] = set()
+        self._items_by_location_id: dict[str, set[str]] = {}
+        # Area indexes
+        self._locations_by_area_id: dict[str, set[str]] = {}
+        self._items_by_area_id: dict[str, set[str]] = {}
+        # Location tree indexes
+        self._children_ids_by_parent_id: dict[str | None, set[str]] = {}
+
+        # O(1) subtree lookup: loc_id -> every item id in that subtree
+        self._items_in_subtree: dict[str, set[str]] = {}
+
+        # What the last load_state could not make sense of; empty on a fresh
+        # repository, and empty again for a load that refuses its payload
+        # outright — the content it reported on is gone either way.
+        self._last_load_report = LoadReport()
 
     def _load_statuses(self, raw: object) -> None:
         """Read the ``statuses`` collection out of a persisted payload.

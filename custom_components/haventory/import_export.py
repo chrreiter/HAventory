@@ -60,16 +60,16 @@ Conflict policies (for ids already present in the repository):
 
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from typing import Any, Literal
 
 from .const import INTEGRATION_VERSION
 from .exceptions import ValidationError
+from .migrations import ADOPTABLE_SCHEMA_VERSIONS
 from .models import (
     DEFAULT_ITEM_STATUS,
     EMPTY_LOCATION_PATH,
     ITEM_STATUSES,
-    NAME_MAX_LENGTH,
     Item,
     Location,
     build_location_path_from_map,
@@ -82,11 +82,14 @@ from .models import (
     serialize_status_definition,
     validate_attachment_meta,
     validate_due_date_rules,
+    validate_low_stock_threshold,
     validate_optional_date,
+    validate_optional_text,
+    validate_quantity,
     validate_reminder_interval,
     validate_reminder_rules,
-    validate_required_name,
     validate_status_definition,
+    validate_write_name,
 )
 from .repository import Repository
 
@@ -197,20 +200,29 @@ def _err(path: str, message: str) -> dict[str, str]:
     return {"path": path, "message": message}
 
 
-def _validate_name_doc(value: object, path: str, errors: list[dict[str, str]]) -> None:
-    """The write paths' name rule, reported into ``errors`` rather than raised.
+def _collect[T](
+    errors: list[dict[str, str]],
+    path: str,
+    validator: Callable[..., T],
+    /,
+    *args: Any,
+    **kwargs: Any,
+) -> T | None:
+    """Run one write-path validator for its refusal, reported at ``path``.
 
-    Items and locations share it, and so does the load path — a document may
-    only name something a store could have held.
+    A document is answered field by field rather than at the first refusal, so
+    a validator is called here for what it says rather than for control flow:
+    the message it raises is the message the import sheet prints, and ``None``
+    back means this field was refused and the caller has nothing to read from
+    it. The value is returned so a caller that needs the validated form — a
+    status definition, a parsed id — gets it from the same call.
     """
 
     try:
-        trimmed = validate_required_name(value)
-    except ValidationError as err:
-        errors.append(_err(path, str(err)))
-        return
-    if len(trimmed) > NAME_MAX_LENGTH:
-        errors.append(_err(path, f"name must be at most {NAME_MAX_LENGTH} characters"))
+        return validator(*args, **kwargs)
+    except ValidationError as exc:
+        errors.append(_err(path, str(exc)))
+        return None
 
 
 def _warn(code: str, path: str, message: str, **fields: Any) -> dict[str, Any]:
@@ -224,16 +236,17 @@ def _warn(code: str, path: str, message: str, **fields: Any) -> dict[str, Any]:
     return {"code": code, "path": path, "message": message, **fields}
 
 
-def _coerce_entity_list(value: Any) -> list[dict[str, Any]] | None:
-    """Accept the document list form (preferred) or a legacy id->dict mapping."""
+def _entity_array(value: Any) -> list[dict[str, Any]] | None:
+    """One of the document's entity sections, or ``None`` when it is not one.
 
-    if isinstance(value, list):
-        if all(isinstance(v, dict) for v in value):
-            return list(value)
-        return None
-    if isinstance(value, dict):
-        # Tolerate {id: entity} maps produced by repository.export_state.
-        return [v for v in value.values() if isinstance(v, dict)]
+    An array of objects is the only shape a section has ever been written in:
+    the stored payload keys entities by id, but nothing hands that form to an
+    import — ``build_export_document`` is what writes every document a user
+    holds, and it writes arrays.
+    """
+
+    if isinstance(value, list) and all(isinstance(v, dict) for v in value):
+        return list(value)
     return None
 
 
@@ -253,19 +266,16 @@ def _parse_status_section(
             for slug, definition in seed_status_definitions().items()
         }
 
-    entries = _coerce_entity_list(raw)
+    entries = _entity_array(raw)
     if entries is None:
         errors.append(_err("statuses", "statuses must be an array of objects"))
         return {}
 
     parsed: dict[str, dict[str, Any]] = {}
     for idx, entry in enumerate(entries):
-        try:
-            definition = validate_status_definition(entry)
-        except ValidationError as exc:
-            errors.append(_err(f"statuses[{idx}]", str(exc)))
-            continue
-        parsed[definition.slug] = serialize_status_definition(definition)
+        definition = _collect(errors, f"statuses[{idx}]", validate_status_definition, entry)
+        if definition is not None:
+            parsed[definition.slug] = serialize_status_definition(definition)
     return parsed
 
 
@@ -301,7 +311,16 @@ def _parse_envelope(
         errors.append(_err("schema_version", "missing schema_version"))
     elif not isinstance(sv, int) or isinstance(sv, bool):
         errors.append(_err("schema_version", "schema_version must be an integer"))
-    elif current_schema_version is not None and sv > current_schema_version:
+    # A document stamped inside `ADOPTABLE_SCHEMA_VERSIONS` reads as newer than
+    # this build and is taken in anyway, for the one release that set exists:
+    # every export written before the schema collapsed carries such a stamp,
+    # the pre-upgrade backup included, and the item and location shapes under it
+    # are the shapes validated field by field below.
+    elif (
+        current_schema_version is not None
+        and sv > current_schema_version
+        and sv not in ADOPTABLE_SCHEMA_VERSIONS
+    ):
         errors.append(
             _err(
                 "schema_version",
@@ -310,10 +329,10 @@ def _parse_envelope(
             )
         )
 
-    items = _coerce_entity_list(doc.get("items", []))
+    items = _entity_array(doc.get("items", []))
     if items is None:
         errors.append(_err("items", "items must be an array of objects"))
-    locations = _coerce_entity_list(doc.get("locations", []))
+    locations = _entity_array(doc.get("locations", []))
     if locations is None:
         errors.append(_err("locations", "locations must be an array of objects"))
 
@@ -324,24 +343,9 @@ def _validate_uuid4(value: Any, path: str, errors: list[dict[str, str]]) -> str 
     if not isinstance(value, str) or not value:
         errors.append(_err(path, "must be a non-empty UUID v4 string"))
         return None
-    try:
-        parse_uuid4(value, field_name=path)
-    except ValidationError as exc:
-        errors.append(_err(path, str(exc)))
+    if _collect(errors, path, parse_uuid4, value, field_name=path) is None:
         return None
     return value
-
-
-def _validate_optional_text_doc(value: Any, path: str, errors: list[dict[str, str]]) -> None:
-    """Report an optional free-text field that is not a string.
-
-    Absence and an explicit null are both fine; every item field this guards is
-    nullable. Length is deliberately not checked — see the module note on caps:
-    a document is a restore, and the length caps bind edits, not stored data.
-    """
-
-    if value is not None and not isinstance(value, str):
-        errors.append(_err(path, f"{path.rsplit('.', 1)[-1]} must be a string or null"))
 
 
 def _validate_location_doc(
@@ -349,13 +353,11 @@ def _validate_location_doc(
 ) -> str | None:
     base = f"locations[{idx}]"
     lid = _validate_uuid4(doc.get("id"), f"{base}.id", errors)
-    _validate_name_doc(doc.get("name"), f"{base}.name", errors)
+    _collect(errors, f"{base}.name", validate_write_name, doc.get("name"))
     parent_id = doc.get("parent_id")
     if parent_id is not None:
         _validate_uuid4(parent_id, f"{base}.parent_id", errors)
-    area_id = doc.get("area_id")
-    if area_id is not None and not isinstance(area_id, str):
-        errors.append(_err(f"{base}.area_id", "area_id must be a string or null"))
+    _collect(errors, f"{base}.area_id", validate_optional_text, doc.get("area_id"), "area_id")
     return lid
 
 
@@ -386,10 +388,7 @@ def _validate_attachments_doc(base: str, doc: dict[str, Any], errors: list[dict[
         errors.append(_err(f"{base}.attachments", "attachments must be an array of objects"))
         return
     for idx, entry in enumerate(raw):
-        try:
-            validate_attachment_meta(entry)
-        except ValidationError as exc:
-            errors.append(_err(f"{base}.attachments[{idx}]", str(exc)))
+        _collect(errors, f"{base}.attachments[{idx}]", validate_attachment_meta, entry)
 
 
 def _validate_tags_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
@@ -398,6 +397,10 @@ def _validate_tags_doc(base: str, doc: dict[str, Any], errors: list[dict[str, st
     The tag caps are deliberately not applied — a document is a restore, and a
     store written before the caps existed can legally carry more tags, or
     longer ones, than an edit may add today.
+
+    Written here rather than run through the write path's ``validate_tags``
+    because the sentence differs: a document is JSON, so it is refused for not
+    being an *array*, where a client's payload is refused for not being a list.
     """
 
     tags = doc.get("tags", [])
@@ -413,6 +416,12 @@ def _validate_custom_fields_doc(
     Only the shape is checked — a mapping of non-empty string keys to scalars,
     which is what the search-index build and the serializers require. The size
     caps are deliberately not applied, for the reason the tag caps are not.
+
+    Written here rather than run through the write path's
+    ``validate_custom_fields`` for the reason the tag check is, plus one of its
+    own: this reports every key the map gets wrong and names the offending key
+    in the path, where a validator raising on the first would send the author
+    back to the whole map once per bad entry.
     """
 
     cf = doc.get("custom_fields", {})
@@ -433,20 +442,23 @@ def _validate_item_doc(
 ) -> str | None:
     base = f"items[{idx}]"
     iid = _validate_uuid4(doc.get("id"), f"{base}.id", errors)
-    _validate_name_doc(doc.get("name"), f"{base}.name", errors)
-    _validate_optional_text_doc(doc.get("description"), f"{base}.description", errors)
-    _validate_optional_text_doc(doc.get("category"), f"{base}.category", errors)
-    qty = doc.get("quantity", 1)
-    if not isinstance(qty, int) or isinstance(qty, bool) or qty < 0:
-        errors.append(_err(f"{base}.quantity", "quantity must be an integer >= 0"))
-    thr = doc.get("low_stock_threshold")
-    if thr is not None and (not isinstance(thr, int) or isinstance(thr, bool) or thr < 0):
-        errors.append(
-            _err(
-                f"{base}.low_stock_threshold",
-                "low_stock_threshold must be an integer >= 0 or null",
-            )
-        )
+    # The name is held to the write path's rule whole, the length cap included:
+    # every release has enforced it, so no store can hold a longer one. The
+    # free-text fields go through the same validator with no cap, which is what
+    # the module note above means by a restore being tolerant of them.
+    _collect(errors, f"{base}.name", validate_write_name, doc.get("name"))
+    _collect(
+        errors, f"{base}.description", validate_optional_text, doc.get("description"), "description"
+    )
+    _collect(errors, f"{base}.category", validate_optional_text, doc.get("category"), "category")
+    # An absent quantity loads as one, so the default is what gets checked.
+    _collect(errors, f"{base}.quantity", validate_quantity, doc.get("quantity", 1))
+    _collect(
+        errors,
+        f"{base}.low_stock_threshold",
+        validate_low_stock_threshold,
+        doc.get("low_stock_threshold"),
+    )
     _validate_item_status_doc(base, doc, errors, known_statuses)
     _validate_attachments_doc(base, doc, errors)
     loc_id = doc.get("location_id")
@@ -467,41 +479,25 @@ def _validate_item_doc(
                     f"{ts_field} must be an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)",
                 )
             )
-    _validate_due_date_doc(base, doc, errors)
-    _validate_inspection_date_doc(base, doc, errors)
+    # A due date only exists while an item is checked out, and every WS and
+    # service path enforces that. A document is the one way an item could arrive
+    # carrying a date nothing will ever clear.
+    _collect(
+        errors,
+        f"{base}.due_date",
+        validate_due_date_rules,
+        checked_out=bool(doc.get("checked_out", False)),
+        due_date=doc.get("due_date"),
+    )
+    _collect(
+        errors,
+        f"{base}.inspection_date",
+        validate_optional_date,
+        doc.get("inspection_date"),
+        field_name="inspection_date",
+    )
     _validate_reminder_doc(base, doc, errors)
     return iid
-
-
-def _validate_due_date_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
-    """Hold an imported item to the same due-date invariant a write is held to.
-
-    A due date only exists while an item is checked out, and every WS and
-    service path enforces that. A document is the one way an item could arrive
-    carrying a date nothing will ever clear.
-    """
-
-    due_date = doc.get("due_date")
-    if due_date is None:
-        return
-    try:
-        validate_due_date_rules(checked_out=bool(doc.get("checked_out", False)), due_date=due_date)
-    except ValidationError as exc:
-        errors.append(_err(f"{base}.due_date", str(exc)))
-
-
-def _validate_inspection_date_doc(
-    base: str, doc: dict[str, Any], errors: list[dict[str, str]]
-) -> None:
-    """Hold an imported inspection date to the format every write path enforces."""
-
-    inspection_date = doc.get("inspection_date")
-    if inspection_date is None:
-        return
-    try:
-        validate_optional_date(inspection_date, field_name="inspection_date")
-    except ValidationError as exc:
-        errors.append(_err(f"{base}.inspection_date", str(exc)))
 
 
 def _validate_reminder_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
@@ -519,56 +515,55 @@ def _validate_reminder_doc(base: str, doc: dict[str, Any], errors: list[dict[str
     reminder_date = doc.get("reminder_date")
     interval = doc.get("reminder_interval")
     anchor = doc.get("reminder_anchor")
-    refused = False
+    reported = len(errors)
 
-    if reminder_date is not None:
-        try:
-            validate_optional_date(reminder_date, field_name="reminder_date")
-        except ValidationError as exc:
-            errors.append(_err(f"{base}.reminder_date", str(exc)))
-            refused = True
-    if anchor is not None:
-        try:
-            validate_optional_date(anchor, field_name="reminder_anchor")
-        except ValidationError as exc:
-            errors.append(_err(f"{base}.reminder_anchor", str(exc)))
-            refused = True
-        else:
-            # The anchor is where the series starts and the date is how far it
-            # has been marked done, so an anchor beyond its own date describes a
-            # series with no occurrence to lead to. Absent is fine — it reads as
-            # the date, which is what every export written before v9 carries.
-            if reminder_date is None:
-                errors.append(
-                    _err(
-                        f"{base}.reminder_anchor",
-                        "reminder_anchor requires a reminder_date to lead to",
-                    )
+    _collect(
+        errors,
+        f"{base}.reminder_date",
+        validate_optional_date,
+        reminder_date,
+        field_name="reminder_date",
+    )
+    if anchor is not None and (
+        _collect(
+            errors,
+            f"{base}.reminder_anchor",
+            validate_optional_date,
+            anchor,
+            field_name="reminder_anchor",
+        )
+        is not None
+    ):
+        # The anchor is where the series starts and the date is how far it has
+        # been marked done, so an anchor beyond its own date describes a series
+        # with no occurrence to lead to. Absent is fine — it reads as the date,
+        # which is what every export written before the field carries.
+        if reminder_date is None:
+            errors.append(
+                _err(
+                    f"{base}.reminder_anchor", "reminder_anchor requires a reminder_date to lead to"
                 )
-                refused = True
-            elif isinstance(reminder_date, str) and anchor > reminder_date:
-                errors.append(
-                    _err(
-                        f"{base}.reminder_anchor",
-                        "reminder_anchor must not be later than reminder_date",
-                    )
+            )
+        elif isinstance(reminder_date, str) and anchor > reminder_date:
+            errors.append(
+                _err(
+                    f"{base}.reminder_anchor",
+                    "reminder_anchor must not be later than reminder_date",
                 )
-                refused = True
-    if interval is not None:
-        try:
-            validate_reminder_interval(interval)
-        except ValidationError as exc:
-            errors.append(_err(f"{base}.reminder_interval", str(exc)))
-            refused = True
-    if refused:
+            )
+    _collect(errors, f"{base}.reminder_interval", validate_reminder_interval, interval)
+    if len(errors) > reported:
         return
 
     # The rule binding the two lives in one place rather than being restated
     # here; the interval is the half that is wrong when it fires.
-    try:
-        validate_reminder_rules(reminder_date=reminder_date, reminder_interval=interval)
-    except ValidationError as exc:
-        errors.append(_err(f"{base}.reminder_interval", str(exc)))
+    _collect(
+        errors,
+        f"{base}.reminder_interval",
+        validate_reminder_rules,
+        reminder_date=reminder_date,
+        reminder_interval=interval,
+    )
 
 
 def _canonical_item(doc: dict[str, Any]) -> dict[str, Any]:

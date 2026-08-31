@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import { cardPath, haConfig } from "./card_views.mjs";
+import { signIn } from "./login.mjs";
 
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -74,23 +75,7 @@ const context = await browser.newContext({
   viewport: { width: 1400, height: 900 },
   serviceWorkers: "block",
 });
-await context.addInitScript(
-  ([hassUrl, accessToken]) => {
-    localStorage.setItem(
-      "hassTokens",
-      JSON.stringify({
-        access_token: accessToken,
-        token_type: "Bearer",
-        refresh_token: "unused-long-lived",
-        expires_in: 1800,
-        expires: Date.now() + 365 * 24 * 3600 * 1000,
-        hassUrl,
-        clientId: hassUrl + "/",
-      }),
-    );
-  },
-  [base, token],
-);
+await signIn(context, { base, token });
 
 function watch(page) {
   const seen = [];

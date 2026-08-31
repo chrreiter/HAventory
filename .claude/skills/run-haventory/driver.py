@@ -1,22 +1,28 @@
-r"""HAventory dev-instance driver: status / send / smoke over the HA WebSocket API.
+r"""HAventory dev-instance driver: status / send / watch / smoke over the HA WebSocket API.
 
 Agent harness for driving a running Home Assistant instance that has the
-haventory integration loaded. Complements scripts/ws_probe.py (single message)
-by holding ONE authenticated connection for a whole command sequence, so ids
-and item versions can flow between steps.
+haventory integration loaded. It holds ONE authenticated connection for a whole
+command sequence, so ids and item versions flow between steps and a subscription
+stays open while another window mutates.
 
-Config: HA_BASE_URL / HA_TOKEN come from the `.env` beside this checkout, which
-wins over an inherited export -- a worktree's .env names the instance that worktree
-is for. HAVENTORY_IGNORE_ENV_FILE=1 hands the decision back to the environment for
-one run. Every command prints the resolved target and the store's counts on stderr
-before it acts, and `smoke` (which creates and deletes) says that it writes.
+Config: HA_BASE_URL / HA_TOKEN are resolved by `dev_env`, which decides between the
+`.env` beside this checkout and an inherited export and names the instance on stderr
+before every command acts; `smoke` (which creates and deletes) says that it writes.
 
 Usage (from repo root):
   uv run python .claude/skills/run-haventory/driver.py status
   uv run python .claude/skills/run-haventory/driver.py send '{"type":"haventory/ping"}' ...
+  uv run python .claude/skills/run-haventory/driver.py watch --count 3
+  uv run python .claude/skills/run-haventory/driver.py watch items stats --timeout 60
   uv run python .claude/skills/run-haventory/driver.py smoke
 
 `send` auto-assigns ids and prints one JSON result frame per message.
+`watch` subscribes to the four topics — or to the ones named — and prints every
+event frame as it arrives. It runs until interrupted; `--count N` stops after N
+events and `--timeout SECONDS` after that much wall clock, so a recipe can bound
+it. A refused subscribe is printed and exits non-zero, because a watch that
+silently subscribed to nothing looks exactly like a backend that broadcasts
+nothing.
 `smoke` runs a full CRUD user flow (location -> item -> search -> optimistic
 concurrency -> quantity -> cleanup) and exits non-zero on the first failure.
 It only touches objects it creates (unique suffix), so it is safe on a dev
@@ -31,6 +37,7 @@ import asyncio
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +45,10 @@ import aiohttp
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RECV_TIMEOUT_S = 20.0
+COMMANDS = ("status", "send", "watch", "smoke")
+#: Every topic `haventory/subscribe` accepts. `watch` with no topic named takes
+#: all of them, so a recipe watching for "anything at all" cannot miss one.
+WATCH_TOPICS = ("items", "locations", "stats", "statuses")
 # One definition of "which instance is this?" for every helper in the repo. This
 # file's committed location names the checkout it belongs to, so the import
 # follows the same tree the .env is read from.
@@ -55,24 +66,43 @@ class HaWs:
 
     async def send(self, message: dict[str, Any]) -> dict[str, Any]:
         """Send one command frame; return its full result frame (success or not)."""
-        message = dict(message)
-        message.setdefault("id", self._next_id)
-        self._next_id = max(self._next_id, int(message["id"])) + 1
-        await self._ws.send_json(message)
+        message_id = await self.send_only(message)
         while True:
-            frame = await asyncio.wait_for(self._ws.receive_json(), timeout=RECV_TIMEOUT_S)
-            if (
-                isinstance(frame, dict)
-                and frame.get("id") == message["id"]
-                and frame.get("type") == "result"
-            ):
+            async with asyncio.timeout(RECV_TIMEOUT_S):
+                frame = await self.receive()
+            if frame.get("id") == message_id and frame.get("type") == "result":
                 return frame
             # Drain unrelated frames (events for other subscriptions etc.)
 
+    async def send_only(self, message: dict[str, Any]) -> int:
+        """Send one command frame and answer with its id, waiting for nothing.
 
-async def connect(session: aiohttp.ClientSession, base: str, token: str) -> HaWs:
+        A watcher subscribes to several topics at once: waiting for each result
+        in turn would drop any event that arrived for an earlier topic while a
+        later subscribe was still outstanding.
+        """
+        message = dict(message)
+        message.setdefault("id", self._next_id)
+        message_id = int(message["id"])
+        self._next_id = max(self._next_id, message_id) + 1
+        await self._ws.send_json(message)
+        return message_id
+
+    async def receive(self) -> dict[str, Any]:
+        """The next frame on the connection, whatever it is about.
+
+        Unbounded: how long a caller is willing to wait is the caller's, and a
+        watch waits as long as it was told to.
+        """
+        frame = await self._ws.receive_json()
+        return frame if isinstance(frame, dict) else {"raw": frame}
+
+
+async def connect(
+    session: aiohttp.ClientSession, base: str, token: str, *, receive_timeout: float | None = 15
+) -> HaWs:
     ws = await session.ws_connect(
-        dev_env.ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=15)
+        dev_env.ws_url(base), timeout=aiohttp.ClientWSTimeout(ws_receive=receive_timeout)
     )
     await asyncio.wait_for(ws.receive_json(), timeout=RECV_TIMEOUT_S)  # hello
     await ws.send_json({"type": "auth", "access_token": token})
@@ -120,6 +150,96 @@ async def cmd_send(base: str, token: str, raw_messages: list[str]) -> int:
             if not frame.get("success", False):
                 rc = 1
     return rc
+
+
+@dataclass(frozen=True)
+class Watch:
+    """What a `watch` run subscribes to and what makes it stop."""
+
+    topics: tuple[str, ...]
+    count: int | None
+    timeout: float | None
+
+
+class WatchArgumentError(ValueError):
+    """A `watch` invocation this driver cannot act on."""
+
+
+def parse_watch(args: list[str]) -> Watch:
+    """Read `[topic ...] [--count N] [--timeout SECONDS]`.
+
+    Naming no topic means all four rather than none: the mistake worth guarding
+    against is a watch that quietly listens to nothing, which is indistinguishable
+    from a backend that broadcasts nothing. An unknown topic is refused here
+    rather than by the backend, so a typo does not cost a round trip and a
+    partially-subscribed connection.
+    """
+
+    topics: list[str] = []
+    count: int | None = None
+    timeout: float | None = None
+    remaining = list(args)
+    while remaining:
+        word = remaining.pop(0)
+        if word in {"--count", "--timeout"}:
+            if not remaining:
+                raise WatchArgumentError(f"{word} needs a value")
+            raw = remaining.pop(0)
+            try:
+                value = float(raw)
+            except ValueError:
+                raise WatchArgumentError(f"{word} takes a number, not {raw!r}") from None
+            if value <= 0:
+                raise WatchArgumentError(f"{word} must be positive, not {raw!r}")
+            if word == "--count":
+                count = int(value)
+            else:
+                timeout = value
+        elif word in WATCH_TOPICS:
+            if word not in topics:
+                topics.append(word)
+        else:
+            raise WatchArgumentError(
+                f"unknown topic or flag {word!r}; topics are {', '.join(WATCH_TOPICS)}"
+            )
+    return Watch(tuple(topics) or WATCH_TOPICS, count, timeout)
+
+
+async def cmd_watch(base: str, token: str, watch: Watch) -> int:
+    """Subscribe, then print every event until a bound is reached or Ctrl-C."""
+
+    deadline = None if watch.timeout is None else time.monotonic() + watch.timeout
+    pending: dict[int, str] = {}
+    seen = 0
+    # No per-receive budget: an idle inventory is the normal state of a watch,
+    # and aiohttp's default would end the run rather than report quiet.
+    async with aiohttp.ClientSession() as session:
+        ha = await connect(session, base, token, receive_timeout=None)
+        for topic in watch.topics:
+            pending[await ha.send_only({"type": "haventory/subscribe", "topic": topic})] = topic
+        while pending or watch.count is None or seen < watch.count:
+            remaining_s = None if deadline is None else deadline - time.monotonic()
+            if remaining_s is not None and remaining_s <= 0:
+                break
+            try:
+                async with asyncio.timeout(remaining_s):
+                    frame = await ha.receive()
+            except TimeoutError:
+                break
+            answered = frame.get("id") if frame.get("type") == "result" else None
+            topic = pending.pop(answered, None) if isinstance(answered, int) else None
+            if topic is not None:
+                if not frame.get("success", False):
+                    print(json.dumps(frame, indent=2))
+                    print(f"[FAIL] subscribe {topic}", file=sys.stderr)
+                    return 1
+                print(f"[SUB] {topic}", file=sys.stderr)
+                continue
+            print(json.dumps(frame, indent=2), flush=True)
+            if frame.get("type") == "event":
+                seen += 1
+    print(f"[WATCH] {seen} event(s)", file=sys.stderr)
+    return 0
 
 
 class SmokeFailure(RuntimeError):
@@ -229,8 +349,13 @@ async def cmd_smoke(base: str, token: str) -> int:
 
 def main() -> None:
     args = sys.argv[1:]
-    if not args or args[0] not in {"status", "send", "smoke"}:
+    if not args or args[0] not in COMMANDS:
         print(__doc__, file=sys.stderr)
+        sys.exit(2)
+    try:
+        watch = parse_watch(args[1:]) if args[0] == "watch" else None
+    except WatchArgumentError as exc:
+        print(f"watch: {exc}", file=sys.stderr)
         sys.exit(2)
     target = dev_env.load_env(REPO_ROOT)
     base = target.base_url
@@ -246,10 +371,14 @@ def main() -> None:
             code = asyncio.run(cmd_status(base, token))
         elif args[0] == "send":
             code = asyncio.run(cmd_send(base, token, args[1:]))
+        elif watch is not None:
+            code = asyncio.run(cmd_watch(base, token, watch))
         else:
             code = asyncio.run(cmd_smoke(base, token))
     except SmokeFailure:
         code = 1
+    except KeyboardInterrupt:
+        code = 130
     except (TimeoutError, aiohttp.ClientError) as exc:
         print(f"Connection error: {exc} (is HA up at {base}?)", file=sys.stderr)
         code = 3

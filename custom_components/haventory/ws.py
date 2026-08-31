@@ -71,6 +71,7 @@ from .models import (
     new_uuid4,
     normalize_string_list,
     serialize_status_definition,
+    validate_area_filter,
     validate_attachment_meta,
     validate_item_filter,
     validate_sort,
@@ -426,11 +427,11 @@ async def ws_config(
 ) -> None:
     """Return the settings the frontend renders, not the whole options set.
 
-    Rate-limit tunables stay server-side. What is here is what the card cannot
-    know on its own: the configured heading, which quick-filter pills to offer,
-    the status vocabulary items are labelled with, and the attachment caps —
-    reported so the picker can refuse an oversized file before it is sent, never
-    so the backend can trust that it did.
+    What is here is what the card cannot know on its own: the configured
+    heading, which quick-filter pills to offer, the status vocabulary items are
+    labelled with, and the attachment caps — reported so the picker can refuse
+    an oversized file before it is sent, never so the backend can trust that it
+    did. An option the card does not draw stays server-side.
     """
     runtime = loaded_runtime(hass)
     title = runtime.card_title
@@ -543,7 +544,7 @@ async def ws_subscribe(
             msg.get("location_ids"), field_name="location_ids"
         )
     if "area_id" in msg:
-        sub["area_id"] = msg.get("area_id")
+        sub["area_id"] = validate_area_filter(msg.get("area_id"))
     if "include_subtree" in msg:
         sub["include_subtree"] = bool(msg.get("include_subtree"))
     if "inspection_overdue_only" in msg:

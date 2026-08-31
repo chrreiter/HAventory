@@ -157,7 +157,7 @@ haventory-card                     Lovelace element; store owner
     ├── hv-checkout-popover        desktop: anchored due-date step
     ├── hv-organize-dialog         Locations / Categories / Tags / Statuses
     ├── hv-import-sheet            input → preview → summary (+ invalid-document state)
-    ├── hv-diagnostics-panel       counts, drop counters, subscriptions, copy report
+    ├── hv-diagnostics-panel       subscriptions, counts, version, copy report
     ├── hv-confirm                 in-app confirmation (replaces window.confirm)
     ├── hv-banner                  the one alert treatment; the degraded and error
     │                              stacks are built in ui/banners.ts and rendered
@@ -194,13 +194,16 @@ the Locations section's from the same module — one level deeper, because a tre
 open and close.
 
 `hv-filter-panel` answers the same problem by showing less rather than by moving the stop:
-its category and tag groups draw the first `CATEGORY_CHIP_LIMIT` (4) and `TAG_CHIP_LIMIT`
-(8) chips and collapse the rest behind a "More…" chip carrying the hidden tally, so the
-group costs a fixed handful of tab stops whatever the household has named. A selected value
-past the cut is drawn anyway — the chip that says the filter is on must not be the one
-"More…" hides — and the expansion is per mount, left alone by "Clear all" and by the sheet's
-Cancel. Both lists arrive from `distinct_values` sorted alphabetically, so the cut is the
-head of the alphabet, not the most-used values; the tag group's add field takes any label as
+its category and tag groups draw `CATEGORY_CHIP_LIMIT` (4) and `TAG_CHIP_LIMIT` (8) chips and
+collapse the rest behind a "More…" chip carrying the hidden tally, so the group costs a fixed
+handful of tab stops whatever the household has named. A selected value past the cut is drawn
+anyway — the chip that says the filter is on must not be the one "More…" hides — and the
+expansion is per mount, left alone by "Clear all" and by the sheet's Cancel. Both lists arrive
+from `distinct_values` sorted alphabetically, which would spend those chips on whichever
+labels a household happens to have named first, so the cut is taken over `count` — ties by
+value, and never over the filter-priced `matching_count`, which moves as a filter is built and
+would reshuffle the row under the pointer. Expanding hands back the answer's own alphabetical
+order, which is what a long list is read in; the tag group's add field takes any label as
 typed, so nothing has to be expanded to reach one.
 
 Each of the four headings offers a create action, and the three that can be counted state
@@ -495,7 +498,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself, 
 | `modal.ts` | The centred dialogs' chrome, once: the backdrop/centring/panel CSS (`modalChrome`), the phone bottom-sheet restyle of it (`modalSheet`), and the `Modal` controller that owns the stacking base, the focus in and back out, the Escape binding and the panel markup. |
 | `relative-time.ts` | "2 h ago" / "Jul 31" formatting, overdue checks, and the `+N days` arithmetic the check-out chips use. |
 | `day-clock.ts` | `onDayChange(cb)`: one shared timer to the next local midnight, so everything that renders a date re-renders when the day turns. See "The day turning over". |
-| `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the `custom_fields_set` / `custom_fields_unset` diff. |
+| `item-form.ts` | Form model and payload building for the edit surfaces: validation per field, typed custom fields, tag normalization, and the save diff — an update names only the fields the edit changed, including the `custom_fields_set` / `custom_fields_unset` halves. |
 | `value-rewrite.ts` | Tag/category rename, merge and removal as batches of item updates. |
 | `fuzzy.ts` | Nearest-existing-value suggestion for the merge flow. |
 | `empty-state.ts` | The four empty-list situations: which one applies (`emptyKindFor`), its copy and offered actions, and the markup. |
@@ -698,6 +701,12 @@ Any other key in that record is ignored, so an older or newer payload never brea
   404 counts as missing; an inconclusive probe leaves the picture alone.
 - **Optimistic writes** stay as they were; a rejected save keeps the expander open with the
   user's text in it, and conflicts render as a banner with *View latest* / *Re-apply*.
+- **An item save carries only what the edit changed**, measured against the copy of the item
+  the form was filled from. The form stays open across live events, so by the time Save is
+  pressed the version it writes against can already carry another member's edit — sending
+  the whole form would put their field back the way this form found it, on a version fresh
+  enough for the write to be accepted. *Re-apply* resends that same diff, which is what lets
+  it land on top of the change that caused the conflict instead of over it.
 - **Bulk work is chunked**, so progress is determinate and cancel stops cleanly after the
   in-flight chunk. Nothing is rolled back — the endpoint is not transactional, and the UI
   says so.
@@ -766,15 +775,8 @@ Things jsdom cannot do, and how the tests handle it:
   changes through the item editor or the bulk bar's Move action, never by dragging the row
   onto a node of the sidebar tree.
 
-Run:
-
-```bash
-cd cards/haventory-card
-npx eslint .
-npm run typecheck
-npx vitest run
-npm run build
-```
+The frontend half of the gate is what runs them; the commands are in
+[CONTRIBUTING.md](../CONTRIBUTING.md#the-gate).
 
 ---
 

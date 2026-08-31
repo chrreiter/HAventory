@@ -30,13 +30,10 @@ Docker and filesystem through Git Bash instead; nothing else here depends on the
   HA_TOKEN=<long-lived access token>
   ```
 
-  It **wins over an inherited export**: a worktree carrying its own `.env` names the
-  instance that worktree is for, whatever a shell profile exported.
-  `HAVENTORY_IGNORE_ENV_FILE=1` hands the decision back to the environment for one run.
-  Every driver and harness prints the resolved target on stderr before it acts
-  (`[target] HA_BASE_URL=…`), and the Python ones print the store's counts with it — so
-  a run against the wrong inventory shows up in the first line instead of in a number
-  that looks off later.
+  Which instance that resolves to, and how to override it for one run, is
+  `scripts/dev_env.py`'s rule — written out in `docs/developing.md` → "Which instance a
+  helper talks to". Every driver and harness prints the resolved target on stderr before
+  it acts (`[target] HA_BASE_URL=…`), the Python ones with the store's counts.
 
   Do **not** put `HA_CONTAINER` in `.env` — `scripts/smoke_online.sh` purges the
   HAventory store from that container whenever it's set (see Gotchas).
@@ -46,12 +43,8 @@ Docker and filesystem through Git Bash instead; nothing else here depends on the
 
 ## Setup
 
-Once per clone (the SessionStart hook already does the first two):
-
-```bash
-uv sync
-(cd cards/haventory-card && npm ci)
-```
+The repository's own bootstrap is `docs/developing.md` → "Setup"; the SessionStart hook
+already runs it.
 
 One-time for the screenshot harness (installs Playwright + Chromium into the skill dir;
 `node_modules/` and `*.png` there are gitignored):
@@ -122,25 +115,33 @@ integration: the sidebar panel is registered in code, a dashboard is user data. 
 
 ### WebSocket driver — status / arbitrary commands / smoke
 
-`driver.py` holds **one authenticated WS connection** for a whole command sequence
-(so item `version`s and ids flow between steps — `scripts/ws_probe.py` is one message
-per connection and can't do that).
+`driver.py` holds **one authenticated WS connection** for a whole command sequence, so
+item `version`s and ids flow between steps and a subscription stays open while another
+window mutates.
 
 ```bash
 uv run python .claude/skills/run-haventory/driver.py status
 uv run python .claude/skills/run-haventory/driver.py smoke
 uv run python .claude/skills/run-haventory/driver.py send '{"type":"haventory/ping","echo":"hi"}' '{"type":"haventory/stats"}'
+uv run python .claude/skills/run-haventory/driver.py watch --count 3
+uv run python .claude/skills/run-haventory/driver.py watch items stats --timeout 60
 ```
 
 | command | what it does |
 |---|---|
 | `status` | HA version/state + `haventory/version`, `/health`, `/stats` in one JSON blob |
 | `send <json>...` | send frames sequentially on one connection; ids auto-assigned; prints each result frame; exit 1 if any `success: false` |
+| `watch [topic...]` | subscribe to `items`, `locations`, `stats`, `statuses` — or to the ones named — and print every event frame as it arrives. Runs until interrupted; `--count N` stops after N events, `--timeout SECONDS` after that much wall clock. A refused subscribe prints and exits 1 |
 | `smoke` | full CRUD user flow: create location → create item → case-insensitive search → `expected_version` update → stale-version `conflict` check → adjust quantity → delete both (self-cleaning, safe alongside existing data). Prints `[PASS]`/`[FAIL]` per step, ends `SMOKE OK` |
 
+`watch` is the "did that mutation actually broadcast?" tool: start it in one shell,
+mutate in another, and read what came out. It only subscribes, so it is safe against
+any instance.
+
 Command catalog + payload shapes: `docs/backend_api_contract.md` and `docs/data_shapes.md`.
-Subscriptions (watch events while mutating): `uv run python scripts/ws_subscribe.py`
-(env-driven, see its docstring). Seed data: `uv run python scripts/create_test_items.py`.
+Seeding an instance is one `haventory/import/execute` of a generated document — `driver.py
+send`, or `drive_import.mjs` below when the import sheet is what you want exercised — which
+creates the locations along with the items rather than one WS call per row.
 
 ### Screenshot / drive the card or panel in the real HA frontend
 
@@ -617,22 +618,16 @@ the disposable dev instance.
 
 ## Test
 
-Offline suites (no HA needed — full gate incl. lint is in CLAUDE.md):
+The repository's test surfaces are the sibling `/test-haventory` skill's job: the offline
+gate and its expected counts, the stress regimen, the browser smoke and the online pytest
+smokes. The in-process HA suite and its container recipe are in `docs/developing.md`.
 
-```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
-(cd cards/haventory-card && npx vitest run)
-```
-
-As of v0.3.1: backend 540 passed / 22 skipped; frontend 1094 passed across 51 files. Both
-counts only grow — a *smaller* one than the last release's means collection broke, not that
-tests were removed — so treat them as a floor, and re-pin them when a release moves them.
-The full gate, with the numbers kept next to it, is the sibling `/test-haventory` skill.
-
-The harness has its own unit cover for the parts that decide where a run looks and which
-instance it looks at: `card_views.mjs` (which views hold the card, which URL addresses them,
-what `--path` and `--dashboard` asked for, which `.env` wins), `probe.mjs` (which actions
-run in which order, and which screen a measurement was taken on) and `surfaces.mjs`, whose
+What lives here is the harness's own unit cover for the parts that decide where a run looks,
+which instance it looks at and whether it is signed in: `card_views.mjs` (which views hold
+the card, which URL addresses them, what `--path` and `--dashboard` asked for, which `.env`
+wins), `login.mjs` (the shape Home Assistant accepts the injected token in), `probe.mjs`
+(which actions run in which order, and which screen a measurement was taken on) and
+`surfaces.mjs`, whose
 tables are checked about themselves — every selector a desktop surface asserts **absent** has
 to be one a narrow surface asserts present, so a typo cannot leave a `hidden` check passing
 vacuously. No HA and no dependency beyond Node:
@@ -640,13 +635,6 @@ vacuously. No HA and no dependency beyond Node:
 ```bash
 cd .claude/skills/run-haventory && node --test
 ```
-
-The in-process HA integration suite (`scripts/test_integration.sh`, real HA core via phacc)
-runs directly on Linux/WSL2. It cannot run on a Windows host at all — the script builds a
-POSIX venv path and HA core imports `fcntl` — and a throwaway `python:3.14-slim` container is
-the proven way to get it there: one `docker run` with the repo bind-mounted, `pip install -r
-requirements-integration.txt`, then `pytest -o asyncio_mode=auto tests/integration`. That
-container path also covers a WSL install whose DNS is broken.
 
 Online smoke against the running container (non-destructive as long as
 `HA_CONTAINER` is unset — verify with `echo $HA_CONTAINER` first):
@@ -656,8 +644,8 @@ set -a; . ./.env; set +a
 RUN_ONLINE=1 bash scripts/smoke_online.sh
 ```
 
-Expected as of v0.3.1: `8 passed, 13 skipped` (the skips need `HA_CONTAINER`, i.e. the
-destructive clean-start mode), then `Online smoke test completed successfully.`
+Expected: `8 passed, 13 skipped` (the skips need `HA_CONTAINER`, i.e. the destructive
+clean-start mode), then `Online smoke test completed successfully.`
 
 ## Gotchas
 
@@ -725,8 +713,10 @@ destructive clean-start mode), then `Online smoke test completed successfully.`
   `docs/data_shapes.md`) — not `names`/`ids`.
 - **Login bypass**: the HA frontend accepts an injected `hassTokens` localStorage entry
   with the long-lived token as `access_token`, a future `expires`, and
-  `clientId === origin + "/"` (what `screenshot.mjs` does). No password needed, no
-  login form automation.
+  `clientId === origin + "/"`. No password needed, no login form automation. Every
+  harness gets it from `login.mjs` (`signIn(page|context, {base, token, dark})`), and
+  asks `atLoginPage(page)` right after its first navigation — a refused token is not an
+  error anywhere, it is a page where every selector times out.
 - **Playwright selectors pierce shadow DOM but text extraction does not** —
   `haventory-card` and its inner `input[placeholder="Search"]` are directly selectable
   despite Lit shadow roots, yet `locator.innerText()` on a shadow host reads its *light*

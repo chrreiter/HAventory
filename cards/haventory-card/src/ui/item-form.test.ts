@@ -289,9 +289,10 @@ describe('status in the form model', () => {
     expect(formFromItem(makeItem()).status).toBe('ok');
   });
 
-  it('rides along on both save payloads', () => {
-    const item = makeItem({ status: 'missing' });
-    expect(toUpdatePayload(formFromItem(item), item).status).toBe('missing');
+  it('rides along on both save payloads when the edit picked one', () => {
+    const item = makeItem({ status: 'ok' });
+    const model = { ...formFromItem(item), status: 'missing' };
+    expect(toUpdatePayload(model, item).status).toBe('missing');
     expect(toCreatePayload({ ...base(), name: 'A', status: 'missing' }).status).toBe('missing');
   });
 
@@ -355,20 +356,72 @@ describe('toCreatePayload', () => {
 });
 
 describe('toUpdatePayload', () => {
+  // A form is filled from one copy of the item and saved against another: while
+  // it was open, another member's edit reached the card and moved the version
+  // the save is checked against, so the write is accepted. A field nobody here
+  // touched must stay out of the payload — sending the form's copy of it puts
+  // their change back the way it was, with nothing for either side to notice.
+  it('carries the fields this edit changed and nothing else', () => {
+    const item = makeItem({ name: 'Multimeter', description: 'mine', quantity: 10, tags: ['meter'] });
+    const model = { ...formFromItem(item), description: 'mine, typo fixed' };
+
+    expect(toUpdatePayload(model, item)).toEqual({ description: 'mine, typo fixed' });
+  });
+
+  it('sends nothing for a form nobody typed into', () => {
+    const item = makeItem({
+      name: 'A',
+      quantity: 10,
+      category: 'Tools',
+      tags: ['meter'],
+      custom_fields: { serial: 'a' },
+    });
+
+    expect(toUpdatePayload(formFromItem(item), item)).toEqual({});
+  });
+
+  it('sends null for a field cleared to empty', () => {
+    const item = makeItem({ description: 'Fluke 117', category: 'Tools' });
+    const model = { ...formFromItem(item), description: '   ', category: '' };
+
+    const payload = toUpdatePayload(model, item);
+    expect(payload.description).toBe(null);
+    expect(payload.category).toBe(null);
+  });
+
+  it('clears the due date with the check-in that made it meaningless', () => {
+    const item = makeItem({ checked_out: true, due_date: '2026-07-31' });
+    const model = { ...formFromItem(item), checkedOut: false };
+
+    expect(toUpdatePayload(model, item)).toEqual({ checked_out: false, due_date: null });
+  });
+
+  it('sets exactly the custom fields this edit wrote', () => {
+    const item = makeItem({ custom_fields: { serial: 'a', price: 1 } });
+    const model = formFromItem(item);
+    model.customFields = model.customFields.map((r) => (r.key === 'price' ? { ...r, value: '2' } : r));
+
+    const payload = toUpdatePayload(model, item);
+    expect(payload.custom_fields_set).toEqual({ price: 2 });
+    expect(payload.custom_fields_unset).toBeUndefined();
+  });
+
+  it('sends neither half for a custom-field map nobody touched', () => {
+    const item = makeItem({ custom_fields: { serial: 'a', price: 1 } });
+
+    const payload = toUpdatePayload(formFromItem(item), item);
+    expect(payload.custom_fields_set).toBeUndefined();
+    expect(payload.custom_fields_unset).toBeUndefined();
+  });
+
   it('unsets exactly the custom fields the form no longer describes', () => {
     const item = makeItem({ custom_fields: { serial: 'a', price: 1, gone: 'x' } });
     const model = formFromItem(item);
     model.customFields = model.customFields.filter((r) => r.key !== 'gone');
 
     const payload = toUpdatePayload(model, item);
-    expect(payload.custom_fields_set).toEqual({ serial: 'a', price: 1 });
     expect(payload.custom_fields_unset).toEqual(['gone']);
-  });
-
-  it('omits the unset list entirely when nothing was removed', () => {
-    const item = makeItem({ custom_fields: { serial: 'a' } });
-    const payload = toUpdatePayload(formFromItem(item), item);
-    expect(payload.custom_fields_unset).toBeUndefined();
+    expect(payload.custom_fields_set).toBeUndefined();
   });
 
   it('treats a cleared value as an unset', () => {
@@ -377,8 +430,8 @@ describe('toUpdatePayload', () => {
     model.customFields = model.customFields.map((r) => ({ ...r, value: '' }));
 
     const payload = toUpdatePayload(model, item);
-    expect(payload.custom_fields_set).toEqual({});
     expect(payload.custom_fields_unset).toEqual(['serial']);
+    expect(payload.custom_fields_set).toBeUndefined();
   });
 });
 

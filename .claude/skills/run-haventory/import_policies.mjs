@@ -35,6 +35,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 
 import { cardPath, haConfig } from "./card_views.mjs";
+import { LOGIN_REJECTED, atLoginPage, signIn } from "./login.mjs";
 
 const skillDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -197,27 +198,11 @@ page.on("console", (msg) => {
 });
 page.on("pageerror", (err) => consoleErrors.push(`pageerror: ${err.message}`));
 
-await page.addInitScript(
-  ([hassUrl, accessToken]) => {
-    localStorage.setItem(
-      "hassTokens",
-      JSON.stringify({
-        access_token: accessToken,
-        token_type: "Bearer",
-        refresh_token: "unused-long-lived",
-        expires_in: 1800,
-        expires: Date.now() + 365 * 24 * 3600 * 1000,
-        hassUrl,
-        clientId: hassUrl + "/",
-      }),
-    );
-  },
-  [base, token],
-);
+await signIn(page, { base, token });
 
 await page.goto(base + urlPath, { waitUntil: "domcontentloaded" });
-if (page.url().includes("/auth/authorize")) {
-  console.error("Redirected to the login page — hassTokens injection was rejected. Is HA_TOKEN valid?");
+if (atLoginPage(page)) {
+  console.error(LOGIN_REJECTED);
   await browser.close();
   process.exit(1);
 }

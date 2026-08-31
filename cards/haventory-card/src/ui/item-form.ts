@@ -282,6 +282,9 @@ export function normalizeTags(tags: readonly string[]): string[] {
   return out;
 }
 
+/** Every field a create names and an update may name, as the wire spells them. */
+type CommonFields = ReturnType<typeof commonFields>;
+
 function commonFields(model: ItemFormModel) {
   return {
     name: model.name.trim(),
@@ -313,15 +316,50 @@ export function toCreatePayload(model: ItemFormModel): ItemCreate {
   return { ...commonFields(model), custom_fields: customFieldsFrom(model) };
 }
 
+/** Two field values, compared the way the wire sees them rather than by identity. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 /**
- * The update payload, including the explicit set/unset semantics the backend
- * wants: everything the form describes goes in `custom_fields_set`, and any key
- * the item had that the form no longer describes goes in `custom_fields_unset`.
+ * The update payload: what this edit changed, and nothing else.
+ *
+ * `baseline` is the item the form was *built* from, which is not the item the
+ * save is sent against — the two part company the moment another member's edit
+ * reaches the card while the form is open. The version travels with that newer
+ * copy, so the write is accepted; a field nobody here touched would then be
+ * written back to what the form was opened on, undoing them with nothing on
+ * either screen to say so. So a field rides along only where the form differs
+ * from the baseline, and the two behaviours the whole-form payload carried on
+ * purpose are kept: a field cleared to empty is a change to `null`, and
+ * checking an item in clears the due date it had.
+ *
+ * The custom-field map keeps its explicit halves, on the same terms:
+ * `custom_fields_set` names the keys this edit wrote, `custom_fields_unset` the
+ * keys it took away. The backend patches the stored map by key, so a key
+ * neither half names is left alone.
  */
-export function toUpdatePayload(model: ItemFormModel, original: Item): ItemUpdate {
-  const set = customFieldsFrom(model);
-  const unset = Object.keys(original.custom_fields ?? {}).filter((key) => !(key in set));
-  const payload: ItemUpdate = { ...commonFields(model), custom_fields_set: set };
+export function toUpdatePayload(model: ItemFormModel, baseline: Item): ItemUpdate {
+  const before = commonFields(formFromItem(baseline));
+  const after = commonFields(model);
+  const payload: ItemUpdate = {};
+  // One write per key rather than thirteen named assignments: `commonFields`
+  // is the list of what an update may carry, and it stays the only one.
+  const changed = payload as Record<string, unknown>;
+  for (const key of Object.keys(after) as (keyof CommonFields)[]) {
+    if (!sameValue(after[key], before[key])) changed[key] = after[key];
+  }
+
+  const stored = baseline.custom_fields ?? {};
+  const described = customFieldsFrom(model);
+  const set: Record<string, ScalarValue> = {};
+  for (const [key, value] of Object.entries(described)) {
+    if (stored[key] !== value) set[key] = value;
+  }
+  const unset = Object.keys(stored).filter((key) => !(key in described));
+  if (Object.keys(set).length) payload.custom_fields_set = set;
   if (unset.length) payload.custom_fields_unset = unset;
   return payload;
 }

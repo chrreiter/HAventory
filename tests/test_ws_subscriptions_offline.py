@@ -631,10 +631,10 @@ async def test_an_area_a_nested_location_already_resolves_to_is_silent() -> None
 async def test_location_update_announces_what_changed_once() -> None:
     """One event per call, keyed on the change rather than on the keys sent.
 
-    The card's location editor submits every field it holds on every save, so a
-    request carrying an unchanged ``new_parent_id`` beside a new name is a plain
-    rename and must say so. A request that changes two anchors at once is still
-    one move, and a request that changes nothing announces nothing.
+    A client may name a field it is not changing, so a request carrying an
+    unchanged ``new_parent_id`` beside a new name is a plain rename and must say
+    so. A request that changes two anchors at once is still one move, and a
+    request that changes nothing announces nothing.
     """
 
     hass = HomeAssistant()

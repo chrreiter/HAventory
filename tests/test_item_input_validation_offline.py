@@ -384,9 +384,10 @@ def test_an_item_over_the_custom_field_cap_may_not_grow_further() -> None:
 def test_a_pre_cap_description_may_be_resent_or_trimmed_but_not_grown() -> None:
     """Issue #437: the growth rule covers the scalar caps, not just the collections.
 
-    An editor saves the whole form, so an untouched over-cap description comes
-    back in the update payload — and the edit that trims some of the excess is
-    exactly the one a user digging out of it makes first.
+    A client that hands an item back whole re-sends the over-cap description it
+    read, and the edit that trims some of the excess is exactly the one a user
+    digging out of it makes first. Both have to be accepted; only growth is
+    refused.
     """
 
     legacy = "d" * (DESCRIPTION_MAX_LENGTH + 500)

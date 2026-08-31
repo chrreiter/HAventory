@@ -27,7 +27,7 @@ One HAventory device under Settings → Devices & services, carrying:
 *Due* includes today and *overdue* does not, here and everywhere else in HAventory — so
 each *due* count is its *overdue* twin plus whatever falls today, and never smaller than it.
 
-They update the moment something changes — a card edit, a `haventory.*` service call, an
+They update the moment something changes — a card edit, a `haventory.*` action, an
 import — with no polling interval to tune. The four date-derived ones also roll over at
 midnight, so "Checked out overdue count" grows overnight without anybody touching the
 inventory.
@@ -57,13 +57,13 @@ A worked example — tell whoever is home when something runs low:
 ```yaml
 automation:
   - alias: Notify when stock runs low
-    trigger:
-      platform: event
-      event_type: haventory_low_stock
-      event_data:
-        action: entered
-    action:
-      - service: notify.notify
+    triggers:
+      - trigger: event
+        event_type: haventory_low_stock
+        event_data:
+          action: entered
+    actions:
+      - action: notify.notify
         data:
           title: Running low
           message: >-
@@ -77,14 +77,14 @@ And the other direction — react to a specific item being checked out:
 ```yaml
 automation:
   - alias: Media room lights when the projector goes out
-    trigger:
-      platform: event
-      event_type: haventory_item_changed
-      event_data:
-        action: checked_out
-    condition: "{{ trigger.event.data.name == 'Projector' }}"
-    action:
-      - service: light.turn_on
+    triggers:
+      - trigger: event
+        event_type: haventory_item_changed
+        event_data:
+          action: checked_out
+    conditions: "{{ trigger.event.data.name == 'Projector' }}"
+    actions:
+      - action: light.turn_on
         target:
           entity_id: light.media_room
 ```
@@ -97,9 +97,9 @@ Services work the other way round: every `haventory.*` service returns the entit
 touched, so a script can chain calls through `response_variable` — see the same document's
 "Service responses".
 
-A service mutation also reaches any card left open, the same way a card's own edit does: an
-automation that restocks something repaints the list and the counts on every screen showing
-them, with nobody touching anything.
+A mutation made that way also reaches any card left open, the same way a card's own edit
+does: an automation that restocks something repaints the list and the counts on every
+screen showing them, with nobody touching anything.
 
 ## The calendar
 
@@ -136,12 +136,12 @@ birthday:
 ```yaml
 automation:
   - alias: Say what the inventory wants today
-    trigger:
-      platform: calendar
-      event: start
-      entity_id: calendar.haventory
-    action:
-      - service: notify.notify
+    triggers:
+      - trigger: calendar
+        event: start
+        entity_id: calendar.haventory
+    actions:
+      - action: notify.notify
         data:
           title: HAventory
           message: >-
@@ -178,21 +178,20 @@ has to pass before anything is late.
 
 When you have actually changed the filter, **bump** the reminder and the whole series moves
 on one step. That is what **Mark done** does; from an automation or a script it is one
-service call — say, when the smart plug on the boiler reports the service engineer's visit
-is done:
+action — say, wired to a button you press by the furnace once the filter is in:
 
 ```yaml
 automation:
   - alias: The filter has been changed
-    trigger:
-      platform: state
-      entity_id: input_button.hvac_filter_changed
-    action:
-      - service: haventory.reminder_bump
+    triggers:
+      - trigger: state
+        entity_id: input_button.hvac_filter_changed
+    actions:
+      - action: haventory.reminder_bump
         data:
           item_id: "0f2c…"
         response_variable: bumped
-      - service: notify.notify
+      - action: notify.notify
         data:
           message: "Next filter change: {{ bumped.item.reminder_date }}"
 ```
@@ -202,7 +201,7 @@ Setting and clearing a reminder are ordinary field writes, so they ride the item
 `reminder_interval`, and `null` for either clears it.
 
 ```yaml
-      - service: haventory.item_update
+      - action: haventory.item_update
         data:
           item_id: "0f2c…"
           reminder_date: "2026-09-01"

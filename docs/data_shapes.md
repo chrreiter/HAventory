@@ -89,25 +89,26 @@ after any number of bumps**: bumping a 31st series in a 30-day month lands on th
 the one after it is the 31st again. A past anchor is accepted and is what a reminder nobody
 has bumped looks like.
 
-Stores written before schema v8 carry none of the three; `migrate_7_to_8` writes the date and
-the interval as `null`, and `migrate_8_to_9` gives every reminder an anchor equal to its own
-date — which is what a series that has never been bumped under this rule has. A store from
-before v9 that carries no anchor reads the same way, so the two paths agree.
+A store written before the three fields existed carries none of them, and the load fills them
+in: the date and the interval as `null`, and every reminder's anchor as its own date — which
+is what a series that has never been bumped under this rule has. A store carrying a reminder
+but no anchor reads the same way, so the two paths agree.
 
 `status` is a stored per-item condition: exactly one slug from the store's `statuses`
 collection, seeded with `ok`, `missing` and `needs_repair`. It is **non-nullable** — setting
 `ok` is how a flagged state clears — and independent of `checked_out`/`quantity` (a
-checked-out item is not "missing"; missing means its whereabouts are unknown). Stores
-written before the field existed are migrated on load (schema v5's `migrate_4_to_5`
-backfills `ok`), and loading additionally tolerates a missing or unknown value as `ok`; an
-explicit unknown or null value in a write is rejected as `validation_error`.
+checked-out item is not "missing"; missing means its whereabouts are unknown). A store
+written before the field existed has it filled in on load (`ok`, unless the store's own
+`statuses` collection names the value it holds), and loading additionally tolerates a
+missing or unknown value as `ok`; an explicit unknown or null value in a write is rejected
+as `validation_error`.
 
 `attachments` is **metadata only** — the files live on disk, outside the store (see
 Attachments below). It is written by the two attachment commands and by nothing else:
 `ItemCreate` and `ItemUpdate` carry no such field, so an ordinary item save can never
 rewrite it. Unlike the derived `location_path`, attaching or detaching a file *is* an item
-edit and bumps `version` and `updated_at`. Absent on a payload written before schema v6,
-which reads as none.
+edit and bumps `version` and `updated_at`. Absent on a payload written before the field
+existed, which reads as none and is filled in with the empty list on load.
 
 Input shapes:
 - ItemCreate (request payload subset; only `name` required):
@@ -182,8 +183,10 @@ export document:
 - Both are absent from a document written before they existed, and read as those defaults.
 - `ok` is the fixed default: it is what an unknown stored value coerces to and what
   "flagged" (`status !== "ok"`) is defined against, so it is always present.
-- **An absent `statuses` section means the built-in three**, permanently — that is what
-  every store and every export document written before schema v6 carries.
+- **An absent `statuses` section means the built-in three**, permanently — that is what a
+  store or an export document written before the collection existed carries. A store that
+  carries one keeps exactly it: every built-in but `ok` can be deleted, so nothing seeds
+  into a collection that is already there.
 
 ### Attachments
 
@@ -294,7 +297,7 @@ counts items at the node or any descendant (so it is always >= the direct count)
   - "today" in those five is the day Home Assistant is configured for, read once per query — the same day the counts, the calendar entity and the card's chips use
   - `location_id?: uuid-v4|null`
   - `location_ids?: uuid-v4[]` (multi-select beside `location_id`; see the union rule below)
-  - `area_id?: string`
+  - `area_id?: string|null` (`null`, like an omitted key, is no area filter at all)
   - `include_subtree?: boolean` (governs the whole `location_id` + `location_ids` selection, not one entry)
   - `low_stock_first?: boolean`
   - `updated_after?: ISO8601Z` (strictly greater-than)
@@ -344,6 +347,15 @@ only predicate returns the whole inventory, and nothing in the reply says the fi
 apply. `sort` accepts `field` and `order` and nothing else. The accepted filter key set is
 exactly the list above, and it is read off the filter type itself, so a filter key added later
 is accepted the moment it is declared.
+
+**`area_id` is checked on its value too**, for the same reason: it is the one filter key
+answered by an index alone — an item's area is resolved from its location tree, which the
+item-by-item pass cannot walk — so a value that names no area would narrow nothing at all.
+Anything other than `null` or a string with non-whitespace in it is `validation_error`
+("area_id must be a non-empty string or null"), on `item/list` and on `haventory/subscribe`
+alike. Leading and trailing whitespace is trimmed off the rest. A well-formed `area_id` that
+no location resolves to is a normal empty answer, not a refusal — the integration reads Home
+Assistant's area registry and never decides what an area id may look like.
 
 ### Pagination
 
@@ -432,7 +444,7 @@ With a filter on the request, each category and tag entry also carries `matching
 ```json
 {
   "haventory_export_version": 1,
-  "schema_version": 4,
+  "schema_version": 1,
   "exported_at": "YYYY-MM-DDTHH:MM:SSZ",
   "integration_version": "0.0.1",
   "items": [ <Item>, ... ],
@@ -463,7 +475,7 @@ With a filter on the request, each category and tag entry also carries `matching
   "warnings": [ <ImportWarning>, ... ],
   "policy": "merge",
   "document": {
-    "haventory_export_version": 1, "schema_version": 4,
+    "haventory_export_version": 1, "schema_version": 1,
     "exported_at": "…", "integration_version": "0.0.1"
   },
   "items":     { "add": ["uuid"], "update": [], "conflict": [], "unchanged": [] },
@@ -483,6 +495,10 @@ With a filter on the request, each category and tag entry also carries `matching
   empty. Envelope problems (bad/missing versions, malformed `items`/`locations`, a
   `schema_version` newer than supported), invalid entities, duplicate ids, and broken
   references (e.g. an item's `location_id` with no matching location) all surface here.
+  One closed set of versions is the exception to "newer than supported": 2 through 9, the
+  stamps this project used before the schema was collapsed to 1. Every export taken on a
+  build before the collapse carries one of them and imports cleanly. That exception lives
+  for one release and is removed with the store-side adopter it belongs to.
   A document is held to what `Repository.load_state` accepts, not to the write path's input
   caps: the rules every release has enforced — the 120-character name limit, canonical
   timestamps, the `due_date` ⇔ `checked_out` invariant, every date's calendar validity
@@ -558,14 +574,14 @@ Subscription filters (`haventory/subscribe`) are matched against the payload abo
 against the repository:
 
 - `location_id` / `location_ids` / `include_subtree` read the item's `location_path.id_path` (or the location's own `path.id_path`). The scalar and the list are unioned exactly as `ItemFilter` unions them, and `include_subtree` (defaulting to **true** here, unlike the list filter) applies to the whole selection.
-- `area_id` reads the item's `effective_area_id`, so it selects the same area `ItemFilter.area_id` does. An item with no location carries `effective_area_id: null` and matches no area filter; a `null` or omitted `area_id` on the subscription means no area filter at all. `area_id` applies to the `items` topic only.
+- `area_id` reads the item's `effective_area_id`, so it selects the same area `ItemFilter.area_id` does — and is refused on the same terms: anything but `null` or a string with non-whitespace in it answers `validation_error` when the subscription is opened. An item with no location carries `effective_area_id: null` and matches no area filter; a `null` or omitted `area_id` on the subscription means no area filter at all. `area_id` applies to the `items` topic only.
 - Filters combine with AND, and every one of them is applied to the payload as it stands *after* the mutation. An item that leaves a filtered set produces no event for that subscription, so a client tracking one re-lists rather than waiting for a departure event — including after a `locations` `moved` event, which is the only signal that a subtree's `effective_area_id` was rewritten.
 
 ### Home Assistant bus events
 
 Fired on the HA bus after the durable write, from WebSocket mutations and `haventory.*`
-service calls alike. Separate from the WebSocket events above and unaffected by the rate
-limiter; see the API contract's "Home Assistant bus events".
+service calls alike. Separate from the WebSocket events above; see the API contract's
+"Home Assistant bus events".
 
 `haventory_item_changed`:
 ```json

@@ -946,6 +946,85 @@ describe('hv-organize-dialog: tags and categories', () => {
     expect(store.state.value.items.flatMap((i) => i.tags)).not.toContain('batery');
   });
 
+  // The confirmation is a dialog inside this one and reports its own dismissal
+  // as `cancel` — the same event, on the same element, that tells the host to
+  // take this dialog down. Backing out of one tag's delete must not read as
+  // "Organize was dismissed".
+  it('keeps Organize open when the remove confirmation is cancelled', async () => {
+    for (const how of ['click', 'escape'] as const) {
+      const { el, sr } = await mount({ items, tab: 'tags' });
+      let dismissed = 0;
+      el.addEventListener('cancel', () => {
+        dismissed += 1;
+      });
+
+      const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'batery')!;
+      const remove = row.querySelector('[data-testid="value-remove"]') as HTMLButtonElement;
+      remove.focus();
+      remove.click();
+      await settle(el);
+
+      const confirm = q(sr, '[data-testid="organize-confirm"]') as HTMLElement & { open: boolean };
+      expect(confirm.open, how).toBe(true);
+      if (how === 'click') {
+        (confirm.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
+      } else {
+        (confirm.shadowRoot?.querySelector('[data-testid="confirm-dialog"]') as HTMLElement).dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+        );
+      }
+      await settle(el);
+
+      expect(dismissed, how).toBe(0);
+      expect(confirm.open, how).toBe(false);
+      expect(q(sr, '[data-testid="organize-dialog"]'), how).toBeTruthy();
+      // Back where the question was asked from, so the next key press acts on
+      // the row rather than on whatever the browser fell back to.
+      expect(sr.activeElement, how).toBe(remove);
+      el.remove();
+    }
+  });
+
+  // What a real browser does with that return: the ✕ sits in row actions that
+  // are `visibility: hidden` again once the pointer is on the confirmation,
+  // and focusing an undrawn element is a silent no-op — jsdom lays nothing out
+  // and accepts it, so the refusal is modelled by stubbing the button's
+  // `focus`. The rescue lands on the row, whose `:focus-within` re-reveals the
+  // actions, and Tab continues from the user's place in the list (#678).
+  it('lands focus on the row when the browser refuses the hidden ✕', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'batery')!;
+    const remove = row.querySelector('[data-testid="value-remove"]') as HTMLButtonElement;
+    remove.focus();
+    remove.click();
+    await settle(el);
+
+    remove.focus = () => undefined;
+    const confirm = q(sr, '[data-testid="organize-confirm"]') as HTMLElement;
+    (confirm.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(sr.activeElement).toBe(row);
+  });
+
+  it('keeps an accepted removal from reading as this dialog answering', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+    let answered = 0;
+    el.addEventListener('confirm', () => {
+      answered += 1;
+    });
+
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'batery')!;
+    (row.querySelector('[data-testid="value-remove"]') as HTMLButtonElement).click();
+    await settle(el);
+    (q(sr, '[data-testid="organize-confirm"]') as HTMLElement).shadowRoot
+      ?.querySelector<HTMLButtonElement>('[data-testid="confirm-accept"]')
+      ?.click();
+    await settle(el);
+
+    expect(answered).toBe(0);
+  });
+
   it('says so when there is nothing to organize', async () => {
     const { sr } = await mount({ items: [], tab: 'tags' });
     expect(q(sr, '[data-testid="organize-empty"]')?.textContent).toContain('No tags in use yet');
@@ -1764,6 +1843,25 @@ describe('hv-organize-dialog: the language in force', () => {
     (q(sr, '[data-testid="organize-new-value"]') as HTMLButtonElement).click();
     await settle(el);
     expect(q(sr, '[data-testid="new-value-create"]')?.textContent?.trim()).toBe('Erstellen');
+  });
+
+  it('composes the {noun} strings without an article, so both genders read right', async () => {
+    // "Kategorie" is feminine and "Label" neuter; a German value carrying
+    // "Ein …" or "Neues …" in front of the placeholder is wrong for one of
+    // the two. The categories tab is the one that broke, so it is the pin.
+    setLanguage('de');
+    const { el, sr } = await mount({ tab: 'categories' });
+    (q(sr, '[data-testid="organize-new-value"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const input = q(sr, '[data-testid="new-value-name"]') as HTMLInputElement;
+    expect(input.placeholder).toBe('Kategorie hinzufügen …');
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await settle(el);
+    expect(q(sr, '[data-testid="new-value-error"]')?.textContent?.trim()).toBe(
+      'Kategorie braucht einen Namen.',
+    );
   });
 });
 

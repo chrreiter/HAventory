@@ -2,7 +2,7 @@ import { setLanguage } from '../i18n';
 import './hv-filter-panel';
 import type { HVFilterPanel } from './hv-filter-panel';
 import { defaultFilters } from '../store/store';
-import type { DistinctValues, Location, LocationTreeNode, StatusDefinition, StoreFilters } from '../store/types';
+import type { DistinctValue, DistinctValues, Location, LocationTreeNode, StatusDefinition, StoreFilters } from '../store/types';
 import { all, componentCss, mountComponent, q } from '../test.utils';
 
 const distinct: DistinctValues = {
@@ -370,8 +370,10 @@ describe('hv-filter-panel: tags', () => {
 });
 
 /**
- * A vocabulary larger than the label cap, named so the alphabetical order the
- * backend sends is also the order these read in.
+ * A vocabulary larger than the label cap, counted so the most-used labels are
+ * also the alphabetically first: these cases are about how many chips the cap
+ * leaves, and read the same whichever order the cut takes. Which labels the cut
+ * keeps is pinned below, on a vocabulary where the two orders disagree.
  */
 const manyTags = (count: number) =>
   Array.from({ length: count }, (_, i) => ({
@@ -465,6 +467,116 @@ describe('hv-filter-panel: the label cap', () => {
     expect(await stopsIn(122)).toBe(await stopsIn(30));
     // Eight chips, More…, the any/all pair and the add field.
     expect(await stopsIn(122)).toBe(12);
+  });
+});
+
+/**
+ * What `distinct_values` answers on a household whose common labels are late in
+ * the alphabet: twelve tags and six categories, alphabetical, the counts spread
+ * so the head of the alphabet is the rare end of the vocabulary.
+ */
+const skewed = {
+  categories: [
+    { value: 'Camping', count: 8 },
+    { value: 'Electronics', count: 72 },
+    { value: 'Food', count: 101 },
+    { value: 'Office', count: 11 },
+    { value: 'Tools', count: 12 },
+    { value: 'Toys', count: 29 },
+  ],
+  tags: [
+    { value: 'attic', count: 1 },
+    { value: 'batteries', count: 9 },
+    { value: 'camping', count: 2 },
+    { value: 'cellar', count: 3 },
+    { value: 'garden', count: 12 },
+    { value: 'kitchen', count: 30 },
+    { value: 'office', count: 4 },
+    { value: 'outdoor', count: 1 },
+    { value: 'pantry', count: 21 },
+    { value: 'seasonal', count: 14 },
+    { value: 'spare', count: 7 },
+    { value: 'winter', count: 6 },
+  ],
+  custom_field_keys: [],
+} satisfies DistinctValues;
+
+const shownValues = (el: HVFilterPanel, testid: string) =>
+  all(el, `[data-testid="${testid}"]`).map((c) => c.dataset.value);
+
+/** What a "More…" chip says is hidden, read off the tally rather than the label. */
+const tally = (el: HVFilterPanel, testid: string) =>
+  q(el, `[data-testid="${testid}"] .hv-tally`)!.textContent?.trim();
+
+describe('hv-filter-panel: which labels the cut keeps', () => {
+  it('shows the most-used tags, not the ones the alphabet leads with', async () => {
+    const el = await mount({}, { distinct: skewed });
+
+    expect(shownValues(el, 'filter-tag')).toEqual([
+      'kitchen',
+      'pantry',
+      'seasonal',
+      'garden',
+      'batteries',
+      'spare',
+      'winter',
+      'office',
+    ]);
+    expect(tally(el, 'filter-tag-more')).toBe('4');
+  });
+
+  it('shows the most-used categories the same way', async () => {
+    const el = await mount({}, { distinct: skewed });
+
+    expect(shownValues(el, 'filter-category')).toEqual(['Food', 'Electronics', 'Toys', 'Tools']);
+    expect(tally(el, 'filter-category-more')).toBe('2');
+  });
+
+  // Fed in reverse so the answer cannot come from the sort being stable: two
+  // equally used labels are ordered by the value, and the panel's order does not
+  // depend on which one the backend happened to send first.
+  it('orders two equally used labels alphabetically', async () => {
+    const tags: DistinctValue[] = [
+      { value: 'zinc', count: 9 },
+      { value: 'copper', count: 4 },
+      { value: 'brass', count: 4 },
+    ];
+    const el = await mount({}, { distinct: { ...skewed, tags } });
+
+    expect(shownValues(el, 'filter-tag')).toEqual(['zinc', 'brass', 'copper']);
+  });
+
+  // Ranking on the priced number would reshuffle the row on every keystroke of
+  // a filter being built, moving the chip out from under the pointer.
+  it('ranks on the whole count while a filter prices the chips', async () => {
+    const tags: DistinctValue[] = [
+      { value: 'attic', count: 1, matching_count: 1 },
+      { value: 'kitchen', count: 30, matching_count: 0 },
+    ];
+    const el = await mount({}, { distinct: { ...skewed, tags } });
+
+    expect(shownValues(el, 'filter-tag')).toEqual(['kitchen', 'attic']);
+  });
+
+  it('keeps a rarely used selected tag on screen past the cut', async () => {
+    const el = await mount({ tags: ['attic'] }, { distinct: skewed });
+    const shown = shownValues(el, 'filter-tag');
+
+    expect(shown).toHaveLength(9);
+    expect(shown.at(-1)).toBe('attic');
+    expect(tally(el, 'filter-tag-more')).toBe('3');
+  });
+
+  // A hundred labels are read in the order they are looked up in, so expanding
+  // hands back the answer's own alphabetical order rather than the ranking.
+  it('expands to the whole vocabulary, alphabetically', async () => {
+    const el = await mount({}, { distinct: skewed });
+    (q(el, '[data-testid="filter-tag-more"]') as HTMLButtonElement).click();
+    (q(el, '[data-testid="filter-category-more"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(shownValues(el, 'filter-tag')).toEqual(skewed.tags.map((t) => t.value));
+    expect(shownValues(el, 'filter-category')).toEqual(skewed.categories.map((c) => c.value));
   });
 });
 

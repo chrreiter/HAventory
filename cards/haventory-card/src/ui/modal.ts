@@ -123,6 +123,13 @@ export interface ModalHostOptions {
    * Enter completes and Escape aborts. Omitted, focus stays on the panel.
    */
   initialFocus?: () => HTMLElement | null | undefined;
+  /**
+   * Where focus goes when the close cannot return it to the opener — one the
+   * action removed, or one the browser refuses because it is hover-hidden with
+   * the pointer elsewhere. Called only when focus would otherwise be stranded
+   * on `<body>`; see `DialogFocus.sync`.
+   */
+  onOpenerGone?: () => void;
 }
 
 /**
@@ -163,7 +170,7 @@ export class Modal implements ReactiveController {
 
   hostUpdated(): void {
     const open = this._opts.open();
-    this._focus.sync(open, () => this._panel);
+    this._focus.sync(open, () => this._panel, () => this._opts.onOpenerGone?.());
     if (!open) {
       this._landed = false;
       return;

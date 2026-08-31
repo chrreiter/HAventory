@@ -5,6 +5,8 @@ Scenarios:
 - effective_area_id is null when no ancestor has area_id
 - area-only changes update effective_area_id without bumping item.version
 - the subscription matcher and item/list agree on which area an item is in
+- an area_id that names no area is refused by item/list and by subscribe
+- a real but empty area answers with no items, and an area holds against `q`
 """
 
 from __future__ import annotations
@@ -147,3 +149,103 @@ async def test_subscription_matcher_agrees_with_item_list_on_area() -> None:
 
     assert by_list == {"Whisk"}
     assert by_matcher == by_list
+
+
+async def _hass_with_two_areas() -> tuple[HomeAssistant, Repository]:
+    """A kitchen and a garage, one item each, both matching the same `q`."""
+
+    hass = HomeAssistant()
+    repo = Repository()
+    install_runtime(hass, repository=repo)
+    runtime_of(hass).store = DomainStore(hass)
+    ws_setup(hass)
+
+    kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
+    garage = repo.create_location(name="Garage", area_id="garage")
+    await ws_send(
+        hass, 1, "haventory/item/create", name="Kitchen widget", location_id=str(kitchen.id)
+    )
+    await ws_send(
+        hass, 2, "haventory/item/create", name="Garage widget", location_id=str(garage.id)
+    )
+    return hass, repo
+
+
+#: Values an `area_id` cannot resolve to an area. A blank string reaches the
+#: area index as no bucket at all, which is the same nothing an omitted key is,
+#: and an area is applied nowhere else in the query path.
+DEGENERATE_AREAS: tuple[object, ...] = ("", " ", "\t\n", 5, [], {}, True)
+
+
+@pytest.mark.parametrize("degenerate", DEGENERATE_AREAS)
+@pytest.mark.asyncio
+async def test_item_list_refuses_an_area_that_names_no_area(degenerate: object) -> None:
+    """`item/list` answers validation_error rather than the unfiltered inventory."""
+
+    hass, _repo = await _hass_with_two_areas()
+
+    res = await ws_send(hass, 3, "haventory/item/list", filter={"area_id": degenerate})
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+    assert "area_id" in res["error"]["message"]
+
+
+@pytest.mark.parametrize("degenerate", DEGENERATE_AREAS)
+@pytest.mark.asyncio
+async def test_subscribe_refuses_an_area_that_names_no_area(degenerate: object) -> None:
+    """The opener refuses it too, rather than opening a topic that delivers nothing."""
+
+    hass, _repo = await _hass_with_two_areas()
+
+    res = await ws_send(hass, 3, "haventory/subscribe", topic="items", area_id=degenerate)
+
+    assert res["success"] is False
+    assert res["error"]["code"] == "validation_error"
+    assert "area_id" in res["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_a_null_area_means_no_area_filter_on_both_doors() -> None:
+    """`null` is how a caller says "no area filter", on the filter and on the opener."""
+
+    hass, _repo = await _hass_with_two_areas()
+
+    listed = await ws_send(hass, 3, "haventory/item/list", filter={"area_id": None})
+    assert listed["success"] is True
+    assert {it["name"] for it in listed["result"]["items"]} == {"Kitchen widget", "Garage widget"}
+
+    opened = await ws_send(hass, 4, "haventory/subscribe", topic="items", area_id=None)
+    assert opened["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_an_area_nothing_is_in_answers_with_no_items() -> None:
+    """A real area holding nothing is the empty page — not a refusal, and not everything."""
+
+    hass, repo = await _hass_with_two_areas()
+    repo.create_location(name="Attic", area_id="attic")
+
+    listed = await ws_send(hass, 3, "haventory/item/list", filter={"area_id": "attic"})
+
+    assert listed["success"] is True
+    assert listed["result"]["items"] == []
+    assert listed["result"]["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_an_area_holds_when_the_filter_also_carries_q() -> None:
+    """The text search runs over the area's items, never over the whole inventory.
+
+    `q` is answered by the scan, and the scan carries no area predicate — so an
+    area that stopped narrowing the candidates would widen this answer to both.
+    """
+
+    hass, _repo = await _hass_with_two_areas()
+
+    listed = await ws_send(
+        hass, 3, "haventory/item/list", filter={"area_id": "kitchen", "q": "widget"}
+    )
+
+    assert listed["success"] is True
+    assert [it["name"] for it in listed["result"]["items"]] == ["Kitchen widget"]
