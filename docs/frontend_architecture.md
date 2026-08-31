@@ -352,17 +352,15 @@ element it names stays in the tree whether or not it is open — an `aria-contro
 resolves to nothing announces the control as controlling nothing. Only the contents come and
 go, so collapsing still discards the state inside. Every disclosure in the card is wired this
 way: `hv-filter-panel`'s location chip, `hv-full-view`'s sidebar headings and Filters button,
-`hv-card-shell`'s expand and filter buttons, `hv-item-editor`'s location, category and "More
-fields" fields, `hv-organize-dialog`'s two location pickers, and `hv-location-tree`'s rows and
-area bands. Ids are shadow-scoped, so the desktop panel and the phone sheet can both be
-mounted without colliding. `hv-overflow-menu` is the one disclosure outside this rule: a menu
-button announces its popup with `aria-haspopup`, so its menu is free to leave the DOM.
+`hv-card-shell`'s expand and filter buttons, `hv-item-editor`'s location and category fields,
+`hv-organize-dialog`'s two location pickers, and `hv-location-tree`'s rows and area bands.
+Ids are shadow-scoped, so the desktop panel and the phone sheet can both be mounted without
+colliding. `hv-overflow-menu` is the one disclosure outside this rule: a menu button
+announces its popup with `aria-haspopup`, so its menu is free to leave the DOM.
 
 Where the target keeps a rendered box of its own it is held in the tree with `hidden`, so an
 empty one neither paints nor takes a grid gap; a holder that sets a `display` of its own
-needs a `[hidden]` rule to go with it, because an author rule outranks the browser's. Where
-the contents belong to a layout the holder must not join — the item editor's "More fields"
-are cells of the form grid — the holder takes `display: contents` instead and stays empty.
+needs a `[hidden]` rule to go with it, because an author rule outranks the browser's.
 
 Two ids are generated rather than fixed, both in `hv-location-tree`: a row names a container
 derived from its node id, and an area band names one derived from its collapse key. Anything
@@ -671,8 +669,8 @@ Any other key in that record is ignored, so an older or newer payload never brea
 ## Behaviour worth knowing
 
 - **One edit form.** `hv-item-editor` is used by the inline expander, the full view and the
-  mobile sheet. On mobile it stacks and collapses description / dates / custom fields
-  behind a single "More fields" disclosure. Its action bar is sticky on **every** host, not
+  mobile sheet. On mobile it stacks into one column and shows the same fields, so the form
+  reads top to bottom on both widths. Its action bar is sticky on **every** host, not
   only the phone: each of them scrolls the form in a box (the card's list, the sheet, the
   expanded view's 70dvh cap), so Save and Cancel land below the fold on all three. The
   editor solves that once; no host grows a pinned footer of its own. The bar bleeds past

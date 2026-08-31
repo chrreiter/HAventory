@@ -359,6 +359,70 @@ describe('hv-item-editor: field parity', () => {
     expect(saves[0].changes?.inspection_date).toBe(addDays(7));
   });
 
+  // Every other way in is drawn on the box; the way back out was emptying the
+  // field with the keyboard, which nobody finds by looking at it.
+  it('takes the inspection date off again from a button beside the field', async () => {
+    const el = await mount(makeItem({ id: 'item-1', inspection_date: '2027-03-01', version: 3 }));
+    const saves = onSave(el);
+    const dateInput = () => q(el, '[data-testid="editor-inspection-date"]') as HTMLInputElement;
+    expect(dateInput().value).toBe('2027-03-01');
+
+    const clear = q(el, '[data-testid="editor-inspection-clear"]') as HTMLButtonElement;
+    expect(clear.getAttribute('aria-label')).toBe('Clear inspection date');
+    clear.click();
+    await el.updateComplete;
+
+    expect(dateInput().value).toBe('');
+    expect(el.dirty).toBe(true);
+
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+    expect(saves[0].changes?.inspection_date).toBe(null);
+  });
+
+  // Disabled rather than absent, on the terms the due date and the repeat are:
+  // a control that would do nothing keeps its place, so pressing it is not a
+  // race against the row resizing under the pointer.
+  it('leaves the remove button dead until there is a date to remove', async () => {
+    const el = await mount(makeItem({ id: '1', inspection_date: null }));
+    const clear = () => q(el, '[data-testid="editor-inspection-clear"]') as HTMLButtonElement;
+    expect(clear().disabled).toBe(true);
+
+    (all(el, '[data-testid="editor-inspection-offset"]')[0] as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(clear().disabled).toBe(false);
+  });
+
+  // The custom row is open because an interval of somebody's own is in force.
+  // Over an emptied field its chip would still be lit as the one that set the
+  // date, which is the state the presets are never left in.
+  it('shuts the +X days row when the date that row wrote is removed', async () => {
+    const el = await mount(makeItem({ id: '1', inspection_date: null }));
+    (q(el, '[data-testid="editor-inspection-offset-custom"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+    expect(q(el, '[data-testid="editor-inspection-custom"]')).toBeTruthy();
+
+    (q(el, '[data-testid="editor-inspection-clear"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect((q(el, '[data-testid="editor-inspection-date"]') as HTMLInputElement).value).toBe('');
+    expect(q(el, '[data-testid="editor-inspection-custom"]')).toBe(null);
+    expect(
+      q(el, '[data-testid="editor-inspection-offset-custom"]')?.classList.contains('on'),
+    ).toBe(false);
+  });
+
+  // The button disables itself on the empty field it has just made, and a
+  // disabled control leaves its focus on the page body — where Escape no longer
+  // reaches this form and the next Tab starts over from the top.
+  it('hands focus to the field it emptied rather than to the page', async () => {
+    const el = await mount(makeItem({ id: '1', inspection_date: '2027-03-01' }));
+
+    (q(el, '[data-testid="editor-inspection-clear"]') as HTMLButtonElement).click();
+    await el.updateComplete;
+
+    expect(el.shadowRoot?.activeElement).toBe(q(el, '[data-testid="editor-inspection-date"]'));
+  });
+
   /*
    * The check-out box holds two controls side by side and one of them has no
    * label, which is what put them on different lines: packed to the top of
@@ -1021,60 +1085,73 @@ describe('hv-item-editor: typed custom fields', () => {
 });
 
 describe('hv-item-editor: mobile layout', () => {
-  it('hides the rarely-used half behind one More fields disclosure', async () => {
+  // The wide form shows every field and is scrolled to the bottom; the phone
+  // form is the same form in one column. A field the phone reaches only through
+  // a control of its own is a field a household has to know is there.
+  it('stacks every field into one column, with nothing to open first', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }), { mobile: true });
 
-    // Primary fields stay visible...
-    expect(q(el, '[data-testid="editor-name"]')).toBeTruthy();
-    expect(q(el, '[data-testid="editor-tags"]')).toBeTruthy();
-    // ...the rest is collapsed, not dropped.
-    expect(q(el, '[data-testid="editor-description"]')).toBe(null);
-    expect(q(el, '[data-testid="editor-cf-add"]')).toBe(null);
+    for (const testid of [
+      'editor-name',
+      'editor-tags',
+      'editor-description',
+      'editor-due-date',
+      'editor-inspection-date',
+      'editor-reminder-date',
+      'editor-cf-add',
+    ]) {
+      expect(q(el, `[data-testid="${testid}"]`), testid).toBeTruthy();
+    }
+    // Every one of them is there for the scroll, with no disclosure in front.
+    expect(q(el, '[data-testid="editor-more-toggle"]')).toBe(null);
+  });
 
-    (q(el, '[data-testid="editor-more-toggle"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+  // The emptiest item is the one whose fields are easiest to leave out, and the
+  // create form is where every one of them is first set.
+  it('shows the same fields on a phone with nothing filled in yet', async () => {
+    const el = await mount(null, { mobile: true });
+
     expect(q(el, '[data-testid="editor-description"]')).toBeTruthy();
-    expect(q(el, '[data-testid="editor-cf-add"]')).toBeTruthy();
     expect(q(el, '[data-testid="editor-inspection-date"]')).toBeTruthy();
+    expect(q(el, '[data-testid="editor-cf-add"]')).toBeTruthy();
   });
 
-  // aria-expanded on its own says only that something opened; which element it
-  // opened was left to whatever happened to follow the toggle in reading order.
-  it('names what More fields discloses, open or shut', async () => {
+  // The fields an edit is usually about come first and the rest follows, which
+  // is the order the wide form reads in too.
+  it('keeps the rarely-touched fields below the rest, in their order', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }), { mobile: true });
-    const toggle = () => q(el, '[data-testid="editor-more-toggle"]') as HTMLButtonElement;
-    const id = 'editor-more-fields';
 
-    expect(toggle().getAttribute('aria-controls')).toBe(id);
-    expect(toggle().getAttribute('aria-expanded')).toBe('false');
-    // The id has to resolve in both states — a toggle pointing at nothing
-    // announces as controlling nothing — so the holder outlives the fields.
-    const shut = el.shadowRoot?.getElementById(id);
-    expect(shut, 'holder shut').toBeTruthy();
-    expect(shut?.children, 'no fields while shut').toHaveLength(0);
+    const order = all(
+      el,
+      [
+        '[data-testid="editor-name"]',
+        '[data-testid="editor-description"]',
+        '[data-testid="editor-inspection-date"]',
+        '[data-testid="editor-cf-add"]',
+      ].join(','),
+    ).map((node) => node.dataset.testid);
 
-    toggle().click();
-    await el.updateComplete;
-
-    expect(toggle().getAttribute('aria-expanded')).toBe('true');
-    expect(toggle().getAttribute('aria-controls')).toBe(id);
-    const open = el.shadowRoot?.getElementById(id);
-    expect(open?.querySelector('[data-testid="editor-description"]'), 'fields open inside it').toBeTruthy();
+    expect(order).toEqual([
+      'editor-name',
+      'editor-description',
+      'editor-inspection-date',
+      'editor-cf-add',
+    ]);
   });
 
-  it('summarises what is inside the disclosure', async () => {
-    const el = await mount(
-      makeItem({ id: '1', name: 'A', description: 'x', due_date: '2026-07-31', custom_fields: { k: 1 } }),
-      { mobile: true },
-    );
-    expect(q(el, '[data-testid="editor-more-toggle"]')?.textContent).toContain('description · dates · 1 custom');
-  });
+  // The field is rendered at a different point in the grid on each width, from
+  // one renderer: a label pointing at an id nothing carries names nothing.
+  it('names the description field on both widths', async () => {
+    for (const mobile of [true, false]) {
+      const el = await mount(makeItem({ id: '1', name: 'A' }), { mobile });
+      const field = q(el, '[data-testid="editor-description"]') as HTMLTextAreaElement;
 
-  it('names a reminder in the summary rather than folding it into "dates"', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A', reminder_date: '2026-09-01' }), {
-      mobile: true,
-    });
-    expect(q(el, '[data-testid="editor-more-toggle"]')?.textContent).toContain('reminder');
+      expect(field.id, `mobile=${mobile}`).toBeTruthy();
+      expect(q(el, `label[for="${field.id}"]`)?.textContent, `mobile=${mobile}`).toContain(
+        t('hv.field.description'),
+      );
+      el.remove();
+    }
   });
 });
 
@@ -2213,20 +2290,19 @@ describe('hv-item-editor: same-item refreshes', () => {
     expect(el.dirty).toBe(true);
   });
 
-  // On a phone the description lives behind the More fields disclosure, so the
-  // refresh has to leave that open too or the typing survives out of sight.
-  it('leaves the mobile disclosure open around the text it holds', async () => {
+  // The phone form renders the description from the other branch of the grid,
+  // so it is worth its own pass: the typing has to survive the refresh there
+  // as well, and be on screen rather than merely held in the model.
+  it('keeps typing on the phone form when the same item comes back', async () => {
     const el = await mount(makeItem({ id: 'i-1', name: 'Drill', version: 3 }), { mobile: true });
-    (q(el, '[data-testid="editor-more-toggle"]') as HTMLButtonElement).click();
-    await el.updateComplete;
     await type(el, 'editor-description', 'typed on a phone');
 
     await refreshed(el, { version: 4 });
 
-    expect((q(el, '[data-testid="editor-description"]') as HTMLInputElement)?.value).toBe(
+    expect((q(el, '[data-testid="editor-description"]') as HTMLTextAreaElement)?.value).toBe(
       'typed on a phone',
     );
-    expect(q(el, '[data-testid="editor-more-toggle"]')?.getAttribute('aria-expanded')).toBe('true');
+    expect(el.dirty).toBe(true);
   });
 
   it('adopts the attachments the refreshed item carries', async () => {
