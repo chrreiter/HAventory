@@ -1,15 +1,15 @@
 """Typed models and validation helpers for HAventory.
 
-This module defines the persisted shapes for Item and Location, along with
-lightweight input schemas for create/update/filter/sort operations. It also
-provides validation and normalization helpers to enforce invariants and produce
-denormalized location paths.
+``Item`` and ``Location`` are the persisted shapes; the create/update/filter/sort
+schemas beside them are what a surface hands in. Validation lives here rather
+than at the surfaces, so a WebSocket command, a service call and an import
+document refuse the same value for the same reason — and the refusal text is the
+whole of what a caller gets back, which is why the helpers take the name of the
+field to put in it.
 
-The intent is to keep these models framework-agnostic and free of I/O. Higher
-layers (WebSocket/API, storage) are expected to compose these helpers. The one
-Home Assistant import is `dt_util`, for the household's own calendar day: it
-reads a module global rather than a `hass`, and every date a user reads or
-writes is measured in that day.
+Free of I/O. The one Home Assistant import is `dt_util`, for the household's own
+calendar day: it reads a module global rather than a `hass`, and every date a
+user reads or writes is measured in that day.
 """
 
 from __future__ import annotations
@@ -470,18 +470,18 @@ class ItemFilter(TypedDict, total=False):
     low_stock_first: bool
     # When true, only items without a location (location_id is None)
     orphaned_only: bool
-    # When true, only items whose due_date has passed (see filter_items)
+    # When true, only items whose due_date has passed
     overdue_only: bool
     # When true, only items whose due date has come round — today included,
-    # unlike `overdue_only` (see filter_items)
+    # unlike `overdue_only`
     checked_out_due_only: bool
-    # When true, only items whose inspection_date has passed (see filter_items)
+    # When true, only items whose inspection_date has passed
     inspection_overdue_only: bool
     # When true, only items whose inspection is being asked for — today
-    # included, unlike `inspection_overdue_only` (see filter_items)
+    # included, unlike `inspection_overdue_only`
     inspection_due_only: bool
     # When true, only items whose reminder has come round — today included,
-    # like the two `*_due_only` keys above (see filter_items)
+    # like the two `*_due_only` keys above
     reminder_due_only: bool
     location_id: str | None
     # Multi-select beside the scalar above, unioned the same way — see
@@ -1874,9 +1874,9 @@ def item_reminder_is_due(item: Item, *, today: str = "") -> bool:
 def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
     """The selected location ids as UUIDs, dropping any that will not parse.
 
-    An unparsable id contributes nothing rather than raising, so a selection
-    of only bad ids matches nothing — which is what a single bad id among good
-    ones does too. The parse belongs here rather than in the per-item predicate: the
+    An unparsable id contributes nothing rather than raising, so a selection of
+    only bad ids matches nothing — which is what a single bad id among good ones
+    does too. The parse belongs here rather than in the per-item predicate: the
     selection is constant for a whole query, and rebuilding the same UUID once
     per candidate is measurable on an inventory of any size.
     """
@@ -2054,33 +2054,11 @@ def filter_items(
     *,
     known_statuses: Collection[str] = ITEM_STATUSES,
 ) -> list[Item]:
-    """Filter items according to ItemFilter semantics.
+    """Keep the items every key of ``flt`` accepts; each key is one test.
 
-    - q: case-insensitive match in name, description, tags, location display_path
-    - tags_any: at least one matches
-    - tags_all: all must be present
-    - category / categories: case-insensitive equals any of the selection
-    - status: exact match against one of the known statuses
-    - checked_out: exact match
-    - low_stock_only: quantity <= threshold (0 valid, None disables)
-    - orphaned_only: only items without a location (location_id is None)
-    - overdue_only: due_date set and strictly before today
-    - checked_out_due_only: due_date set and on or before today
-    - inspection_overdue_only: inspection_date set and strictly before today
-    - inspection_due_only: inspection_date set and on or before today
-    - reminder_due_only: reminder_date set and on or before today
-    - "today" in those five is the instance's local day, read once per query
-    - the three ``*_due_only`` keys count today and the two ``*overdue*`` ones do
-      not: a due date names the day something is being asked for, not the last
-      day it is not
-    - location_id / location_ids: equals any of the selection; include_subtree
-      optionally includes descendants (by prefix of id_path), one flag for all
-    - updated_after/created_after: ISO-8601 UTC with 'Z', strictly greater-than
-    - updated_before/created_before: ISO-8601 UTC with 'Z', strictly less-than
-
-    Each key the filter carries becomes one test, built once by
-    :func:`_filter_predicates`; an item is walked against those and no others,
-    and stops at the first one it fails.
+    The tests are built once by :func:`_filter_predicates` — one per key the
+    filter carries and none for the keys it does not — and an item stops at the
+    first one it fails. What each key means is on :class:`ItemFilter`.
     """
 
     if not flt:

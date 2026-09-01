@@ -178,7 +178,6 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
     """Persist immediately after a successful service mutation.
 
     Services are user-initiated and infrequent; prefer immediate durability.
-    Exposed for tests to monkeypatch failure paths.
     """
     await _storage_async_persist_repo(hass)
 

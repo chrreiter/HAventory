@@ -1,11 +1,14 @@
-"""In-memory repository with indexes and rich operations for HAventory.
+"""The in-memory source of truth: items, locations, statuses and their indexes.
 
-This module provides a synchronous repository class that maintains in-memory
-indexes for items and locations, implements CRUD, filtering/sorting/pagination,
-optimistic concurrency on items, and location subtree rename/move propagation.
+Every index is maintained by hand on each write. ``_reset_state`` is the one
+place the fields are listed and ``_index_item`` / ``_unindex_item`` the one pair
+that fills and empties them, so an index added to only some of the three reads
+as a stale bucket rather than as an error. A location rename or move is not an
+item edit: it rewrites the denormalized ``location_path`` under it and leaves
+``version`` and ``updated_at`` alone.
 
-The repository is framework-agnostic and designed to be exercised by offline
-tests and invoked by service/WebSocket layers.
+Synchronous and framework-agnostic — it holds no Home Assistant object, persists
+nothing and announces nothing. The caller saves, and the caller announces.
 """
 
 from __future__ import annotations
@@ -1524,14 +1527,12 @@ class Repository:
         new_parent_id: str | uuid.UUID | object | None = UNSET,
         area_id: str | uuid.UUID | object | None = UNSET,
     ) -> Location:
-        """Update location name and/or move under a new parent.
+        """Rename a location, move it under a new parent, set its area, or all three.
 
-        Args:
-            location_id: Target location ID.
-            name: Optional new name.
-            new_parent_id: Optional new parent. Pass ``None`` to move to root.
-                If omitted entirely (leave default sentinel), parent is unchanged.
-            area_id: Optional new area. Propagates to root of location tree.
+        ``new_parent_id`` and ``area_id`` tell "not provided" — the ``UNSET``
+        sentinel — from an explicit ``None``, which moves the location to the
+        root and clears the area. An area given here is propagated to the root
+        of the tree, which is the only node that stores one.
         """
 
         key = str(location_id)

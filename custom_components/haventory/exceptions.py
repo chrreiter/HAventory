@@ -1,11 +1,9 @@
 """Exception taxonomy for the HAventory integration.
 
-Defines a small hierarchy of exceptions used across services and the
-WebSocket API. These extend Home Assistant's HomeAssistantError to ensure
-consistent behavior when surfaced through the platform.
-
-All exceptions accept a human-readable message. ``str(exception)`` returns the
-message unchanged.
+Every exception here extends Home Assistant's ``HomeAssistantError``, so one
+raised inside a service call surfaces the way the platform expects, and
+``str(exception)`` is the message unchanged — which is what a WebSocket error
+envelope carries to a client.
 
 The taxonomy also owns how each error is logged, so the WebSocket and service
 boundaries cannot drift apart on severity.

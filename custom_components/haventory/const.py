@@ -1,8 +1,7 @@
 """Constants for the HAventory integration.
 
-Defines the integration domain, the public integration version, the config-entry
-option keys and their defaults, the entity platforms and the sensor catalog, and
-the Home Assistant bus event types.
+Each section below heads the constraint its constants carry — who else spells the
+same name, and what disagreeing with them costs.
 """
 
 from dataclasses import dataclass

@@ -1,7 +1,13 @@
-"""HAventory integration bootstrap.
+"""HAventory integration setup and teardown.
 
-This module initializes the integration, prepares persistent storage, and sets up
-the core data structures in hass.data.
+Stands the store, the repository and the runtime that carries them up, serves the
+card bundle and the media view, and registers the sidebar panel. Per-entry state
+lives on `entry.runtime_data`; `hass.data[DOMAIN]` keeps only the registrations
+Home Assistant cannot hand back, which outlive an entry and must not be made
+twice.
+
+The order inside `async_setup_entry` is a constraint rather than a style — each
+step's comment says what it is waiting for.
 """
 
 from __future__ import annotations
@@ -768,7 +774,7 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
         return
 
     # The panel is the card bundle's second element, so without a build there is
-    # nothing for it to load — same graceful skip the card loaders take.
+    # nothing for it to load — the same skip the card loaders take.
     if not os.path.isfile(_CARD_BUNDLE_PATH):  # noqa: ASYNC240
         give_back()
         LOGGER.debug(
