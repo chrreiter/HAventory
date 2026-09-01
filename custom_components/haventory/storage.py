@@ -11,9 +11,9 @@ Data shape persisted (Phase 1):
 
 The manager ensures first load initializes an empty dataset, fills in the fields
 a payload predates, and refuses a payload written by a schema version this build
-does not know. The one exception is the closed set of versions this project
-stamped before the schema was collapsed to 1: those are taken in for one release
-and restamped rather than refused.
+does not know. There are two such refusals, because there are two ways out: a
+stamp this project used before the schema was collapsed to 1 is reached by a
+0.8.x build, and anything above them by a newer HAventory.
 """
 
 from __future__ import annotations
@@ -266,15 +266,12 @@ class DomainStore:
         """Bring ``raw`` to the current schema, or refuse it.
 
         A payload at or below the current version is filled in where it predates
-        a field and persisted back. So is one carrying a schema version the
-        project used before the collapse: ``migrations.ADOPTABLE_SCHEMA_VERSIONS``
-        names exactly those, and they are taken in for one release rather than
-        refused, because the shapes underneath are the shapes this build reads.
+        a field and persisted back.
 
-        Raises ``SchemaDowngradeError`` when ``raw`` was written by a schema
-        version above that set — a genuinely newer build — and
-        ``CorruptSchemaVersionError`` when it carries no readable version at all.
-        Both leave the stored payload untouched.
+        Raises ``SchemaDowngradeError`` when ``raw`` carries a version above the
+        current one, with the message that names the way out of the version it
+        actually carries, and ``CorruptSchemaVersionError`` when it carries no
+        readable version at all. Both leave the stored payload untouched.
         """
 
         if not isinstance(raw, dict):  # Corrupted or unexpected
@@ -296,13 +293,14 @@ class DomainStore:
         if from_version == to_version:
             return await self._async_adopted(raw, from_version=from_version, to_version=to_version)
 
-        if from_version in migrations.ADOPTABLE_SCHEMA_VERSIONS and to_version == 1:
-            # The literal is deliberate: the amnesty belongs to the collapsed
-            # version and must not be inherited by whatever schema comes after
-            # it. A store stamped above the set still falls through to the
-            # refusal below.
-            _LOGGER.warning(
-                "Adopting a store stamped with a schema version from before the collapse",
+        if to_version == 1 and from_version in migrations.PRE_COLLAPSE_SCHEMA_VERSIONS:
+            # The literal is deliberate: these numbers name this project's own
+            # pre-collapse schemas only while the current one is 1. The schema
+            # after the collapse takes 2, and from that build's side a store
+            # stamped 2 through 9 is indistinguishable from a newer one, so it
+            # gets the refusal below instead of advice about a 0.8.x build.
+            _LOGGER.error(
+                "Refusing to load a store stamped before the schema collapse",
                 extra={
                     "domain": DOMAIN,
                     "op": "migrate",
@@ -311,7 +309,14 @@ class DomainStore:
                     "storage_key": self.key,
                 },
             )
-            return await self._async_adopted(raw, from_version=from_version, to_version=to_version)
+            raise SchemaDowngradeError(
+                f"stored data uses schema version {from_version}, which this build cannot "
+                f"read: it is neither the current schema ({to_version}) nor an older one this "
+                "build migrates forward, and no newer HAventory understands it either. "
+                "HAventory 0.8.x does: install 0.8.x, start Home Assistant once so it reads "
+                "and restamps the store, then upgrade again. The stored data was left "
+                "unchanged."
+            )
 
         if from_version > to_version:
             # Migrations are forward-only, so a newer payload would pass through

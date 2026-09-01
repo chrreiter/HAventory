@@ -148,7 +148,7 @@ def test_load_state_tolerates_missing_and_unknown_status() -> None:
 
 def _payload_written_before_the_field() -> dict:
     return {
-        "schema_version": 4,
+        "schema_version": 0,
         "items": {
             "a": {"id": "a", "name": "Hammer"},
             "b": {"id": "b", "name": "Drill", "status": "needs_repair"},

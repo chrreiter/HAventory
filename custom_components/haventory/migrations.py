@@ -1,10 +1,9 @@
 """Schema handling for HAventory persistent storage.
 
 Two things live here. ``migrate`` is the forward-only driver the storage layer
-calls for a payload stamped below the current version. ``adopt_dev_schema`` is
-the one-release amnesty: it fills in everything a store written before the
-schema was collapsed to 1 may not carry, so such a store can be read and
-restamped instead of refused.
+calls for a payload stamped below the current version. ``adopt_dev_schema``
+fills in every field a store may predate, so a store written before a field
+existed reaches the repository carrying it.
 
 Both are idempotent — they receive and return the entire persisted dict payload,
 and applying either twice leaves what the first pass produced.
@@ -21,13 +20,14 @@ from typing import Any, Final
 
 from .exceptions import SchemaDowngradeError
 
-# The stamps `adopt_dev_schema` is allowed to take in. Each of them names a
-# schema this project shipped to itself before the collapse, so a store carrying
-# one reads as *newer* than this build and would otherwise hit the downgrade
-# refusal. The set is closed — exactly those numbers, never `> CURRENT` — so a
-# store from a genuinely newer build is still refused, and it exists for one
-# release: it is deleted once the store it was written for has crossed.
-ADOPTABLE_SCHEMA_VERSIONS: Final[frozenset[int]] = frozenset(range(2, 10))
+# The stamps this project used before the schema was collapsed to 1. Nothing
+# reads such a store; the numbers are here so the refusal can name the one way
+# across — a 0.8.x build, which takes it in and restamps it — rather than
+# telling the user to upgrade to a HAventory that understands it. None does, and
+# none will: the schema after the collapse takes 2, which is why the set is
+# closed at 9 and why the storage layer checks it only while the current schema
+# is 1.
+PRE_COLLAPSE_SCHEMA_VERSIONS: Final[frozenset[int]] = frozenset(range(2, 10))
 
 # What an item with no readable status becomes. It is the one slug that cannot
 # be deleted, so it names something in every store. Frozen here rather than read
@@ -80,11 +80,9 @@ def adopt_dev_schema(payload: dict[str, Any]) -> dict[str, Any]:
     only ever filled in an absent field: the per-item status, the seeded status
     definitions and the per-item attachment list, the two reminder fields, and
     the reminder's series anchor. Nothing here rewrites a value that is there,
-    so it is safe to run on a store that already has all of it — which is what
-    lets it run on every payload this build reads rather than only on the stamps
-    ``ADOPTABLE_SCHEMA_VERSIONS`` names. A store stamped 1 before the collapse
-    gave 1 its meaning predates all of these fills and reads as current, so it
-    needs them as much as an adopted one does.
+    so it is safe to run on every payload this build reads — which it has to be:
+    a store stamped 1 before the collapse gave 1 its meaning predates all of
+    these fills and reads as current.
     """
 
     data: dict[str, Any] = deepcopy(payload) if isinstance(payload, dict) else {}

@@ -24,7 +24,7 @@ from custom_components.haventory.exceptions import (
     SchemaDowngradeError,
     StorageError,
 )
-from custom_components.haventory.migrations import ADOPTABLE_SCHEMA_VERSIONS
+from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
 from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import (
@@ -47,9 +47,10 @@ _STORED_ITEM_FIELDS: dict[str, Any] = {
     "reminder_anchor": None,
 }
 
-#: One above everything the amnesty covers: a store no build of this project
-#: wrote, and the only kind the downgrade refusal is left for.
-BEYOND_THE_ADOPTABLE_RANGE = max(ADOPTABLE_SCHEMA_VERSIONS) + 1
+#: One above every stamp this project used before the collapse: a store only a
+#: genuinely newer build could have written, which is what the downgrade wording
+#: is for.
+FROM_A_NEWER_BUILD = max(PRE_COLLAPSE_SCHEMA_VERSIONS) + 1
 
 #: A counter value no fresh load could reach, so reading it back would be visible.
 STALE_GENERATION = 17
@@ -277,22 +278,21 @@ async def test_a_store_already_holding_everything_is_not_rewritten(monkeypatch) 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stored_version", [0, *sorted(ADOPTABLE_SCHEMA_VERSIONS)])
-async def test_every_version_this_build_accepts_lands_at_v1(stored_version: int) -> None:
-    """A store from anywhere in the project's history loads, intact, stamped v1.
+async def test_a_store_with_no_stamp_lands_at_v1() -> None:
+    """The forward path: a store below the current version loads, intact, stamped v1.
 
-    The versions above the current one are the ones the amnesty takes in; 0 is a
-    store with no stamp at all. Both end up at the collapsed version with the
-    same fields filled in, because what a store carries is what it was written
-    with, not what its number claims.
+    0 is what an absent ``schema_version`` reads as, so this is every store
+    written before the key existed. It lands at the collapsed version with the
+    fields it predates filled in, because what a store carries is what it was
+    written with, not what its number claims.
     """
 
     hass = HomeAssistant()
-    key = f"test_store_forward_load_v{stored_version}"
+    key = "test_store_forward_load_v0"
     store = DomainStore(hass, key=key)
 
     pre_payload = {
-        "schema_version": stored_version,
+        "schema_version": 0,
         "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5}},
         "locations": {"l1": {"id": "l1", "name": "Garage"}},
     }
@@ -315,19 +315,52 @@ async def test_every_version_this_build_accepts_lands_at_v1(stored_version: int)
 
 
 @pytest.mark.asyncio
-async def test_newer_schema_version_is_refused_and_store_untouched() -> None:
-    """A payload from a newer build is refused; the store is left byte-for-byte intact.
+@pytest.mark.parametrize("stored_version", sorted(PRE_COLLAPSE_SCHEMA_VERSIONS))
+async def test_a_store_stamped_before_the_collapse_is_refused_towards_0_8(
+    stored_version: int,
+) -> None:
+    """The refusal names the build that reads such a store, not a newer one.
 
-    "Newer" is anything above the amnesty, which is the only kind of newer left:
-    the versions inside it were written by this project before the collapse and
-    are taken in instead.
+    No HAventory above this one understands these stamps — a 0.8.x build is the
+    only thing that does, and it is older — so the downgrade wording would send
+    the user looking for a release that does not exist.
     """
+
+    hass = HomeAssistant()
+    key = f"test_store_pre_collapse_v{stored_version}"
+    store = DomainStore(hass, key=key)
+
+    pre_payload = {
+        "schema_version": stored_version,
+        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5}},
+        "locations": {"l1": {"id": "l1", "name": "Garage"}},
+    }
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
+    await raw_store.async_save(deepcopy(pre_payload))
+
+    with pytest.raises(SchemaDowngradeError) as excinfo:
+        await store.async_load()
+
+    message = str(excinfo.value)
+    assert str(stored_version) in message
+    assert str(CURRENT_SCHEMA_VERSION) in message
+    assert "0.8" in message
+    # The wording a genuinely newer store gets would be a lie here.
+    assert "Upgrade HAventory" not in message
+
+    # A refusal writes nothing, so the store is still readable by the build named.
+    assert await raw_store.async_load() == pre_payload
+
+
+@pytest.mark.asyncio
+async def test_newer_schema_version_is_refused_and_store_untouched() -> None:
+    """A payload from a newer build is refused; the store is left byte-for-byte intact."""
 
     hass = HomeAssistant()
     key = "test_store_newer_schema_refused"
     store = DomainStore(hass, key=key)
 
-    newer_version = BEYOND_THE_ADOPTABLE_RANGE
+    newer_version = FROM_A_NEWER_BUILD
     pre_payload = {
         "schema_version": newer_version,
         "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5, "future_field": True}},
@@ -343,6 +376,7 @@ async def test_newer_schema_version_is_refused_and_store_untouched() -> None:
     message = str(excinfo.value)
     assert str(newer_version) in message
     assert str(CURRENT_SCHEMA_VERSION) in message
+    assert "Upgrade HAventory" in message
 
     # A downgrade refusal is a storage failure, so existing handlers still map it.
     assert isinstance(excinfo.value, StorageError)
@@ -352,10 +386,10 @@ async def test_newer_schema_version_is_refused_and_store_untouched() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_store_stamped_above_the_amnesty_is_refused_whatever_it_holds() -> None:
-    """The amnesty is a membership test, never "anything above the current one".
+async def test_a_store_from_a_newer_build_is_refused_whatever_it_holds() -> None:
+    """Refusing is about the stamp, never about whether the rows happen to parse.
 
-    A build that stamped something past the project's own range knows a shape
+    A build that stamped something past this project's own range knows a shape
     this one does not — a status ``color`` outside the vocabulary it validates,
     say, whose definition would be skipped on load and every item carrying its
     slug rewritten to the default on the next save. Refusing without a rewrite
@@ -363,10 +397,10 @@ async def test_a_store_stamped_above_the_amnesty_is_refused_whatever_it_holds() 
     """
 
     hass = HomeAssistant()
-    key = "test_store_above_the_amnesty"
+    key = "test_store_from_a_newer_build"
 
     written_by_a_newer_build = {
-        "schema_version": BEYOND_THE_ADOPTABLE_RANGE,
+        "schema_version": FROM_A_NEWER_BUILD,
         "items": {"i1": {"id": "i1", "name": "Drill", "status": "loaned", "attachments": []}},
         "locations": {},
         "statuses": {
@@ -398,7 +432,7 @@ async def test_newer_schema_version_never_reaches_migrations(monkeypatch) -> Non
 
     raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
     await raw_store.async_save(
-        {"schema_version": BEYOND_THE_ADOPTABLE_RANGE + 2, "items": {}, "locations": {}}
+        {"schema_version": FROM_A_NEWER_BUILD + 2, "items": {}, "locations": {}}
     )
 
     def _fail(_payload, *, from_version, to_version):  # type: ignore[no-untyped-def]

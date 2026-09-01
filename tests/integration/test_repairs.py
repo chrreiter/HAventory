@@ -17,7 +17,7 @@ from custom_components.haventory.const import (
     ISSUE_CORRUPT_STORE,
     ISSUE_SCHEMA_DOWNGRADE,
 )
-from custom_components.haventory.migrations import ADOPTABLE_SCHEMA_VERSIONS
+from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.components.repairs import repairs_flow_manager
@@ -30,11 +30,11 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 READABLE_ITEM_ID = str(uuid.uuid4())
 NAMELESS_ITEM_ID = str(uuid.uuid4())
-ADOPTED_ITEM_ID = str(uuid.uuid4())
+REFUSED_ITEM_ID = str(uuid.uuid4())
 
-#: One above everything the amnesty covers: a store no build of this project
-#: wrote, and the only kind that reaches the schema-downgrade card.
-BEYOND_THE_ADOPTABLE_RANGE = max(ADOPTABLE_SCHEMA_VERSIONS) + 1
+#: One above every stamp this project used before the collapse: a store only a
+#: genuinely newer build could have written.
+FROM_A_NEWER_BUILD = max(PRE_COLLAPSE_SCHEMA_VERSIONS) + 1
 
 
 def _stored(data: dict) -> dict:
@@ -65,7 +65,7 @@ async def test_a_newer_store_leaves_a_non_fixable_issue(
 ) -> None:
     """The refusal reaches Settings → Repairs, and the file it refuses is untouched."""
 
-    stored = _stored({"schema_version": BEYOND_THE_ADOPTABLE_RANGE, "items": {}, "locations": {}})
+    stored = _stored({"schema_version": FROM_A_NEWER_BUILD, "items": {}, "locations": {}})
     hass_storage[STORAGE_KEY] = stored
     before = dict(stored["data"])
 
@@ -84,32 +84,36 @@ async def test_a_newer_store_leaves_a_non_fixable_issue(
     assert hass_storage[STORAGE_KEY]["data"] == before
 
 
-async def test_a_store_from_before_the_collapse_sets_up_instead_of_carding(
+async def test_a_pre_collapse_store_cards_the_route_through_0_8(
     hass: HomeAssistant, hass_storage: dict
 ) -> None:
-    """The amnesty has to be told apart from the refusal here, or an upgrade stops.
+    """The card is where this refusal is read, so the sentence in it has to be the true one.
 
-    Both stamps are above this build's, and the refusal path ends on a card the
-    user cannot clear. A store the amnesty covers has to reach the inventory
-    instead — with no card left behind.
+    Both stamps reach the same card. The one a user restoring an old backup
+    actually hits is this one, and telling them to upgrade would leave them
+    looking for a release that never existed.
     """
 
-    hass_storage[STORAGE_KEY] = _stored(
+    stored = _stored(
         {
-            "schema_version": max(ADOPTABLE_SCHEMA_VERSIONS),
-            "items": {ADOPTED_ITEM_ID: {"id": ADOPTED_ITEM_ID, "name": "Hammer", "quantity": 2}},
+            "schema_version": max(PRE_COLLAPSE_SCHEMA_VERSIONS),
+            "items": {REFUSED_ITEM_ID: {"id": REFUSED_ITEM_ID, "name": "Hammer", "quantity": 2}},
             "locations": {},
         }
     )
+    hass_storage[STORAGE_KEY] = stored
+    before = dict(stored["data"])
 
     entry = await _added_entry(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id) is True
+    assert await hass.config_entries.async_setup(entry.entry_id) is False
     await hass.async_block_till_done()
 
-    assert entry.state is ConfigEntryState.LOADED
-    assert ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_SCHEMA_DOWNGRADE) is None
-    assert find_runtime(hass).repository.get_item(ADOPTED_ITEM_ID).name == "Hammer"
-    assert hass_storage[STORAGE_KEY]["data"]["schema_version"] == CURRENT_SCHEMA_VERSION
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    issue = ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_SCHEMA_DOWNGRADE)
+    assert issue is not None
+    assert "0.8" in issue.translation_placeholders["error"]
+    assert "Upgrade HAventory" not in issue.translation_placeholders["error"]
+    assert hass_storage[STORAGE_KEY]["data"] == before
 
 
 async def test_a_corrupt_row_offers_a_fix_that_backs_up_reloads_and_clears(

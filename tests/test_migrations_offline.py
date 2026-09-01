@@ -22,7 +22,7 @@ from custom_components.haventory.const import (
 )
 from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
 from custom_components.haventory.migrations import (
-    ADOPTABLE_SCHEMA_VERSIONS,
+    PRE_COLLAPSE_SCHEMA_VERSIONS,
     adopt_dev_schema,
     migrate,
 )
@@ -33,9 +33,6 @@ from custom_components.haventory.storage import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
-
-#: One above everything the amnesty covers: a store no build of this project wrote.
-BEYOND_THE_ADOPTABLE_RANGE = max(ADOPTABLE_SCHEMA_VERSIONS) + 1
 
 
 @pytest.mark.asyncio
@@ -153,22 +150,16 @@ async def test_log_context_on_corrupted_payload_via_storage(
 # -----------------------------
 
 
-def test_the_adoptable_set_is_closed_above() -> None:
-    """One past the range is not adoptable: the amnesty is membership, not `>=`.
+def test_the_pre_collapse_set_starts_right_above_the_current_schema() -> None:
+    """Every member is a refusal, and nothing at or below the current version is.
 
-    A store stamped there was written by a build that knows something this one
-    does not, and taking it in would relabel data nothing here can read.
+    The set decides which of the two refusals a stamp gets, so a member the
+    forward path also claims would be told to install 0.8.x for a store this
+    build reads perfectly well.
     """
 
-    assert BEYOND_THE_ADOPTABLE_RANGE not in ADOPTABLE_SCHEMA_VERSIONS
-
-
-def test_the_adoptable_set_leaves_the_forward_path_alone() -> None:
-    """0 and 1 are below the current version, so they migrate rather than being adopted."""
-
-    assert 0 not in ADOPTABLE_SCHEMA_VERSIONS
-    assert CURRENT_SCHEMA_VERSION not in ADOPTABLE_SCHEMA_VERSIONS
-    assert min(ADOPTABLE_SCHEMA_VERSIONS) == CURRENT_SCHEMA_VERSION + 1
+    assert min(PRE_COLLAPSE_SCHEMA_VERSIONS) == CURRENT_SCHEMA_VERSION + 1
+    assert 0 not in PRE_COLLAPSE_SCHEMA_VERSIONS
 
 
 def test_the_adopter_produces_every_stored_collection() -> None:

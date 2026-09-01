@@ -22,7 +22,7 @@ from custom_components.haventory.exceptions import (
     CorruptSchemaVersionError,
     SchemaDowngradeError,
 )
-from custom_components.haventory.migrations import ADOPTABLE_SCHEMA_VERSIONS
+from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
 from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
@@ -35,9 +35,9 @@ from homeassistant.helpers.storage import Store as HAStore
 from runtime_helpers import RETIRED_RATE_LIMIT_OPTIONS, repo_of, runtime_of, setup_entry
 from ws_helpers import RecordingConn, ws_send
 
-#: One above everything the amnesty covers: a store no build of this project
-#: wrote, and the only kind setup refuses on its schema version.
-BEYOND_THE_ADOPTABLE_RANGE = max(ADOPTABLE_SCHEMA_VERSIONS) + 1
+#: One above every stamp this project used before the collapse: a store only a
+#: genuinely newer build could have written.
+FROM_A_NEWER_BUILD = max(PRE_COLLAPSE_SCHEMA_VERSIONS) + 1
 
 
 def _health_records(caplog) -> list[logging.LogRecord]:
@@ -107,20 +107,20 @@ async def test_setup_entry_logs_populated_storage_at_debug(monkeypatch, caplog) 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stored_version", sorted(ADOPTABLE_SCHEMA_VERSIONS))
-async def test_setup_entry_adopts_a_store_from_before_the_collapse(
+@pytest.mark.parametrize("stored_version", sorted(PRE_COLLAPSE_SCHEMA_VERSIONS))
+async def test_setup_entry_sends_a_pre_collapse_store_to_0_8(
     monkeypatch, stored_version: int
 ) -> None:
-    """A store stamped inside the amnesty sets up, rather than stopping the entry.
+    """Setup stops with the wording that names the build such a store can cross on.
 
-    Its number is above this build's, which is the shape of the refusal below —
-    so the two paths have to be told apart here or an upgrade lands the owner on
-    the Repairs card instead of their inventory.
+    The number is above this build's, so it reaches the same refusal as data
+    from a newer build — and the newer-build wording tells the user to upgrade,
+    which no release will ever satisfy for these stamps.
     """
 
     hass = HomeAssistant()
     entry = ConfigEntry()
-    key = f"test_init_adopted_v{stored_version}"
+    key = f"test_init_pre_collapse_v{stored_version}"
     monkeypatch.setattr(haven_init, "STORAGE_KEY", key)
 
     item_id = "11111111-1111-4111-8111-111111111111"
@@ -132,10 +132,16 @@ async def test_setup_entry_adopts_a_store_from_before_the_collapse(
     raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
     await raw_store.async_save(deepcopy(pre_payload))
 
-    await setup_entry(hass, entry)
+    with pytest.raises(ConfigEntryError) as excinfo:
+        await haven_init.async_setup_entry(hass, entry)
 
-    assert repo_of(hass).get_item(item_id).name == "Screws"
-    assert (await raw_store.async_load())["schema_version"] == CURRENT_SCHEMA_VERSION
+    message = str(excinfo.value)
+    assert str(stored_version) in message
+    assert "0.8" in message
+    assert "Upgrade HAventory" not in message
+
+    assert await raw_store.async_load() == pre_payload
+    assert "repository" not in hass.data[haven_init.DOMAIN]
 
 
 @pytest.mark.asyncio
@@ -147,7 +153,7 @@ async def test_setup_entry_refuses_newer_schema_and_leaves_store_intact(monkeypa
     key = "test_init_newer_schema_refused"
     monkeypatch.setattr(haven_init, "STORAGE_KEY", key)
 
-    newer_version = BEYOND_THE_ADOPTABLE_RANGE
+    newer_version = FROM_A_NEWER_BUILD
     pre_payload = {
         "schema_version": newer_version,
         "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5}},
@@ -415,7 +421,7 @@ async def test_a_newer_store_also_reaches_settings_repairs(monkeypatch) -> None:
 
     async def _newer(self):  # type: ignore[no-untyped-def]
         raise SchemaDowngradeError(
-            f"stored data uses schema version {BEYOND_THE_ADOPTABLE_RANGE}, which is newer "
+            f"stored data uses schema version {FROM_A_NEWER_BUILD}, which is newer "
             f"than this build supports ({CURRENT_SCHEMA_VERSION})"
         )
 
@@ -427,7 +433,7 @@ async def test_a_newer_store_also_reaches_settings_repairs(monkeypatch) -> None:
     issue = _issues(hass)[(haven_init.DOMAIN, ISSUE_SCHEMA_DOWNGRADE)]
     assert issue["is_fixable"] is False
     assert issue["severity"] == "error"
-    assert str(BEYOND_THE_ADOPTABLE_RANGE) in issue["translation_placeholders"]["error"]
+    assert str(FROM_A_NEWER_BUILD) in issue["translation_placeholders"]["error"]
     # The build's own number reaches the card too, and it is the collapsed one.
     assert f"({CURRENT_SCHEMA_VERSION})" in issue["translation_placeholders"]["error"]
     assert issue["translation_placeholders"]["storage_key"] == STORAGE_KEY

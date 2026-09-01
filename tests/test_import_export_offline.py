@@ -23,7 +23,7 @@ import pytest
 from custom_components.haventory import import_export as ie
 from custom_components.haventory import media
 from custom_components.haventory.exceptions import StorageError, ValidationError
-from custom_components.haventory.migrations import ADOPTABLE_SCHEMA_VERSIONS
+from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
 from custom_components.haventory.models import (
     CATEGORY_MAX_LENGTH,
     CUSTOM_FIELD_KEY_MAX_LENGTH,
@@ -50,7 +50,7 @@ SEEDED_LOCATIONS = 2
 
 #: One above everything the import side takes in: a document from a build that
 #: knows a shape this one does not.
-BEYOND_THE_ADOPTABLE_RANGE = max(ADOPTABLE_SCHEMA_VERSIONS) + 1
+FROM_A_NEWER_BUILD = max(PRE_COLLAPSE_SCHEMA_VERSIONS) + 1
 
 
 def _new_hass() -> HomeAssistant:
@@ -380,7 +380,7 @@ def test_preview_schema_version_newer_than_supported() -> None:
     repo = Repository()
     doc = {
         "haventory_export_version": 1,
-        "schema_version": BEYOND_THE_ADOPTABLE_RANGE,
+        "schema_version": FROM_A_NEWER_BUILD,
         "items": [],
         "locations": [],
     }
@@ -389,7 +389,7 @@ def test_preview_schema_version_newer_than_supported() -> None:
     assert any(e["path"] == "schema_version" for e in report["errors"])
 
 
-@pytest.mark.parametrize("stamped", sorted(ADOPTABLE_SCHEMA_VERSIONS))
+@pytest.mark.parametrize("stamped", sorted(PRE_COLLAPSE_SCHEMA_VERSIONS))
 def test_a_document_stamped_before_the_collapse_previews_and_imports(stamped: int) -> None:
     """Every export in the wild carries such a stamp, the pre-upgrade one included.
 
