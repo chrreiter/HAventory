@@ -52,18 +52,13 @@ export function stopPendingIntervals(): void {
   liveIntervals.clear();
 }
 
-/** How many intervals the sweep is currently holding. */
-export function pendingIntervalCount(): number {
-  return liveIntervals.size;
-}
-
 /*
  * A `setTimeout` still pending when the environment goes away fails exactly the
  * same way an interval does, so it is swept the same way. One difference decides
  * the shape: a timeout fires once and is then gone, and nothing tells the set
- * that. The wrapper therefore wraps the handler and drops the id as it runs —
- * without that, every zero-delay wait a spec file makes stays in the set and the
- * count reports garbage.
+ * that. The wrapper therefore wraps the handler and drops the id as it runs, so
+ * the set holds what is still pending rather than every zero-delay wait the
+ * spec file has ever made.
  */
 const liveTimeouts = new Set<number>();
 const scheduleTimeout = window.setTimeout.bind(window);
@@ -95,11 +90,6 @@ window.clearTimeout = ((id?: number) => {
 export function stopPendingTimeouts(): void {
   for (const id of liveTimeouts) cancelTimeout(id);
   liveTimeouts.clear();
-}
-
-/** How many timeouts the sweep is currently holding. */
-export function pendingTimeoutCount(): number {
-  return liveTimeouts.size;
 }
 
 // Per spec file, immediately before the environment goes away. Fake timers
