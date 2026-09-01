@@ -141,9 +141,10 @@ client + OS version, date. Put it in the results log.
 
 Fixtures for A6–A8 are generated, never committed: `scripts/probe_fixtures.py` writes them
 into a temporary directory each run — its header says how much disk that takes — and
-`--fixtures-dir DIR` reuses one across runs. Reading the stored bytes needs either `HA_CONFIG_DIR` (a bind-mounted config) or
-`HA_CONTAINER` (read out through `docker exec`). Pillow comes from the non-default `probes`
-dependency group — `uv sync --group probes` first.
+`--fixtures-dir DIR` reuses one across runs. Reading the stored bytes needs either
+`HA_CONFIG_DIR` (a bind-mounted config) or `HA_CONTAINER` (read out through
+`docker exec`). Pillow comes from the non-default `probes` dependency group —
+`uv sync --group probes` first.
 
 ### B — Mobile / touch (companion app)
 
