@@ -1,12 +1,7 @@
-"""Offline tests for haventory/items/bulk WebSocket command.
+"""Offline tests for the `haventory/items/bulk` command.
 
-Scenarios:
-- mixed success and failure results are mapped by op_id
-- single persist when at least one operation succeeds (spy DomainStore.async_save)
-- a deleted row frees its attachment files, after the batch's one write
-- a failed write frees nothing
-- only the rows that were deleted free files
-- a row whose payload has the wrong shape fails only itself
+A row that fails takes only itself down, and a batch with nothing to apply
+writes nothing at all.
 """
 
 from __future__ import annotations
@@ -17,10 +12,9 @@ from custom_components.haventory.exceptions import StorageError
 from custom_components.haventory.models import AttachmentMeta, iso_utc_now, new_uuid4
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, runtime_of
+from runtime_helpers import runtime_of, ws_hass
 from ws_helpers import ws_send
 
 
@@ -28,11 +22,8 @@ from ws_helpers import ws_send
 async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
     """Bulk should return per-op results and persist once if any success."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
+    hass = ws_hass()
+    store = runtime_of(hass).store
 
     calls = {"count": 0}
 
@@ -41,7 +32,6 @@ async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
 
     monkeypatch.setattr(store, "async_save", _spy_save)
 
-    # Seed an item
     created = await ws_send(hass, 1, "haventory/item/create", name="Hammer", quantity=1)
     item_id = created["result"]["id"]
 
@@ -70,7 +60,6 @@ async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
     assert results["ok1"]["success"] is True and results["ok2"]["success"] is True
     assert results["bad1"]["success"] is False and results["bad2"]["success"] is False
 
-    # Persist should have been called at least once (for the successes)
     assert calls["count"] >= 1
 
 
@@ -78,11 +67,8 @@ async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
 async def test_bulk_empty_and_invalid_operations_and_duplicate_ids(monkeypatch) -> None:
     """Bulk: empty returns empty results; invalid type rejected; dup op_id rejects."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
+    hass = ws_hass()
+    store = runtime_of(hass).store
 
     calls = {"count": 0}
 
@@ -91,7 +77,6 @@ async def test_bulk_empty_and_invalid_operations_and_duplicate_ids(monkeypatch) 
 
     monkeypatch.setattr(store, "async_save", _spy_save)
 
-    # Empty operations list
     res = await ws_send(hass, 1, "haventory/items/bulk", operations=[])
     assert res["success"] is True and res["result"]["results"] == {}
     assert calls["count"] == 0  # nothing to persist
@@ -170,12 +155,9 @@ def _meta() -> AttachmentMeta:
 
 
 def _hass_with_store() -> tuple[HomeAssistant, Repository, DomainStore]:
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
+    store = runtime_of(hass).store
     return hass, repo, store
 
 
@@ -294,9 +276,7 @@ async def test_a_row_whose_tags_are_a_string_fails_only_itself() -> None:
     had while the rest of the batch runs.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Chisel", tags=["tools"])
     item_id = created["result"]["id"]

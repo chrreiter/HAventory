@@ -219,10 +219,6 @@ async def test_a_status_reassignment_reaches_the_bus_once_per_item(
     assert {p["action"] for p in payloads} == {"updated"}
 
 
-# -----------------------------
-# The local-midnight rollover
-# -----------------------------
-
 # 11:00 UTC on 22 August is 23:00 the same day in New Zealand, and 12:00:30 UTC
 # is half a minute past that household's midnight — while UTC is still on the
 # 22nd. A tick scheduled for UTC's midnight would not have fired at that

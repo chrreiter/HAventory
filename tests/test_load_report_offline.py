@@ -8,8 +8,9 @@ the setup path reading a file somebody else wrote.
 
 Two properties have to hold:
 
-- the walk **terminates** — a cyclic parent chain used to be followed forever,
-  once per item, during Home Assistant startup;
+- the walk **terminates** — a cyclic parent chain is followed once per item
+  during Home Assistant startup, so a walk that does not end never lets the
+  instance finish booting;
 - the damage is **reported** — entries that cannot be loaded are dropped from
   memory, and the next save would write the store without them.
 """
@@ -67,7 +68,7 @@ def _cyclic_payload() -> dict[str, object]:
 
 
 def test_a_cyclic_parent_chain_terminates() -> None:
-    """The load completes at all — it used to spin forever, during startup.
+    """The load completes at all, on a payload whose parents point in a circle.
 
     Asserted by the call returning rather than by a wall-clock bound, which is
     what makes it meaningful in CI.
@@ -257,11 +258,6 @@ def test_has_corruption_covers_every_kind(report: LoadReport, expected: bool) ->
     assert report.has_corruption is expected
 
 
-# --------------------------------------------------------------------------- #
-# The reset a load starts from
-# --------------------------------------------------------------------------- #
-
-
 def test_a_reload_leaves_exactly_what_a_fresh_repository_holds() -> None:
     """One list of fields, so neither construction path can outgrow the other.
 
@@ -300,11 +296,6 @@ def test_a_payload_that_is_not_a_dict_reports_an_empty_load() -> None:
 
     assert repo.last_load_report == LoadReport()
     assert repo.export_state()["items"] == {}
-
-
-# --------------------------------------------------------------------------- #
-# Names the load path used to invent
-# --------------------------------------------------------------------------- #
 
 
 #: Marks a key a case wants *absent* rather than set to something unreadable.
@@ -353,10 +344,10 @@ UNREADABLE_IDS = [label for label, _ in UNREADABLE_NAMES]
 def test_an_item_with_no_readable_name_is_dropped(label: str, overrides: dict[str, object]) -> None:
     """A row no write path could have produced is corrupt, not an item named "".
 
-    The write paths all refuse a name that is empty after a trim. The load path
-    used to coerce instead, which put a row in memory the model rejects and made
-    it permanent on the next save — and an empty name indexes no search tokens,
-    so the row is unfindable as well as unnameable.
+    The write paths all refuse a name that is empty after a trim, so the load
+    path drops such a row rather than coercing it: a coerced row is one the model
+    itself rejects, made permanent by the next save, and an empty name indexes no
+    search tokens, so it is unfindable as well as unnameable.
     """
 
     item_id = str(uuid.uuid4())

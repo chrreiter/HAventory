@@ -1,15 +1,4 @@
-"""Offline tests for the Home Assistant bus events.
-
-Scenarios:
-- every item mutation fires exactly one `haventory_item_changed` with the
-  documented keys, and the action vocabulary matches the WebSocket one
-- low-stock transitions fire once on the crossing and not again below it
-- a restock fires `cleared`; deleting a low item fires `cleared` with no name
-- the snapshot seeded at setup keeps a restart from re-announcing
-- a torn-down entry makes the helper a no-op rather than a `KeyError`
-- setup tracks the instance's local midnight, the tick broadcasts the counts to
-  a `stats` subscriber, unload cancels it, and a failing broadcast is logged
-"""
+"""Offline tests for the Home Assistant bus events."""
 
 from __future__ import annotations
 
@@ -26,7 +15,6 @@ from custom_components.haventory.const import (
 )
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.serialization import serialize_item
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
 from runtime_helpers import (
@@ -36,6 +24,7 @@ from runtime_helpers import (
     setup_entry,
     unload_entry,
     unload_runtime,
+    ws_hass,
 )
 from ws_helpers import ITEM_ACTIONS, RecordingConn, ws_send
 
@@ -67,10 +56,8 @@ async def test_every_websocket_item_mutation_reaches_the_bus() -> None:
     so the bus action is asserted against the one the WS event carried.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Widget", quantity=5)
     item_id = created["result"]["id"]
@@ -252,11 +239,6 @@ def test_low_stock_ids_are_a_snapshot_not_the_live_index() -> None:
     assert before == frozenset({str(item.id)})
 
 
-# -----------------------------
-# Bulk rewrites and location edits
-# -----------------------------
-
-
 @pytest.mark.asyncio
 async def test_deleting_a_status_with_reassign_to_announces_every_item_it_rewrote() -> None:
     """The one mutation path that moved items and told nobody.
@@ -267,10 +249,8 @@ async def test_deleting_a_status_with_reassign_to_announces_every_item_it_rewrot
     event fires on every path.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
     repo = repo_of(hass)
     moved = [repo.create_item({"name": f"Item {n}", "status": "missing"}) for n in range(3)]
     repo.create_item({"name": "Untouched"})
@@ -309,10 +289,8 @@ async def test_renaming_a_location_repaints_without_announcing_an_item_change() 
     vocabulary has no location word.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
     repo = repo_of(hass)
     garage = repo.create_location(name="Garage")
     repo.create_item({"name": "Ladder", "location_id": str(garage.id)})
@@ -332,10 +310,8 @@ async def test_renaming_a_location_repaints_without_announcing_an_item_change() 
 async def test_a_location_save_that_changes_no_path_repaints_nothing() -> None:
     """The control: a re-save with the same name is not a reason to recount."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
     repo = repo_of(hass)
     garage = repo.create_location(name="Garage")
     hass.dispatcher_sends.clear()
@@ -352,10 +328,8 @@ async def test_a_location_save_that_changes_no_path_repaints_nothing() -> None:
 async def test_moving_a_subtree_repaints_the_paths_it_rewrote() -> None:
     """`move_subtree` rewrites every path below the moved node."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
     repo = repo_of(hass)
     garage = repo.create_location(name="Garage")
     cellar = repo.create_location(name="Cellar")
@@ -403,10 +377,8 @@ async def test_creating_and_deleting_a_location_repaints_the_count() -> None:
     edit.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
     hass.dispatcher_sends.clear()
 
     created = await ws_send(hass, 1, "haventory/location/create", name="Garage")
@@ -438,11 +410,6 @@ async def test_the_location_services_repaint_the_count_too() -> None:
     await services_mod.service_location_delete(hass, {"location_id": created["location"]["id"]})
     assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
     assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
-
-
-# -----------------------------
-# The day rollover
-# -----------------------------
 
 
 def _rollover_action(hass: HomeAssistant):

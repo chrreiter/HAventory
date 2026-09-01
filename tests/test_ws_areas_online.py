@@ -3,16 +3,12 @@ import uuid
 
 import pytest
 
-from online_helpers import expect_result, id_counter, open_ws
+from online_helpers import expect_result, id_counter, open_ws, requires_online
 
-pytestmark = pytest.mark.online
+pytestmark = [pytest.mark.online, requires_online]
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 async def test_ws_areas_list_with_created_areas() -> None:
     """Create temporary areas via HA WS API and assert haventory/areas/list includes them.
 

@@ -134,7 +134,7 @@ def runtime_of(hass: HomeAssistant) -> HAventoryRuntime:
 
 
 def repo_of(hass: HomeAssistant) -> Repository:
-    """The installed repository — what `hass.data[DOMAIN]["repository"]` used to be."""
+    """The installed repository, for a test that asserts on what setup built."""
 
     return runtime_of(hass).repository
 

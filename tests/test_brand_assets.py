@@ -72,11 +72,6 @@ SUBPATHS = 7
 FLATTEN_TOLERANCE = 0.05
 
 
-# --------------------------------------------------------------------------- #
-# Reading the three copies
-# --------------------------------------------------------------------------- #
-
-
 def card_mark_path() -> str:
     """``HAVENTORY_MARK_PATH``, rebuilt from the groups it is joined from.
 
@@ -151,11 +146,6 @@ def png_shape(filename: str) -> tuple[int, int, int, int]:
     header, _ = png_parts((BRAND_DIR / filename).read_bytes())
     width, height, depth, color_type = struct.unpack(">IIBB", header[:10])
     return width, height, depth, color_type
-
-
-# --------------------------------------------------------------------------- #
-# Normalising one outline to a canonical form
-# --------------------------------------------------------------------------- #
 
 
 def _point(point: tuple[float, float]) -> tuple[float, float]:
@@ -241,11 +231,6 @@ def outline(path: str) -> list[tuple[tuple[object, ...], ...]]:
     return sorted(canonical(subpath) for subpath in parse_path(path))
 
 
-# --------------------------------------------------------------------------- #
-# The mark, across the copies
-# --------------------------------------------------------------------------- #
-
-
 def test_the_card_mark_and_the_social_preview_describe_one_shape() -> None:
     """Two spellings, two fill rules, one outline.
 
@@ -299,11 +284,6 @@ def test_the_social_previews_subpaths_are_all_wound_alike() -> None:
     assert 'fill-rule="evenodd"' in source
     assert len(subpaths) == SUBPATHS
     assert {winding(subpath) for subpath in subpaths} == {CLOCKWISE}
-
-
-# --------------------------------------------------------------------------- #
-# The brand images
-# --------------------------------------------------------------------------- #
 
 
 def brand_files() -> dict[str, tuple[int, int]]:

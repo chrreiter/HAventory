@@ -1,16 +1,8 @@
-"""Offline tests for the error-mapping guarantees of the WS API.
+"""Offline tests for the error taxonomy every `haventory/*` command answers in.
 
-Scenarios:
-- every registered haventory/* command is wrapped by ws_guard
-- unexpected (non-domain) exceptions map to unknown_error with a generic
-  message; exception details never reach the client payload
-- previously unguarded commands surface domain errors with taxonomy codes
-  (stats/health/location list/tree with missing repository -> storage_error;
-  subscribe with a bad topic -> validation_error)
-- unsubscribe validates the subscription id -> validation_error
-- bulk: a malformed per-op payload fails only its own op; unexpected per-op
-  errors map to a per-op unknown_error without killing the batch
-- broadcast failures never turn a successful mutation into an error
+An unexpected exception maps to `unknown_error` carrying a generic message:
+what it says reaches a browser, so the detail belongs in the log and nowhere
+else.
 """
 
 from __future__ import annotations

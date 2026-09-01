@@ -1,14 +1,7 @@
-"""Offline tests for HAventory storage manager.
+"""Offline tests for the HAventory store.
 
-Scenarios:
-- Initial load returns an empty dataset with correct schema_version
-- Save then load returns equal data (roundtrip)
-- Migration hook is invoked when schema_version differs
-- Migration failure raises StorageError and does not persist changes
-- A payload written by a newer schema is refused without rewriting the store
-- A payload whose schema_version is not an integer is refused, never coerced
-- A saved payload carries the stored collections and the schema number, nothing else
-- A store still carrying `_generation` loads, and the key is not read back
+A refusal must leave the file untouched: the store on disk is the household's
+only copy, and a build that cannot read it has no business rewriting it.
 """
 
 from __future__ import annotations
@@ -48,14 +41,11 @@ STALE_GENERATION = 17
 async def test_initial_load_returns_empty_dataset() -> None:
     """First load initializes an empty dataset."""
 
-    # Arrange
     hass = HomeAssistant()
     store = DomainStore(hass, key="test_store_initial_clean")
 
-    # Act
     data = await store.async_load()
 
-    # Assert
     assert isinstance(data, dict)
     assert data["schema_version"] == CURRENT_SCHEMA_VERSION
     assert data["items"] == {}
@@ -66,7 +56,6 @@ async def test_initial_load_returns_empty_dataset() -> None:
 async def test_save_then_load_roundtrip() -> None:
     """Save then load equality."""
 
-    # Arrange
     hass = HomeAssistant()
     store = DomainStore(hass, key="test_store_roundtrip")
     payload = {
@@ -78,11 +67,9 @@ async def test_save_then_load_roundtrip() -> None:
         "statuses": {},
     }
 
-    # Act
     await store.async_save(payload)
     loaded = await store.async_load()
 
-    # Assert
     assert loaded == payload
 
 
@@ -101,9 +88,7 @@ async def test_repository_roundtrip_preserves_string_area_ids_and_filtering() ->
     payload = await store.async_load()
     repo2 = Repository.from_state(payload)
 
-    # area_id preserved
     assert repo2.get_location(loc.id).name == "Pantry"
-    # list by area works
     page = repo2.list_items(flt={"area_id": "kitchen"})  # type: ignore[typeddict-item]
     assert [x.id for x in page["items"]] == [it.id]
 
@@ -112,19 +97,12 @@ async def test_repository_roundtrip_preserves_string_area_ids_and_filtering() ->
 async def test_migration_is_applied_for_older_payload(monkeypatch) -> None:
     """Migration hook is invoked when schema_version differs."""
 
-    # Arrange
     hass = HomeAssistant()
     store = DomainStore(hass)
 
-    # Simulate older payload saved directly to underlying Store
-    underlying = store  # we only have DomainStore; reach its attribute via name
-    # Use the same key as DomainStore config; tests' Store stub exposes key
-    # Save a v0 payload lacking required keys
-
-    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, getattr(underlying, "key", "haventory_store"))
+    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, store.key)
     await raw_store.async_save({"schema_version": 0})
 
-    # Spy on migrations.migrate to ensure it's called
     calls = {"count": 0}
 
     def _spy_migrate(payload, *, from_version, to_version):  # type: ignore[no-untyped-def]
@@ -138,10 +116,8 @@ async def test_migration_is_applied_for_older_payload(monkeypatch) -> None:
 
     monkeypatch.setattr(migrations, "migrate", _spy_migrate)
 
-    # Act
     loaded = await store.async_load()
 
-    # Assert
     assert calls["count"] >= 1
     assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
     assert loaded["items"] == {}
@@ -152,27 +128,22 @@ async def test_migration_is_applied_for_older_payload(monkeypatch) -> None:
 async def test_migration_failure_raises_and_does_not_persist(monkeypatch) -> None:
     """Migration failure raises StorageError and leaves on-disk payload unchanged."""
 
-    # Arrange
     hass = HomeAssistant()
     key = "test_store_migrate_failure_no_persist"
     store = DomainStore(hass, key=key)
 
-    # Seed an older valid payload directly into underlying storage
     pre_payload = {"schema_version": 0, "items": {"i1": {"id": "i1"}}, "locations": {}}
     raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
     await raw_store.async_save(pre_payload)
 
-    # Make migrate raise
     def _raise(_payload, *, from_version, to_version):  # type: ignore[no-untyped-def]
         raise RuntimeError("boom")
 
     monkeypatch.setattr(migrations, "migrate", _raise)
 
-    # Act + Assert
     with pytest.raises(StorageError):
         await store.async_load()
 
-    # Assert on-disk payload was not overwritten
     underlying = await raw_store.async_load()
     assert underlying == pre_payload
 
@@ -410,7 +381,7 @@ async def test_corrupt_schema_version_is_refused_and_store_untouched(
         await store.async_load()
 
     # The message quotes the offending value back, so `"4"` is distinguishable
-    # from `4` in the log — that pair is exactly what coercion used to hide.
+    # from `4` in the log, which is the pair a coercion would have hidden.
     message = str(excinfo.value)
     assert "schema_version" in message
     assert repr(stored) in message
@@ -505,12 +476,12 @@ async def test_a_saved_payload_carries_nothing_beyond_the_stored_collections() -
 
 @pytest.mark.asyncio
 async def test_a_store_written_before_the_generation_was_dropped_still_loads() -> None:
-    """Every store this build inherits carries the key, and none of them may refuse.
+    """A store carrying `_generation` loads, and the key is not read back.
 
-    Dropping the key took no schema bump — a build that no longer writes it and
-    one that never wrote it are the same store to read — so nothing rewrites the
-    stores that have it. They have to keep loading, and the key has to survive
-    until the next save rather than making the load fail.
+    The key is unstamped: a store that has it and one that does not read the
+    same, so no schema bump rewrites the ones that have it. They have to keep
+    loading, and the key has to survive until the next save rather than making
+    the load fail.
     """
 
     hass = HomeAssistant()
@@ -527,8 +498,7 @@ async def test_a_store_written_before_the_generation_was_dropped_still_loads() -
     assert [item.name for item in reloaded.list_items()["items"]] == ["Screws"]
 
 
-@pytest.mark.asyncio
-async def test_export_state_emits_every_stored_collection() -> None:
+def test_export_state_emits_every_stored_collection() -> None:
     """The repository must emit every collection the store persists.
 
     A save writes exactly ``Repository.export_state()``. The load path is wider —

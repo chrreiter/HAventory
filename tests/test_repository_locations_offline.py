@@ -12,26 +12,22 @@ from custom_components.haventory.models import ItemCreate, ItemUpdate
 from custom_components.haventory.repository import Repository
 
 
-@pytest.mark.asyncio
-async def test_create_get_and_delete_location_constraints() -> None:
+def test_create_get_and_delete_location_constraints() -> None:
     """Create/get locations; deletion blocked when children or items exist."""
 
     repo = Repository()
     root = repo.create_location(name="Garage")
     leaf = repo.create_location(name="Bin 1", parent_id=root.id)
 
-    # Cannot delete parent while it has a child
     with pytest.raises(ValidationError):
         repo.delete_location(root.id)
 
-    # Deleting leaf works
     repo.delete_location(leaf.id)
     with pytest.raises(NotFoundError):
         repo.get_location(leaf.id)
 
 
-@pytest.mark.asyncio
-async def test_move_and_rename_updates_paths_and_items() -> None:
+def test_move_and_rename_updates_paths_and_items() -> None:
     """Renaming/moving a location updates subtree paths and item location_path."""
 
     repo = Repository()
@@ -45,41 +41,34 @@ async def test_move_and_rename_updates_paths_and_items() -> None:
     )  # type: ignore[arg-type]
     assert "A / B / C" in repo.get_item(item.id).location_path.display_path
 
-    # Rename B -> B2 and ensure subtree paths and item path update
     repo.update_location(b.id, name="B2")
     assert repo.get_location(c.id).path.display_path == "A / B2 / C"
     assert "A / B2 / C" in repo.get_item(item.id).location_path.display_path
 
-    # Move C under A (C becomes A/C)
     repo.update_location(c.id, new_parent_id=a.id)
     assert repo.get_location(c.id).path.display_path == "A / C"
     assert "A / C" in repo.get_item(item.id).location_path.display_path
 
-    # Attempt to move A under C (descendant) → invalid
     with pytest.raises(ValidationError):
         repo.update_location(a.id, new_parent_id=c.id)
 
 
-@pytest.mark.asyncio
-async def test_move_to_root_and_disallow_self_parent() -> None:
+def test_move_to_root_and_disallow_self_parent() -> None:
     """Moving a node to root works and self-parent is disallowed."""
 
     repo = Repository()
     a = repo.create_location(name="A")
     b = repo.create_location(name="B", parent_id=a.id)
 
-    # Self-parent invalid
     with pytest.raises(ValidationError):
         repo.update_location(a.id, new_parent_id=a.id)
 
-    # Move B to root
     updated_b = repo.update_location(b.id, new_parent_id=None)
     assert updated_b.parent_id is None
     assert updated_b.path.display_path == "B"
 
 
-@pytest.mark.asyncio
-async def test_location_item_counts_and_no_location_count() -> None:
+def test_location_item_counts_and_no_location_count() -> None:
     """Per-location direct/subtree counts and the orphan count track item moves."""
 
     repo = Repository()
@@ -102,13 +91,11 @@ async def test_location_item_counts_and_no_location_count() -> None:
     expected_orphans = 2
     assert repo.get_counts()["no_location_count"] == expected_orphans
 
-    # Unknown location id raises NotFoundError
     with pytest.raises(NotFoundError):
         repo.get_location_item_counts("00000000-0000-4000-8000-000000000000")
 
 
-@pytest.mark.asyncio
-async def test_moving_a_subtree_to_the_top_level_files_it_under_a_new_area() -> None:
+def test_moving_a_subtree_to_the_top_level_files_it_under_a_new_area() -> None:
     """One update does both halves of "move this subtree into an area".
 
     The parent change commits before the area propagates, so the area lands on
@@ -136,13 +123,11 @@ async def test_moving_a_subtree_to_the_top_level_files_it_under_a_new_area() -> 
     assert [i.id for i in in_cellar["items"]] == [drill.id]
 
 
-@pytest.mark.asyncio
-async def test_the_tree_is_readable_without_reaching_into_the_indexes() -> None:
+def test_the_tree_is_readable_without_reaching_into_the_indexes() -> None:
     """`location/list` and `location/tree` are ordinary reads, not introspection.
 
-    Both used to walk the location index and the private child map directly, so
-    the two commands the card opens with depended on a helper written for tests.
-    These two accessors are what they read instead.
+    The two commands the card opens with read these accessors, not the location
+    index and the private child map behind them.
     """
 
     repo = Repository()

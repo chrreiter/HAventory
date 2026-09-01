@@ -1,19 +1,15 @@
-"""Offline tests for new HAventory WebSocket item wrapper commands.
+"""Offline tests for the item commands that edit one field at a time.
 
-Scenarios:
-- add/remove tags normalize and preserve order; error mapping on invalid tags
-- update_custom_fields set/unset; validation errors for non-scalar values
-- set_low_stock_threshold updates item and affects low_stock_count
-- item/move updates location_id and returns updated item
+Tags, custom fields, the low-stock threshold and the location each have their
+own command beside `item/update`, and each answers the same envelope and the
+same refusals as the general edit does.
 """
 
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.ws import setup as ws_setup
-from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime
+from runtime_helpers import ws_hass
 from ws_helpers import ws_send
 
 
@@ -21,14 +17,11 @@ from ws_helpers import ws_send
 async def test_add_remove_tags_success_and_normalization() -> None:
     """add/remove tags should normalize case/whitespace and preserve order on union/subtract."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Thing")
     item_id = created["result"]["id"]
 
-    # Add tags with mixed case/whitespace and duplicates
     res = await ws_send(
         hass,
         2,
@@ -37,10 +30,8 @@ async def test_add_remove_tags_success_and_normalization() -> None:
         tags=["  Alpha ", "beta", "ALPHA", "Beta"],
     )
     assert res["success"] is True
-    # normalized unique order: ["alpha", "beta"]
     assert res["result"]["tags"] == ["alpha", "beta"]
 
-    # Remove tags (normalize) and ensure subtraction
     res = await ws_send(
         hass,
         3,
@@ -62,14 +53,11 @@ async def test_add_remove_tags_success_and_normalization() -> None:
 async def test_update_custom_fields_set_unset_and_validation_error() -> None:
     """update_custom_fields sets/unsets and rejects non-scalar values."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
 
-    # Set two fields
     res = await ws_send(
         hass,
         2,
@@ -82,7 +70,6 @@ async def test_update_custom_fields_set_unset_and_validation_error() -> None:
     SIZE_VALUE = 42
     assert res["result"]["custom_fields"]["size"] == SIZE_VALUE
 
-    # Unset one field
     res = await ws_send(
         hass,
         3,
@@ -108,14 +95,11 @@ async def test_update_custom_fields_set_unset_and_validation_error() -> None:
 async def test_set_low_stock_threshold_affects_counts() -> None:
     """Setting low_stock_threshold should update low_stock_count via stats."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Nails", quantity=1)
     item_id = created["result"]["id"]
 
-    # Initially, with no threshold, low_stock_count should be 0
     stats = await ws_send(hass, 2, "haventory/stats")
     assert stats["success"] is True and stats["result"]["low_stock_count"] == 0
 
@@ -139,9 +123,7 @@ async def test_set_low_stock_threshold_affects_counts() -> None:
 async def test_item_move_updates_location() -> None:
     """item/move should set location_id and return updated item."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Box")
     item_id = created["result"]["id"]
@@ -157,15 +139,11 @@ async def test_item_move_updates_location() -> None:
 async def test_unknown_command_and_type_errors() -> None:
     """Unknown command type and bad payloads produce validation_error envelopes."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
-    # Unknown command type: ensure no handler responds
     with pytest.raises(AssertionError):
         await ws_send(hass, 99, "haventory/does_not_exist")
 
-    # Type errors inside payload for wrappers that validate
     created = await ws_send(hass, 1, "haventory/item/create", name="Thing")
     iid = created["result"]["id"]
     res = await ws_send(

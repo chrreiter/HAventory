@@ -21,19 +21,16 @@ import pytest
 from custom_components.haventory import events as events_mod
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import EVENT_ITEM_CHANGED
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime
+from runtime_helpers import ws_hass
 from ws_helpers import ITEM_ACTIONS, RecordingConn, ws_send
 
 _BULK_ROWS = 3
 
 
 def _hass() -> HomeAssistant:
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
     return hass
 

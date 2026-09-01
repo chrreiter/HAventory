@@ -86,6 +86,20 @@ class RecordingConn:
             unsub()
         self.subscriptions.clear()
 
+    def subscription_ids(self, *, topic: str) -> set[Any]:
+        """Which subscriptions an event on this topic reached.
+
+        The enclosing message's id is the subscription id the client opened
+        with, which is how a test with several open subscriptions on one
+        connection tells which of them a filter let through.
+        """
+
+        return {
+            msg.get("id")
+            for msg in self.messages
+            if msg.get("type") == "event" and (msg.get("event") or {}).get("topic") == topic
+        }
+
     def events(self, *, topic: str | None = None) -> list[dict[str, Any]]:
         """The event payloads pushed on this connection, oldest first.
 

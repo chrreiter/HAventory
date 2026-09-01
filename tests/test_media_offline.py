@@ -4,23 +4,6 @@ The offline Home Assistant stub has no HTTP layer, so the authenticated view
 itself is only observable in the phacc integration mode
 (``tests/integration/test_attachments.py``). Everything here is the part that
 decides *what* the view would be allowed to serve and *where* it would find it.
-
-Scenarios:
-- a non-image file is refused for the picture kind
-- a file whose bytes are not what it claims is refused
-- SVG is refused outright — it carries script and is served from the HA origin
-- a file over the byte cap is refused, and an empty one too
-- the 11th picture on an item is refused
-- an id no metadata claims resolves to nothing
-- the served name follows title-then-filename, and no title can break the header
-- only a URL versioned by that name may be cached, because the name can change
-- the sweep deletes an unreferenced file and keeps a referenced one
-- the sweep refuses a path resolving outside the media root
-- a tile names the encoder generation that wrote it, and the sweep removes the
-  tiles an earlier generation left behind
-- an item's directory goes with its last file, and one holding anything else stays
-- a tile keeps the transparency its source had, where there is a decoder to
-  look at the bytes with
 """
 
 from __future__ import annotations
@@ -67,11 +50,6 @@ def _meta(mime: str = "image/png", kind: str = "picture") -> AttachmentMeta:
         size=len(PNG_BYTES),
         uploaded_at=iso_utc_now(),
     )
-
-
-# -----------------------------
-# Sniffing and the allow-list
-# -----------------------------
 
 
 @pytest.mark.parametrize(
@@ -139,11 +117,6 @@ def test_a_manual_accepts_pdf_and_refuses_an_image() -> None:
         media.validate_upload(kind="manual", head=PNG_BYTES, size=32)
 
 
-# -----------------------------
-# Per-item caps
-# -----------------------------
-
-
 def test_the_eleventh_picture_on_an_item_is_refused() -> None:
     """Enforced by the repository regardless of what the card checked first."""
 
@@ -172,11 +145,6 @@ def test_the_cap_is_per_kind() -> None:
     assert [a.kind for a in updated.attachments].count("manual") == 1
 
 
-# -----------------------------
-# Path resolution
-# -----------------------------
-
-
 def test_an_id_no_metadata_claims_resolves_to_nothing() -> None:
     """The view looks a file up through metadata, never from the request path."""
 
@@ -203,11 +171,6 @@ def test_the_stored_extension_comes_from_the_sniffed_type(tmp_path: Path) -> Non
 
     assert path.name == "att.jpg"
     assert path.parent.name == "item"
-
-
-# -----------------------------
-# The served filename
-# -----------------------------
 
 
 def _disposition(*, filename: str = "photo.png", title: str = "") -> str:
@@ -320,11 +283,6 @@ def test_a_url_not_versioned_by_name_is_not_stored_at_all() -> None:
 
     assert value == "private, no-store"
     assert "immutable" not in value
-
-
-# -----------------------------
-# The orphan sweep
-# -----------------------------
 
 
 @pytest.mark.asyncio
@@ -616,11 +574,6 @@ async def test_deleting_an_attachment_takes_its_thumbnail_with_it(monkeypatch) -
 
     assert not thumb.exists()
     assert not media.attachment_path(root, str(item.id), str(meta.id), meta.mime).exists()
-
-
-# -----------------------------
-# The item's directory
-# -----------------------------
 
 
 @pytest.mark.asyncio

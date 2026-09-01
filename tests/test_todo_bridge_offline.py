@@ -1,16 +1,8 @@
 """Offline tests for the low-stock → to-do list bridge.
 
-Scenarios:
-- an item dropping to its threshold puts one line on the list; restocking takes
-  it off, and neither issues a call the other's pass already made
-- a second pass over unchanged data, and the first pass after a restart, are
-  both silent — the convergence property the whole design rests on
-- a refused add leaves the item unlinked so the next pass retries it; a refused
-  removal gives up the link instead, because nothing about it will improve
-- an unconfigured list issues no call at all, and changing the list moves the
-  lines across
-- a list that is missing or unavailable is left alone until it answers again
-- the shortfall floors at one, so a threshold of zero never asks for none
+The bridge converges: a pass over data that has not moved issues no call, and
+neither does the first pass after a restart. Everything else here rests on
+that, which is why so many of these tests assert on calls not made.
 
 The bridge's service calls are recorded rather than dispatched: the offline
 `HomeAssistant` stub has no service registry, and what these tests assert is
@@ -418,11 +410,6 @@ async def test_a_stored_row_missing_half_of_itself_is_dropped_on_load() -> None:
     assert runtime_of(hass).todo.links == {
         "kept": {"entity_id": TODO_ENTITY, "summary": f"Peanut butter {TIMES}2"}
     }
-
-
-# -----------------------------
-# A list that cannot delete its own lines
-# -----------------------------
 
 
 @pytest.mark.asyncio

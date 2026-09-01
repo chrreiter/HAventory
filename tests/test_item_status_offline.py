@@ -30,10 +30,6 @@ from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainSt
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
 
-# -----------------------------
-# Models
-# -----------------------------
-
 
 def test_create_defaults_to_ok() -> None:
     item = create_item_from_create({"name": "Hammer"})
@@ -106,11 +102,6 @@ def test_filter_items_rejects_unknown_status() -> None:
         filter_items(items, {"status": "bogus"})  # type: ignore[typeddict-item]
 
 
-# -----------------------------
-# Stored state
-# -----------------------------
-
-
 def test_repository_roundtrip_preserves_status() -> None:
     repo = Repository()
     repo.create_item({"name": "Hammer", "status": "missing"})
@@ -138,11 +129,6 @@ def test_load_state_tolerates_missing_and_unknown_status() -> None:
     counts = restored.get_counts()
     assert counts["missing_count"] == 0
     assert counts["needs_repair_count"] == 0
-
-
-# -----------------------------
-# The load path
-# -----------------------------
 
 
 @pytest.mark.asyncio
@@ -184,11 +170,6 @@ async def test_a_store_written_before_the_field_loads_with_every_status() -> Non
     assert by_name["Wrench"].status == "ok"
     # The store predates the collection too, so the built-ins are what it gets.
     assert sorted(repo.status_slugs()) == ["missing", "needs_repair", "ok"]
-
-
-# -----------------------------
-# Import / export
-# -----------------------------
 
 
 def test_export_document_carries_status_and_reimports() -> None:
@@ -260,21 +241,11 @@ def test_import_merge_overlays_incoming_status() -> None:
     assert payload["items"][str(item.id)]["status"] == "needs_repair"
 
 
-# -----------------------------
-# Services
-# -----------------------------
-
-
 def test_service_schemas_accept_status_passthrough() -> None:
     created = SCHEMA_ITEM_CREATE({"name": "Hammer", "status": "missing"})
     assert created["status"] == "missing"
     updated = SCHEMA_ITEM_UPDATE({"item_id": "x", "status": "ok"})
     assert updated["status"] == "ok"
-
-
-# -----------------------------
-# The live status set
-# -----------------------------
 
 
 def test_validate_accepts_a_slug_in_the_live_set_and_rejects_one_outside_it() -> None:

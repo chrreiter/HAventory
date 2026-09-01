@@ -1,11 +1,9 @@
-"""Offline tests for HAventory config flow.
+"""Offline tests for the HAventory config flow and its options form.
 
-Scenarios:
-- Single-instance guard aborts with reason, and the manifest declares the same rule
-- async_step_user happy path creates entry
-- The card title is asked for at setup, normalized, and seeded into the options
-- Import path: create entry if no existing (if supported)
-- Validation errors surfaced to form (simulated)
+The translation trees are held here too. `strings.json` and every
+`translations/<tag>.json` have to carry the same key tree and the same
+placeholders: a key in one and not the other renders as the raw key on the
+household's own screen, where nobody on this side of the release sees it.
 """
 
 from __future__ import annotations
@@ -66,7 +64,6 @@ async def test_single_instance_guard_aborts(monkeypatch) -> None:
 
     flow = HAventoryConfigFlow()
 
-    # Simulate existing entries
     monkeypatch.setattr(flow, "_async_current_entries", lambda: [object()], raising=False)
 
     result = await flow.async_step_user(user_input=None)
@@ -95,7 +92,6 @@ async def test_user_step_creates_entry(monkeypatch) -> None:
 
     flow = HAventoryConfigFlow()
 
-    # No current entries
     monkeypatch.setattr(flow, "_async_current_entries", lambda: [], raising=False)
 
     result = await flow.async_step_user(user_input={})

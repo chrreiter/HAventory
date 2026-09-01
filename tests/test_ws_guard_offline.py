@@ -1,11 +1,8 @@
-"""Offline tests for ws_guard error handling behavior.
+"""Offline tests for `ws_guard`.
 
-Scenarios:
-- handlers return the error envelope while also attempting to send it
-- send_message raising does not prevent returning the error envelope
-- missing send_message still returns the error envelope
-- the loaded-entry refusal: answered while `LOADED`, `storage_error` when the
-  entry is gone and when it exists in any other state
+The guard answers whatever the connection does: a `send_message` that raises,
+or a connection that has none, still leaves the caller with an error envelope
+rather than an exception crossing the WebSocket layer.
 """
 
 from __future__ import annotations
@@ -18,7 +15,7 @@ from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime
+from runtime_helpers import ws_hass
 from ws_helpers import ws_send
 
 
@@ -52,9 +49,7 @@ class _ConnNoSend:
 async def test_returns_and_sends_error_when_validation_fails() -> None:
     """Handlers should send AND return the error envelope."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     handler = _get_handler(hass, "haventory/item/set_quantity")
     conn = _ConnCollect()
@@ -64,9 +59,7 @@ async def test_returns_and_sends_error_when_validation_fails() -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
-    # Envelope should have been sent as well
     assert conn.last == res
-    # Context data should include op and relevant fields
     data = res["error"].get("data", {})
     assert data.get("op") == "item_set_quantity"
     assert data.get("quantity") == -1
@@ -76,9 +69,7 @@ async def test_returns_and_sends_error_when_validation_fails() -> None:
 async def test_returns_error_when_send_message_raises() -> None:
     """Even if send fails, the error envelope must be returned to caller."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     handler = _get_handler(hass, "haventory/item/set_quantity")
     conn = _ConnRaise()
@@ -94,9 +85,7 @@ async def test_returns_error_when_send_message_raises() -> None:
 async def test_returns_error_when_no_send_message_attribute() -> None:
     """If the connection lacks send_message, the error is still returned."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     handler = _get_handler(hass, "haventory/item/set_quantity")
     conn = _ConnNoSend()
@@ -113,9 +102,7 @@ async def test_returns_error_when_no_send_message_attribute() -> None:
 async def test_a_command_answers_while_the_entry_is_loaded(command: str) -> None:
     """The happy path of the state check that replaced the emptied bucket."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     res = await ws_send(hass, 1, command)
 
@@ -141,15 +128,11 @@ async def test_a_command_refuses_when_no_entry_exists(command: str) -> None:
 async def test_a_command_refuses_while_the_entry_is_not_loaded(command: str) -> None:
     """An entry that exists but is unloaded or disabled serves nothing.
 
-    The behavior `_require_loaded` used to get from an emptied bucket, restated
-    against the source of truth that replaced it. The runtime is deliberately
-    left attached: what refuses here is the *state*, not a missing object, which
-    is exactly the disabled-entry case.
+    The runtime is deliberately left attached: what refuses here is the entry
+    *state*, not a missing object, which is exactly the disabled-entry case.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass, state=ConfigEntryState.NOT_LOADED)
-    ws_setup(hass)
+    hass = ws_hass(state=ConfigEntryState.NOT_LOADED)
 
     res = await ws_send(hass, 1, command)
 

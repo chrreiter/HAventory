@@ -1,4 +1,4 @@
-"""Comprehensive offline tests covering filter and sort behavior."""
+"""Offline tests for `filter_items` and `sort_items`."""
 
 from __future__ import annotations
 
@@ -50,8 +50,7 @@ def _build_locations() -> tuple[dict[str, Location], Location, Location, Locatio
     return by_id, root, mid, leaf
 
 
-@pytest.mark.asyncio
-async def test_filter_q_matches_name_description_tags_and_location() -> None:
+def test_filter_q_matches_name_description_tags_and_location() -> None:
     by_id, _root, _mid, leaf = _build_locations()
     a = create_item_from_create({"name": "Electric Saw", "description": "Power cutting TOOL"})
     b = create_item_from_create({"name": "Glue", "description": "Strong adhesive"})
@@ -75,35 +74,31 @@ async def test_filter_q_matches_name_description_tags_and_location() -> None:
     assert [x.name for x in out4] == ["Tape"]
 
 
-@pytest.mark.asyncio
-async def test_filter_q_is_accent_insensitive() -> None:
+def test_filter_q_is_accent_insensitive() -> None:
     """q matching folds accents (NFKD) in both the query and the item text.
 
-    Regression: the post-filter used casefold() only, so the unaccented query
-    "cafe" missed an item named "Probe Café" even though the index found it.
+    Folding one side only would let the index find an item the post-filter then
+    drops, so every direction is asserted: unaccented query against accented
+    text, accented against accented, and accented against unaccented.
     """
     a = create_item_from_create({"name": "Probe Café"})
     b = create_item_from_create({"name": "Plain Mug"})
 
-    # Unaccented query vs accented content (the previously broken direction)
     out = filter_items([a, b], ItemFilter(q="cafe"))
     assert [x.name for x in out] == ["Probe Café"]
 
     out2 = filter_items([a, b], ItemFilter(q="CAFE"))
     assert [x.name for x in out2] == ["Probe Café"]
 
-    # Accented query vs accented content still works
     out3 = filter_items([a, b], ItemFilter(q="café"))
     assert [x.name for x in out3] == ["Probe Café"]
 
-    # Accented query vs unaccented content (the reverse direction)
     c = create_item_from_create({"name": "Cafe Filter"})
     out4 = filter_items([b, c], ItemFilter(q="café"))
     assert [x.name for x in out4] == ["Cafe Filter"]
 
 
-@pytest.mark.asyncio
-async def test_filter_tags_any_and_all() -> None:
+def test_filter_tags_any_and_all() -> None:
     i1 = create_item_from_create({"name": "Box", "tags": ["red", "blue"]})
     i2 = create_item_from_create({"name": "Tape", "tags": ["blue"]})
     i3 = create_item_from_create({"name": "Bag", "tags": ["yellow"]})
@@ -118,8 +113,7 @@ async def test_filter_tags_any_and_all() -> None:
     assert [x.name for x in out_both] == ["Box"]
 
 
-@pytest.mark.asyncio
-async def test_filter_category_and_checked_out() -> None:
+def test_filter_category_and_checked_out() -> None:
     a = create_item_from_create({"name": "Hammer", "category": "Tools"})
     b = create_item_from_create(
         {"name": "Glue", "category": "Consumables", "checked_out": True, "due_date": "2024-01-02"}
@@ -132,8 +126,7 @@ async def test_filter_category_and_checked_out() -> None:
     assert [x.name for x in out_checked] == ["Glue"]
 
 
-@pytest.mark.asyncio
-async def test_filter_low_stock_only_threshold_rules() -> None:
+def test_filter_low_stock_only_threshold_rules() -> None:
     # None disables; 0 is valid (quantity <= 0); integer N indicates quantity <= N
     a = create_item_from_create({"name": "Screws", "quantity": 5, "low_stock_threshold": None})
     b = create_item_from_create({"name": "Glue", "quantity": 0, "low_stock_threshold": 0})
@@ -144,8 +137,7 @@ async def test_filter_low_stock_only_threshold_rules() -> None:
     assert [x.name for x in out] == ["Glue", "Batteries"]
 
 
-@pytest.mark.asyncio
-async def test_low_stock_first_orders_without_filtering() -> None:
+def test_low_stock_first_orders_without_filtering() -> None:
     a = create_item_from_create({"name": "A", "quantity": 5, "low_stock_threshold": 2})
     b = create_item_from_create({"name": "B", "quantity": 1, "low_stock_threshold": 2})
     c = create_item_from_create({"name": "C", "quantity": 3, "low_stock_threshold": None})
@@ -156,7 +148,6 @@ async def test_low_stock_first_orders_without_filtering() -> None:
     c.updated_at = "2024-01-03T00:00:00Z"
     d.updated_at = "2024-01-04T00:00:00Z"
 
-    # Base order by updated_at desc (no preference applied yet)
     items = sort_items(
         filter_items([a, b, c, d], ItemFilter()),
         Sort(field="updated_at", order="desc"),
@@ -174,8 +165,7 @@ async def test_low_stock_first_orders_without_filtering() -> None:
     assert [x.name for x in items] == ["D", "B", "C", "A"]
 
 
-@pytest.mark.asyncio
-async def test_filter_location_id_with_and_without_subtree() -> None:
+def test_filter_location_id_with_and_without_subtree() -> None:
     by_id, root, mid, leaf = _build_locations()
     at_root = create_item_from_create(
         {"name": "Box", "location_id": root.id, "checked_out": True, "due_date": "2024-01-02"},
@@ -207,8 +197,7 @@ async def test_filter_location_id_with_and_without_subtree() -> None:
     assert empty == []
 
 
-@pytest.mark.asyncio
-async def test_filter_updated_after_and_created_after() -> None:
+def test_filter_updated_after_and_created_after() -> None:
     a = create_item_from_create({"name": "A"})
     b = create_item_from_create({"name": "B"})
     c = create_item_from_create({"name": "C"})
@@ -230,8 +219,7 @@ async def test_filter_updated_after_and_created_after() -> None:
         filter_items([a, b, c], ItemFilter(updated_after="2024/01/01"))
 
 
-@pytest.mark.asyncio
-async def test_filter_updated_before_and_created_before() -> None:
+def test_filter_updated_before_and_created_before() -> None:
     """The `before` bounds mirror the `after` ones and combine into a range."""
 
     a = create_item_from_create({"name": "A"})
@@ -271,8 +259,7 @@ async def test_filter_updated_before_and_created_before() -> None:
         filter_items([a, b, c], ItemFilter(created_before="2024/01/01"))
 
 
-@pytest.mark.asyncio
-async def test_filter_overdue_only() -> None:
+def test_filter_overdue_only() -> None:
     """`overdue_only` keeps items whose due date is already in the past."""
 
     late = create_item_from_create({"name": "Late", "checked_out": True, "due_date": "2000-01-01"})
@@ -287,8 +274,7 @@ async def test_filter_overdue_only() -> None:
     assert filter_items(every, ItemFilter(overdue_only=False)) == every
 
 
-@pytest.mark.asyncio
-async def test_filter_inspection_overdue_only_is_strictly_before_today() -> None:
+def test_filter_inspection_overdue_only_is_strictly_before_today() -> None:
     """`inspection_overdue_only` keeps items whose next inspection is already past."""
 
     yesterday = create_item_from_create({"name": "Yesterday", "inspection_date": day_offset(-1)})
@@ -305,8 +291,7 @@ async def test_filter_inspection_overdue_only_is_strictly_before_today() -> None
     assert filter_items(every, ItemFilter(inspection_overdue_only=False)) == every
 
 
-@pytest.mark.asyncio
-async def test_filter_inspection_overdue_is_independent_of_checkout() -> None:
+def test_filter_inspection_overdue_is_independent_of_checkout() -> None:
     """An inspection is a fact about the item, so the two date filters are separate."""
 
     shelved = create_item_from_create({"name": "Shelved", "inspection_date": day_offset(-1)})
@@ -328,8 +313,7 @@ async def test_filter_inspection_overdue_is_independent_of_checkout() -> None:
     assert filter_items(every, ItemFilter(overdue_only=True, inspection_overdue_only=True)) == []
 
 
-@pytest.mark.asyncio
-async def test_filter_checked_out_due_only_counts_today() -> None:
+def test_filter_checked_out_due_only_counts_today() -> None:
     """`checked_out_due_only` is `overdue_only` plus the items due back today."""
 
     late = create_item_from_create(
@@ -354,8 +338,7 @@ async def test_filter_checked_out_due_only_counts_today() -> None:
     assert filter_items(every, ItemFilter(checked_out_due_only=False)) == every
 
 
-@pytest.mark.asyncio
-async def test_filter_inspection_due_only_counts_today() -> None:
+def test_filter_inspection_due_only_counts_today() -> None:
     """`inspection_due_only` is `inspection_overdue_only` plus today's inspections."""
 
     yesterday = create_item_from_create({"name": "Yesterday", "inspection_date": day_offset(-1)})
@@ -373,8 +356,7 @@ async def test_filter_inspection_due_only_counts_today() -> None:
     assert filter_items(every, ItemFilter(inspection_due_only=False)) == every
 
 
-@pytest.mark.asyncio
-async def test_the_two_due_filters_ask_about_different_dates() -> None:
+def test_the_two_due_filters_ask_about_different_dates() -> None:
     """A due date is about a borrowing; an inspection date is about the item."""
 
     borrowed = create_item_from_create(
@@ -395,8 +377,7 @@ async def test_the_two_due_filters_ask_about_different_dates() -> None:
     assert filter_items(every, both) == []
 
 
-@pytest.mark.asyncio
-async def test_sort_default_and_fields_with_tiebreak() -> None:
+def test_sort_default_and_fields_with_tiebreak() -> None:
     a = create_item_from_create({"name": "Alpha"})
     b = create_item_from_create({"name": "Bravo"})
     c = create_item_from_create({"name": "Charlie"})
@@ -411,7 +392,6 @@ async def test_sort_default_and_fields_with_tiebreak() -> None:
     expected = [b, c] if b.id < c.id else [c, b]
     assert [x.id for x in out_default][:2] == [x.id for x in expected]
 
-    # By name asc (case-insensitive)
     n1 = create_item_from_create({"name": "Äfter"})
     n2 = create_item_from_create({"name": "alpha"})
     n3 = create_item_from_create({"name": "Bravo"})
@@ -422,8 +402,7 @@ async def test_sort_default_and_fields_with_tiebreak() -> None:
     assert [x.name for x in out_name_desc] == ["Bravo", "alpha", "Äfter"]
 
 
-@pytest.mark.asyncio
-async def test_sort_by_quantity_and_timestamps() -> None:
+def test_sort_by_quantity_and_timestamps() -> None:
     q1 = create_item_from_create({"name": "A", "quantity": 5})
     q2 = create_item_from_create({"name": "B", "quantity": 1})
     q3 = create_item_from_create({"name": "C", "quantity": 3})
@@ -444,8 +423,7 @@ async def test_sort_by_quantity_and_timestamps() -> None:
     assert [x.name for x in out_c_desc] == ["T3", "T2", "T1"]
 
 
-@pytest.mark.asyncio
-async def test_filter_orphaned_only_matches_items_without_location() -> None:
+def test_filter_orphaned_only_matches_items_without_location() -> None:
     """orphaned_only=True keeps only items with location_id == None."""
 
     by_id, root, _mid, _leaf = _build_locations()
@@ -467,8 +445,7 @@ async def test_filter_orphaned_only_matches_items_without_location() -> None:
     assert sorted(x.name for x in out_off) == ["Orphan Glue", "Orphan Saw", "Placed"]
 
 
-@pytest.mark.asyncio
-async def test_sort_by_due_date_nulls_last_both_orders() -> None:
+def test_sort_by_due_date_nulls_last_both_orders() -> None:
     """due_date sorting orders dated items and places undated items last."""
 
     d1 = create_item_from_create({"name": "Early", "checked_out": True, "due_date": "2024-01-05"})
@@ -482,8 +459,7 @@ async def test_sort_by_due_date_nulls_last_both_orders() -> None:
     assert [x.name for x in out_desc] == ["Late", "Early", "Undated"]
 
 
-@pytest.mark.asyncio
-async def test_sort_by_inspection_date_nulls_last_both_orders() -> None:
+def test_sort_by_inspection_date_nulls_last_both_orders() -> None:
     """inspection_date sorting mirrors due_date semantics (nulls last)."""
 
     i1 = create_item_from_create({"name": "Soon", "inspection_date": "2024-02-01"})
@@ -504,19 +480,13 @@ async def test_sort_by_inspection_date_nulls_last_both_orders() -> None:
     assert [x.id for x in out_tie] == [x.id for x in expected]
 
 
-@pytest.mark.asyncio
-async def test_filter_then_sort_pipeline() -> None:
+def test_filter_then_sort_pipeline() -> None:
     a = create_item_from_create({"name": "B", "tags": ["x"]})
     b = create_item_from_create({"name": "A", "tags": ["y"]})
     c = create_item_from_create({"name": "C", "tags": ["x"]})
     filt = ItemFilter(tags_any=["x"])
     out = sort_items(filter_items([a, b, c], filt), Sort(field="name", order="asc"))
     assert [x.name for x in out] == ["B", "C"]
-
-
-# -----------------------------
-# Unknown filter and sort keys
-# -----------------------------
 
 
 def test_validate_item_filter_accepts_every_declared_key() -> None:
@@ -589,13 +559,7 @@ def test_validate_sort_accepts_the_vocabulary_and_rejects_the_rest() -> None:
         validate_sort("name")
 
 
-# -----------------------------
-# Multi-select categories and locations
-# -----------------------------
-
-
-@pytest.mark.asyncio
-async def test_filter_categories_unions_the_selection() -> None:
+def test_filter_categories_unions_the_selection() -> None:
     a = create_item_from_create({"name": "Hammer", "category": "Tools"})
     b = create_item_from_create({"name": "Novel", "category": "Books"})
     c = create_item_from_create({"name": "Soap", "category": "Cleaning"})
@@ -608,8 +572,7 @@ async def test_filter_categories_unions_the_selection() -> None:
     assert [x.name for x in out_case] == ["Hammer"]
 
 
-@pytest.mark.asyncio
-async def test_filter_categories_unions_with_the_scalar_rather_than_intersecting() -> None:
+def test_filter_categories_unions_with_the_scalar_rather_than_intersecting() -> None:
     """An item has one category, so requiring both keys would match nothing."""
 
     a = create_item_from_create({"name": "Hammer", "category": "Tools"})
@@ -619,8 +582,7 @@ async def test_filter_categories_unions_with_the_scalar_rather_than_intersecting
     assert sorted(x.name for x in out) == ["Hammer", "Novel"]
 
 
-@pytest.mark.asyncio
-async def test_an_empty_category_selection_does_not_narrow() -> None:
+def test_an_empty_category_selection_does_not_narrow() -> None:
     """The rule `tags_any` already follows: an empty list is not a filter."""
 
     a = create_item_from_create({"name": "Hammer", "category": "Tools"})
@@ -630,8 +592,7 @@ async def test_an_empty_category_selection_does_not_narrow() -> None:
     assert sorted(x.name for x in out) == ["Hammer", "Loose"]
 
 
-@pytest.mark.asyncio
-async def test_filter_location_ids_unions_the_selection() -> None:
+def test_filter_location_ids_unions_the_selection() -> None:
     by_id, root, mid, leaf = _build_locations()
     in_root = create_item_from_create(
         {"name": "At root", "location_id": root.id}, locations_by_id=by_id
@@ -649,8 +610,7 @@ async def test_filter_location_ids_unions_the_selection() -> None:
     assert [x.name for x in filter_items(items, ItemFilter(location_ids=[str(mid.id)]))] == []
 
 
-@pytest.mark.asyncio
-async def test_include_subtree_is_one_flag_for_the_whole_location_selection() -> None:
+def test_include_subtree_is_one_flag_for_the_whole_location_selection() -> None:
     by_id, _root, mid, leaf = _build_locations()
     other = _make_location(str(uuid.uuid4()), "Cellar", None)
     by_id[str(other.id)] = other
@@ -677,8 +637,7 @@ async def test_include_subtree_is_one_flag_for_the_whole_location_selection() ->
     assert [x.name for x in without] == ["At cellar"]
 
 
-@pytest.mark.asyncio
-async def test_a_selection_of_only_unparseable_location_ids_matches_nothing() -> None:
+def test_a_selection_of_only_unparseable_location_ids_matches_nothing() -> None:
     """The scalar has always answered "nothing" to a malformed id; so does a list."""
 
     by_id, root, _mid, _leaf = _build_locations()
@@ -742,11 +701,6 @@ def test_validate_item_filter_accepts_the_multi_select_keys() -> None:
     validate_item_filter({"categories": ["Tools"], "location_ids": [str(uuid.uuid4())]})
 
 
-# -----------------------------
-# Ordering by location path
-# -----------------------------
-
-
 def _located(name: str, chain: list[Location]) -> Item:
     """An item whose denormalized path is built from a root->leaf chain."""
 
@@ -756,8 +710,7 @@ def _located(name: str, chain: list[Location]) -> Item:
     )
 
 
-@pytest.mark.asyncio
-async def test_sort_by_location_orders_on_the_denormalized_path() -> None:
+def test_sort_by_location_orders_on_the_denormalized_path() -> None:
     by_id, root, mid, leaf = _build_locations()
     cellar = _make_location(str(uuid.uuid4()), "Cellar", None)
     cellar.path = build_location_path([cellar])
@@ -775,8 +728,7 @@ async def test_sort_by_location_orders_on_the_denormalized_path() -> None:
     assert [x.name for x in desc] == ["Deep", "Shallow", "Elsewhere"]
 
 
-@pytest.mark.asyncio
-async def test_sort_by_location_puts_unlocated_items_last_in_both_orders() -> None:
+def test_sort_by_location_puts_unlocated_items_last_in_both_orders() -> None:
     """The rule `date_sort_key` already applies to undated items.
 
     A stored path key is "" for an item filed nowhere, which a plain ascending
@@ -799,8 +751,7 @@ async def test_sort_by_location_puts_unlocated_items_last_in_both_orders() -> No
     assert {x.name for x in desc[1:]} == {"Loose A", "Loose B"}
 
 
-@pytest.mark.asyncio
-async def test_unlocated_items_stay_last_behind_a_non_latin_location_name() -> None:
+def test_unlocated_items_stay_last_behind_a_non_latin_location_name() -> None:
     """A printable sentinel would not have outranked this path.
 
     The key is built from location *names*, and an accented or non-Latin one

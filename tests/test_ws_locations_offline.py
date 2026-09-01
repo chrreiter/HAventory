@@ -1,21 +1,11 @@
-"""Offline tests for haventory WebSocket location commands.
-
-Scenarios:
-- create/get/update/move_subtree/delete location via WS success
-- list locations returns array
-- tree returns nested structure
-- error mapping for validation and not_found
-"""
+"""Offline tests for the `haventory/location/*` commands."""
 
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.storage import DomainStore
-from custom_components.haventory.ws import setup as ws_setup
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 
-from runtime_helpers import install_runtime, repo_of, runtime_of
+from runtime_helpers import repo_of, runtime_of, ws_hass
 from ws_helpers import ws_send
 
 
@@ -23,11 +13,8 @@ from ws_helpers import ws_send
 async def test_location_crud_and_tree() -> None:
     """Create a small tree, list, get, move via WS, and delete."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
-    # Seed areas and create root and child
     reg = ar.async_get(hass)
     area_uuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     reg._add(area_uuid, "Garage")  # type: ignore[attr-defined]
@@ -37,16 +24,13 @@ async def test_location_crud_and_tree() -> None:
     res_child = await ws_send(hass, 2, "haventory/location/create", name="Shelf", parent_id=root_id)
     child_id = res_child["result"]["id"]
 
-    # Get
     res = await ws_send(hass, 3, "haventory/location/get", location_id=root_id)
     assert res["success"] is True and res["result"]["id"] == root_id
 
-    # List
     res = await ws_send(hass, 4, "haventory/location/list")
     expected_locations_count = 2  # root + child
     assert res["success"] is True and len(res["result"]) == expected_locations_count
 
-    # Tree
     res = await ws_send(hass, 5, "haventory/location/tree")
     assert res["success"] is True
     tree = res["result"]
@@ -59,15 +43,11 @@ async def test_location_crud_and_tree() -> None:
 async def test_ws_location_create_update_area_validation() -> None:
     """Create/update with area validation and serialization of area_id."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
-    # Unknown area on create → validation_error
     bad = await ws_send(hass, 1, "haventory/location/create", name="X", area_id="missing")
     assert bad["success"] is False and bad["error"]["code"] == "validation_error"
 
-    # Seed area, create ok
     reg = ar.async_get(hass)
     area_uuid1 = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     reg._add(area_uuid1, "Garage")  # type: ignore[attr-defined]
@@ -75,13 +55,11 @@ async def test_ws_location_create_update_area_validation() -> None:
     assert created["success"] is True and created["result"]["area_id"] == area_uuid1
     loc_id = created["result"]["id"]
 
-    # Unknown area on update → validation_error
     upd_bad = await ws_send(
         hass, 3, "haventory/location/update", location_id=loc_id, area_id="missing"
     )
     assert upd_bad["success"] is False and upd_bad["error"]["code"] == "validation_error"
 
-    # Add second area and update ok
     area_uuid2 = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     reg._add(area_uuid2, "Office")  # type: ignore[attr-defined]
     updated = await ws_send(
@@ -89,16 +67,12 @@ async def test_ws_location_create_update_area_validation() -> None:
     )
     assert updated["success"] is True and updated["result"]["area_id"] == area_uuid2
 
-    # No further mutations in this test
-
 
 @pytest.mark.asyncio
 async def test_ws_location_create_update_area_with_non_uuid_id() -> None:
     """WS accepts non-UUID area ids when present in HA area registry."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
@@ -118,20 +92,23 @@ async def test_ws_location_create_update_area_with_non_uuid_id() -> None:
 async def test_location_error_mapping() -> None:
     """Invalid operations yield validation/not_found errors."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
+
+    res = await ws_send(
+        hass, 1, "haventory/location/get", location_id="00000000-0000-4000-8000-000000000000"
+    )
+    assert res["success"] is False and res["error"]["code"] == "not_found"
+
+    res = await ws_send(hass, 2, "haventory/location/create", name="")
+    assert res["success"] is False and res["error"]["code"] == "validation_error"
 
 
 @pytest.mark.asyncio
 async def test_ws_location_mutations_persist_to_store(monkeypatch) -> None:
     """Location create/update/delete should persist via DomainStore.save."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
+    hass = ws_hass()
+    store = runtime_of(hass).store
 
     calls = {"count": 0}
 
@@ -147,26 +124,13 @@ async def test_ws_location_mutations_persist_to_store(monkeypatch) -> None:
     MIN_PERSISTS_TOTAL = 3
     assert calls["count"] >= MIN_PERSISTS_TOTAL
 
-    # Not found
-    res = await ws_send(
-        hass, 1, "haventory/location/get", location_id="00000000-0000-4000-8000-000000000000"
-    )
-    assert res["success"] is False and res["error"]["code"] == "not_found"
-
-    # Validation: create with empty name
-    res = await ws_send(hass, 2, "haventory/location/create", name="")
-    assert res["success"] is False and res["error"]["code"] == "validation_error"
-
 
 @pytest.mark.asyncio
 async def test_location_move_subtree_persists(monkeypatch) -> None:
     """move_subtree persists via DomainStore.async_save."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
+    hass = ws_hass()
+    store = runtime_of(hass).store
 
     calls = {"count": 0}
 
@@ -175,7 +139,6 @@ async def test_location_move_subtree_persists(monkeypatch) -> None:
 
     monkeypatch.setattr(store, "async_save", _spy_save)
 
-    # Create a small tree: Root -> Shelf
     res_root = await ws_send(hass, 10, "haventory/location/create", name="Root")
     root_id = res_root["result"]["id"]
     res_child = await ws_send(
@@ -184,13 +147,11 @@ async def test_location_move_subtree_persists(monkeypatch) -> None:
     child_id = res_child["result"]["id"]
 
     before = calls["count"]
-    # Move subtree: Shelf -> root (new_parent_id=None)
     res_move = await ws_send(
         hass, 12, "haventory/location/move_subtree", location_id=child_id, new_parent_id=None
     )
     assert res_move["success"] is True
     after = calls["count"]
-    # Expect at least one persist triggered by move_subtree
     assert after >= before + 1
 
 
@@ -198,9 +159,7 @@ async def test_location_move_subtree_persists(monkeypatch) -> None:
 async def test_location_tree_includes_item_counts() -> None:
     """Tree nodes carry direct and subtree item counts."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     root = await ws_send(hass, 1, "haventory/location/create", name="Garage")
     root_id = root["result"]["id"]
@@ -236,9 +195,7 @@ async def test_location_tree_includes_item_counts() -> None:
 async def test_location_tree_reports_matching_counts_for_a_filter() -> None:
     """With a filter, nodes also carry how much of themselves it keeps."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     root = await ws_send(hass, 1, "haventory/location/create", name="Garage")
     root_id = root["result"]["id"]

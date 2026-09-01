@@ -43,8 +43,7 @@ def _build_tree() -> tuple[Repository, dict[str, object]]:
     return repo, {"garage": garage, "attic": attic, "shelf": shelf, "box": box, "items": items}
 
 
-@pytest.mark.asyncio
-async def test_search_follows_subtree_move() -> None:
+def test_search_follows_subtree_move() -> None:
     repo, t = _build_tree()
 
     # Before: both items are under Garage and searchable via the path word.
@@ -64,8 +63,7 @@ async def test_search_follows_subtree_move() -> None:
     assert {i.name for i in res["items"]} == {"Hammer"}
 
 
-@pytest.mark.asyncio
-async def test_search_follows_location_rename() -> None:
+def test_search_follows_location_rename() -> None:
     repo, t = _build_tree()
     repo.update_location(t["shelf"].id, name="Rack Beta")
 
@@ -75,8 +73,7 @@ async def test_search_follows_location_rename() -> None:
     assert res["items"] == []
 
 
-@pytest.mark.asyncio
-async def test_rename_rewrites_paths_without_touching_versions() -> None:
+def test_rename_rewrites_paths_without_touching_versions() -> None:
     repo, t = _build_tree()
     before = {str(i.id): (i.version, i.updated_at) for i in t["items"]}
 
@@ -90,8 +87,7 @@ async def test_rename_rewrites_paths_without_touching_versions() -> None:
         assert item.updated_at == old_updated
 
 
-@pytest.mark.asyncio
-async def test_move_rewrites_paths_without_touching_versions() -> None:
+def test_move_rewrites_paths_without_touching_versions() -> None:
     repo, t = _build_tree()
     before = {str(i.id): (i.version, i.updated_at) for i in t["items"]}
 
@@ -104,8 +100,7 @@ async def test_move_rewrites_paths_without_touching_versions() -> None:
         assert item.updated_at == old_updated
 
 
-@pytest.mark.asyncio
-async def test_an_item_move_leaves_one_subtree_and_joins_another() -> None:
+def test_an_item_move_leaves_one_subtree_and_joins_another() -> None:
     """A location edit rebuilds the subtree index; an item edit maintains it.
 
     The item write path walks the chain it leaves and the chain it joins on its
@@ -132,8 +127,7 @@ async def test_an_item_move_leaves_one_subtree_and_joins_another() -> None:
     assert {i.name for i in under_attic["items"]} == {"Hammer"}
 
 
-@pytest.mark.asyncio
-async def test_stale_token_survives_a_rename() -> None:
+def test_stale_token_survives_a_rename() -> None:
     """The scenario item 23 is about: a rename must not spend a client's token."""
     repo, t = _build_tree()
     item = t["items"][0]
@@ -151,8 +145,7 @@ async def test_stale_token_survives_a_rename() -> None:
     assert repo.get_item(item.id).version == held_version + 1
 
 
-@pytest.mark.asyncio
-async def test_area_change_leaves_items_untouched() -> None:
+def test_area_change_leaves_items_untouched() -> None:
     """``effective_area_id`` is resolved at serialization, never stored."""
     repo = Repository()
     garage = repo.create_location(name="Garage")
@@ -169,8 +162,7 @@ async def test_area_change_leaves_items_untouched() -> None:
     assert [i.name for i in res["items"]] == ["Hammer"]
 
 
-@pytest.mark.asyncio
-async def test_effective_area_rebuckets_on_subtree_move() -> None:
+def test_effective_area_rebuckets_on_subtree_move() -> None:
     repo = Repository()
     garage = repo.create_location(name="Garage", area_id="area-garage")
     attic = repo.create_location(name="Attic", area_id="area-attic")
@@ -189,8 +181,7 @@ async def test_effective_area_rebuckets_on_subtree_move() -> None:
     assert repo.get_item(item.id).version == item.version
 
 
-@pytest.mark.asyncio
-async def test_an_area_only_edit_rebuilds_no_path_and_no_subtree_index() -> None:
+def test_an_area_only_edit_rebuilds_no_path_and_no_subtree_index() -> None:
     """A path is built from the name and the parent link; the index from the link.
 
     An edit that moves neither leaves both as they stand, which is what saves a
@@ -221,8 +212,7 @@ async def test_an_area_only_edit_rebuilds_no_path_and_no_subtree_index() -> None
 
 
 @pytest.mark.parametrize("kind", ["rename", "move", "area"])
-@pytest.mark.asyncio
-async def test_every_edit_leaves_the_derived_state_a_full_rebuild_would_leave(kind: str) -> None:
+def test_every_edit_leaves_the_derived_state_a_full_rebuild_would_leave(kind: str) -> None:
     """Each of the three change kinds answers what building from scratch answers.
 
     The oracle for a location's path is the chain it sits in, and the oracle for

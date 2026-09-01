@@ -1,8 +1,4 @@
-"""Offline tests for the HAventory integration lifecycle.
-
-Scenarios:
-- a second setup leaves one handler per WebSocket command and one service per name
-"""
+"""Offline tests for the HAventory integration lifecycle."""
 
 from __future__ import annotations
 

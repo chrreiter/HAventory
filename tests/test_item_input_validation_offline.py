@@ -1,10 +1,12 @@
 """Offline tests for item field-type validation at the model/repository boundary.
 
-Regression coverage for the PR #91 review:
-- non-scalar category/description are rejected before indexing, so a bad value
-  can never leave a durable partially-indexed phantom item;
-- boolean quantity/delta/low_stock_threshold are rejected consistently on the
-  single-command paths (matching the bulk validator), never stored as a bool;
+Three rules hold together here:
+
+- a non-scalar category or description is rejected before indexing, so a bad
+  value can never leave a durable partially-indexed phantom item;
+- a boolean quantity, delta or low-stock threshold is rejected on the
+  single-command paths exactly as the bulk validator rejects it, and never
+  stored as a bool;
 - a value the payload is wrong about is refused before the item is looked up, so
   a single-item command and the `items/bulk` row of the same kind answer one
   payload with one code.
@@ -31,10 +33,6 @@ from custom_components.haventory.repository import Repository
 
 from runtime_helpers import ws_hass
 from ws_helpers import ws_send
-
-# -----------------------------
-# Repository / model boundary
-# -----------------------------
 
 
 @pytest.mark.parametrize("bad", [["oops"], {"a": 1}, 5, 1.5])
@@ -94,11 +92,6 @@ def test_low_stock_threshold_rejects_bool() -> None:
     item = repo.create_item(ItemCreate(name="Widget", quantity=1))
     with pytest.raises(ValidationError):
         repo.update_item(item.id, ItemUpdate(low_stock_threshold=True))
-
-
-# -----------------------------
-# WS surface (phantom-free, validation_error)
-# -----------------------------
 
 
 @pytest.mark.asyncio
@@ -267,11 +260,6 @@ async def test_a_reorder_still_refuses_a_list_naming_one_member_twice() -> None:
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
     assert res["error"]["message"] == "reorder must name every status exactly once"
-
-
-# -----------------------------
-# Size caps (one case at each boundary, one over)
-# -----------------------------
 
 
 @pytest.mark.parametrize(

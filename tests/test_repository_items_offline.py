@@ -23,43 +23,35 @@ LOW_STOCK_AFTER_ADJUST = 2
 LOADED_ITEM_COUNT = 2
 
 
-@pytest.mark.asyncio
-async def test_item_crud_and_concurrency() -> None:
+def test_item_crud_and_concurrency() -> None:
     """Create, get, update, and delete with version checks."""
 
     repo = Repository()
 
-    # Create
     item = repo.create_item(ItemCreate(name="Hammer"))
     assert item.name == "Hammer"
     assert repo.get_counts()["items_total"] == 1
 
-    # Get
     fetched = repo.get_item(item.id)
     assert str(fetched.id) == str(item.id)
 
-    # Update with mismatched version → ConflictError
     with pytest.raises(ConflictError):
         repo.update_item(item.id, {"name": "Hammer v2"}, expected_version=item.version + 1)  # type: ignore[arg-type]
 
-    # Successful update increments version
     updated = repo.update_item(item.id, {"name": "Hammer v2"}, expected_version=item.version)  # type: ignore[arg-type]
     assert updated.version == item.version + 1
     assert updated.name == "Hammer v2"
 
-    # Delete with wrong version → ConflictError
     with pytest.raises(ConflictError):
         repo.delete_item(item.id, expected_version=999)
 
-    # Delete succeeds with current version
     repo.delete_item(item.id, expected_version=updated.version)
     with pytest.raises(NotFoundError):
         repo.get_item(item.id)
     assert repo.get_counts()["items_total"] == 0
 
 
-@pytest.mark.asyncio
-async def test_filter_sort_and_cursor_pagination() -> None:
+def test_filter_sort_and_cursor_pagination() -> None:
     """Filter, sort, and paginate deterministically with a stable cursor."""
 
     repo = Repository()
@@ -69,7 +61,6 @@ async def test_filter_sort_and_cursor_pagination() -> None:
     for nm in names:
         repo.create_item(ItemCreate(name=nm))
 
-    # Sort by name asc (case-insensitive, accent-folded)
     sort = Sort(field="name", order="asc")  # type: ignore[typeddict-item]
 
     page1 = repo.list_items(sort=sort, limit=2)
@@ -89,8 +80,7 @@ async def test_filter_sort_and_cursor_pagination() -> None:
     assert [x.name for x in out["items"]] == ["alpha"]
 
 
-@pytest.mark.asyncio
-async def test_due_date_sort_cursor_pagination_with_nulls() -> None:
+def test_due_date_sort_cursor_pagination_with_nulls() -> None:
     """Cursor pagination stays consistent for due_date sort, undated items last."""
 
     repo = Repository()
@@ -124,8 +114,7 @@ async def test_due_date_sort_cursor_pagination_with_nulls() -> None:
     assert {names[3], names[4]} == {"UndatedA", "UndatedB"}
 
 
-@pytest.mark.asyncio
-async def test_orphaned_only_filter_through_list_items() -> None:
+def test_orphaned_only_filter_through_list_items() -> None:
     """orphaned_only composes with the index-first candidate path (q index)."""
 
     repo = Repository()
@@ -142,8 +131,7 @@ async def test_orphaned_only_filter_through_list_items() -> None:
     assert [x.name for x in out_q["items"]] == ["Orphan Saw"]
 
 
-@pytest.mark.asyncio
-async def test_overdue_count_and_filter_track_check_in() -> None:
+def test_overdue_count_and_filter_track_check_in() -> None:
     """`overdue_count` counts past-due items and follows the check-out state."""
 
     repo = Repository()
@@ -162,8 +150,7 @@ async def test_overdue_count_and_filter_track_check_in() -> None:
     assert repo.list_items(flt=ItemFilter(overdue_only=True))["items"] == []
 
 
-@pytest.mark.asyncio
-async def test_checked_out_due_count_includes_today_where_overdue_does_not() -> None:
+def test_checked_out_due_count_includes_today_where_overdue_does_not() -> None:
     """The two counts differ by exactly the items due back today.
 
     `due` includes today and `overdue` does not — the same vocabulary
@@ -189,8 +176,7 @@ async def test_checked_out_due_count_includes_today_where_overdue_does_not() -> 
     assert out["total"] == CHECKED_OUT_DUE
 
 
-@pytest.mark.asyncio
-async def test_checked_out_due_count_empties_on_check_in() -> None:
+def test_checked_out_due_count_empties_on_check_in() -> None:
     """Checking in clears the due date, so the due population empties with it."""
 
     repo = Repository()
@@ -214,8 +200,7 @@ async def test_checked_out_due_count_empties_on_check_in() -> None:
     assert repo.list_items(flt=ItemFilter(checked_out_due_only=True))["items"] == []
 
 
-@pytest.mark.asyncio
-async def test_inspection_overdue_count_walks_the_whole_inventory() -> None:
+def test_inspection_overdue_count_walks_the_whole_inventory() -> None:
     """`inspection_overdue_count` spans every item, not just the checked-out ones."""
 
     repo = Repository()
@@ -245,8 +230,7 @@ async def test_inspection_overdue_count_walks_the_whole_inventory() -> None:
     assert out["total"] == INSPECTION_OVERDUE
 
 
-@pytest.mark.asyncio
-async def test_inspection_overdue_count_follows_the_stored_date() -> None:
+def test_inspection_overdue_count_follows_the_stored_date() -> None:
     """Rescheduling or clearing the date moves the item out of the population."""
 
     repo = Repository()
@@ -265,8 +249,7 @@ async def test_inspection_overdue_count_follows_the_stored_date() -> None:
     assert repo.list_items(flt=ItemFilter(inspection_overdue_only=True))["items"] == []
 
 
-@pytest.mark.asyncio
-async def test_inspection_due_count_includes_today_where_overdue_does_not() -> None:
+def test_inspection_due_count_includes_today_where_overdue_does_not() -> None:
     """The two counts differ by exactly the items due today.
 
     `due` includes today and `overdue` does not — the vocabulary
@@ -287,8 +270,7 @@ async def test_inspection_due_count_includes_today_where_overdue_does_not() -> N
     assert counts["items_total"] == INSPECTION_DUE + 2
 
 
-@pytest.mark.asyncio
-async def test_inspection_due_count_is_never_below_the_overdue_count() -> None:
+def test_inspection_due_count_is_never_below_the_overdue_count() -> None:
     """Rescheduling moves an item between the two counts without inverting them."""
 
     repo = Repository()
@@ -312,26 +294,21 @@ async def test_inspection_due_count_is_never_below_the_overdue_count() -> None:
     assert repo.get_counts()["inspection_due_count"] == 0
 
 
-@pytest.mark.asyncio
-async def test_prefilter_by_area_and_and_logic_with_location() -> None:
+def test_prefilter_by_area_and_and_logic_with_location() -> None:
     """Pre-filter by area id and support AND with location_id."""
 
     repo = Repository()
-    # Create locations: L1(area=A), L2(area=B)
     area_a = uuid.uuid4()
     area_b = uuid.uuid4()
     l1 = repo.create_location(name="L1", area_id=area_a)
     l2 = repo.create_location(name="L2", area_id=area_b)
 
-    # Items in each location
     i1 = repo.create_item(ItemCreate(name="X", location_id=str(l1.id)))
     i2 = repo.create_item(ItemCreate(name="Y", location_id=str(l2.id)))
 
-    # Filter by area A returns only i1
     out = repo.list_items(flt=ItemFilter(area_id=str(area_a)))
     assert [x.id for x in out["items"]] == [i1.id]
 
-    # Filter by area B AND location_id=L2 returns only i2
     out2 = repo.list_items(
         flt=ItemFilter(area_id=str(area_b), location_id=str(l2.id)),
         sort=Sort(field="name", order="asc"),  # type: ignore[typeddict-item]
@@ -339,34 +316,28 @@ async def test_prefilter_by_area_and_and_logic_with_location() -> None:
     assert [x.id for x in out2["items"]] == [i2.id]
 
 
-@pytest.mark.asyncio
-async def test_prefilter_by_area_with_non_uuid_ids_and_update_rebuckets() -> None:
+def test_prefilter_by_area_with_non_uuid_ids_and_update_rebuckets() -> None:
     """Repository accepts string area ids and re-buckets items on area change."""
 
     repo = Repository()
-    # Non-UUID area ids
     l1 = repo.create_location(name="L1", area_id="kitchen")
     l2 = repo.create_location(name="L2", area_id="garage")
 
     i1 = repo.create_item(ItemCreate(name="X", location_id=str(l1.id)))
     i2 = repo.create_item(ItemCreate(name="Y", location_id=str(l2.id)))
 
-    # Filter by 'kitchen' returns only i1
     out = repo.list_items(flt=ItemFilter(area_id="kitchen"))
     assert [x.id for x in out["items"]] == [i1.id]
 
-    # Change L2 area to 'kitchen' and ensure item re-bucketed
     repo.update_location(l2.id, area_id="kitchen")
     out2 = repo.list_items(flt=ItemFilter(area_id="kitchen"))
     assert {x.id for x in out2["items"]} == {i1.id, i2.id}
 
-    # 'garage' bucket now empty
     out3 = repo.list_items(flt=ItemFilter(area_id="garage"))
     assert [x.id for x in out3["items"]] == []
 
 
-@pytest.mark.asyncio
-async def test_an_area_that_names_no_bucket_matches_nothing() -> None:
+def test_an_area_that_names_no_bucket_matches_nothing() -> None:
     """The area block answers every present value but `None`: no bucket, no items.
 
     The WebSocket refuses a blank area before it reaches here, so this is the
@@ -388,8 +359,7 @@ async def test_an_area_that_names_no_bucket_matches_nothing() -> None:
     assert len(repo.list_items(flt=ItemFilter(area_id=None))["items"]) == 1
 
 
-@pytest.mark.asyncio
-async def test_low_stock_and_checked_out_counts_update() -> None:
+def test_low_stock_and_checked_out_counts_update() -> None:
     """Derived counts reflect item state and update on writes."""
 
     repo = Repository()
@@ -404,20 +374,17 @@ async def test_low_stock_and_checked_out_counts_update() -> None:
     assert cnt["low_stock_count"] == INITIAL_LOW_STOCK_COUNT
     assert cnt["checked_out_count"] == 0
 
-    # Adjust quantity to enter low-stock for i2
     repo.set_quantity(i2.id, 2)
     cnt2 = repo.get_counts()
     assert cnt2["low_stock_count"] == LOW_STOCK_AFTER_ADJUST
 
-    # Check-out and check-in
     repo.check_out(i3.id, due_date="2024-01-02")
     assert repo.get_counts()["checked_out_count"] == 1
     repo.check_in(i3.id)
     assert repo.get_counts()["checked_out_count"] == 0
 
 
-@pytest.mark.asyncio
-async def test_list_items_total_counts_all_matches() -> None:
+def test_list_items_total_counts_all_matches() -> None:
     """`total` reflects all filtered matches, independent of pagination."""
 
     repo = Repository()
@@ -426,7 +393,6 @@ async def test_list_items_total_counts_all_matches() -> None:
     for i in range(seeded):
         repo.create_item(ItemCreate(name=f"Widget {i}", category="tools" if i < tools else "misc"))
 
-    # Unpaginated: total equals the number of items returned
     out = repo.list_items()
     assert out["total"] == seeded
     assert len(out["items"]) == seeded
@@ -439,20 +405,13 @@ async def test_list_items_total_counts_all_matches() -> None:
     page2 = repo.list_items(limit=page_limit, cursor=page1["next_cursor"])
     assert page2["total"] == seeded
 
-    # Filtered: total counts only matches
     filtered = repo.list_items(flt=ItemFilter(category="tools"), limit=1)
     assert filtered["total"] == tools
     assert len(filtered["items"]) == 1
 
-    # No matches: empty page, zero total
     none = repo.list_items(flt=ItemFilter(q="zzz-not-there"))
     assert none["total"] == 0
     assert none["items"] == []
-
-
-# -----------------------------
-# Malformed cursors
-# -----------------------------
 
 
 @pytest.mark.parametrize(
@@ -495,7 +454,7 @@ def test_a_cursor_minted_under_another_sort_raises() -> None:
 
 
 def test_a_valid_cursor_still_pages_to_the_end() -> None:
-    """The regression that matters: hardening did not break the round trip."""
+    """The cursor a page hands back is the one the next page is asked for."""
 
     repo = Repository()
     for i in range(5):
@@ -514,10 +473,6 @@ def test_a_valid_cursor_still_pages_to_the_end() -> None:
     assert seen == [f"Item {i}" for i in range(5)]
     assert cursor is None
 
-
-# -----------------------------
-# low_stock_first pagination
-# -----------------------------
 
 GROUPED_CATALOG_SIZE = 10
 LOW_STOCK_ROWS = frozenset({2, 5, 7, 9})
@@ -548,11 +503,11 @@ def _walk_pages(repo: Repository, *, flt: ItemFilter, sort: Sort, limit: int) ->
 )
 @pytest.mark.parametrize("limit", [1, 3, 4, 7])
 def test_low_stock_first_pages_deliver_every_item(sort: Sort, limit: int) -> None:
-    """Issue #435: paging with low_stock_first on delivers exactly ``total`` items.
+    """Paging with low_stock_first on delivers exactly ``total`` items.
 
-    The regroup used to break the (sort value, id) ordering the cursor scan
-    assumed: after the low-stock block every remaining item compared *before*
-    the cursor, so page two came back empty and most of the list was
+    The regroup breaks the (sort value, id) ordering the cursor scan otherwise
+    assumes: after the low-stock block every remaining item compares *before*
+    the cursor, which would leave page two empty and most of the list
     unreachable while ``total`` still reported all of it.
     """
 

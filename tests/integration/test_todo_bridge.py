@@ -365,7 +365,7 @@ async def test_a_list_that_cannot_delete_keeps_one_line_rather_than_stacking_the
     """An option set before the picker was filtered still names such a list.
 
     Home Assistant refuses `todo.remove_item` on an entity without
-    `DELETE_TODO_ITEM`, and the bridge used to read that refusal as permanent and
+    `DELETE_TODO_ITEM`, and a bridge reading that refusal as permanent would
     give up the link — so the next crossing wrote a second line, and the one
     after that a third, with nothing HAventory offers able to clear them.
     """

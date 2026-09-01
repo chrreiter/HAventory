@@ -1,24 +1,19 @@
-"""Offline tests for effective_area_id in WS item serialization.
+"""Offline tests for `effective_area_id` on a serialized item.
 
-Scenarios:
-- effective_area_id reflects first ancestor with area_id
-- effective_area_id is null when no ancestor has area_id
-- area-only changes update effective_area_id without bumping item.version
-- the subscription matcher and item/list agree on which area an item is in
-- an area_id that names no area is refused by item/list and by subscribe
-- a real but empty area answers with no items, and an area holds against `q`
+The field is derived from the location tree's nearest area-bearing ancestor, so
+re-anchoring a subtree rewrites it on every item beneath — without touching an
+item's `version`, because a location edit is not an item edit. The subscription
+matcher and `item/list` answer the same question and are held to each other.
 """
 
 from __future__ import annotations
 
 import pytest
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.subscriptions import _item_matches_filter
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, runtime_of
+from runtime_helpers import ws_hass
 from ws_helpers import ws_send
 
 
@@ -26,11 +21,8 @@ from ws_helpers import ws_send
 async def test_effective_area_id_present_from_ancestor() -> None:
     """Item serialization includes effective_area_id from ancestor location."""
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     # Tree: Garage(area='wohnzimmer') -> Shelf A -> Bin 1
     garage = repo.create_location(name="Garage", area_id="wohnzimmer")
@@ -63,11 +55,8 @@ async def test_effective_area_id_present_from_ancestor() -> None:
 async def test_effective_area_id_none_when_no_area() -> None:
     """effective_area_id is null when no ancestor defines area_id."""
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     root = repo.create_location(name="Root")  # no area
     child = repo.create_location(name="Child", parent_id=root.id)  # no area
@@ -85,11 +74,8 @@ async def test_effective_area_id_none_when_no_area() -> None:
 async def test_effective_area_id_updates_on_area_change_without_version_bump() -> None:
     """Changing a location's area updates effective_area_id but does not bump item.version."""
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     # Root without area -> effective_area_id None
     root = repo.create_location(name="Root")
@@ -118,11 +104,8 @@ async def test_subscription_matcher_agrees_with_item_list_on_area() -> None:
     cannot drift from the page `item/list` returns for it.
     """
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
     drawer = repo.create_location(name="Drawer", parent_id=kitchen.id)
@@ -154,11 +137,8 @@ async def test_subscription_matcher_agrees_with_item_list_on_area() -> None:
 async def _hass_with_two_areas() -> tuple[HomeAssistant, Repository]:
     """A kitchen and a garage, one item each, both matching the same `q`."""
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     kitchen = repo.create_location(name="Kitchen", area_id="kitchen")
     garage = repo.create_location(name="Garage", area_id="garage")

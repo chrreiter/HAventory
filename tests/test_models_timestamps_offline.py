@@ -1,4 +1,4 @@
-"""Offline tests pinning the canonical-timestamp invariant (WP4 review fixes).
+"""Offline tests pinning the canonical-timestamp invariant.
 
 Sorting and range filters compare timestamps lexicographically, so validation
 must accept EXACTLY the canonical YYYY-MM-DDTHH:MM:SSZ form. fromisoformat

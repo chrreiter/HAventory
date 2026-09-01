@@ -44,11 +44,6 @@ def _only(caplog, logger: str = WS_LOGGER) -> logging.LogRecord:
     return records[0]
 
 
-# -----------------------------
-# Client-recoverable rejections: WARNING, no traceback
-# -----------------------------
-
-
 @pytest.mark.asyncio
 async def test_validation_error_logs_warning_without_traceback(caplog) -> None:
     hass = ws_hass()
@@ -101,11 +96,6 @@ async def test_conflict_logs_warning_without_traceback(caplog) -> None:
     assert record.exc_info is None
 
 
-# -----------------------------
-# Operator-actionable failures: ERROR, with traceback
-# -----------------------------
-
-
 @pytest.mark.asyncio
 async def test_storage_error_logs_error_with_traceback(caplog, monkeypatch) -> None:
     """The cause chain is the only record of what actually failed to write."""
@@ -146,11 +136,6 @@ async def test_unknown_error_logs_error_with_traceback(caplog, monkeypatch) -> N
     assert record.op == "item_create"
     assert record.levelno == logging.ERROR
     assert record.exc_info is not None
-
-
-# -----------------------------
-# The refusal a teardown leaves behind: same envelope, quieter log
-# -----------------------------
 
 
 def _make_unloaded_hass() -> HomeAssistant:
@@ -258,11 +243,6 @@ async def test_service_not_loaded_refusal_logs_warning_without_traceback(caplog)
     assert record.op == "item_create"
     assert record.levelno == logging.WARNING
     assert record.exc_info is None
-
-
-# -----------------------------
-# Bulk ops classify per failing op, not per batch
-# -----------------------------
 
 
 @pytest.mark.asyncio
@@ -382,11 +362,6 @@ async def test_partly_successful_bulk_still_logs_its_summary(caplog) -> None:
     assert len(summaries) == 1
     assert summaries[0].levelno == logging.INFO
     assert (summaries[0].successful, summaries[0].failed) == (1, 1)
-
-
-# -----------------------------
-# The service boundary follows the same policy
-# -----------------------------
 
 
 @pytest.mark.asyncio

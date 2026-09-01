@@ -1,11 +1,4 @@
-"""Offline tests for HAventory schema handling.
-
-Scenarios:
-- The driver stamps a payload below the current version and refuses a downgrade
-- The pre-collapse set starts right above the current version, so every member
-  reaches the refusal that names a 0.8.x build and nothing below it does
-- Corrupt payload reaches the storage layer's log with its context attached
-"""
+"""Offline tests for HAventory schema handling."""
 
 from __future__ import annotations
 
@@ -22,8 +15,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
 
 
-@pytest.mark.asyncio
-async def test_older_version_is_stamped_with_the_current_one() -> None:
+def test_older_version_is_stamped_with_the_current_one() -> None:
     """A payload below the current version comes back carrying it."""
 
     payload: dict[str, Any] = {"schema_version": 0, "items": {}, "locations": {}}
@@ -35,8 +27,7 @@ async def test_older_version_is_stamped_with_the_current_one() -> None:
     assert migrated["locations"] == {}
 
 
-@pytest.mark.asyncio
-async def test_noop_when_already_current_and_idempotent() -> None:
+def test_noop_when_already_current_and_idempotent() -> None:
     """Current-version payload is preserved and repeated applications are idempotent."""
 
     payload = {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
@@ -56,8 +47,7 @@ async def test_noop_when_already_current_and_idempotent() -> None:
     assert migrated2 == payload
 
 
-@pytest.mark.asyncio
-async def test_the_driver_does_not_alias_or_crash_on_what_it_is_given() -> None:
+def test_the_driver_does_not_alias_or_crash_on_what_it_is_given() -> None:
     """A caller's dict is never the stamped one, and a non-dict is tolerated."""
 
     payload: dict[str, Any] = {"schema_version": 0, "items": {"i1": {"id": "i1"}}}
@@ -72,8 +62,7 @@ async def test_the_driver_does_not_alias_or_crash_on_what_it_is_given() -> None:
     assert migrated_non_dict == {"schema_version": CURRENT_SCHEMA_VERSION}
 
 
-@pytest.mark.asyncio
-async def test_downgrade_is_refused_rather_than_relabelled() -> None:
+def test_downgrade_is_refused_rather_than_relabelled() -> None:
     """A backwards migration raises instead of passing the payload through.
 
     Passing it through is the dangerous half: the caller stamps ``to_version``
@@ -111,13 +100,11 @@ async def test_log_context_on_corrupted_payload_via_storage(
     store = DomainStore(hass, key=key)
     raw_store = HAStore(hass, 1, key)
 
-    # Save a corrupted payload (string)
     await raw_store.async_save("oops")
 
     with pytest.raises(StorageError):
         await store.async_load()
 
-    # Assert log record includes structured context
     found = False
     for rec in caplog.records:
         if (
@@ -130,11 +117,6 @@ async def test_log_context_on_corrupted_payload_via_storage(
             assert getattr(rec, "to_version", None) == store.schema_version
             break
     assert found, "expected migration error log with context"
-
-
-# -----------------------------
-# The closed set
-# -----------------------------
 
 
 def test_the_pre_collapse_set_starts_right_above_the_current_schema() -> None:

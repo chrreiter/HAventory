@@ -1,30 +1,22 @@
-"""Offline tests for the haventory distinct-values WebSocket command.
+"""Offline tests for the `haventory/distinct_values` command.
 
-Scenarios:
-- distinct_values returns distinct categories and tags with usage counts
-- categories are grouped case-insensitively with a representative display label
-- an empty repository yields empty lists
-- a filtered request prices both facets without shrinking either list
-- an unfiltered request carries no matching_count key at all
-- unknown filter keys are refused by name; unknown/extra request fields are
-  refused before the handler runs, as real Home Assistant refuses them
+The facets are priced against a filter but never shrunk by it: a value the
+current filter excludes still has to be offered, or the filter panel can never
+be widened again.
 """
 
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.ws import setup as ws_setup
 from custom_components.haventory.ws import ws_distinct_values
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime
+from runtime_helpers import ws_hass
 from ws_helpers import ws_send
 
 
 def _fresh_hass() -> HomeAssistant:
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
     return hass
 
 

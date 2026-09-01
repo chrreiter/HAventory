@@ -1,14 +1,8 @@
-"""Offline tests for haventory WebSocket subscriptions and events.
+"""Offline tests for the subscription registry and the event fan-out.
 
-Scenarios:
-- subscribe/unsubscribe lifecycle and echo policy
-- item events delivered with correct shape; stats counts emitted on mutations
-- location_id + include_subtree filters constrain delivered events, and a
-  payload-less items event reaches every subscription regardless, because it is
-  a refetch signal rather than a per-item patch
-- inspection_overdue_only narrows item events the way item/list narrows a page
-- area_id narrows item events to the payload's own effective_area_id, and never
-  delivers an item that has no location
+A subscription's filter is applied to the payload as it stands after the
+mutation, so a client whose filtered set a mutation moved out from under it
+re-lists rather than waiting for a departure event that never comes.
 """
 
 from __future__ import annotations
@@ -17,14 +11,11 @@ from typing import Any
 
 import pytest
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.subscriptions import broadcast_event, open_subscriptions
-from custom_components.haventory.ws import setup as ws_setup
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 
 from date_helpers import day_offset
-from runtime_helpers import install_runtime, runtime_of
+from runtime_helpers import ws_hass
 from ws_helpers import RecordingConn, ws_send
 
 
@@ -72,19 +63,15 @@ class _SlottedHAConn:
 async def test_subscribe_receives_item_created_and_counts() -> None:
     """Subscribe to items and stats; creating an item emits item+counts events."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
 
-    # Subscribe to items and stats on same connection with different ids
     res = await ws_send(hass, 101, "haventory/subscribe", conn=conn, topic="items")
     assert res["success"] is True
     res = await ws_send(hass, 102, "haventory/subscribe", conn=conn, topic="stats")
     assert res["success"] is True
 
-    # Trigger mutation
     created = await ws_send(hass, 1, "haventory/item/create", conn=conn, name="Hammer", quantity=1)
     assert created["success"] is True
 
@@ -103,28 +90,21 @@ async def test_subscribe_receives_item_created_and_counts() -> None:
 async def test_unsubscribe_stops_events() -> None:
     """Unsubscribe removes further deliveries for the subscription id."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
 
-    # Subscribe to items
     res = await ws_send(hass, 201, "haventory/subscribe", conn=conn, topic="items")
     assert res["success"] is True
 
-    # First create triggers an item event
     await ws_send(hass, 1, "haventory/item/create", conn=conn, name="Box")
     assert len(conn.events(topic="items")) >= 1
 
-    # Unsubscribe using the subscription id
     res = await ws_send(hass, 202, "haventory/unsubscribe", conn=conn, subscription=201)
     assert res["success"] is True
 
-    # Clear previous messages
     conn.messages.clear()
 
-    # Further mutations should not deliver to this subscription
     await ws_send(hass, 2, "haventory/item/create", conn=conn, name="Tape")
     assert conn.events(topic="items") == []
 
@@ -133,21 +113,16 @@ async def test_unsubscribe_stops_events() -> None:
 async def test_double_subscribe_and_unsubscribe_edge() -> None:
     """Double subscribing reuses conn bucket; unsubscribe of unknown id is benign."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
 
-    # Two subscriptions for same topic with different ids
     await ws_send(hass, 401, "haventory/subscribe", conn=conn, topic="stats")
     await ws_send(hass, 402, "haventory/subscribe", conn=conn, topic="stats")
 
-    # Unsubscribe unknown id should succeed and not crash
     res = await ws_send(hass, 499, "haventory/unsubscribe", conn=conn, subscription=999)
     assert res["success"] is True
 
-    # Trigger mutation and ensure at least one event delivered
     await ws_send(hass, 1, "haventory/item/create", conn=conn, name="Hammer")
     events = conn.events(topic="stats")
     assert any(ev.get("action") == "counts" for ev in events)
@@ -157,9 +132,7 @@ async def test_double_subscribe_and_unsubscribe_edge() -> None:
 async def test_subscriptions_cleanup_on_connection_close() -> None:
     """Connection close should remove all subscriptions for that connection."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
     await ws_send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
@@ -176,13 +149,10 @@ async def test_subscriptions_cleanup_on_connection_close() -> None:
 async def test_location_filters_subtree_and_direct_only() -> None:
     """location_id + include_subtree filters constrain delivered item events."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
 
-    # Create a small location tree: root -> child
     root = await ws_send(hass, 1, "haventory/location/create", conn=conn, name="Root")
     root_id = root["result"]["id"]
     child = await ws_send(
@@ -212,13 +182,11 @@ async def test_location_filters_subtree_and_direct_only() -> None:
         include_subtree=False,
     )
 
-    # Create in child: both subs should receive (subtree and direct child)
     conn.messages.clear()
     item1 = await ws_send(
         hass, 3, "haventory/item/create", conn=conn, name="Wrench", quantity=1, location_id=child_id
     )
     assert item1["success"] is True
-    # Expect 2 events with different ids (subscription ids)
     EXPECTED_EVENTS_MIN = 2
     SUB_ID_SUBTREE = 301
     SUB_ID_DIRECT = 302
@@ -226,7 +194,6 @@ async def test_location_filters_subtree_and_direct_only() -> None:
     ids = {m.get("id") for m in conn.messages if m.get("type") == "event"}
     assert SUB_ID_SUBTREE in ids and SUB_ID_DIRECT in ids
 
-    # Create in root: only subtree subscription (301) should receive
     conn.messages.clear()
     item2 = await ws_send(
         hass,
@@ -238,11 +205,7 @@ async def test_location_filters_subtree_and_direct_only() -> None:
         location_id=root_id,
     )
     assert item2["success"] is True
-    ids = {
-        m.get("id")
-        for m in conn.messages
-        if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-    }
+    ids = conn.subscription_ids(topic="items")
     assert ids == {SUB_ID_SUBTREE}
 
     # A payload-less items event has no item to match a filter against, so it
@@ -252,11 +215,7 @@ async def test_location_filters_subtree_and_direct_only() -> None:
     # watching one shelf has just as much reason to re-list as any other.
     conn.messages.clear()
     broadcast_event(hass, topic="items", action="updated", payload=None)
-    ids = {
-        m.get("id")
-        for m in conn.messages
-        if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-    }
+    ids = conn.subscription_ids(topic="items")
     assert ids == {SUB_ID_SUBTREE, SUB_ID_DIRECT}
     delivered = next(m for m in conn.messages if m.get("type") == "event")["event"]
     assert "item" not in delivered
@@ -266,9 +225,7 @@ async def test_location_filters_subtree_and_direct_only() -> None:
 async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
     """`inspection_overdue_only` narrows item events the same way `item/list` does."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
 
@@ -284,13 +241,6 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
     )
     await ws_send(hass, SUB_ID_EVERYTHING, "haventory/subscribe", conn=conn, topic="items")
 
-    def item_event_ids() -> set[object]:
-        return {
-            m.get("id")
-            for m in conn.messages
-            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-        }
-
     # A missed inspection reaches both subscriptions.
     conn.messages.clear()
     late = await ws_send(
@@ -302,7 +252,7 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
         inspection_date=day_offset(-1),
     )
     assert late["success"] is True
-    assert item_event_ids() == {SUB_ID_INSPECTION, SUB_ID_EVERYTHING}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_INSPECTION, SUB_ID_EVERYTHING}
 
     # Due today is not late yet, so the filtered subscription hears nothing —
     # the same strictly-before boundary the filter and the count use.
@@ -316,24 +266,21 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
         inspection_date=day_offset(0),
     )
     assert due_today["success"] is True
-    assert item_event_ids() == {SUB_ID_EVERYTHING}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_EVERYTHING}
 
     # And an item with no inspection date at all never matches.
     conn.messages.clear()
     undated = await ws_send(hass, 5, "haventory/item/create", conn=conn, name="Bucket")
     assert undated["success"] is True
-    assert item_event_ids() == {SUB_ID_EVERYTHING}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_EVERYTHING}
 
 
 @pytest.mark.asyncio
 async def test_area_filter_constrains_delivered_events() -> None:
     """`area_id` narrows item events to the area the item's location tree is anchored to."""
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     conn = RecordingConn()
 
@@ -354,20 +301,17 @@ async def test_area_filter_constrains_delivered_events() -> None:
         hass, SUB_ID_NULL_AREA, "haventory/subscribe", conn=conn, topic="items", area_id=None
     )
 
-    def item_event_ids() -> set[object]:
-        return {
-            m.get("id")
-            for m in conn.messages
-            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-        }
-
     # An item deep under the kitchen inherits its area and reaches all three.
     conn.messages.clear()
     inside = await ws_send(
         hass, 1, "haventory/item/create", conn=conn, name="Whisk", location_id=str(drawer.id)
     )
     assert inside["success"] is True
-    assert item_event_ids() == {SUB_ID_KITCHEN, SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
+    assert conn.subscription_ids(topic="items") == {
+        SUB_ID_KITCHEN,
+        SUB_ID_EVERYTHING,
+        SUB_ID_NULL_AREA,
+    }
 
     # An item in another area does not.
     conn.messages.clear()
@@ -375,7 +319,7 @@ async def test_area_filter_constrains_delivered_events() -> None:
         hass, 2, "haventory/item/create", conn=conn, name="Spanner", location_id=str(garage.id)
     )
     assert outside["success"] is True
-    assert item_event_ids() == {SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
 
     # Neither does an item with no location: its effective_area_id is null, and a
     # null resolves to no area rather than to every area.
@@ -383,18 +327,15 @@ async def test_area_filter_constrains_delivered_events() -> None:
     orphan = await ws_send(hass, 3, "haventory/item/create", conn=conn, name="Loose screw")
     assert orphan["success"] is True
     assert orphan["result"]["effective_area_id"] is None
-    assert item_event_ids() == {SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
 
 
 @pytest.mark.asyncio
 async def test_area_and_location_filters_are_conjunctive() -> None:
     """`area_id` and `location_id` on one subscription both have to match."""
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     conn = RecordingConn()
 
@@ -418,25 +359,18 @@ async def test_area_and_location_filters_are_conjunctive() -> None:
         hass, SUB_ID_UNUSED_AREA, "haventory/subscribe", conn=conn, topic="items", area_id="attic"
     )
 
-    def item_event_ids() -> set[object]:
-        return {
-            m.get("id")
-            for m in conn.messages
-            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-        }
-
     conn.messages.clear()
     await ws_send(
         hass, 1, "haventory/item/create", conn=conn, name="Whisk", location_id=str(drawer.id)
     )
-    assert item_event_ids() == {SUB_ID_BOTH}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_BOTH}
 
     # Right area, wrong location.
     conn.messages.clear()
     await ws_send(
         hass, 2, "haventory/item/create", conn=conn, name="Jar", location_id=str(shelf.id)
     )
-    assert item_event_ids() == set()
+    assert conn.subscription_ids(topic="items") == set()
 
 
 @pytest.mark.asyncio
@@ -450,11 +384,8 @@ async def test_location_area_change_emits_no_item_events() -> None:
     departure event.
     """
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     conn = RecordingConn()
 
@@ -503,11 +434,8 @@ async def test_reassigning_a_locations_own_area_announces_one_moved_event() -> N
     tells it to. Still no item events: the items themselves did not change.
     """
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
@@ -547,11 +475,8 @@ async def test_an_area_set_on_a_nested_location_is_announced_too() -> None:
     filtered to the area the tree just left has to hear about it.
     """
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
@@ -596,11 +521,8 @@ async def test_an_area_a_nested_location_already_resolves_to_is_silent() -> None
     is whether the tree ended up somewhere else, and here it did not.
     """
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
@@ -637,11 +559,8 @@ async def test_location_update_announces_what_changed_once() -> None:
     request that changes nothing announces nothing.
     """
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     reg = ar.async_get(hass)
     reg._add("garage", "Garage")  # type: ignore[attr-defined]
@@ -697,14 +616,12 @@ async def test_framework_unsubscribe_events_tears_down_subscription() -> None:
     """Subscriptions register in HA's own registry so core ``unsubscribe_events``
     (the teardown path the frontend's ``subscribeMessage`` uses) can cancel them.
 
-    Before the fix nothing was registered under the message id, so core replied
-    ``not_found`` ("Subscription not found.") on every teardown — an unhandled
-    rejection in the card.
+    Nothing registered under the message id makes core answer ``not_found``
+    ("Subscription not found.") on every teardown, which reaches the card as an
+    unhandled rejection.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     sub_id = 501
     conn = RecordingConn()
@@ -716,7 +633,6 @@ async def test_framework_unsubscribe_events_tears_down_subscription() -> None:
     assert sub_id in conn.subscriptions
     assert callable(conn.subscriptions[sub_id])
 
-    # Events flow while subscribed.
     await ws_send(hass, 1, "haventory/item/create", conn=conn, name="Box")
     assert len(conn.events(topic="items")) >= 1
 
@@ -725,7 +641,6 @@ async def test_framework_unsubscribe_events_tears_down_subscription() -> None:
     assert sub_id not in conn.subscriptions
     assert conn not in open_subscriptions(hass)  # our bucket was cleaned up too
 
-    # No further deliveries after teardown.
     conn.messages.clear()
     await ws_send(hass, 2, "haventory/item/create", conn=conn, name="Tape")
     assert conn.events(topic="items") == []
@@ -736,9 +651,7 @@ async def test_dedicated_unsubscribe_clears_framework_registry() -> None:
     """``haventory/unsubscribe`` also clears the HA-registry entry, keeping the two
     teardown paths symmetric (no stale callback left in ``connection.subscriptions``)."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     sub_id = 601
     conn = RecordingConn()
@@ -755,17 +668,14 @@ async def test_dedicated_unsubscribe_clears_framework_registry() -> None:
 async def test_subscribe_on_slotted_connection_never_stamps_attribute() -> None:
     """Subscribe must not stamp a marker attribute on a ``__slots__`` connection.
 
-    Regression for the WP4 stress re-run finding: ``_register_close_listener`` used to
-    set ``conn._haventory_close_registered = True`` for "register once" behaviour. Real
-    HA's ``ActiveConnection`` is slotted (no ``__dict__``), so that assignment raised
-    ``AttributeError`` on **every** subscribe (caught, but logged as a traceback under
-    debug logging). The ``__dict__``-carrying stubs never surfaced it. Idempotency now
-    derives from the ``"haventory/cleanup"`` key already present in ``subscriptions``.
+    Real HA's ``ActiveConnection`` is slotted and has no ``__dict__``, so any
+    assignment onto it raises ``AttributeError``. The stubs elsewhere in this
+    suite carry a ``__dict__`` and would swallow that, which is what
+    ``_SlottedHAConn`` exists to stop. "Register once" therefore derives from the
+    ``"haventory/cleanup"`` key already present in ``subscriptions``.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = _SlottedHAConn()
 
@@ -780,31 +690,21 @@ async def test_subscribe_on_slotted_connection_never_stamps_attribute() -> None:
     assert sub_b in conn.subscriptions
     assert list(conn.subscriptions).count("haventory/cleanup") == 1  # idempotent
 
-    # The core assertion: production code never attempted to stamp a marker attribute
-    # on the slotted connection (the old ``_haventory_close_registered = True``).
+    # Nothing was stamped on the connection, by any name.
     assert conn.stray_set_attempts == []
-    assert not hasattr(conn, "_haventory_close_registered")
 
-    # Both subscriptions are live in our bucket, and the disconnect path
-    # (subscriptions.values()) tears them all down without drift.
+    # The disconnect path walks `subscriptions.values()`, so both come down.
     assert open_subscriptions(hass).get(conn)
     conn.close()
     assert conn not in open_subscriptions(hass)
-
-    # Sanity: the stub really is slotted like real HA (rejects arbitrary attrs).
-    with pytest.raises(AttributeError):
-        conn.some_unexpected_attr = 1  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
 async def test_location_ids_scopes_a_subscription_to_several_locations() -> None:
     """The multi-select filter's own delivery path, unioned like the query's."""
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     conn = RecordingConn()
 
@@ -847,35 +747,28 @@ async def test_location_ids_scopes_a_subscription_to_several_locations() -> None
         location_ids=[str(garage.id)],
     )
 
-    def item_event_ids() -> set[object]:
-        return {
-            m.get("id")
-            for m in conn.messages
-            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-        }
-
     conn.messages.clear()
     await ws_send(
         hass, 1, "haventory/item/create", conn=conn, name="Whisk", location_id=str(drawer.id)
     )
-    assert item_event_ids() == {SUB_ID_TWO}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_TWO}
 
     conn.messages.clear()
     await ws_send(
         hass, 2, "haventory/item/create", conn=conn, name="Spanner", location_id=str(garage.id)
     )
-    assert item_event_ids() == {SUB_ID_TWO, SUB_ID_DIRECT, SUB_ID_UNION}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_TWO, SUB_ID_DIRECT, SUB_ID_UNION}
 
     conn.messages.clear()
     await ws_send(
         hass, 3, "haventory/item/create", conn=conn, name="Jam", location_id=str(cellar.id)
     )
-    assert item_event_ids() == {SUB_ID_UNION}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_UNION}
 
     # An item with no location reaches no location-scoped subscription.
     conn.messages.clear()
     await ws_send(hass, 4, "haventory/item/create", conn=conn, name="Loose screw")
-    assert item_event_ids() == set()
+    assert conn.subscription_ids(topic="items") == set()
 
 
 @pytest.mark.asyncio
@@ -883,14 +776,12 @@ async def test_location_ids_scopes_a_subscription_to_several_locations() -> None
 async def test_subscribe_refuses_location_ids_that_is_not_a_list_of_strings(bad: object) -> None:
     """The same rule the list filter answers, and no coercion behind it.
 
-    A number in the list used to become its own string, which then matched no
-    location — so a client that sent one got a subscription that silently
-    delivered nothing instead of being told what was wrong.
+    A number coerced to its own string matches no location, so the client gets a
+    subscription that silently delivers nothing instead of being told what is
+    wrong.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
     conn = RecordingConn()
 
     res = await ws_send(

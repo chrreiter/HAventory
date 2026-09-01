@@ -6,63 +6,52 @@ display path of an item. These tests are what that contract means in cases a
 faster shortcut over words or fragments would get wrong.
 """
 
-import pytest
 from custom_components.haventory.repository import Repository
 
 # ruff: noqa: PLR2004
 
 
-@pytest.mark.asyncio
-async def test_fast_text_search_exact_words() -> None:
+def test_fast_text_search_exact_words() -> None:
     """Fast text search finds exact word matches."""
     repo = Repository()
 
-    # Setup items
     i1 = repo.create_item({"name": "Phillips Screw 50mm", "tags": ["hardware"]})
     i2 = repo.create_item({"name": "Flathead Screw 30mm", "tags": ["hardware"]})
     repo.create_item({"name": "Hammer", "description": "Heavy duty"})
 
-    # Search for "Phillips"
     results = repo.list_items(flt={"q": "Phillips"})["items"]
     assert len(results) == 1
     assert results[0].id == i1.id
 
-    # Search for "screw" (case insensitive)
     results = repo.list_items(flt={"q": "screw"})["items"]
     assert len(results) == 2
     assert {x.id for x in results} == {i1.id, i2.id}
 
-    # Search for "50mm"
     results = repo.list_items(flt={"q": "50mm"})["items"]
     assert len(results) == 1
     assert results[0].id == i1.id
 
 
-@pytest.mark.asyncio
-async def test_text_search_prefix_autocomplete() -> None:
+def test_text_search_prefix_autocomplete() -> None:
     """Text search supports name prefix matching for autocomplete."""
     repo = Repository()
     i1 = repo.create_item({"name": "Screwdriver"})
     i2 = repo.create_item({"name": "Screw"})
     repo.create_item({"name": "Scraper"})
 
-    # Search for "Scr" should match all
     results = repo.list_items(flt={"q": "Scr"})["items"]
     assert len(results) == 3
 
-    # Search for "Screw" should match Screwdriver and Screw
     results = repo.list_items(flt={"q": "Screw"})["items"]
     assert len(results) == 2
     assert {x.id for x in results} == {i1.id, i2.id}
 
-    # Search for "Screwd"
     results = repo.list_items(flt={"q": "Screwd"})["items"]
     assert len(results) == 1
     assert results[0].id == i1.id
 
 
-@pytest.mark.asyncio
-async def test_text_search_matches_inside_a_word() -> None:
+def test_text_search_matches_inside_a_word() -> None:
     """A fragment that starts no word still matches the word holding it."""
     repo = Repository()
     i1 = repo.create_item({"name": "Battery AA"})
@@ -72,8 +61,7 @@ async def test_text_search_matches_inside_a_word() -> None:
     assert results[0].id == i1.id
 
 
-@pytest.mark.asyncio
-async def test_text_search_accent_insensitive_end_to_end() -> None:
+def test_text_search_accent_insensitive_end_to_end() -> None:
     """An unaccented query finds accented content through ``list_items``."""
     repo = Repository()
     i1 = repo.create_item({"name": "Probe Café"})
@@ -95,36 +83,30 @@ async def test_text_search_accent_insensitive_end_to_end() -> None:
     assert results[0].id == i1.id
 
 
-@pytest.mark.asyncio
-async def test_text_search_multi_word_and_logic() -> None:
+def test_text_search_multi_word_and_logic() -> None:
     """Multi-word text search uses AND logic."""
     repo = Repository()
     i1 = repo.create_item({"name": "Red Box", "description": "Large"})
     repo.create_item({"name": "Blue Box", "description": "Small"})
     repo.create_item({"name": "Red Bag", "description": "Large"})
 
-    # "Red Box" -> matches i1 only
     results = repo.list_items(flt={"q": "Red Box"})["items"]
     assert len(results) == 1
     assert results[0].id == i1.id
 
-    # "Large" -> matches i1, i3
     results = repo.list_items(flt={"q": "Large"})["items"]
     assert len(results) == 2
 
-    # "Red Large" -> matches i1, i3 (Wait... Red is in name, Large in desc. Should match both)
     results = repo.list_items(flt={"q": "Red Large"})["items"]
     # i1: name="Red Box", desc="Large". Matches Red AND Large.
     # i3: name="Red Bag", desc="Large". Matches Red AND Large.
     assert len(results) == 2
 
-    # "Blue Large" -> i2 has Blue but Small. i1/i3 have Large but Red. Should be 0.
     results = repo.list_items(flt={"q": "Blue Large"})["items"]
     assert len(results) == 0
 
 
-@pytest.mark.asyncio
-async def test_text_search_short_fragment_matches_mid_word() -> None:
+def test_text_search_short_fragment_matches_mid_word() -> None:
     """A one- or two-character fragment matches mid-word like any other.
 
     The contract is a substring test over the item's text, so query length
@@ -144,8 +126,7 @@ async def test_text_search_short_fragment_matches_mid_word() -> None:
     assert results[0].id == i1.id
 
 
-@pytest.mark.asyncio
-async def test_short_fragment_matches_beyond_the_word_starts_it_hits() -> None:
+def test_short_fragment_matches_beyond_the_word_starts_it_hits() -> None:
     """A fragment returns mid-word matches alongside the word-start ones.
 
     "wi" starts "Wine" and sits inside "Kiwi"; both are matches, and an answer
@@ -160,8 +141,7 @@ async def test_short_fragment_matches_beyond_the_word_starts_it_hits() -> None:
     assert {x.id for x in results} == {kiwi.id, wine.id}
 
 
-@pytest.mark.asyncio
-async def test_a_q_filter_still_narrows_by_its_siblings() -> None:
+def test_a_q_filter_still_narrows_by_its_siblings() -> None:
     """``q`` alongside an indexed filter answers over that filter's candidates."""
     repo = Repository()
     kiwi = repo.create_item({"name": "Kiwi", "category": "Fruit"})
@@ -171,8 +151,7 @@ async def test_a_q_filter_still_narrows_by_its_siblings() -> None:
     assert [x.id for x in results] == [kiwi.id]
 
 
-@pytest.mark.asyncio
-async def test_punctuation_only_query_is_matched_literally() -> None:
+def test_punctuation_only_query_is_matched_literally() -> None:
     """Punctuation is text like any other, not a query with nothing in it."""
     repo = Repository()
     i1 = repo.create_item({"name": "Wow!!!"})
@@ -183,8 +162,7 @@ async def test_punctuation_only_query_is_matched_literally() -> None:
     assert results[0].id == i1.id
 
 
-@pytest.mark.asyncio
-async def test_mid_word_match_survives_a_word_start_hit_elsewhere() -> None:
+def test_mid_word_match_survives_a_word_start_hit_elsewhere() -> None:
     """A fragment that is one item's whole word still matches inside others.
 
     The answer is a substring test per item, so what any other item is called
@@ -199,8 +177,7 @@ async def test_mid_word_match_survives_a_word_start_hit_elsewhere() -> None:
     assert {x.id for x in results} == {light.id, flashlight.id}
 
 
-@pytest.mark.asyncio
-async def test_accented_query_matches_unaccented_content() -> None:
+def test_accented_query_matches_unaccented_content() -> None:
     """Accents are stripped on both sides, so either spelling finds the other."""
     repo = Repository()
     plain = repo.create_item({"name": "Cafe Sign"})
@@ -211,8 +188,7 @@ async def test_accented_query_matches_unaccented_content() -> None:
         assert [x.id for x in results] == [plain.id], f"q={query!r} should match 'Cafe Sign'"
 
 
-@pytest.mark.asyncio
-async def test_multi_word_query_ands_across_fields_and_the_path() -> None:
+def test_multi_word_query_ands_across_fields_and_the_path() -> None:
     """Each query word may land in a different field, and all of them must land."""
     repo = Repository()
     shelf = repo.create_location(name="Basement Shelf")
@@ -236,8 +212,7 @@ async def test_multi_word_query_ands_across_fields_and_the_path() -> None:
     assert results == []
 
 
-@pytest.mark.asyncio
-async def test_a_query_that_normalizes_away_narrows_nothing() -> None:
+def test_a_query_that_normalizes_away_narrows_nothing() -> None:
     """A query that ASCII folding empties matches every item.
 
     ``normalize_search_text`` keeps only what NFKD can render as ASCII, so a
