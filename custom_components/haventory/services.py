@@ -41,10 +41,6 @@ from .storage import async_persist_repo as _storage_async_persist_repo
 LOGGER = context_logger(__name__)
 
 
-# -----------------------------
-# Validation schemas
-# -----------------------------
-
 _SCALAR = vol.Any(str, int, float, bool)
 
 SCHEMA_ITEM_CREATE = vol.Schema(
@@ -155,11 +151,6 @@ SCHEMA_LOCATION_UPDATE = vol.Schema(
 SCHEMA_LOCATION_DELETE = vol.Schema({vol.Required("location_id"): str})
 
 
-# -----------------------------
-# Internal helpers
-# -----------------------------
-
-
 def _log_domain_error(op: str, context: dict[str, Any], exc: Exception) -> None:
     # A schema rejection is a validation_error by any other name; voluptuous
     # just raises it before the domain layer gets a chance to.
@@ -263,11 +254,6 @@ async def _run_service(hass: HomeAssistant, name: str, data: dict[str, Any]) -> 
         _raise_service_error(name, _context(name, data), exc)
 
 
-# -----------------------------
-# Service handlers (exported for tests)
-# -----------------------------
-
-
 async def service_item_create(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     return await _run_service(hass, "item_create", data)
 
@@ -323,10 +309,6 @@ async def service_location_update(hass: HomeAssistant, data: dict) -> dict[str, 
 async def service_location_delete(hass: HomeAssistant, data: dict) -> dict[str, Any]:
     return await _run_service(hass, "location_delete", data)
 
-
-# -----------------------------
-# Registration
-# -----------------------------
 
 ServiceHandler = Callable[[HomeAssistant, dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
 

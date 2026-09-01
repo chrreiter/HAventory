@@ -33,11 +33,6 @@ from .runtime import Subscription, find_runtime, loaded_runtime
 LOGGER = context_logger(__name__)
 
 
-# -----------------------------
-# The registry
-# -----------------------------
-
-
 def open_subscriptions(
     hass: HomeAssistant,
 ) -> dict[websocket_api.ActiveConnection, dict[int, Subscription]]:
@@ -161,11 +156,6 @@ def _register_close_listener(hass: HomeAssistant, conn: websocket_api.ActiveConn
         )
 
 
-# -----------------------------
-# Matching
-# -----------------------------
-
-
 def _subscription_location_ids(sub: Subscription) -> list[str]:
     """The locations a subscription is scoped to, scalar and list unioned.
 
@@ -268,11 +258,6 @@ def _collect_event_deliveries(
         if sub_ids:
             deliveries.append((conn, sub_ids))
     return deliveries
-
-
-# -----------------------------
-# The fan-out
-# -----------------------------
 
 
 def _now_ts() -> str:

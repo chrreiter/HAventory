@@ -155,10 +155,6 @@ def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict
     return _error_envelope(_id, code, message, context or None)
 
 
-# -----------------------------
-# Unified exception handling for WS handlers
-# -----------------------------
-
 _WSHandler = Callable[
     [HomeAssistant, "websocket_api.ActiveConnection", dict[str, Any]], Awaitable[Any]
 ]
@@ -223,11 +219,10 @@ def ws_guard(
                 return await func(hass, conn, msg)
             except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
                 ctx = _context_from_msg(op, msg, context_fields)
-                # In real Home Assistant, handlers must send on the connection.
-                # Returning a dict is only supported by our offline test stub.
+                # A handler must send on the connection in real Home Assistant;
+                # the returned envelope is what the offline stub reads.
                 err = _error_message(msg.get("id", 0), exc, context=ctx)
                 _send_error(conn, err)
-                # Always return the envelope for offline tests and stubs
                 return err
             except Exception:
                 # Final safety net: any non-domain exception maps to the
@@ -249,11 +244,6 @@ def ws_guard(
         return wrapper
 
     return decorator
-
-
-# -----------------------------
-# Shared op helpers (single and bulk)
-# -----------------------------
 
 
 def _validate_bulk_ops(operations: Any) -> list[dict[str, Any]]:
@@ -378,11 +368,6 @@ async def _mutate(
     )
 
 
-# -----------------------------
-# Utility commands
-# -----------------------------
-
-
 @websocket_api.websocket_command(
     {vol.Required("type"): "haventory/ping", vol.Optional("echo"): object}
 )
@@ -501,11 +486,6 @@ async def ws_health(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
-# -----------------------------
-# Subscription commands
-# -----------------------------
-
-
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "haventory/subscribe",
@@ -583,11 +563,6 @@ async def ws_unsubscribe(
         },
     )
     conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
-
-
-# -----------------------------
-# Items
-# -----------------------------
 
 
 @websocket_api.websocket_command(
@@ -1204,11 +1179,6 @@ async def ws_item_list(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
-# -----------------------------
-# Locations
-# -----------------------------
-
-
 def _require_known_area(hass: HomeAssistant, area_id: Any) -> None:
     """Refuse an `area_id` Home Assistant has no area for.
 
@@ -1516,11 +1486,6 @@ async def ws_areas_list(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), {"areas": areas}))
 
 
-# -----------------------------
-# Import / Export (data safety)
-# -----------------------------
-
-
 @websocket_api.websocket_command(
     {vol.Required("type"): "haventory/export", vol.Optional("filter"): object}
 )
@@ -1687,11 +1652,6 @@ async def ws_import_execute(
         },
     )
     conn.send_message(websocket_api.result_message(msg.get("id", 0), summary))
-
-
-# -----------------------------
-# Registration
-# -----------------------------
 
 
 # Every command this integration serves. Home Assistant keys its command

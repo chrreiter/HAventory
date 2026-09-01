@@ -129,11 +129,6 @@ _ITEM_SOURCE_FIELDS: tuple[str, ...] = (
 _LOCATION_SOURCE_FIELDS: tuple[str, ...] = ("name", "parent_id", "area_id")
 
 
-# -----------------------------
-# Export
-# -----------------------------
-
-
 def build_export_document(
     repo: Repository,
     *,
@@ -189,11 +184,6 @@ def _sorted_index_by_id(items: list[Item]) -> list[int]:
     """Return indices of ``items`` ordered by their stringified id (stable export)."""
 
     return sorted(range(len(items)), key=lambda i: str(items[i].id))
-
-
-# -----------------------------
-# Import — validation & planning
-# -----------------------------
 
 
 def _err(path: str, message: str) -> dict[str, str]:

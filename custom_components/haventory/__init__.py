@@ -178,10 +178,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
     # change has to reach it.
     await todo_mod.async_setup(hass, entry)
 
-    # Register services
     services_mod.setup(hass)
-
-    # Register WebSocket commands
     ws_mod.setup(hass)
 
     # Entity platforms, after the repository is on the entry the entities read

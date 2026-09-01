@@ -520,11 +520,6 @@ class Sort(TypedDict):
     order: Literal["asc", "desc"]
 
 
-# -----------------------------
-# Utility helpers
-# -----------------------------
-
-
 def parse_uuid4(value: str | uuid.UUID, *, field_name: str = "id") -> uuid.UUID:
     """Parse a UUID value and ensure it is version 4.
 
@@ -578,7 +573,6 @@ def normalize_date_yyyy_mm_dd(value: str, *, field_name: str) -> str:
     if not isinstance(value, str) or not DATE_RE.match(value):
         raise ValidationError(f"{field_name} must be in 'YYYY-MM-DD' format")
     try:
-        # This ensures the date components are valid (e.g., no Feb 30)
         datetime.strptime(value, "%Y-%m-%d")
     except ValueError as exc:
         raise ValidationError(f"{field_name} must be a valid calendar date (YYYY-MM-DD)") from exc
@@ -1320,11 +1314,6 @@ def build_location_path_from_map(
     )
 
 
-# -----------------------------
-# Creation and update helpers
-# -----------------------------
-
-
 def _is_int_not_bool(value: object) -> bool:
     """True for a real integer. ``bool`` is a subclass of ``int`` — exclude it."""
     return isinstance(value, int) and not isinstance(value, bool)
@@ -1663,11 +1652,6 @@ def apply_item_update(
     new_item.updated_at = monotonic_timestamp_after(item.updated_at)
     new_item.version = item.version + 1
     return new_item
-
-
-# -----------------------------
-# Filtering and sorting helpers
-# -----------------------------
 
 
 #: Length of the canonical "YYYY-MM-DDTHH:MM:SSZ" timestamp format. Canonical
