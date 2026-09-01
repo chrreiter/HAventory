@@ -139,22 +139,42 @@ finds them again records nothing:
 
 ## 2. Owner pre-flight
 
-Decisions that would otherwise stop a session mid-way. Items 1 and 4 need the owner's own
-state; 2, 3, 5 and 6 have a recommended verdict a session may assume unless the owner says
-otherwise before M1 starts.
+Decisions that would otherwise stop a session mid-way. Items 1 and 2 were **decided on
+2026-09-01**; item 4 needs the owner's own state; 3, 5 and 6 carry a recommended verdict a
+session may assume unless the owner says otherwise before M1 starts.
 
-1. **Has production crossed to v1 on 0.8.x?** #668's premise is that the adopter shipped
-   in a build the owner actually runs — the deletion is safe only after the owner's own
-   store has been read once by 0.8.x (the log line is
-   `Adopting … from_version=9 to_version=1`; the dev instance crossed on 2026-08-30, the
-   production instance is the one that matters). **M1 checks this as its start condition
-   and stops if the owner has not confirmed it on #236.**
-2. **The Dependabot six (#653–#657, #665) — recommended: M3 drives them.** All six are
-   dev-scope. M3 merges each whose CI and the full gate are green, oldest first; for the
-   three majors (typescript 7, jsdom 30, @types/node 26) it checks the branch out and runs
-   the frontend gate first. A major that breaks the gate is closed with a comment naming
-   what broke — the upgrade returns when something needs it; no issue unless it blocks a
-   real update path. `test_toolchain_pins.py` guards the Node floor either way.
+1. **Decided: confirmed.** Production crossed to v1 on 0.8.x (the owner's word,
+   2026-09-01, recorded on #236). #668's premise — that the adopter shipped in a build the
+   owner actually runs — holds, and **M1 may start**. The reasoning stays for the record:
+   the deletion is safe only after the owner's own store has been read once by 0.8.x
+   (`Adopting … from_version=9 to_version=1`; the dev instance crossed on 2026-08-30).
+2. **Decided: four of the Dependabot six are pulled for v0.9.0; two wait for after the
+   HACS release.** Taken 2026-09-01 from each PR's CI and failure logs (all six are
+   dev-scope; the evidence is in the 2026-09-01 comment on #236):
+   - **#665** (codeql-action 4.37.7 → 4.37.9) and **#653** (the card-deps group: seven
+     minor/patch bumps) — every check green. **Merge as-is**; the base has moved since
+     their runs, so the full gate is re-run at merge time.
+   - **#657** (the python-dev group) — 1,407 tests pass; the only two failures are the
+     pin sweep itself: Dependabot bumped ruff 0.16.3 → 0.16.4 in `pyproject.toml` but not
+     the pinned copy `test_toolchain_pins.py` enumerates in `.pre-commit-config.yaml`.
+     **Merge, with one companion commit on the branch** aligning that pin — the failing
+     tests name every copy.
+   - **#654** (jsdom 26 → 30) — 2,014 of 2,015 tests pass; the one failure is
+     `hv-overflow-menu.test.ts`'s two `:scope > …` lookups, which jsdom 30 answers with
+     `null`. `:scope` appears nowhere in production code, so the bump touches tests only.
+     **Merge, with one companion commit** rewriting the two lookups to assert the same
+     fact (a direct-child check), never weakening them.
+   - **#655** (typescript 6.0.3 → 7.0.2) — **wait**: `npm ci` fails with ERESOLVE;
+     `@typescript-eslint` peer-requires `typescript >=4.8.4 <6.1.0`, so the toolchain
+     itself refuses TS 7 and nothing in-repo fixes that honestly. Close it, and add a
+     dependabot ignore rule for typescript majors (npm section, in the style of the uv
+     section's), with the lift condition in the comment: typescript-eslint supporting
+     TS 7.
+   - **#656** (@types/node 22 → 26) — **wait**: the typings would describe Node 26 while
+     `engines` floors at `^22.13.0 || >=24` and CI runs a 22/24 matrix, and typecheck is
+     already red under them (TS2550 `.at()` lib errors). Close it, and add the matching
+     ignore rule for @types/node majors; both lift together with a deliberate Node-floor
+     bump — post-release housekeeping, not this milestone's.
 3. **Repository visibility — recommended: flip after V, with #196.** The sweep exists so
    the first public read happens after it lands; the earliest sensible flip is after M1–M3
    merge, and #236 stage 7 puts it at the HACS release. Flipping earlier costs the sweep
@@ -249,8 +269,8 @@ M1  backend + tests: the adopter deletion (#668); the backend      4 PRs   cloud
 M2  card: the copy-id fold; the dead surface; the comment          3 PRs   cloud   (may run beside M1)
     and spec-preamble sweep (#686)
 M3  docs/process: the wrong claims; one home per fact and          3 PRs   cloud   (after M1 and M2)
-    the residue; the release-testing-plan rows (#687);           + 6 merges
-    the Dependabot six (§2 item 2)
+    the residue; the release-testing-plan rows (#687);           + 4 merges,
+    the Dependabot six (§2 item 2: 4 merge, 2 close)               2 closes
 L1  local: deploy main, every regimen, the "Validate locally"              local, Fable 5
     blocks; then the owner merges release-please's 0.9.0 PR
 V   the validation run (#276) against v0.9.x per                            local, Fable 5
@@ -458,9 +478,11 @@ skills PR restates test counts M1 changes), no V0.9.0 PR open.
    pointer; the `op_id` and #507 corrections in the two SKILL.md files and
    `frontend_architecture.md`.
 
-Then, **no subagents**: the six Dependabot PRs per §2 item 2 — oldest first, gate-verified,
-merged or closed with the reason. Groups #653/#657/#665 first (grouped patches), then the
-majors #654/#655/#656 one at a time.
+Then, **no subagents**: the Dependabot six per §2 item 2's decided verdict. Merge #665 and
+#653 with the full gate re-run on the moved base; push the ruff-pin companion commit onto
+#657 and merge; push the `:scope` test rewrite onto #654 and merge; close #655 and #656
+with the recorded reasons, adding the two dependabot ignore rules (npm section, each with
+its lift condition in the comment) in this session's residue PR.
 
 No phacc. **Live checks the master runs**: `test_docs_links_offline.py`,
 `test_docs_contract_offline.py`, `test_docs_examples_offline.py` and the backend gate
@@ -633,9 +655,10 @@ merged, no V0.9.0 PR open.
 
 The three PRs of §6.M3 in order, one subagent each, one at a time — the release-testing-
 plan rows first, the backend gate run before any README edit is believed. Then, yourself,
-no subagents: the six Dependabot PRs per §2 item 2 — oldest first, the full frontend gate
-on each of the three majors before merging; a major that breaks the gate is closed with a
-comment naming what broke. Release-please PRs are never touched.
+no subagents: the Dependabot six per §2 item 2's decided verdict — merge #665 and #653
+(full gate on the moved base), push the ruff-pin commit onto #657 and merge, push the
+:scope test rewrite onto #654 and merge, close #655 and #656 with the recorded reasons and
+add the two ignore rules. Release-please PRs are never touched.
 
 End with the six-part handover as your last message and as a comment on #236.
 ```
