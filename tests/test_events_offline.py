@@ -1,9 +1,4 @@
-"""Offline tests for the Home Assistant bus events.
-
-An automation trigger and a card subscription describe the same mutation, so
-the bus action is asserted against the action the WebSocket event carried
-rather than on its own.
-"""
+"""Offline tests for the Home Assistant bus events."""
 
 from __future__ import annotations
 

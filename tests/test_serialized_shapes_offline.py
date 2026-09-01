@@ -93,11 +93,10 @@ def hass_with(repo: Repository) -> HomeAssistant:
 def test_the_stored_payload_is_byte_for_byte_what_it_was() -> None:
     """The golden document, loaded and exported again, is the golden document.
 
-    #482 pulls the stored-shape changes forward so #229's collapse lands on a
-    shape that has stopped moving. Consolidating three hand-written serializers
-    into one is exactly the kind of change that moves a byte without meaning to
-    — a lost key, a reordered field, an ``int()`` dropped — and every one of
-    those is a store this build writes differently from the last.
+    Refactoring the serializers is exactly the kind of change that moves a byte
+    without meaning to — a lost key, a reordered field, an ``int()`` dropped —
+    and every one of those is a store this build writes differently from the
+    last one a household ran.
     """
     exported = loaded_repository().export_state()
 

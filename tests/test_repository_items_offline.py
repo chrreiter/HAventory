@@ -454,7 +454,7 @@ def test_a_cursor_minted_under_another_sort_raises() -> None:
 
 
 def test_a_valid_cursor_still_pages_to_the_end() -> None:
-    """The regression that matters: hardening did not break the round trip."""
+    """The cursor a page hands back is the one the next page is asked for."""
 
     repo = Repository()
     for i in range(5):
@@ -503,11 +503,11 @@ def _walk_pages(repo: Repository, *, flt: ItemFilter, sort: Sort, limit: int) ->
 )
 @pytest.mark.parametrize("limit", [1, 3, 4, 7])
 def test_low_stock_first_pages_deliver_every_item(sort: Sort, limit: int) -> None:
-    """Issue #435: paging with low_stock_first on delivers exactly ``total`` items.
+    """Paging with low_stock_first on delivers exactly ``total`` items.
 
-    The regroup used to break the (sort value, id) ordering the cursor scan
-    assumed: after the low-stock block every remaining item compared *before*
-    the cursor, so page two came back empty and most of the list was
+    The regroup breaks the (sort value, id) ordering the cursor scan otherwise
+    assumes: after the low-stock block every remaining item compares *before*
+    the cursor, which would leave page two empty and most of the list
     unreachable while ``total`` still reported all of it.
     """
 

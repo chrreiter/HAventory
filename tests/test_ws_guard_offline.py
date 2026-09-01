@@ -128,10 +128,8 @@ async def test_a_command_refuses_when_no_entry_exists(command: str) -> None:
 async def test_a_command_refuses_while_the_entry_is_not_loaded(command: str) -> None:
     """An entry that exists but is unloaded or disabled serves nothing.
 
-    The behavior `_require_loaded` used to get from an emptied bucket, restated
-    against the source of truth that replaced it. The runtime is deliberately
-    left attached: what refuses here is the *state*, not a missing object, which
-    is exactly the disabled-entry case.
+    The runtime is deliberately left attached: what refuses here is the entry
+    *state*, not a missing object, which is exactly the disabled-entry case.
     """
 
     hass = ws_hass(state=ConfigEntryState.NOT_LOADED)

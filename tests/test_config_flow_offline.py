@@ -1,9 +1,9 @@
 """Offline tests for the HAventory config flow and its options form.
 
-The translation trees are held here too: Home Assistant reads `strings.json`
-for the flow it renders and `translations/<tag>.json` for the language a
-household set, and a key present in one and missing from the other shows up as
-a raw key on a form nobody on this side of the release will see.
+The translation trees are held here too. `strings.json` and every
+`translations/<tag>.json` have to carry the same key tree and the same
+placeholders: a key in one and not the other renders as the raw key on the
+household's own screen, where nobody on this side of the release sees it.
 """
 
 from __future__ import annotations

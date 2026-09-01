@@ -1,9 +1,8 @@
 """Offline tests for the subscription registry and the event fan-out.
 
 A subscription's filter is applied to the payload as it stands after the
-mutation, and answers the same question the matching `item/list` filter does —
-so the two are asserted against each other rather than each against a
-hand-written expectation.
+mutation, so a client whose filtered set a mutation moved out from under it
+re-lists rather than waiting for a departure event that never comes.
 """
 
 from __future__ import annotations
@@ -617,9 +616,9 @@ async def test_framework_unsubscribe_events_tears_down_subscription() -> None:
     """Subscriptions register in HA's own registry so core ``unsubscribe_events``
     (the teardown path the frontend's ``subscribeMessage`` uses) can cancel them.
 
-    Before the fix nothing was registered under the message id, so core replied
-    ``not_found`` ("Subscription not found.") on every teardown — an unhandled
-    rejection in the card.
+    Nothing registered under the message id makes core answer ``not_found``
+    ("Subscription not found.") on every teardown, which reaches the card as an
+    unhandled rejection.
     """
 
     hass = ws_hass()
@@ -669,12 +668,11 @@ async def test_dedicated_unsubscribe_clears_framework_registry() -> None:
 async def test_subscribe_on_slotted_connection_never_stamps_attribute() -> None:
     """Subscribe must not stamp a marker attribute on a ``__slots__`` connection.
 
-    Regression for the WP4 stress re-run finding: ``_register_close_listener`` used to
-    set ``conn._haventory_close_registered = True`` for "register once" behaviour. Real
-    HA's ``ActiveConnection`` is slotted (no ``__dict__``), so that assignment raised
-    ``AttributeError`` on **every** subscribe (caught, but logged as a traceback under
-    debug logging). The ``__dict__``-carrying stubs never surfaced it. Idempotency now
-    derives from the ``"haventory/cleanup"`` key already present in ``subscriptions``.
+    Real HA's ``ActiveConnection`` is slotted and has no ``__dict__``, so any
+    assignment onto it raises ``AttributeError``. The stubs elsewhere in this
+    suite carry a ``__dict__`` and would swallow that, which is what
+    ``_SlottedHAConn`` exists to stop. "Register once" therefore derives from the
+    ``"haventory/cleanup"`` key already present in ``subscriptions``.
     """
 
     hass = ws_hass()
@@ -692,20 +690,13 @@ async def test_subscribe_on_slotted_connection_never_stamps_attribute() -> None:
     assert sub_b in conn.subscriptions
     assert list(conn.subscriptions).count("haventory/cleanup") == 1  # idempotent
 
-    # The core assertion: production code never attempted to stamp a marker attribute
-    # on the slotted connection (the old ``_haventory_close_registered = True``).
+    # Nothing was stamped on the connection, by any name.
     assert conn.stray_set_attempts == []
-    assert not hasattr(conn, "_haventory_close_registered")
 
-    # Both subscriptions are live in our bucket, and the disconnect path
-    # (subscriptions.values()) tears them all down without drift.
+    # The disconnect path walks `subscriptions.values()`, so both come down.
     assert open_subscriptions(hass).get(conn)
     conn.close()
     assert conn not in open_subscriptions(hass)
-
-    # Sanity: the stub really is slotted like real HA (rejects arbitrary attrs).
-    with pytest.raises(AttributeError):
-        conn.some_unexpected_attr = 1  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -785,9 +776,9 @@ async def test_location_ids_scopes_a_subscription_to_several_locations() -> None
 async def test_subscribe_refuses_location_ids_that_is_not_a_list_of_strings(bad: object) -> None:
     """The same rule the list filter answers, and no coercion behind it.
 
-    A number in the list used to become its own string, which then matched no
-    location — so a client that sent one got a subscription that silently
-    delivered nothing instead of being told what was wrong.
+    A number coerced to its own string matches no location, so the client gets a
+    subscription that silently delivers nothing instead of being told what is
+    wrong.
     """
 
     hass = ws_hass()

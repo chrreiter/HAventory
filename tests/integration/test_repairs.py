@@ -255,7 +255,7 @@ async def test_a_row_with_no_name_reaches_the_repairs_card_and_its_fix(
 ) -> None:
     """A stored ``"name": null`` is corruption, and behaves like every other kind.
 
-    It used to load: ``str(None)`` produced an item literally called ``"None"``,
+    Coerced with ``str(None)`` it loads as an item literally called ``"None"``,
     which no write path could have created and which the next edit would have
     made permanent. Now it is refused — and the point of asserting that here
     rather than offline is that nothing about the *consequences* is visible

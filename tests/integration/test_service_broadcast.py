@@ -31,7 +31,7 @@ async def _subscribe(client, sub_id: int, topic: str) -> None:
 async def _drain_events(client, count: int) -> list[dict]:
     """The next `count` event frames, in arrival order.
 
-    Bounded, because the regression this file guards against is events that
+    Bounded, because what this file guards against is events that
     never arrive: an unbounded read would hang the run instead of failing it.
     """
 

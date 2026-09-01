@@ -330,11 +330,11 @@ def test_next_occurrence_after_a_one_off_is_none() -> None:
 
 
 def test_a_reminder_date_that_cannot_be_parsed_costs_only_that_item(caplog) -> None:
-    """One unreadable row used to answer 500 for every window and every item.
+    """One unreadable row costs that item its occurrences and nothing else.
 
     The projection serves the whole entity, so raising on a row nobody can parse
-    takes every other item's occurrences down with it. Only a hand-edited store
-    can produce one now — every write path and the import side refuse it — and
+    would take every other item's occurrences down with it. Only a hand-edited
+    store can produce one — every write path and the import side refuse it — so
     the answer is to leave that item off and say so once.
     """
 

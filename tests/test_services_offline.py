@@ -34,8 +34,8 @@ from runtime_helpers import install_runtime, repo_of, runtime_of
 
 
 @pytest.mark.asyncio
-async def test_item_create_and_update_flow_logs_and_mutates() -> None:
-    """Create an item, then update it; ensure repo state changes and no exceptions bubble."""
+async def test_item_create_then_update_mutates_the_repository() -> None:
+    """Create an item, then update it, and read the change back off the repository."""
 
     hass = HomeAssistant()
     install_runtime(hass)

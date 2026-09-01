@@ -333,12 +333,12 @@ async def test_a_bump_counts_from_the_household_day_not_the_utc_one(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_a_month_end_series_still_lands_on_the_31st_after_a_bump(monkeypatch) -> None:
-    """The guarantee the projection makes, now true for a reminder somebody uses.
+    """A bump leaves the anchor where it is, so the series keeps its own day.
 
     Month steps are measured from the anchor, so a series on the 31st returns to
-    the 31st in every month that has one. Bumping used to write the occurrence
-    back as the anchor, so one pass through a 30-day month re-anchored the series
-    on the 30th — and February re-anchored it on the 28th — permanently.
+    the 31st in every month that has one. Writing the occurrence back as the new
+    anchor would re-anchor the series on the 30th after one pass through a
+    30-day month, and on the 28th after February — permanently.
     """
 
     hass = ws_hass()

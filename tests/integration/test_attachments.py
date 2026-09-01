@@ -268,7 +268,7 @@ async def test_size_thumb_serves_a_real_webp_tile_and_writes_it_once(
     tile = await served.read()
 
     # A tile, not the picture: WebP whatever the original was, capped on its
-    # longest edge, and a fraction of the bytes a row used to download.
+    # longest edge, and a fraction of the bytes the full picture costs.
     assert served.headers["Content-Type"] == "image/webp"
     assert tile[:4] == b"RIFF" and tile[8:12] == b"WEBP"
     assert len(tile) < len(photo) / 4

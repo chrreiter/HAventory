@@ -71,7 +71,7 @@ def test_only_loaded_counts_for_a_client(state) -> None:
 
 @pytest.mark.asyncio
 async def test_the_final_flush_writes_while_the_entry_is_not_loaded() -> None:
-    """The regression this migration was most likely to introduce.
+    """The flush at teardown goes through the lookup that ignores entry state.
 
     Home Assistant marks an entry `UNLOAD_IN_PROGRESS` *before* calling
     `async_unload_entry`, so the teardown flush runs against an entry that is no

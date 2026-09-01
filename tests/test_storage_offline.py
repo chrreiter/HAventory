@@ -381,7 +381,7 @@ async def test_corrupt_schema_version_is_refused_and_store_untouched(
         await store.async_load()
 
     # The message quotes the offending value back, so `"4"` is distinguishable
-    # from `4` in the log — that pair is exactly what coercion used to hide.
+    # from `4` in the log, which is the pair a coercion would have hidden.
     message = str(excinfo.value)
     assert "schema_version" in message
     assert repr(stored) in message
@@ -476,12 +476,12 @@ async def test_a_saved_payload_carries_nothing_beyond_the_stored_collections() -
 
 @pytest.mark.asyncio
 async def test_a_store_written_before_the_generation_was_dropped_still_loads() -> None:
-    """Every store this build inherits carries the key, and none of them may refuse.
+    """A store carrying `_generation` loads, and the key is not read back.
 
-    Dropping the key took no schema bump — a build that no longer writes it and
-    one that never wrote it are the same store to read — so nothing rewrites the
-    stores that have it. They have to keep loading, and the key has to survive
-    until the next save rather than making the load fail.
+    The key is unstamped: a store that has it and one that does not read the
+    same, so no schema bump rewrites the ones that have it. They have to keep
+    loading, and the key has to survive until the next save rather than making
+    the load fail.
     """
 
     hass = HomeAssistant()

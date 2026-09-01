@@ -1,7 +1,7 @@
 """Offline tests for the `haventory/items/bulk` command.
 
-A batch is one write, whatever it holds: the rows are applied in memory, the
-store is saved once, and a row that fails takes only itself down.
+A row that fails takes only itself down, and a batch with nothing to apply
+writes nothing at all.
 """
 
 from __future__ import annotations

@@ -1,10 +1,12 @@
 """Offline tests for item field-type validation at the model/repository boundary.
 
-Regression coverage for the PR #91 review:
-- non-scalar category/description are rejected before indexing, so a bad value
-  can never leave a durable partially-indexed phantom item;
-- boolean quantity/delta/low_stock_threshold are rejected consistently on the
-  single-command paths (matching the bulk validator), never stored as a bool;
+Three rules hold together here:
+
+- a non-scalar category or description is rejected before indexing, so a bad
+  value can never leave a durable partially-indexed phantom item;
+- a boolean quantity, delta or low-stock threshold is rejected on the
+  single-command paths exactly as the bulk validator rejects it, and never
+  stored as a bool;
 - a value the payload is wrong about is refused before the item is looked up, so
   a single-item command and the `items/bulk` row of the same kind answer one
   payload with one code.

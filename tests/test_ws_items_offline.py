@@ -245,7 +245,7 @@ async def test_ws_mutations_persist_to_store(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_inspection_date_in_create_update_get() -> None:
-    """inspection_date field is handled correctly in WS create/update/get operations."""
+    """inspection_date is set on create, read back on get, changed and cleared."""
 
     hass = ws_hass()
 
@@ -776,7 +776,7 @@ def _hass_with_items(count: int = 3) -> HomeAssistant:
 
 @pytest.mark.asyncio
 async def test_item_list_refuses_an_unknown_filter_key_by_name() -> None:
-    """A typo'd key used to be dropped, and the reply was the whole inventory."""
+    """A typo'd filter key is named in the refusal, not dropped for a full page."""
 
     hass = _hass_with_items()
 
@@ -850,7 +850,7 @@ async def test_item_list_refuses_a_tag_selection_that_is_a_bare_string(key: str)
 
 @pytest.mark.asyncio
 async def test_item_list_still_serves_a_full_known_filter_and_pages() -> None:
-    """The regression that matters: nothing legitimate got refused."""
+    """Every filter key the contract documents still passes."""
 
     hass = _hass_with_items()
 

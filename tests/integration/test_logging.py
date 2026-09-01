@@ -74,5 +74,5 @@ async def test_the_setup_line_carries_the_numbers_a_boot_is_diagnosed_from(
     assert "op=setup_storage_health" in health[-1]
     assert "schema_version=" in health[-1]
     assert "items_count=" in health[-1]
-    # Once each: the numbers used to be formatted into the message as well.
+    # Once each: the numbers are context, not part of the message text.
     assert health[-1].count("schema_version=") == 1

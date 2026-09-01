@@ -1,9 +1,9 @@
 """Offline tests for what must survive an export_state/load_state round trip.
 
-- LocationPath.sort_key, which once serialized without sort_key and reloaded
-  as "".
-- Cursor pagination must return an empty page when everything after the
-  cursor was deleted between pages (it previously re-served page one).
+- LocationPath.sort_key, which is derived rather than typed and so has to be
+  rebuilt for a payload that carries none.
+- Cursor pagination returns an empty page when everything after the cursor was
+  deleted between pages, rather than falling back to the first one.
 - Status definitions, against the two traps that would silently lose them: the
   loader ordering (items coerced against the built-ins alone) and the save path
   (a collection the repository reads but does not emit).
@@ -45,7 +45,7 @@ def test_sort_key_survives_persistence_round_trip() -> None:
 
 
 def test_legacy_store_without_sort_key_is_backfilled_on_load() -> None:
-    """Pre-WP4 stores never persisted sort_key; loading must derive it."""
+    """A payload carrying no sort_key gets one derived on load."""
 
     repo = Repository()
     garage = repo.create_location(name="Garage")

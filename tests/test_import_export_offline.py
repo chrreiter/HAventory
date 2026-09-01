@@ -790,7 +790,7 @@ def test_preview_accepts_a_due_date_on_a_checked_out_item() -> None:
 
 
 def test_preview_accepts_an_item_at_every_cap() -> None:
-    """The regression that matters: nothing legitimate got refused."""
+    """Every document the contract documents still imports."""
 
     repo = Repository()
     report, target = ie.plan_import(
@@ -1102,7 +1102,7 @@ def test_a_location_collision_names_the_stored_path() -> None:
 
 @pytest.mark.parametrize("policy", ["merge", "replace", "skip"])
 def test_a_clean_round_trip_warns_about_nothing(policy: str) -> None:
-    """The regression that matters most.
+    """The case a false positive would hit first.
 
     Every entity of a re-imported export classifies `unchanged` or `update`, so
     a check that fired here would fire on every healthy document — which is
