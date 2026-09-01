@@ -1000,10 +1000,10 @@ describe('hv-item-editor: typed custom fields', () => {
     ]);
   });
 
-  // The bar was pinned only when the card said "phone". Every host that can
-  // scroll the form puts it below the fold — the card's list, the phone sheet,
-  // and the expanded view, which caps the form at 70dvh — so the editor solves
-  // it once for all of them instead of each host growing a footer of its own.
+  // Every host that can scroll the form puts the actions below the fold — the
+  // card's list, the phone sheet, and the expanded view, which caps the form at
+  // 70dvh — so the editor keeps them in reach itself rather than each host
+  // growing a footer of its own.
   it('keeps Save and Cancel in reach on every host', async () => {
     const css = editorCss();
 
@@ -2698,8 +2698,6 @@ describe('hv-item-editor: dropping files onto the editor', () => {
   });
 });
 
-// The form was authored for a 600–900px card and then given a 1080p surface to
-// fill. Everything below is a measurement that stopped being true there.
 describe('hv-item-editor: geometry and type', () => {
 
   // Both boxes are caption + body and nothing else, so the hint belongs to the
@@ -2725,8 +2723,8 @@ describe('hv-item-editor: one label recipe, one note size', () => {
     }
   });
 
-  // A note riding inside a label needs to step out of the uppercase treatment;
-  // it did that with the file's only inline style attribute.
+  // A note riding inside a label steps out of the label's uppercase treatment,
+  // and the rule for that belongs in the stylesheet like every other.
   it('carries the tags note as a class, not an inline style', async () => {
     const el = await mount(makeItem({ id: '1' }));
     expect(el.shadowRoot?.innerHTML).not.toContain('style="text-transform');
@@ -2767,8 +2765,6 @@ describe('hv-item-editor: the custom-fields tally states a fact', () => {
   });
 });
 
-// "Checkout" above a button reading "Check out…", in a card that says "Check
-// out" everywhere else.
 describe('hv-item-editor: one verb for checking out', () => {
   it('heads the box with the verb its own button uses', async () => {
     const el = await mount(makeItem({ id: '1' }));
@@ -2777,9 +2773,8 @@ describe('hv-item-editor: one verb for checking out', () => {
   });
 });
 
-// The form's thumbnails were 72px squares of a photo and nothing more: the
-// lightbox existed on the phone's detail sheet and nowhere else, so on the card
-// and the expanded view there was no way to see a photo at a useful size.
+// A 72px thumbnail is no way to look at a photo, so the form opens the lightbox
+// from one wherever it is hosted — not only on the phone's detail sheet.
 describe('hv-item-editor: photos open full-size', () => {
   const shots = () => [makeAttachment({ id: 'att-1' }), makeAttachment({ id: 'att-2' })];
 

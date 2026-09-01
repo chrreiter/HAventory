@@ -902,8 +902,8 @@ describe('hv-full-view: sidebar facets', () => {
     expect(q(sr, '[data-testid="sidebar-tree"]')).toBeTruthy();
   });
 
-  // Locations was the odd one out: a "+" where the other two headings carry a
-  // number, so the section you can add to was the one you could not size up.
+  // The tally counts every depth, and it sits beside the "+" rather than in
+  // place of it.
   it('states how many locations there are, at every depth', async () => {
     const { sr } = await mount({
       items: faceted,
@@ -914,9 +914,6 @@ describe('hv-full-view: sidebar facets', () => {
     expect(q(sr, '[data-testid="sidebar-new-location"]')).toBeTruthy();
   });
 
-  // Locations could be added to from its heading and the other two could not,
-  // so the one section with a "+" was the only facet you could create without
-  // going to find the organize dialog yourself.
   it('offers a create action on every heading, not just Locations', async () => {
     const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
     const seen: { id: string; tab?: string }[] = [];
@@ -935,9 +932,8 @@ describe('hv-full-view: sidebar facets', () => {
     expect(q(sr, '[data-testid="sidebar-new-tags"]')?.getAttribute('title')).toBe('New tag…');
   });
 
-  // Status was the fourth facet and the only heading with nothing on it, so the
-  // one vocabulary a household actually defines was the one you could not reach
-  // from the sidebar that shows it.
+  // Status is the one vocabulary a household defines itself, so its heading
+  // offers the same way in as the other three.
   it('offers the same create action on the Status heading', async () => {
     const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
     const seen: { id: string; tab?: string }[] = [];
@@ -1186,9 +1182,8 @@ describe('hv-full-view: context bar and table', () => {
     expect(seen).toEqual(['columns']);
   });
 
-  // Organizing was reachable only from inside the ⋮ menu, on the surface where
-  // there is room for a button — so the one place with space for it was the one
-  // place that hid it. The menu entry stays; the hosts' menu-order pins hold it.
+  // Organize has a button of its own on the app bar, embedded and modal alike;
+  // the ⋮ entry stays beside it, held by the hosts' menu-order pins.
   it('opens Organize from a button on the app bar', async () => {
     for (const embedded of [false, true]) {
       const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
@@ -2484,8 +2479,8 @@ describe('hv-full-view: failures are visible here too', () => {
   });
 });
 
-// The table's rows had a Delete key and no visible equivalent, and none of the
-// three actions the card's rows offer.
+// Every action the card's rows offer is on the table's rows too, through a
+// visible control rather than a key with nothing on screen to match it.
 describe('hv-full-view: table row actions', () => {
   const pick = (sr: ShadowRoot, id: string, row = 0) => {
     const menus = [
@@ -2715,11 +2710,9 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
   });
 });
 
-// Every status, category and tag row was a tab stop of its own, so the walk
-// from the search box to the first table row grew with the household's
-// vocabulary: 184 presses on a seeded install, 122 of them labels. Each list is
-// now one stop with the arrows moving inside it, the shape the locations tree
-// already carries.
+// Each facet list is one tab stop with the arrows moving inside it, the shape
+// the locations tree carries — so the walk from the search box to the first
+// table row does not grow with the household's vocabulary.
 describe('hv-full-view: one tab stop per facet list', () => {
   const faceted = [
     makeItem({ id: '1', category: 'Cleaning', tags: ['heavy'] }),

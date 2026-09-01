@@ -72,7 +72,6 @@ describe('hv-card-shell: header', () => {
   });
 
   it('agrees with a one-item inventory', async () => {
-    // The total badge was one of nine strings with "items" hardcoded.
     const { sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Lonely Hammer' })] });
     expect(sr.querySelector('[data-testid="badge-total"]')?.textContent?.trim()).toBe('1 item');
   });
@@ -734,9 +733,8 @@ describe('hv-card-shell: banners', () => {
 
   // The row's own ± is the other half: a delta cannot be re-applied against a
   // version somebody else has moved, so the store files the entry without an
-  // item — and the banner used to fall through to the raw message with no
-  // heading at all, which was the one place a household read the numbers with
-  // nothing around them.
+  // item — and the banner still frames it rather than falling through to the
+  // raw message with no heading at all.
   it('frames a refused quantity the same way, with no way back offered', async () => {
     const { el, store, sr } = await mountShell({
       items: [makeItem({ id: '1', name: 'A', quantity: 3 })],
