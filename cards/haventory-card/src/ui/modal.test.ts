@@ -6,9 +6,8 @@ import '../components/hv-organize-dialog';
 import { mountComponent, settle } from '../test.utils';
 
 /**
- * The five centred dialogs, which have to end up alike: each used to write its
- * own backdrop, its own centring layer, its own panel box and its own answer to
- * "who closes this?".
+ * The five centred dialogs, which have to come out alike: one backdrop, one
+ * centring layer, one panel box and one answer to "who closes this?".
  */
 const DIALOGS = [
   'hv-column-picker',

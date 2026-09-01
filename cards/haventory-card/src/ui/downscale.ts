@@ -91,7 +91,7 @@ export interface DownscaleDeps {
 
 const browserDeps: DownscaleDeps = {
   decode: (file) =>
-    // `from-image` is load-bearing: re-encoding drops the source's EXIF, so a
+    // `from-image` is required: re-encoding drops the source's EXIF, so a
     // bitmap decoded without applying the orientation tag first would upload a
     // portrait photo permanently on its side.
     createImageBitmap(file, { imageOrientation: 'from-image' }),

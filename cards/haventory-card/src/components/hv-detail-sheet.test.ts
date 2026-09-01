@@ -856,6 +856,9 @@ describe('hv-detail-sheet: pictures', () => {
   });
 });
 
+// Stepping, wrapping, the counter and the single-photo case belong to the
+// lightbox and are pinned in hv-lightbox.test.ts. The sheet only hosts one, so
+// what is pinned here is the boundary between the two.
 describe('hv-detail-sheet: lightbox navigation', () => {
   const shots = () => [
     makeAttachment({ id: 'att-1' }),
@@ -871,10 +874,6 @@ describe('hv-detail-sheet: lightbox navigation', () => {
     return el;
   }
 
-  const shown = (el: HVDetailSheet) =>
-    (lightbox(el, '[data-testid="lightbox"] img') as HTMLImageElement | null)?.getAttribute('alt');
-  const counter = (el: HVDetailSheet) =>
-    lightbox(el, '[data-testid="lightbox-counter"]')?.textContent?.trim();
   const press = async (el: HVDetailSheet, key: string) => {
     lightbox(el)?.dispatchEvent(
       new KeyboardEvent('keydown', { key, bubbles: true }),
@@ -882,76 +881,12 @@ describe('hv-detail-sheet: lightbox navigation', () => {
     await settle(el);
   };
 
-  it('counts the photo out of the strip it belongs to', async () => {
-    const el = await opened(1);
-    expect(counter(el)).toBe('2 of 3');
-    // A changed dialog label is not re-announced; the counter is.
-    expect(lightbox(el, '[data-testid="lightbox-counter"]')?.getAttribute('aria-live')).toBe('polite');
-  });
-
-  it('steps forward and back from the tap-edge buttons', async () => {
-    const el = await opened(0);
-    expect(shown(el)).toBe('Drill — photo 1 of 3');
-
-    (lightbox(el, '[data-testid="lightbox-next"]') as HTMLButtonElement).click();
-    await settle(el);
-    expect(shown(el)).toBe('Drill — photo 2 of 3');
-    expect(counter(el)).toBe('2 of 3');
-
-    (lightbox(el, '[data-testid="lightbox-prev"]') as HTMLButtonElement).click();
-    await settle(el);
-    expect(shown(el)).toBe('Drill — photo 1 of 3');
-    expect(counter(el)).toBe('1 of 3');
-  });
-
-  // Every press does something: no control disables itself under the finger
-  // that pressed it, which would drop focus out of the dialog.
-  it('wraps at both ends rather than stopping', async () => {
-    const el = await opened(0);
-    (lightbox(el, '[data-testid="lightbox-prev"]') as HTMLButtonElement).click();
-    await settle(el);
-    expect(counter(el)).toBe('3 of 3');
-
-    (lightbox(el, '[data-testid="lightbox-next"]') as HTMLButtonElement).click();
-    await settle(el);
-    expect(counter(el)).toBe('1 of 3');
-  });
-
-  // The backdrop closes on click and the buttons sit on top of it.
-  it('does not close the lightbox when a nav button is pressed', async () => {
-    const el = await opened(0);
-    (lightbox(el, '[data-testid="lightbox-next"]') as HTMLButtonElement).click();
-    await settle(el);
-    expect(lightbox(el)).toBeTruthy();
-  });
-
-  it('moves with the arrow keys', async () => {
-    const el = await opened(0);
-    await press(el, 'ArrowRight');
-    expect(shown(el)).toBe('Drill — photo 2 of 3');
-    await press(el, 'ArrowLeft');
-    expect(shown(el)).toBe('Drill — photo 1 of 3');
-    await press(el, 'ArrowLeft');
-    expect(shown(el)).toBe('Drill — photo 3 of 3');
-  });
-
   it('leaves the sheet under it alone on an arrow key', async () => {
     const el = await opened(0);
     const seen = captured(el, ['cancel']);
     await press(el, 'ArrowRight');
     expect(seen).toEqual([]);
     expect(el.open).toBe(true);
-  });
-
-  it('offers no navigation for a single photo', async () => {
-    const el = await opened(0, [makeAttachment({ id: 'att-1' })]);
-    expect(lightbox(el, '[data-testid="lightbox-prev"]')).toBeNull();
-    expect(lightbox(el, '[data-testid="lightbox-next"]')).toBeNull();
-    expect(lightbox(el, '[data-testid="lightbox-counter"]')).toBeNull();
-    // The arrow key has nowhere to go and must not be swallowed by a dialog
-    // that cannot act on it.
-    await press(el, 'ArrowRight');
-    expect(shown(el)).toBe('Photo of Drill');
   });
 
   it('still closes on Escape with the navigation on screen', async () => {

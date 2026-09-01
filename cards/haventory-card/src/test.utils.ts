@@ -1124,9 +1124,7 @@ export function discardAsker(): DiscardAsker {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Component-test harness
-// ---------------------------------------------------------------------------
+// ---------- Component-test harness ----------
 
 /** What a mounted component hands back: the element and its shadow root. */
 export interface Mounted<T extends HTMLElement> {

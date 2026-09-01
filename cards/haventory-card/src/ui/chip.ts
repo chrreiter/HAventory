@@ -65,7 +65,7 @@ export const chip = css`
    * Both have to be allowed to shrink for their label to elide at all: the
    * metrics above hold every chip at flex: none, which is right beside other
    * chips and wrong inside a box narrower than the chip. Left unshrunk they do
-   * not merely spill — the location tree's area band painted its name over the
+   * not merely spill: the location tree's area band paints its name over the
    * tally beside it, and a clipped number reads as a smaller one with nothing
    * to say it was cut.
    *

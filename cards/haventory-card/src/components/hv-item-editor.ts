@@ -2172,10 +2172,10 @@ export class HVItemEditor extends LitElement {
     if (!media || !item) return;
     try {
       this._uploaded = await media.remove(item.id, attachmentId);
-      // The guard handed focus back to the control that raised it, and that
-      // control was this tile's own remove button — still there at the time,
-      // gone the moment the strip redraws without the tile. Nobody else is
-      // watching for that: the guard closed cleanly and the form is still up.
+      // The confirm hands focus back to the control that raised it, which is
+      // this tile's own remove button — gone the moment the strip redraws
+      // without the tile. Nothing else watches for that: the confirm closed
+      // cleanly and the form is still up.
       await this.updateComplete;
       if (focusStranded()) this._refocus();
     } catch (err) {

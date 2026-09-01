@@ -1,17 +1,13 @@
 /**
  * The card's count strings.
  *
- * Roughly half of them agreed with their number and half did not: the location
- * tree said "1 item" while the bulk bar, three components away, said "Move 1
- * items to" — and the organize dialog managed both, on adjacent rows. Every one
- * of those was a hand-written `n === 1 ? '' : 's'`, so the drift was inevitable
- * rather than careless.
- *
- * The forms now come from the dictionaries, one pair per noun, which is also
- * the only way a language that does not build its plural by appending a letter
- * can have one. A count *inside* a sentence does not come through here at all —
- * it gets a key for the whole sentence, because where the number sits and what
- * the verb does with it are the sentence's business, not the noun's.
+ * The forms come from the dictionaries, one pair per noun. A hand-written
+ * `n === 1 ? '' : 's'` at each call site drifts between components that count
+ * the same thing, and it is no plural at all in a language that does not build
+ * one by appending a letter. A count *inside* a sentence does not come through
+ * here at all — it gets a key for the whole sentence, because where the number
+ * sits and what the verb does with it are the sentence's business, not the
+ * noun's.
  */
 
 import { tn } from '../i18n';

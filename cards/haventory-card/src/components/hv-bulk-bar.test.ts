@@ -298,16 +298,16 @@ describe('describeFailure', () => {
   });
 });
 
-// The bar was the one surface that ignored the tokens: a hardcoded blue-grey
-// band and a hardcoded red for Delete, neither of which moved with the HA
-// theme — and a running batch's Cancel that was a bare native button on top of
-// it, unstyled where every sibling control was a pill.
+// The band, the Delete accent and every control on the bar come from the tokens
+// and the card's own button recipes, so the bar moves with the HA theme like
+// every other surface.
 describe('hv-bulk-bar: the band belongs to the theme', () => {
 
   it('draws the running batch a real button', async () => {
     const el = await mount({ progress: { done: 1, total: 4, failed: 0, label: 'Moving' } });
     expect(q(el, '[data-testid="bulk-cancel"]')?.className).toContain('band-button');
-    // And it no longer positions itself with an inline style per failure state.
+    // And its place in the row comes from the stylesheet, not an inline style
+    // per failure state.
     expect(q(el, '[data-testid="bulk-cancel"]')?.getAttribute('style')).toBe(null);
   });
 

@@ -593,8 +593,8 @@ describe('hv-list-row: the phone line’s pieces', () => {
     expect(css).toMatch(/:host\(\[mobile\]\) \.secondary > \.lead \{[^}]*text-overflow: ellipsis/);
     expect(css).toMatch(/:host\(\[mobile\]\) \.secondary > \.tail \{[^}]*flex: 1 1 0/);
     expect(css).toMatch(/:host\(\[mobile\]\) \.secondary > \.tail \{[^}]*min-width: 4ch/);
-    // The pill is no longer spaced by a margin of its own — the row's gap does
-    // it, and a margin would double it.
+    // The row's gap does the pill's spacing; a margin of its own would double
+    // it.
     expect(css).not.toMatch(/:host\(\[mobile\]\) \.secondary \.hv-area-chip \{[^}]*margin-right/);
   });
 });

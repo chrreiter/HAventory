@@ -542,13 +542,10 @@ export class HVFullView extends LitElement {
           padding: 0 14px;
         }
 
-        /* Selection mode reuses this bar and broke in its own way. .subcount
-           was the only shrinkable item in a row of flex:none siblings, so it
-           collapsed to its longest word and stacked "of 556 / matching / the /
-           current / filter" down five lines, eating ~230px of a 667px screen —
-           and Clear selection landed at 380..490, off the side. Giving the
-           count the slack keeps Clear on the first row, and the subtitle gets
-           a line to itself instead of a column. */
+        /* Selection mode reuses this bar. The count is the only item in the row
+           allowed to shrink — its siblings are flex:none — so it takes the
+           slack and elides, which keeps Clear selection on the first row. The
+           subtitle gets a line to itself rather than a column of its words. */
         .appbar.selecting .count {
           flex: 1;
           min-width: 0;
@@ -725,13 +722,10 @@ export class HVFullView extends LitElement {
         justify-content: center;
       }
       /*
-       * Every filter the backend accepts, stacked in one column, is around
-       * 1600px of form. Nothing in this column was a scroll container and the
-       * shell is fixed to the viewport and clips, so on a 756px screen 1138px
-       * of the panel simply did not exist: the sort controls, the date rows
-       * and the Show N items button sat about a thousand pixels below the
-       * bottom edge, reachable by no gesture at all, and the table under it
-       * was squeezed to zero.
+       * Every filter the backend accepts, stacked in one column, is taller than
+       * a phone screen, and the shell is fixed to the viewport and clips — so
+       * without a ceiling and a scroll box the foot of the panel is reachable
+       * by no gesture at all and the table under it is squeezed to zero.
        *
        * Same shape as the editor holder below — a ceiling with a scroll box
        * inside it — except the foot stays pinned, because the panel's whole
@@ -749,9 +743,8 @@ export class HVFullView extends LitElement {
         flex-direction: column;
         flex: none;
         min-height: 0;
-        /* The ceiling is a content-box measurement by default, so the 12px of
-           padding below the panel was added back on top of it and the footer
-           hung 5px off the bottom of a landscape screen. */
+        /* max-height sizes the content box by default, which would add the
+           padding below the panel on top of the ceiling. */
         box-sizing: border-box;
         max-height: min(80dvh, calc(100% - 116px));
       }
@@ -963,11 +956,10 @@ export class HVFullView extends LitElement {
    * True on a phone-width viewport (`NARROW_QUERY`).
    *
    * This surface switches its own layout on the matching `@media` block below,
-   * but its two biggest children take theirs from a `mobile` *property*, which
-   * only the card ever set — so at 375px the expanded view drew the item
-   * editor's three-column desktop grid in 156px + 78px + 78px, with "Low-stock
-   * at" wrapping over its own field. A media query cannot set a property, so
-   * the same breakpoint is read here and handed down.
+   * but its two biggest children take theirs from a `mobile` *property*, and a
+   * media query cannot set a property — so the same breakpoint is read here and
+   * handed down. Without it a phone-width expanded view draws the item editor's
+   * desktop grid in three columns of a few dozen pixels each.
    *
    * The phone panel drops its draft when it stops being on a phone, so a staged
    * set held from before the rotation would have the head row counting filters

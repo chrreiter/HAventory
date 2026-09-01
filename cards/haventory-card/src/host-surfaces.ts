@@ -329,7 +329,6 @@ export class HostSurfaces {
         @preview=${(e: CustomEvent) => void this.onImportPreview(e)}
         @execute=${(e: CustomEvent) => void this.onImportExecute(e)}
         @invalidate-preview=${() => {
-          // A preview is only valid for the policy it was run with.
           this.importPreview = null;
           this.importError = null;
           this.host.requestUpdate();

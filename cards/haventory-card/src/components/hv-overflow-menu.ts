@@ -201,14 +201,11 @@ export class HVOverflowMenu extends LitElement {
         /*
          * Dims the page behind the sheet.
          *
-         * This was a ::before on the menu, which put the wash on top of the
-         * menu's own background rather than behind it: the menu carries a
-         * z-index, so it establishes a stacking context, and inside one the
-         * element's background paints first and negative-z-index children
-         * paint next — above that background, below the content. The white
-         * sheet came out washed 50% black under fully opaque text, which read
-         * as a menu with no surface of its own. A sibling with its own z-index
-         * paints where a backdrop belongs.
+         * A sibling with its own z-index, not a ::before on the menu: the menu
+         * carries a z-index and so establishes a stacking context, and inside
+         * one the element's background paints first and a negative-z-index
+         * child paints next — above that background, below the content. A wash
+         * there lands on the menu's own surface instead of behind it.
          *
          * pointer-events: none is what keeps the menu closable: it closes on any
          * outside pointerdown, and that check asks whether the event's composed
