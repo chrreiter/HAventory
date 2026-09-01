@@ -11,7 +11,13 @@ import { canBumpReminder, hasReminder, isReminderDue, reminderSummary } from '..
 import { inferType } from '../ui/item-form';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
 import { isLowStock } from '../ui/row-chrome';
-import { areaMarkName, itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
+import {
+  areaMarkName,
+  itemPathParts,
+  pathTitle,
+  renderAreaChip,
+  renderPathSegments,
+} from '../ui/location-path';
 import {
   MediaUrls,
   attachmentNameToken,
@@ -192,11 +198,6 @@ export class HVDetailSheet extends LitElement {
       .hero .qty.low {
         color: var(--hv-warn);
       }
-      .hero .caption {
-        font-size: 11.5px;
-        color: var(--hv-text-secondary);
-        margin-top: 6px;
-      }
       .description {
         padding: 0 18px 12px;
         font-size: 13.5px;
@@ -237,6 +238,33 @@ export class HVDetailSheet extends LitElement {
       .fact .value.late {
         color: var(--hv-error);
         font-weight: 500;
+      }
+      /* The path is what the crumb at the top of the sheet cuts off, so this
+         row wraps it instead: the row grows and every segment survives. Each
+         segment is a flex item, which is what puts a break on a "›" rather
+         than inside a name. */
+      .fact.location .value,
+      .fact.location .hv-chip-line-text {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        row-gap: 2px;
+      }
+      .fact.location .hv-chip-line-text {
+        display: flex;
+        align-items: center;
+      }
+      /* The separator's spaces sit at the end of a flex item's line, where
+         normal white-space processing drops them and the two names either side
+         would run together. */
+      .fact.location .hv-path-sep {
+        white-space: pre;
+      }
+      /* A household writes these names, and a flex item's automatic minimum is
+         its own content — so a long one would push the row wider than the sheet
+         instead of taking a second line. */
+      .fact.location .hv-path-seg {
+        min-width: 0;
+        overflow-wrap: anywhere;
       }
       /* The one fact row that acts. The value keeps its margin-left:auto, so the
          button sits after it at the right edge; the negative right margin pulls
@@ -759,11 +787,6 @@ export class HVDetailSheet extends LitElement {
         </button>
         <span class="readout">
           <span class="qty ${low ? 'low' : ''}" data-testid="sheet-qty">${item.quantity}</span>
-          ${item.low_stock_threshold !== null
-            ? html`<span class="caption" data-testid="sheet-threshold"
-                >${t('hv.sheet.lowStockAt', { threshold: item.low_stock_threshold })}</span
-              >`
-            : null}
         </span>
         <button
           class="plus"
@@ -783,6 +806,17 @@ export class HVDetailSheet extends LitElement {
         : null}
 
       <div class="facts">
+        <div class="fact location" data-testid="sheet-fact" data-key="location">
+          <span>${t('hv.field.location')}</span>
+          <span
+            class="value hv-chip-line ${parts.path ? '' : 'unset'}"
+            data-testid="sheet-location"
+            >${renderAreaChip(areaMarkName(parts.areaName, parts.path))}<span
+              class="hv-chip-line-text"
+              >${parts.path ? renderPathSegments(parts.path) : t('hv.term.noLocation')}</span
+            ></span
+          >
+        </div>
         <div class="fact" data-testid="sheet-fact" data-key="due">
           <span>${t('hv.field.dueShort')}</span>
           <span class="value ${item.due_date ? '' : 'unset'} ${overdue ? 'late' : ''}"
@@ -795,27 +829,33 @@ export class HVDetailSheet extends LitElement {
             >${item.inspection_date ? formatDate(item.inspection_date) : t('hv.term.notSet')}</span
           >
         </div>
-        ${hasReminder(item)
-          ? html`<div class="fact" data-testid="sheet-fact" data-key="reminder">
-              <span>${t('hv.field.reminder_date')}</span>
-              <span
-                class="value ${isReminderDue(item) ? 'late' : ''}"
-                data-testid="sheet-reminder"
-                >${reminderSummary(item)}</span
+        <div class="fact" data-testid="sheet-fact" data-key="reminder">
+          <span>${t('hv.field.reminder_date')}</span>
+          <span
+            class="value ${hasReminder(item) ? '' : 'unset'} ${isReminderDue(item) ? 'late' : ''}"
+            data-testid="sheet-reminder"
+            >${reminderSummary(item) ?? t('hv.term.notSet')}</span
+          >
+          ${canBumpReminder(item)
+            ? html`<button
+                class="text-action"
+                data-testid="sheet-reminder-bump"
+                title=${t('hv.sheet.markDoneTitle')}
+                ?disabled=${this.busy}
+                @click=${() => this._emit('reminder-bump')}
               >
-              ${canBumpReminder(item)
-                ? html`<button
-                    class="text-action"
-                    data-testid="sheet-reminder-bump"
-                    title=${t('hv.sheet.markDoneTitle')}
-                    ?disabled=${this.busy}
-                    @click=${() => this._emit('reminder-bump')}
-                  >
-                    ${t('hv.sheet.markDone')}
-                  </button>`
-                : null}
-            </div>`
-          : null}
+                ${t('hv.sheet.markDone')}
+              </button>`
+            : null}
+        </div>
+        <div class="fact" data-testid="sheet-fact" data-key="threshold">
+          <span>${t('hv.field.lowStock')}</span>
+          <span
+            class="value ${item.low_stock_threshold === null ? 'unset' : ''}"
+            data-testid="sheet-threshold"
+            >${item.low_stock_threshold ?? t('hv.term.notSet')}</span
+          >
+        </div>
         ${customEntries.map(([key, value]) => this._renderCustomFact(key, value))}
         <div class="fact" data-testid="sheet-fact" data-key="updated">
           <span>${t('hv.field.updated_at')}</span>

@@ -174,11 +174,10 @@ describe('hv-detail-sheet: read view', () => {
     expect(q(el, '[data-testid="sheet-low"]')).toBeTruthy();
   });
 
-  it('makes quantity the primary action, with the threshold as a caption', async () => {
+  it('makes quantity the primary action', async () => {
     const el = await mount({ quantity: 2, low_stock_threshold: 8 });
     expect(q(el, '[data-testid="sheet-qty"]')?.textContent).toBe('2');
     expect(q(el, '[data-testid="sheet-qty"]')?.classList.contains('low')).toBe(true);
-    expect(q(el, '[data-testid="sheet-threshold"]')?.textContent).toContain('low-stock at 8');
   });
 
   it('emits quantity changes', async () => {
@@ -247,11 +246,80 @@ describe('hv-detail-sheet: read view', () => {
     expect(keys).not.toContain('Purchase price');
   });
 
-  it('says "Not set" rather than hiding an empty date', async () => {
-    const el = await mount({ due_date: null, inspection_date: null });
-    const facts = all(el, '[data-testid="sheet-fact"]');
-    expect(facts.find((f) => f.dataset.key === 'due')?.textContent).toContain('Not set');
-    expect(facts.find((f) => f.dataset.key === 'inspection')?.textContent).toContain('Not set');
+  // An item with little filled in reads as a full list rather than a truncated
+  // one: a field with nothing in it says so instead of leaving the list short.
+  it('says "Not set" rather than hiding an empty field', async () => {
+    const el = await mount({
+      due_date: null,
+      inspection_date: null,
+      reminder_date: null,
+      low_stock_threshold: null,
+    });
+    const fact = (key: string) =>
+      all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === key);
+
+    for (const key of ['due', 'inspection', 'reminder', 'threshold']) {
+      expect(fact(key)?.textContent, key).toContain('Not set');
+      expect(fact(key)?.querySelector('.value')?.classList.contains('unset'), key).toBe(true);
+    }
+    expect(fact('location')?.textContent).toContain('No location');
+  });
+
+  // The crumb in the header bar elides, so it is the fact row that has to carry
+  // every segment and the area the path sits in. jsdom lays nothing out, so
+  // what is assertable is that no segment is missing and each has somewhere to
+  // go — a path cut off at "Workshop › Parts C…" names nothing to act on.
+  it('gives the location a fact row, in full and with its area', async () => {
+    const el = await mount(
+      {
+        effective_area_id: 'area-garage',
+        location_path: {
+          id_path: [],
+          name_path: [],
+          display_path: 'Workshop / Parts Cabinet / Drawer A',
+          sort_key: '',
+        },
+      },
+      { areas: [{ id: 'area-garage', name: 'Garage' }] },
+    );
+    const fact = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'location');
+    const value = fact?.querySelector('[data-testid="sheet-location"]');
+
+    expect(value?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'Workshop › Parts Cabinet › Drawer A',
+    );
+    expect(value?.querySelectorAll('.hv-path-seg')).toHaveLength(3);
+    expect(componentCss('hv-detail-sheet')).toMatch(
+      /\.fact\.location \.value, \.fact\.location \.hv-chip-line-text \{[^}]*flex-wrap: wrap/,
+    );
+    expect(value?.querySelector('[data-testid="area-chip"]')?.textContent).toContain('Garage');
+  });
+
+  // One home for the number: a row that reads the same whether or not it is
+  // set, rather than a caption on the readout that shows up only when it is.
+  it('reads the low-stock threshold as a fact, not as a caption under the readout', async () => {
+    const el = await mount({ quantity: 2, low_stock_threshold: 8 });
+    const fact = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'threshold');
+
+    expect(fact?.textContent?.replace(/\s+/g, ' ')).toContain('Low-stock at');
+    expect(q(el, '[data-testid="sheet-threshold"]')?.textContent?.trim()).toBe('8');
+    expect(q(el, '.hero [data-testid="sheet-threshold"]')).toBe(null);
+  });
+
+  // Location leads because it is the fact the crumb truncates, and the id
+  // trails because it is the one row that is not about the item itself.
+  it('lists every fact in one order, location first and the id last', async () => {
+    const el = await mount({ custom_fields: { serial: '44210-887' } });
+    expect(all(el, '[data-testid="sheet-fact"]').map((f) => f.dataset.key)).toEqual([
+      'location',
+      'due',
+      'inspection',
+      'reminder',
+      'threshold',
+      'serial',
+      'updated',
+      'id',
+    ]);
   });
 
   // The stored date is the next inspection due, and the row names it the way
@@ -1083,9 +1151,11 @@ describe('hv-detail-sheet: documents', () => {
   describe('the reminder row', () => {
     const MONTHLY = { unit: 'months' as const, count: 3 };
 
-    it('says nothing at all when the item carries no reminder', async () => {
+    // The row holds its place whether or not there is a reminder; the action
+    // does not, because a bump has nowhere to go without one.
+    it('reads "Not set" when the item carries no reminder, and offers no Mark done', async () => {
       const el = await mount({ reminder_date: null });
-      expect(q(el, '[data-testid="sheet-reminder"]')).toBe(null);
+      expect(q(el, '[data-testid="sheet-reminder"]')?.textContent?.trim()).toBe('Not set');
       expect(q(el, '[data-testid="sheet-reminder-bump"]')).toBe(null);
     });
 
