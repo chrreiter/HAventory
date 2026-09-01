@@ -13,6 +13,12 @@ async function mount(entries: HVOverflowMenu['entries']) {
 const item = (el: HVOverflowMenu, id: string) =>
   el.shadowRoot?.querySelector(`[data-testid="overflow-item"][data-id="${id}"]`) as HTMLElement;
 
+// Read the children directly rather than through a `:scope` selector: an engine
+// that answers it with null turns "no such direct child" into a test that
+// passes whatever the row renders.
+const directChild = (host: HTMLElement, cls: string) =>
+  Array.from(host.children).find((c) => c.classList.contains(cls)) ?? null;
+
 describe('hv-overflow-menu', () => {
   it('opens on the trigger and reports the chosen entry once', async () => {
     const el = await mount([{ id: 'refresh', label: 'Refresh data' }]);
@@ -39,7 +45,7 @@ describe('hv-overflow-menu', () => {
     expect(labels.textContent).toContain('Organize…');
     // Same block as the label — not a sibling competing for the same line.
     expect(labels.querySelector('.meta')?.textContent).toContain('Locations · Tags · Categories');
-    expect(item(el, 'organize').querySelector(':scope > .meta')).toBe(null);
+    expect(directChild(item(el, 'organize'), 'meta')).toBe(null);
 
     // `sub` keeps its existing treatment, and both read the same way.
     const exportLabels = item(el, 'export').querySelector('.labels') as HTMLElement;
@@ -48,7 +54,7 @@ describe('hv-overflow-menu', () => {
 
   it('keeps a badge on the entry row, where it is a status not a hint', async () => {
     const el = await mount([{ id: 'diagnostics', label: 'Diagnostics', badge: '2' }]);
-    expect(item(el, 'diagnostics').querySelector(':scope > .badge')?.textContent).toContain('2');
+    expect(directChild(item(el, 'diagnostics'), 'badge')?.textContent).toContain('2');
   });
 
   it('ignores a disabled entry', async () => {
