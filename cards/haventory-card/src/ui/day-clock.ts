@@ -4,11 +4,11 @@
  *
  * Every date predicate in the card — `isOverdue`, `isDue`, `isReminderDue` —
  * reads the clock at render time and is otherwise a pure function of the item,
- * so nothing re-renders when the only thing that changed is the date. A card
- * left open on a wall tablet therefore showed yesterday's chips until somebody
- * edited something, while the sensors on the same dashboard had rolled over at
- * midnight. Subscribers here get one callback per day boundary and re-render;
- * the predicates keep reading the clock and need no argument threaded to them.
+ * so nothing re-renders when the only thing that changed is the date — a card
+ * left open on a wall tablet would show yesterday's chips until somebody edited
+ * something, beside sensors that rolled over at midnight. Subscribers here get
+ * one callback per day boundary and re-render; the predicates keep reading the
+ * clock and need no argument threaded to them.
  *
  * One module-level timer rather than one per component: a list is a few hundred
  * rows, and a few hundred timers all firing at the same instant is a stall for

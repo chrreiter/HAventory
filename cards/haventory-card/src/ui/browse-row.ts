@@ -6,17 +6,17 @@ import { css } from 'lit';
  *
  * Pressing either narrows the table to that value, and the two lists sit one
  * under the other in the same column — so they are one control drawn in two
- * shadow roots, which cannot share a rule and had drifted 4px of height and
- * 22px of label inset apart. The metrics live here instead of being written
- * out on each side.
+ * shadow roots, which cannot share a rule. The metrics live here rather than
+ * being written out on each side, where a row height or a label inset drifts
+ * between them.
  *
  * The leading slot is what holds the inset together. The tree puts its twisty
  * in it and reserves it on a leaf; a facet row puts its check in it and
  * reserves it while nothing is picked. A name therefore starts at the same x
  * whatever the row can do and whichever state it is in: 12px of padding, a
  * 20px slot and the 6px gap — where the tree's own top-level entries (All
- * items, No location, an area band) have always started. A nested location
- * indents from there, which is the one difference that means something.
+ * items, No location, an area band) start. A nested location indents from
+ * there, which is the one difference that means something.
  *
  * That slot is also the row's height, so there is no number here to keep in
  * step with it.

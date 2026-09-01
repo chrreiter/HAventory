@@ -214,8 +214,8 @@ export interface FilterHeadOptions {
  *
  * Clear all sits here rather than beside the commit buttons because three
  * controls do not fit a 375px row in every language: German's
- * `hv.action.clearAll` broke over two lines and left the button beside it
- * stacking its count sentence over three.
+ * `hv.action.clearAll` takes two lines there, and the count sentence beside it
+ * stacks over three.
  */
 export function renderFilterHead(opts: FilterHeadOptions): TemplateResult {
   return html`<div class="hv-sheet-head ${opts.rowClass}" data-testid=${ifDefined(opts.testids.row)}>
