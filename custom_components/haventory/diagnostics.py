@@ -71,8 +71,7 @@ def _repository_block(repo: Repository | None) -> dict[str, Any]:
     return {
         "loaded": True,
         "counts": _without_household_status_names(repo.get_counts()),
-        # The index checks this used to carry moved into the test suite, where
-        # they are worth something; see `ws.ws_health`. The key stays so a
+        # Constant, for the reason `ws.ws_health` gives; the key stays so a
         # report from this build has the shape a reader expects.
         "health_issues": [],
     }
@@ -141,6 +140,6 @@ async def async_get_config_entry_diagnostics(
             # route or a panel is already in place.
             "shared_keys": sorted(str(key) for key in (hass.data.get(DOMAIN) or {})),
         },
-        "options": async_redact_data(dict(getattr(entry, "options", None) or {}), _REDACT_OPTIONS),
+        "options": async_redact_data(dict(entry.options), _REDACT_OPTIONS),
         "frontend_bundle": bundle,
     }

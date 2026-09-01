@@ -2,12 +2,8 @@
 
 Wraps Home Assistant's Store with schema-aware load/save and migrations.
 
-Data shape persisted (Phase 1):
-    {
-        "schema_version": int,
-        "items": {id -> ItemDict},
-        "locations": {id -> LocationDict},
-    }
+The persisted payload is a ``schema_version`` stamp beside one id-keyed map per
+entry in ``STORE_COLLECTIONS``.
 
 The manager ensures first load initializes an empty dataset, gives a payload
 every collection it predates, and refuses one written by a schema version this
@@ -177,11 +173,7 @@ async def async_backup_store(
 class DomainStore:
     """Schema-aware wrapper around Home Assistant's Store for HAventory.
 
-    This class centralizes storage access and schema migrations. One instance per
-    config entry, held on the entry's runtime.
-
-    Note: HA's Store version is fixed at 1 to avoid HA's internal migration
-    mechanism. All versioning is handled via `schema_version` in the payload.
+    One instance per config entry, held on the entry's runtime.
     """
 
     # HA Store wrapper version - always 1 to avoid HA's migration mechanism.
@@ -193,7 +185,6 @@ class DomainStore:
         self, hass: HomeAssistant, *, key: str = STORAGE_KEY, version: int = CURRENT_SCHEMA_VERSION
     ) -> None:
         self._hass = hass
-        # Use constant HA Store version; our schema_version handles migrations
         self._store: Store[dict[str, Any]] = Store(hass, self.HA_STORE_VERSION, key)
         self._schema_version = version
 
@@ -203,8 +194,7 @@ class DomainStore:
 
     @property
     def key(self) -> str:
-        # Store exposes ``key`` in tests via stub; keep a stable attribute here
-        return getattr(self._store, "key", STORAGE_KEY)
+        return self._store.key
 
     async def async_load(self) -> dict[str, Any]:
         """Load the persisted dataset, applying migrations if needed.
@@ -342,7 +332,7 @@ class DomainStore:
 
         try:
             migrated = migrations.migrate(raw, from_version=from_version, to_version=to_version)
-        except Exception as exc:  # pragma: no cover - exercised via tests
+        except Exception as exc:  # pragma: no cover - no migration step can fail today
             # Do not overwrite on-disk payload; surface as a typed error
             _LOGGER.error(
                 "Storage migration failed",

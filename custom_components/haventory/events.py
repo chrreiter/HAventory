@@ -70,9 +70,9 @@ def async_track_day_rollover(hass: HomeAssistant) -> Callable[[], None]:
     Five of the counts are derived from today's date rather than from stored
     state, so they move on the day boundary with nothing having been mutated.
     The date-derived sensors and `calendar.haventory` each track that instant
-    already; a `stats` subscriber heard about mutations only, so a card left
-    open across midnight showed yesterday's figures until somebody edited
-    something — while the sensors beside it on the same dashboard had moved.
+    already; a `stats` subscriber hears about mutations only, so without this a
+    card left open across midnight shows yesterday's figures until somebody
+    edits something, while the sensors beside it on the same dashboard move.
 
     Local midnight, not UTC: the stored dates are calendar days as the household
     wrote them, which is the boundary every other surface measures against.
@@ -221,8 +221,9 @@ def notify_location_mutation(
     """Announce a location change to subscribers, and repaint what reads the tree.
 
     The counterpart of ``notify_mutation`` for the other topic, and it exists for
-    the same reason: a `haventory.location_*` service reached no subscriber at
-    all while the WebSocket command beside it did.
+    the same reason: every write path announces through a door here, so a
+    `haventory.location_*` service reaches the subscribers the WebSocket command
+    beside it reaches.
 
     Nothing is fired on the bus — the documented action vocabulary is about
     items, and no item changed. ``repaint`` is False for the one edit that

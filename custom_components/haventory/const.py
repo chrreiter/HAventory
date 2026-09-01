@@ -1,8 +1,7 @@
 """Constants for the HAventory integration.
 
-Defines the integration domain, the public integration version, the config-entry
-option keys and their defaults, the entity platforms and the sensor catalog, and
-the Home Assistant bus event types.
+Each section below heads the constraint its constants carry — who else spells the
+same name, and what disagreeing with them costs.
 """
 
 from dataclasses import dataclass
@@ -165,8 +164,8 @@ ATTACHMENT_PICTURE_MIME_TYPES: tuple[str, ...] = (
     "image/webp",
     "image/gif",
 )
-# The manual kind exists on the backend so the shape does not have to be
-# migrated when its card surface lands.
+# Accepted manual types, sniffed the same way. `haventory/config` ships this list
+# to the card, which refuses a file by it before an upload starts.
 ATTACHMENT_MANUAL_MIME_TYPES: tuple[str, ...] = ("application/pdf",)
 
 # Per-item caps, reported through `haventory/config` so the card can refuse

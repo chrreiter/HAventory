@@ -1,11 +1,14 @@
-"""In-memory repository with indexes and rich operations for HAventory.
+"""The in-memory source of truth: items, locations, statuses and their indexes.
 
-This module provides a synchronous repository class that maintains in-memory
-indexes for items and locations, implements CRUD, filtering/sorting/pagination,
-optimistic concurrency on items, and location subtree rename/move propagation.
+Every index is maintained by hand on each write. ``_reset_state`` is the one
+place the fields are listed and ``_index_item`` / ``_unindex_item`` the one pair
+that fills and empties them, so an index added to only some of the three reads
+as a stale bucket rather than as an error. A location rename or move is not an
+item edit: it rewrites the denormalized ``location_path`` under it and leaves
+``version`` and ``updated_at`` alone.
 
-The repository is framework-agnostic and designed to be exercised by offline
-tests and invoked by service/WebSocket layers.
+Synchronous and framework-agnostic — it holds no Home Assistant object, persists
+nothing and announces nothing. The caller saves, and the caller announces.
 """
 
 from __future__ import annotations
@@ -126,8 +129,8 @@ class LoadReport:
     without the dropped rows, turning a readable corrupt file into a permanent
     loss.
 
-    #225 replaces the refusal with a repairs issue offering "load anyway"; this is
-    the payload that flow needs, which is why it carries ids and not just counts.
+    The repair that offers "load anyway" quotes the ids back to the user, so
+    this carries them rather than counts alone.
     """
 
     dropped_item_ids: tuple[str, ...] = ()
@@ -175,10 +178,6 @@ class Repository:
     ``_update_items_location_paths_for_locations`` says what that protects.
     """
 
-    # -----------------------------
-    # Lifecycle
-    # -----------------------------
-
     def __init__(self) -> None:
         # A fresh repository is a reset one: _reset_state is the single list of
         # fields, so a new index cannot reach one construction path and miss the
@@ -191,10 +190,6 @@ class Repository:
         """What the most recent ``load_state`` dropped or found cyclic."""
 
         return self._last_load_report
-
-    # -----------------------------
-    # Public API — Status definitions
-    # -----------------------------
 
     def status_slugs(self) -> frozenset[str]:
         """The live status slugs, for every caller that validates one."""
@@ -305,10 +300,6 @@ class Repository:
             self._reindex_item_replacement(current, updated)
         return affected
 
-    # -----------------------------
-    # Internal helpers — indexing
-    # -----------------------------
-
     def _add_to_bucket(
         self, bucket: dict[_BucketKey, set[str]], key: _BucketKey, member: str
     ) -> None:
@@ -335,41 +326,32 @@ class Repository:
         item_key = str(item.id)
         self._items_by_id[item_key] = item
 
-        # tags
         for tag in item.tags:
             self._add_to_bucket(self._tags_to_item_ids, tag, item_key)
 
-        # category (case-insensitive)
         cat = (item.category or "").strip().casefold()
         if cat:
             self._add_to_bucket(self._category_to_item_ids, cat, item_key)
 
-        # status (non-default statuses only)
         if item.status != DEFAULT_ITEM_STATUS:
             self._add_to_bucket(self._status_to_item_ids, item.status, item_key)
 
-        # checked_out
         if item.checked_out:
             self._checked_out_item_ids.add(item_key)
 
-        # low stock
         if item_is_low_stock(item):
             self._low_stock_item_ids.add(item_key)
 
-        # location direct membership
         if item.location_id:
             self._add_to_bucket(self._items_by_location_id, str(item.location_id), item_key)
 
-            # area membership (effective area resolved via location ancestry)
             eff_area_id = self.effective_area_id(str(item.location_id))
             if eff_area_id is not None:
                 self._add_to_bucket(self._items_by_area_id, eff_area_id, item_key)
 
-        # Update subtree index
         self._add_item_to_subtree_index(item)
 
     def _unindex_item(self, item: Item) -> None:
-        # Remove from tag/category/checked/low-stock/location caches
         item_key = str(item.id)
         for tag in item.tags:
             self._remove_from_bucket(self._tags_to_item_ids, tag, item_key)
@@ -386,13 +368,9 @@ class Repository:
 
         if item.location_id:
             self._remove_from_bucket(self._items_by_location_id, str(item.location_id), item_key)
-            # Remove from any area buckets (area could have changed since indexing)
             self._remove_item_from_all_area_buckets(item_key)
 
-        # Remove from subtree index
         self._remove_item_from_subtree_index(item)
-
-        # Finally, drop from primary store
         self._items_by_id.pop(item_key, None)
 
     def _remove_item_from_all_area_buckets(self, item_key: str) -> None:
@@ -432,10 +410,6 @@ class Repository:
 
         self._unindex_item(old)
         self._index_item(new)
-
-    # -----------------------------
-    # Internal helpers — locations
-    # -----------------------------
 
     def _parse_new_parent(
         self, new_parent_id: str | uuid.UUID | object | None, current_parent: uuid.UUID | None
@@ -491,17 +465,16 @@ class Repository:
         return root_key
 
     def _propagate_area_to_root(self, location_key: str, area_id: str | None) -> set[str]:
-        """Set area on root of tree and clear from all other locations in tree.
+        """Put the area on the tree's root, clear it elsewhere, and return what moved.
 
-        When assigning an area to any location, it propagates to the root.
-        All descendants inherit from the root via ``effective_area_id``.
-
-        Returns set of modified location ids.
+        An area belongs to one node per tree and every other node inherits it
+        through ``effective_area_id``, so assigning one anywhere assigns it to
+        the root.
         """
+
         root_key = self._find_location_root(location_key)
         modified: set[str] = set()
 
-        # Collect all locations in this tree
         tree_ids = {root_key}
         tree_ids.update(self._collect_descendant_ids(root_key))
 
@@ -512,11 +485,9 @@ class Repository:
             old_area = loc.area_id
             new_area = area_id if loc_id == root_key else None
             if old_area != new_area:
-                # Update area index
                 self._update_location_area_index(
                     location_key=loc_id, old_area=old_area, new_area=new_area
                 )
-                # Update location
                 updated_loc = replace(loc, area_id=new_area)
                 self._locations_by_id[loc_id] = updated_loc
                 modified.add(loc_id)
@@ -543,7 +514,6 @@ class Repository:
         self._locations_by_id[str(loc.id)] = loc
         parent_key: str | None = str(loc.parent_id) if loc.parent_id is not None else None
         self._children_ids_by_parent_id.setdefault(parent_key, set()).add(str(loc.id))
-        # area index (skip None)
         if loc.area_id is not None:
             self._locations_by_area_id.setdefault(str(loc.area_id), set()).add(str(loc.id))
 
@@ -775,10 +745,6 @@ class Repository:
                     if new_area is not None:
                         self._add_to_bucket(self._items_by_area_id, new_area, item_id)
 
-    # -----------------------------
-    # Public API — Item operations
-    # -----------------------------
-
     def create_item(self, payload: ItemCreate) -> Item:
         item = self._create_item_internal(payload)
         LOGGER.debug(
@@ -945,10 +911,6 @@ class Repository:
         self._items_by_id[key] = replace(updated, reminder_anchor=current.reminder_anchor)
         return self._items_by_id[key]
 
-    # -----------------------------
-    # Public API — Attachments
-    # -----------------------------
-
     def _replace_attachments(
         self,
         item_id: str | uuid.UUID,
@@ -1105,14 +1067,6 @@ class Repository:
             return None
         return next((a for a in item.attachments if str(a.id) == attachment_id), None)
 
-    # -----------------------------
-    # Public API — Item querying
-    # -----------------------------
-
-    # -----------------------------
-    # Internal helpers — query optimization
-    # -----------------------------
-
     def _get_filtered_candidates(self, flt: ItemFilter | None) -> list[Item] | None:  # noqa: PLR0911, PLR0912, PLR0915
         """Return a reduced list of items using indexes, or None if full scan needed.
 
@@ -1132,7 +1086,6 @@ class Repository:
         candidate_sets: list[set[str]] = []
         has_indexed_filter = False
 
-        # 1. Area Index
         # `None` — an absent key, or an explicit null — is the one value that
         # means no area filter; every other one is answered here, `""`
         # included. An area is applied here and nowhere else, `filter_items`
@@ -1147,7 +1100,6 @@ class Repository:
                 return []
             candidate_sets.append(in_area)
 
-        # 2. Location Index
         # A multi-select unions its buckets, the way tags_any does below; the
         # one include_subtree flag picks which index every entry reads from.
         location_keys = [key for key in selected_location_ids(flt) if key]
@@ -1163,7 +1115,6 @@ class Repository:
                 return []
             candidate_sets.append(loc_items)
 
-        # 3. Category Index
         category_keys = selected_categories(flt)
         if category_keys:
             has_indexed_filter = True
@@ -1174,9 +1125,9 @@ class Repository:
                 return []
             candidate_sets.append(cat_items)
 
-        # 3b. Status Index (only non-default known statuses are bucketed; "ok"
-        # and unrecognized values fall through to the scan path, where
-        # filter_items validates and rejects the latter)
+        # Only non-default known statuses are bucketed, so "ok" and an
+        # unrecognized value fall through to the scan, where `filter_items`
+        # validates and rejects the latter.
         status_filter = flt.get("status")
         if (
             isinstance(status_filter, str)
@@ -1189,10 +1140,8 @@ class Repository:
                 return []
             candidate_sets.append(s)
 
-        # 4. Tags Index (Any)
-        # Note: tags_all is harder to optimize purely with single-tag indexes without
-        # loading item data or doing complex N-way intersection. For now, we only
-        # optimize tags_any which is a union of indexes.
+        # `tags_all` is not indexed: an N-way intersection costs more than the
+        # scan it would replace.
         if flt.get("tags_any"):
             tags = selected_tags(flt, "tags_any")
             if tags:
@@ -1201,11 +1150,9 @@ class Repository:
                 for tag in tags:
                     tag_items.update(self._tags_to_item_ids.get(tag, set()))
                 if not tag_items:
-                    # User asked for tags matching X or Y, but neither exist in index
                     return []
                 candidate_sets.append(tag_items)
 
-        # 5. Checked Out Index (only useful for True)
         if flt.get("checked_out") is True:
             has_indexed_filter = True
             s = self._checked_out_item_ids
@@ -1213,7 +1160,6 @@ class Repository:
                 return []
             candidate_sets.append(s)
 
-        # 6. Low Stock Index (only useful for True)
         if flt.get("low_stock_only"):
             has_indexed_filter = True
             s = self._low_stock_item_ids
@@ -1224,12 +1170,6 @@ class Repository:
         if not has_indexed_filter:
             return None
 
-        # Defensive: with an indexed filter present the loop above either
-        # returned early or appended at least one candidate set.
-        if not candidate_sets:
-            return None
-
-        # Sort by size to intersect smallest sets first (optimization)
         candidate_sets.sort(key=len)
 
         result_ids = candidate_sets[0]
@@ -1238,8 +1178,6 @@ class Repository:
             if not result_ids:
                 return []
 
-        # Convert back to item objects
-        # Filter out any IDs that might have been deleted (defensive against stale indexes)
         return [self._items_by_id[i] for i in result_ids if i in self._items_by_id]
 
     def list_items(
@@ -1250,7 +1188,6 @@ class Repository:
         limit: int | None = None,
         cursor: str | None = None,
     ) -> PageResult:
-        # Use index-first filtering if possible
         candidates = self._get_filtered_candidates(flt)
 
         source: Iterable[Item]
@@ -1278,17 +1215,12 @@ class Repository:
         total = len(sorted_items)
 
         if limit is None or limit <= 0:
-            # No pagination requested
             return {"items": sorted_items, "next_cursor": None, "total": total}
 
         page, next_cursor = self._paginate(
             sorted_items, sort, limit, cursor, low_stock_first=low_stock_first
         )
         return {"items": page, "next_cursor": next_cursor, "total": total}
-
-    # -----------------------------
-    # Public API — Counts
-    # -----------------------------
 
     @property
     def low_stock_item_ids(self) -> frozenset[str]:
@@ -1502,10 +1434,6 @@ class Repository:
             "custom_field_keys": custom_field_keys,
         }
 
-    # -----------------------------
-    # Public API — Location operations
-    # -----------------------------
-
     def create_location(
         self,
         *,
@@ -1514,7 +1442,6 @@ class Repository:
         area_id: str | None = None,
     ) -> Location:
         name = validate_write_name(name)
-        # Parse/normalize parent id once at ingress using shared helper
         parsed_parent: uuid.UUID | None
         if parent_id is None:
             parsed_parent = None
@@ -1555,10 +1482,8 @@ class Repository:
 
         self._add_location(new_loc)
 
-        # If area_id specified, propagate to root of the tree
         if parsed_area is not None:
             self._propagate_area_to_root(new_key, parsed_area)
-            # Re-bucket items for the entire tree
             root_key = self._find_location_root(new_key)
             self._rebucket_items_for_subtree_area_change(root_key)
 
@@ -1566,7 +1491,6 @@ class Repository:
             "Location created",
             extra={"domain": "haventory", "op": "create_location", "location_id": new_id},
         )
-        # Return the potentially updated location (if area was propagated)
         self._rebuild_location_hierarchy_indexes()
         return self._locations_by_id[new_key]
 
@@ -1603,14 +1527,12 @@ class Repository:
         new_parent_id: str | uuid.UUID | object | None = UNSET,
         area_id: str | uuid.UUID | object | None = UNSET,
     ) -> Location:
-        """Update location name and/or move under a new parent.
+        """Rename a location, move it under a new parent, set its area, or all three.
 
-        Args:
-            location_id: Target location ID.
-            name: Optional new name.
-            new_parent_id: Optional new parent. Pass ``None`` to move to root.
-                If omitted entirely (leave default sentinel), parent is unchanged.
-            area_id: Optional new area. Propagates to root of location tree.
+        ``new_parent_id`` and ``area_id`` tell "not provided" — the ``UNSET``
+        sentinel — from an explicit ``None``, which moves the location to the
+        root and clears the area. An area given here is propagated to the root
+        of the tree, which is the only node that stores one.
         """
 
         key = str(location_id)
@@ -1618,13 +1540,11 @@ class Repository:
         if loc is None:
             raise NotFoundError("location not found")
 
-        # Validate inputs first (no mutation yet)
         updated_name = loc.name
         if name is not None:
             updated_name = validate_write_name(name)
 
         parent_changed, target_parent_id = self._parse_new_parent(new_parent_id, loc.parent_id)
-        # Parse area but don't use target_area directly - we propagate to root
         parsed_area, area_change_requested = self._parse_area_change(area_id, loc.area_id)
         name_changed = updated_name != loc.name
 
@@ -1661,10 +1581,8 @@ class Repository:
             self._update_items_location_paths_for_locations(affected)
             self._rebuild_location_hierarchy_indexes()
 
-        # Handle area change: propagate to root of tree
         if area_change_requested:
             self._propagate_area_to_root(key, parsed_area)
-            # Re-bucket items for the entire tree
             root_key = self._find_location_root(key)
             self._rebucket_items_for_subtree_area_change(root_key)
 
@@ -1682,17 +1600,14 @@ class Repository:
     def _rebucket_items_for_subtree_area_change(self, root_key: str) -> None:
         """Recompute area buckets for items under a location subtree."""
 
-        # Collect all location ids in subtree including root
         loc_ids = {root_key}
         loc_ids.update(self._collect_descendant_ids(root_key))
 
-        # Collect affected item ids
         impacted_item_ids: set[str] = set()
         for loc_id in loc_ids:
             impacted_item_ids.update(self._items_by_location_id.get(loc_id, set()))
 
         for item_id in impacted_item_ids:
-            # Remove from all area buckets then re-add based on current effective area
             self._remove_item_from_all_area_buckets(item_id)
             item = self._items_by_id.get(item_id)
             if item is None or item.location_id is None:
@@ -1706,10 +1621,8 @@ class Repository:
         loc = self._locations_by_id.get(key)
         if loc is None:
             raise NotFoundError("location not found")
-        # Cannot delete if there are children
         if self._children_ids_by_parent_id.get(key):
             raise ValidationError("cannot delete a location that has child locations")
-        # Cannot delete if any items reference it
         if self._items_by_location_id.get(key):
             raise ValidationError("cannot delete a location that contains items")
 
@@ -1719,10 +1632,6 @@ class Repository:
             extra={"domain": "haventory", "op": "delete_location", "location_id": key},
         )
         self._rebuild_location_hierarchy_indexes()
-
-    # -----------------------------
-    # Cursor-based pagination helpers
-    # -----------------------------
 
     def _encode_cursor(self, payload: dict[str, Any]) -> str:
         raw = json.dumps(payload, separators=(",", ":"))
@@ -1872,10 +1781,6 @@ class Repository:
             cursor_payload["last_group"] = self._low_stock_group(last_item)
         return page, self._encode_cursor(cursor_payload)
 
-    # -----------------------------
-    # Persistence — export/import
-    # -----------------------------
-
     def export_state(self) -> dict[str, Any]:
         """Serialize the repository to a plain dict for storage.
 
@@ -1928,11 +1833,6 @@ class Repository:
         if not isinstance(data, dict):
             return
 
-        # Stores written by older builds carry a `_generation` key. Nothing
-        # reads it: the counter it belonged to counted one process's mutations
-        # and is gone, and the item `version` field — which is persisted — is
-        # what optimistic concurrency runs on.
-
         # Statuses BEFORE the item loop, or the tolerant status read would see
         # only the built-ins and rewrite every item on a custom status to "ok"
         # — silently, on the first restart after the upgrade that added it. An
@@ -1967,7 +1867,6 @@ class Repository:
                     dropped_location_ids.append(str(loc_id))
                     continue
 
-        # Load items
         known_statuses = self.status_slugs()
         items = data.get("items") or {}
         if isinstance(items, dict):
@@ -1998,8 +1897,6 @@ class Repository:
                     continue
 
         self._last_load_report = self._build_load_report(dropped_item_ids, dropped_location_ids)
-
-        # Rebuild location hierarchy indexes ensuring consistency
         self._rebuild_location_hierarchy_indexes()
 
     def _reset_state(self) -> None:

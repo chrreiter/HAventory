@@ -1,15 +1,15 @@
 """Typed models and validation helpers for HAventory.
 
-This module defines the persisted shapes for Item and Location, along with
-lightweight input schemas for create/update/filter/sort operations. It also
-provides validation and normalization helpers to enforce invariants and produce
-denormalized location paths.
+``Item`` and ``Location`` are the persisted shapes; the create/update/filter/sort
+schemas beside them are what a surface hands in. Validation lives here rather
+than at the surfaces, so a WebSocket command, a service call and an import
+document refuse the same value for the same reason — and the refusal text is the
+whole of what a caller gets back, which is why the helpers take the name of the
+field to put in it.
 
-The intent is to keep these models framework-agnostic and free of I/O. Higher
-layers (WebSocket/API, storage) are expected to compose these helpers. The one
-Home Assistant import is `dt_util`, for the household's own calendar day: it
-reads a module global rather than a `hass`, and every date a user reads or
-writes is measured in that day.
+Free of I/O. The one Home Assistant import is `dt_util`, for the household's own
+calendar day: it reads a module global rather than a `hass`, and every date a
+user reads or writes is measured in that day.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, S
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from functools import partial
-from typing import Any, Final, Literal, NotRequired, TypedDict
+from typing import Any, Final, Literal, NotRequired, TypedDict, get_args, get_type_hints
 
 from homeassistant.util import dt as dt_util
 
@@ -56,9 +56,9 @@ STATUS_SLUG_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 # without a second parser.
 STATUS_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
-# What an item can carry as an attachment. "picture" is the kind the card
-# renders; "manual" exists on the backend so a document does not have to be
-# migrated onto the shape later.
+# What an item can carry as an attachment. The kind decides which MIME types are
+# accepted and which per-item cap applies — `const.py` holds both — and it scopes
+# ordering: position 0 of an item's pictures is its cover.
 AttachmentKind = Literal["picture", "manual"]
 ATTACHMENT_KINDS: Final[tuple[AttachmentKind, ...]] = ("picture", "manual")
 
@@ -470,18 +470,18 @@ class ItemFilter(TypedDict, total=False):
     low_stock_first: bool
     # When true, only items without a location (location_id is None)
     orphaned_only: bool
-    # When true, only items whose due_date has passed (see filter_items)
+    # When true, only items whose due_date has passed
     overdue_only: bool
     # When true, only items whose due date has come round — today included,
-    # unlike `overdue_only` (see filter_items)
+    # unlike `overdue_only`
     checked_out_due_only: bool
-    # When true, only items whose inspection_date has passed (see filter_items)
+    # When true, only items whose inspection_date has passed
     inspection_overdue_only: bool
     # When true, only items whose inspection is being asked for — today
-    # included, unlike `inspection_overdue_only` (see filter_items)
+    # included, unlike `inspection_overdue_only`
     inspection_due_only: bool
     # When true, only items whose reminder has come round — today included,
-    # like the two `*_due_only` keys above (see filter_items)
+    # like the two `*_due_only` keys above
     reminder_due_only: bool
     location_id: str | None
     # Multi-select beside the scalar above, unioned the same way — see
@@ -518,11 +518,6 @@ class Sort(TypedDict):
         "location",
     ]
     order: Literal["asc", "desc"]
-
-
-# -----------------------------
-# Utility helpers
-# -----------------------------
 
 
 def parse_uuid4(value: str | uuid.UUID, *, field_name: str = "id") -> uuid.UUID:
@@ -578,7 +573,6 @@ def normalize_date_yyyy_mm_dd(value: str, *, field_name: str) -> str:
     if not isinstance(value, str) or not DATE_RE.match(value):
         raise ValidationError(f"{field_name} must be in 'YYYY-MM-DD' format")
     try:
-        # This ensures the date components are valid (e.g., no Feb 30)
         datetime.strptime(value, "%Y-%m-%d")
     except ValueError as exc:
         raise ValidationError(f"{field_name} must be a valid calendar date (YYYY-MM-DD)") from exc
@@ -843,22 +837,15 @@ def selected_location_ids(flt: ItemFilter) -> list[str]:
     return selection
 
 
-#: The fields :func:`sort_items` can order by, and the two orders it accepts.
-SORT_FIELDS: Final[frozenset[str]] = frozenset(
-    {
-        "updated_at",
-        "created_at",
-        "name",
-        "quantity",
-        "due_date",
-        "inspection_date",
-        "reminder_date",
-        "location",
-    }
-)
-SORT_ORDERS: Final[frozenset[str]] = frozenset({"asc", "desc"})
-#: The keys a sort object carries. Anything else is a client typo.
-SORT_KEYS: Final[frozenset[str]] = frozenset({"field", "order"})
+#: The fields :func:`sort_items` can order by, the two orders it accepts, and the
+#: keys a sort object carries — anything else is a client typo. Read off
+#: :class:`Sort`, the way :data:`ITEM_FILTER_KEYS` is read off
+#: :class:`ItemFilter`, so a field added there is accepted the moment it is
+#: declared, with no second list to keep in step.
+_SORT_HINTS: Final[dict[str, Any]] = get_type_hints(Sort)
+SORT_FIELDS: Final[frozenset[str]] = frozenset(get_args(_SORT_HINTS["field"]))
+SORT_ORDERS: Final[frozenset[str]] = frozenset(get_args(_SORT_HINTS["order"]))
+SORT_KEYS: Final[frozenset[str]] = frozenset(_SORT_HINTS)
 
 
 def validate_area_filter(value: object) -> str | None:
@@ -954,8 +941,8 @@ def validate_item_status(
     same as any other unknown value ("ok" is the way to clear a flagged state).
 
     ``known_statuses`` is an explicit parameter rather than module-level mutable
-    state: the default keeps every caller that has no repository to ask meaning
-    what it has always meant, and nothing global needs resetting between tests.
+    state: the default answers for every caller with no repository to ask, and
+    nothing global needs resetting between tests.
 
     ``default`` is what a load path passes to read a stored payload tolerantly:
     a store written before the field existed (or hand-edited into an unknown
@@ -1327,11 +1314,6 @@ def build_location_path_from_map(
     )
 
 
-# -----------------------------
-# Creation and update helpers
-# -----------------------------
-
-
 def _is_int_not_bool(value: object) -> bool:
     """True for a real integer. ``bool`` is a subclass of ``int`` — exclude it."""
     return isinstance(value, int) and not isinstance(value, bool)
@@ -1672,11 +1654,6 @@ def apply_item_update(
     return new_item
 
 
-# -----------------------------
-# Filtering and sorting helpers
-# -----------------------------
-
-
 #: Length of the canonical "YYYY-MM-DDTHH:MM:SSZ" timestamp format. Canonical
 #: timestamps are fixed-width, so lexicographic comparison IS chronological
 #: comparison — sorting and range filters rely on this.
@@ -1897,9 +1874,9 @@ def item_reminder_is_due(item: Item, *, today: str = "") -> bool:
 def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
     """The selected location ids as UUIDs, dropping any that will not parse.
 
-    An unparsable id contributes nothing rather than raising, so a selection
-    of only bad ids matches nothing — which is what a single bad id has always
-    done. The parse belongs here rather than in the per-item predicate: the
+    An unparsable id contributes nothing rather than raising, so a selection of
+    only bad ids matches nothing — which is what a single bad id among good ones
+    does too. The parse belongs here rather than in the per-item predicate: the
     selection is constant for a whole query, and rebuilding the same UUID once
     per candidate is measurable on an inventory of any size.
     """
@@ -1919,8 +1896,8 @@ def _item_matches_locations(
     """True when the item sits in — or under — any of the selected locations.
 
     An empty selection keeps nothing, which is what a selection of only
-    unparsable ids has always meant: the filter names locations, and none of
-    them is this item's.
+    unparsable ids amounts to: the filter names locations, and none of them is
+    this item's.
     """
 
     if not item.location_id:
@@ -1995,8 +1972,9 @@ def _timestamp_predicates(flt: ItemFilter) -> list[Callable[[Item], bool]]:
     """The timestamp filters a filter carries, refusing a malformed bound.
 
     A bound the filter names as null is no filter at all; one it names as empty
-    is not a timestamp to parse but is still compared against, which is what
-    keeps ``updated_before: ""`` meaning what it has always meant.
+    is not a timestamp to parse but is still compared against, so
+    ``updated_before: ""`` keeps every item out and ``updated_after: ""`` lets
+    every item through.
     """
 
     predicates: list[Callable[[Item], bool]] = []
@@ -2076,33 +2054,11 @@ def filter_items(
     *,
     known_statuses: Collection[str] = ITEM_STATUSES,
 ) -> list[Item]:
-    """Filter items according to ItemFilter semantics.
+    """Keep the items every key of ``flt`` accepts; each key is one test.
 
-    - q: case-insensitive match in name, description, tags, location display_path
-    - tags_any: at least one matches
-    - tags_all: all must be present
-    - category / categories: case-insensitive equals any of the selection
-    - status: exact match against one of the known statuses
-    - checked_out: exact match
-    - low_stock_only: quantity <= threshold (0 valid, None disables)
-    - orphaned_only: only items without a location (location_id is None)
-    - overdue_only: due_date set and strictly before today
-    - checked_out_due_only: due_date set and on or before today
-    - inspection_overdue_only: inspection_date set and strictly before today
-    - inspection_due_only: inspection_date set and on or before today
-    - reminder_due_only: reminder_date set and on or before today
-    - "today" in those five is the instance's local day, read once per query
-    - the three ``*_due_only`` keys count today and the two ``*overdue*`` ones do
-      not: a due date names the day something is being asked for, not the last
-      day it is not
-    - location_id / location_ids: equals any of the selection; include_subtree
-      optionally includes descendants (by prefix of id_path), one flag for all
-    - updated_after/created_after: ISO-8601 UTC with 'Z', strictly greater-than
-    - updated_before/created_before: ISO-8601 UTC with 'Z', strictly less-than
-
-    Each key the filter carries becomes one test, built once by
-    :func:`_filter_predicates`; an item is walked against those and no others,
-    and stops at the first one it fails.
+    The tests are built once by :func:`_filter_predicates` — one per key the
+    filter carries and none for the keys it does not — and an item stops at the
+    first one it fails. What each key means is on :class:`ItemFilter`.
     """
 
     if not flt:

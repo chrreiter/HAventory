@@ -76,7 +76,7 @@ def summary_for(name: str, quantity: int, threshold: int) -> str:
 def configured_entity_id(entry: ConfigEntry) -> str:
     """The list this entry mirrors onto, or `""` when the bridge is off."""
 
-    options = getattr(entry, "options", None) or {}
+    options = entry.options
     value = options.get(CONF_TODO_ENTITY_ID, DEFAULT_TODO_ENTITY_ID)
     return value.strip() if isinstance(value, str) else DEFAULT_TODO_ENTITY_ID
 
@@ -286,8 +286,7 @@ def _list_can_delete(hass: HomeAssistant, entity_id: str) -> bool:
 
     Only a list that positively says it cannot delete is treated as one. An
     entity missing from the state machine, or one publishing no
-    `supported_features` at all, answers yes and is left to the ordinary path —
-    the old behaviour, for anything this cannot read.
+    `supported_features` at all, answers yes and is left to the ordinary path.
     """
 
     state = hass.states.get(entity_id)

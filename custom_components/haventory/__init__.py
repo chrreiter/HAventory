@@ -1,7 +1,13 @@
-"""HAventory integration bootstrap.
+"""HAventory integration setup and teardown.
 
-This module initializes the integration, prepares persistent storage, and sets up
-the core data structures in hass.data.
+Stands the store, the repository and the runtime that carries them up, serves the
+card bundle and the media view, and registers the sidebar panel. Per-entry state
+lives on `entry.runtime_data`; `hass.data[DOMAIN]` keeps only the registrations
+Home Assistant cannot hand back, which outlive an entry and must not be made
+twice.
+
+The order inside `async_setup_entry` is a constraint rather than a style — each
+step's comment says what it is waiting for.
 """
 
 from __future__ import annotations
@@ -178,10 +184,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
     # change has to reach it.
     await todo_mod.async_setup(hass, entry)
 
-    # Register services
     services_mod.setup(hass)
-
-    # Register WebSocket commands
     ws_mod.setup(hass)
 
     # Entity platforms, after the repository is on the entry the entities read
@@ -381,7 +384,7 @@ def _resolve_card_title(entry: ConfigEntry) -> str:
     Entries created before the option existed simply have no value for it, so
     an unset or blank title is the default rather than an empty heading.
     """
-    options = getattr(entry, "options", None) or {}
+    options = entry.options
     title = options.get(CONF_CARD_TITLE)
     if isinstance(title, str) and title.strip():
         return title.strip()
@@ -398,7 +401,7 @@ def _resolve_quick_filters(entry: ConfigEntry) -> list[str] | None:
     dropped rather than passed on — the card would drop them too, and dropping
     them here keeps the wire payload to the vocabulary both sides share.
     """
-    options = getattr(entry, "options", None) or {}
+    options = entry.options
     chosen = options.get(CONF_QUICK_FILTERS)
     if not isinstance(chosen, list):
         return None
@@ -714,7 +717,7 @@ def _sidebar_panel_enabled(entry: ConfigEntry) -> bool:
     panel is what makes a fresh install discoverable — so absence reads as on.
     Only an explicit opt-out turns it off.
     """
-    options = getattr(entry, "options", None) or {}
+    options = entry.options
     return bool(options.get(CONF_SIDEBAR_PANEL_ENABLED, DEFAULT_SIDEBAR_PANEL_ENABLED))
 
 
@@ -771,7 +774,7 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
         return
 
     # The panel is the card bundle's second element, so without a build there is
-    # nothing for it to load — same graceful skip the card loaders take.
+    # nothing for it to load — the same skip the card loaders take.
     if not os.path.isfile(_CARD_BUNDLE_PATH):  # noqa: ASYNC240
         give_back()
         LOGGER.debug(
@@ -1074,7 +1077,7 @@ def _delete_refusal_issues(hass: HomeAssistant) -> None:
 def _lossy_load_allowed(entry: ConfigEntry) -> bool:
     """Whether the corrupt-store repair has been run and its reload is now arriving."""
 
-    options = getattr(entry, "options", None) or {}
+    options = entry.options
     return bool(options.get(CONF_ALLOW_LOSSY_LOAD))
 
 
@@ -1088,11 +1091,7 @@ def _clear_lossy_load_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if not _lossy_load_allowed(entry):
         return
 
-    options = {
-        key: value
-        for key, value in (getattr(entry, "options", None) or {}).items()
-        if key != CONF_ALLOW_LOSSY_LOAD
-    }
+    options = {key: value for key, value in entry.options.items() if key != CONF_ALLOW_LOSSY_LOAD}
     hass.config_entries.async_update_entry(entry, options=options)
 
 

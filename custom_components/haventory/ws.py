@@ -105,14 +105,9 @@ def _require_loaded(hass: HomeAssistant) -> None:
 
 
 def _ctx(op: str, **extra: Any) -> dict[str, Any]:
-    """Build a structured logging context for WS operations.
+    """The `extra=` payload a WS log record carries, always naming its `op`."""
 
-    Ensures the `op` field is always present and merges any additional fields.
-    """
-    base: dict[str, Any] = {"op": op}
-    if extra:
-        base.update(extra)
-    return base
+    return {"op": op, **extra}
 
 
 # Sent to clients when a non-domain exception escapes a handler. Deliberately
@@ -159,10 +154,6 @@ def _error_message(_id: int, exc: Exception, *, context: dict[str, Any]) -> dict
     code, message = _log_rejection(exc, context)
     return _error_envelope(_id, code, message, context or None)
 
-
-# -----------------------------
-# Unified exception handling for WS handlers
-# -----------------------------
 
 _WSHandler = Callable[
     [HomeAssistant, "websocket_api.ActiveConnection", dict[str, Any]], Awaitable[Any]
@@ -228,11 +219,10 @@ def ws_guard(
                 return await func(hass, conn, msg)
             except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
                 ctx = _context_from_msg(op, msg, context_fields)
-                # In real Home Assistant, handlers must send on the connection.
-                # Returning a dict is only supported by our offline test stub.
+                # A handler must send on the connection in real Home Assistant;
+                # the returned envelope is what the offline stub reads.
                 err = _error_message(msg.get("id", 0), exc, context=ctx)
                 _send_error(conn, err)
-                # Always return the envelope for offline tests and stubs
                 return err
             except Exception:
                 # Final safety net: any non-domain exception maps to the
@@ -256,11 +246,6 @@ def ws_guard(
     return decorator
 
 
-# -----------------------------
-# Shared op helpers (single and bulk)
-# -----------------------------
-
-
 def _validate_bulk_ops(operations: Any) -> list[dict[str, Any]]:
     # The command schema types `operations` as `object` so a wrong type answers
     # `validation_error` here instead of an HA-core schema rejection that never
@@ -269,7 +254,7 @@ def _validate_bulk_ops(operations: Any) -> list[dict[str, Any]]:
         raise ValidationError("operations must be a list")
     validated: list[dict[str, Any]] = []
     seen_op_ids: set[str] = set()
-    for _idx, op in enumerate(operations):
+    for op in operations:
         if not isinstance(op, dict):
             raise ValidationError("each operation must be an object")
         if "op_id" not in op:
@@ -383,11 +368,6 @@ async def _mutate(
     )
 
 
-# -----------------------------
-# Utility commands
-# -----------------------------
-
-
 @websocket_api.websocket_command(
     {vol.Required("type"): "haventory/ping", vol.Optional("echo"): object}
 )
@@ -492,23 +472,15 @@ async def ws_distinct_values(
 async def ws_health(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    # `healthy` and `issues` answered a set of checks that compared the
-    # repository's indexes against the entities they index. Every hit named a
-    # bug in this integration rather than anything a household had done, so the
-    # answer was empty on every install that ever asked; the checks run in the
-    # test suite instead, where a disagreement fails a build. The two fields
-    # stay in the result, and stay constant, because clients read them.
+    # `healthy` and `issues` are constant: an index disagreeing with what it
+    # indexes is a bug in this integration, and the test suite is where that
+    # fails a build. The two fields stay in the result because clients read them.
     result = {
         "healthy": True,
         "issues": [],
         "counts": _repo(hass).get_counts(),
     }
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
-
-
-# -----------------------------
-# Subscription commands
-# -----------------------------
 
 
 @websocket_api.websocket_command(
@@ -588,11 +560,6 @@ async def ws_unsubscribe(
         },
     )
     conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
-
-
-# -----------------------------
-# Items
-# -----------------------------
 
 
 @websocket_api.websocket_command(
@@ -1051,7 +1018,7 @@ async def ws_item_attachment_update(
     )
     serialized = serialize_item(hass, updated)
     await _persist_repo(hass)
-    # No counts event: a title and an order move nothing any count reads.
+    # No counts event: a title moves nothing any count reads.
     notify_mutation(hass, action="updated", item=serialized, counts=False)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1085,7 +1052,7 @@ async def ws_item_attachment_reorder(
     )
     serialized = serialize_item(hass, updated)
     await _persist_repo(hass)
-    # No counts event: a title and an order move nothing any count reads.
+    # No counts event: the order of attachments moves nothing any count reads.
     notify_mutation(hass, action="updated", item=serialized, counts=False)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1207,11 +1174,6 @@ async def ws_item_list(
         "total": page["total"],
     }
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
-
-
-# -----------------------------
-# Locations
-# -----------------------------
 
 
 def _require_known_area(hass: HomeAssistant, area_id: Any) -> None:
@@ -1521,11 +1483,6 @@ async def ws_areas_list(
     conn.send_message(websocket_api.result_message(msg.get("id", 0), {"areas": areas}))
 
 
-# -----------------------------
-# Import / Export (data safety)
-# -----------------------------
-
-
 @websocket_api.websocket_command(
     {vol.Required("type"): "haventory/export", vol.Optional("filter"): object}
 )
@@ -1692,11 +1649,6 @@ async def ws_import_execute(
         },
     )
     conn.send_message(websocket_api.result_message(msg.get("id", 0), summary))
-
-
-# -----------------------------
-# Registration
-# -----------------------------
 
 
 # Every command this integration serves. Home Assistant keys its command
