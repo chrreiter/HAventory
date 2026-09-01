@@ -57,7 +57,7 @@ uv run ruff format --check .   # CI fails on formatting alone; `ruff check` does
 uv run mypy
 
 # Frontend (in cards/haventory-card)
-npm audit --audit-level=high
+npm audit --audit-level=moderate
 npx eslint .
 npm run typecheck
 npx vitest run
@@ -67,7 +67,11 @@ npm run build
 The audit is the only place a development-scope npm vulnerability becomes
 visible: the repository's Dependabot auto-triage rule dismisses dev-scope
 alerts, so the alert dashboard is not ground truth for the card's lockfile —
-CI is.
+CI is. `moderate` rather than `high` for the same reason: a moderate
+development-scope advisory is dismissed on the dashboard, so a gate that let it
+through would leave it surfacing nowhere. CI (`.github/workflows/ci.yml`) and
+`scripts/ci_local.sh` run the same level; a lower one here is green against a
+red CI.
 
 Or run everything at once with `scripts/ci_local.sh`. CI runs the same checks
 plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
@@ -101,6 +105,9 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   behind reads as pending work.
 - **Preserve the core invariants**: case-insensitive search, denormalized
   `location_path` on items, and optimistic concurrency via the item `version`.
+  `location_path` is derived — no client writes it, and rewriting it leaves
+  `version` and `updated_at` alone, because a location rename is not an item
+  edit.
 - **The card renders no `ha-*` element.** Home Assistant's frontend components
   — `ha-form`, `ha-dialog`, `ha-selector`, `ha-data-table` — are registered
   lazily inside HA's own bundle, are not published for card authors to import,
@@ -299,7 +306,7 @@ and it is sticky: left in place, every later release repeats the same version.
 
 ### The version files
 
-Six files carry the version, each rewritten by a different release-please
+Seven files carry the version, each rewritten by a different release-please
 mechanism, so each can fail to update independently:
 
 | File | Mechanism |
@@ -307,12 +314,18 @@ mechanism, so each can fail to update independently:
 | `pyproject.toml` | `release-type: python` |
 | `custom_components/haventory/manifest.json` | `extra-files` json + jsonpath |
 | `cards/haventory-card/package.json` | `extra-files` json + jsonpath |
+| `cards/haventory-card/package-lock.json` | `extra-files` json + **two** jsonpaths |
 | `custom_components/haventory/const.py` (`INTEGRATION_VERSION`) | `extra-files` generic + an `x-release-please-version` line annotation |
 | `uv.lock` | `extra-files` toml + jsonpath |
 | `.release-please-manifest.json` | release-please's own bookkeeping |
 
 `INTEGRATION_VERSION` is the one users see: `haventory/version` returns it and
 every export document is stamped with it.
+
+The card's lockfile takes two entries because npm writes the root package's
+version twice — at the top level and again under `packages[""]` — and one
+`extra-files` entry rewrites one jsonpath. A copy left behind is rewritten by
+the next `npm install`, which dirties the working tree for whoever runs it.
 
 `uv.lock` is the odd one: nothing reads its version, but uv writes `pyproject`'s
 version into the project's own `[[package]]` entry, so a lockfile left at the
@@ -324,7 +337,7 @@ because release-please's TOML updater parses string values into
 matches nothing, and release-please treats no match as a warning rather than an
 error. That is the failure this check exists to make loud.
 
-`scripts/check_version_consistency.py` compares all six (and, on a tag build,
+`scripts/check_version_consistency.py` compares all seven (and, on a tag build,
 the tag) — run it locally any time:
 
 ```bash

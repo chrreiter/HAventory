@@ -34,10 +34,10 @@ dev = [
 ]
 # Not installed by `uv sync`, on purpose. `scripts/probe_fixtures.py` generates
 # the attachment fixtures with Pillow and `scripts/probe_attachments.py` decodes
-# what came back off Home Assistant's disk — but the integration does no image
-# work server-side (nothing is thumbnailed, nothing is re-encoded), and the
-# offline suite must keep running without an imaging library. Opt in with
-# `uv sync --group probes` / `uv run --group probes …`.
+# what came back off Home Assistant's disk. `media.py` imports Pillow for its
+# thumbnail tiles and serves the original wherever it cannot, so the integration
+# installs without it and the offline suite runs without it.
+# Opt in with `uv sync --group probes` / `uv run --group probes …`.
 probes = [
   "pillow",
 ]

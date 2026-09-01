@@ -446,7 +446,7 @@ With a filter on the request, each category and tag entry also carries `matching
   "haventory_export_version": 1,
   "schema_version": 1,
   "exported_at": "YYYY-MM-DDTHH:MM:SSZ",
-  "integration_version": "0.0.1",
+  "integration_version": "X.Y.Z",
   "items": [ <Item>, ... ],
   "locations": [ <Location>, ... ],
   "statuses": [ <StatusDefinition>, ... ]
@@ -476,7 +476,7 @@ With a filter on the request, each category and tag entry also carries `matching
   "policy": "merge",
   "document": {
     "haventory_export_version": 1, "schema_version": 1,
-    "exported_at": "…", "integration_version": "0.0.1"
+    "exported_at": "…", "integration_version": "…"
   },
   "items":     { "add": ["uuid"], "update": [], "conflict": [], "unchanged": [] },
   "locations": { "add": [], "update": [], "conflict": [], "unchanged": [] },
@@ -561,12 +561,13 @@ With a filter on the request, each category and tag entry also carries `matching
 
 Common envelope inside HA WS event wrapper:
 ```json
-{ "domain": "haventory", "topic": "items|locations|stats", "action": "...", "ts": "ISO8601Z", ... }
+{ "domain": "haventory", "topic": "items|locations|stats|statuses", "action": "...", "ts": "ISO8601Z", ... }
 ```
 
 - Items: `created`, `updated`, `moved`, `deleted`, `checked_out`, `checked_in`, `quantity_changed` with `{item: <Item>}`. `item` may be **absent** on any items event, and its absence means "refetch" rather than "patch this item": `reloaded` after an import replaces the dataset, and `updated` after `status/delete` with `reassign_to` rewrites every item carrying the slug at once.
 - Locations: `created`, `renamed`, `moved`, `deleted` with `{location: <Location>}`; plus `reloaded` (no `location`) after an import. `moved` covers both ways a location is re-anchored — a new parent and a new area — because each rewrites `effective_area_id` for everything under it. The `location` payload is the one the command targeted, which for an area sent to a nested location is not the location whose stored `area_id` changed: a tree's area lives on its root. Read a `moved` event as "re-list this subtree", not as a patch.
 - Stats: `counts` with `{counts: <Counts>}`.
+- Statuses: `created`, `updated`, `deleted` with `{status: <StatusDefinition>}`, and `reordered` with `{statuses: <StatusDefinition[]>}` — the reorder describes the list rather than an entry of it, so it carries the whole vocabulary in its new order.
 - Every topic: `unavailable` (common fields only), sent once per open subscription when the config entry serving it tears down. The subscription is over at that point; see the API contract's "While no entry is loaded".
 
 Subscription filters (`haventory/subscribe`) are matched against the payload above, not

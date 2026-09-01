@@ -190,7 +190,7 @@ session may assume unless the owner says otherwise before M1 starts.
 
    Both ignore rules are scoped to `semver-major`, so minor and patch releases of either —
    and a security update for either — still open a pull request. Left for the owner: none;
-   no Dependabot PR is open at the start of M1.
+   no Dependabot PR was open when M3 started.
 3. **Repository visibility — recommended: flip after V, with #196.** The sweep exists so
    the first public read happens after it lands; the earliest sensible flip is after M1–M3
    merge, and #236 stage 7 puts it at the HACS release. Flipping earlier costs the sweep
@@ -354,9 +354,9 @@ its closing comment on #236.
   keeps every `data-testid`, class and key as-is. A session that needs a new key has left
   the milestone's scope and says so.
 - **Dependabot and release-please PRs are never touched.** The six open at the start of
-  the milestone were resolved before M1 (§2 item 2); anything Dependabot opens while the
-  milestone runs waits for the owner, so no session merges a dependency bump under a
-  sweep it is in the middle of reviewing.
+  the milestone were resolved after M1 and M2 merged and before M3 (§2 item 2); anything
+  Dependabot opens while the milestone runs waits for the owner, so no session merges a
+  dependency bump under a sweep it is in the middle of reviewing.
 - `tests/test_min_ha_version.py`, `test_toolchain_pins.py` and
   `test_release_version_consistency.py` stay exactly as they are.
 
@@ -671,7 +671,8 @@ merged, no V0.9.0 PR open.
 
 The three PRs of §6.M3 in order, one subagent each, one at a time — the release-testing-
 plan rows first, the backend gate run before any README edit is believed. The Dependabot
-six were resolved before M1 (§2 item 2); Dependabot and release-please PRs are not yours.
+six were resolved after M1 and M2 merged, before you start (§2 item 2); Dependabot and
+release-please PRs are not yours.
 
 End with the six-part handover as your last message and as a comment on #236.
 ```

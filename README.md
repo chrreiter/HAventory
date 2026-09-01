@@ -64,8 +64,9 @@ button above opens your own Home Assistant and does steps 1 and 2 for you.
 
    [![Open your Home Assistant instance and start setting up a new integration.](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=haventory)
 
-5. Reload the browser page once (Ctrl/Cmd+Shift+R), so the card reaches the tab you already
-   had open.
+5. Reload the browser page once, so the card reaches a tab you already had open. An
+   ordinary reload is enough — the card is served under a versioned URL, so there is no
+   cache to clear.
 
 HACS installs **released versions only**: it downloads the `haventory.zip` attached to a
 GitHub release, which already contains the built card. Installing from the default branch is

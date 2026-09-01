@@ -490,7 +490,7 @@ re-render it — so each container subscribes to `store.state.onChange` itself, 
 | Module | What it does |
 |---|---|
 | `tokens.ts` | Every design token as a `--hv-*` custom property, bound to the HA theme variable first with the mock hex as fallback, plus dark-mode and reduced-motion overrides. `base` adds the pill/icon-button/chip/input primitives. Composed as `static styles = [tokens, base, css\`…\`]`. |
-| `icons.ts` | ~30 MDI glyphs as inline path data, rendered as `<svg fill="currentColor">`. See the deviation note below. |
+| `icons.ts` | Material Design Icons path data, inlined and rendered as `<svg fill="currentColor">`. See the note below. |
 | `brand-icon.ts` | The HAventory mark as one path, published to HA's icon registry (`window.customIcons`) under the `haventory:` prefix so the sidebar entry can name it. The backend's `PANEL_ICON` is the matching string. |
 | `responsive.ts` | The two phone predicates, both as Lit reactive controllers: `ResponsiveController` drives mobile mode from the card's own measured width (≤600px), and `ViewportNarrow` follows `NARROW_QUERY`, the viewport query every fixed overlay switches on. |
 | `modal.ts` | The centred dialogs' chrome, once: the backdrop/centring/panel CSS (`modalChrome`), the phone bottom-sheet restyle of it (`modalSheet`), and the `Modal` controller that owns the stacking base, the focus in and back out, the Escape binding and the panel markup. |
@@ -514,14 +514,14 @@ re-render it — so each container subscribes to `store.state.onChange` itself, 
 | `plural.ts` | Count agreement for every count string in the card. |
 | `theme.ts` | Whether the card is painted on a light or dark surface, read from HA's own theme variables rather than `prefers-color-scheme`. |
 
-### Deviation: inline SVG instead of `<ha-icon>`
+### Inline SVG instead of `<ha-icon>`
 
-The design handoff specifies `<ha-icon icon="mdi:…">`. That element only resolves inside
-the Home Assistant frontend: in Vitest/jsdom it is an unresolved custom element that renders
-nothing, and it would leave the card silently icon-less anywhere HA has not loaded its icon
-set. The glyphs are therefore inlined (path data taken verbatim from the design canvas;
-Material Design Icons, Apache-2.0). `ha-button-menu` / `mwc-list-item` are likewise replaced
-by `hv-overflow-menu`.
+`ha-icon` resolves only inside the Home Assistant frontend: in Vitest/jsdom it is an
+unresolved custom element that renders nothing, and it leaves the card icon-less anywhere HA
+has not loaded its icon set. The glyphs are inlined as path data instead (Material Design
+Icons, Apache-2.0), which renders everywhere and is assertable in a test. `ha-button-menu` /
+`mwc-list-item` are replaced by `hv-overflow-menu` for the same reason — the rule in full is
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) → "The card renders no `ha-*` element".
 
 ---
 
@@ -532,9 +532,10 @@ by `hv-overflow-menu`.
 Holds all app state in a small observable (`createObservable`), fetches over `WSClient`, and
 applies optimistic writes with rollback.
 
-**State** (`StoreState`): `items`, `cursor`, `total`, `loading`, `filters`, `selection`,
-`errorQueue`, `areasCache`, `locationTreeCache`, `locationsFlatCache`,
-`statsCounts`, `versionInfo`, `distinctValuesCache`, `connected`, `degraded`.
+**State**: `StoreState` in `src/store/types.ts`, which documents each field — the loaded
+page and its cursor, the filtered total, the selection, the caches the sidebar and the
+autocompletes read, what `haventory/config` answered, and the connection state the banners
+render from.
 
 **Notable methods**
 
@@ -642,14 +643,14 @@ view requires one.
 
 ### Column preferences (`src/store/columns.ts`)
 
-`ColumnKey` covers quantity, category, location, tags, due date, inspection date and
-updated. Each definition carries a `tableSize` for the full-view table and — only where the
-backend can actually sort by it — a `sortField`. Category, location and tags have none, so
-their headers are not clickable: a header that looks interactive but does nothing is worse
-than a plain one.
+`COLUMN_DEFS` is the vocabulary and the canonical order — `ColumnKey`, the track size each
+column takes in the full-view table, and the backend sort field it maps to where there is
+one. Status, category and tags have none, so their headers are not clickable: a header that
+looks interactive but does nothing is worse than a plain one.
 
-`DEFAULT_COLUMNS` is every key, in the canonical order: a browser that has made no choice
-sees the whole record, and the picker is what thins it and reorders it. The stored array
+`DEFAULT_COLUMNS` is derived, not written out — every key except those in `OFF_BY_DEFAULT`,
+which is `reminder_date` alone. A browser that has made no choice sees the rest of the
+record, and the picker is what thins it, switches the last one on and reorders it. The stored array
 *is* the order — `normalizeColumns` validates and dedupes without re-sorting, so a
 selection written before ordering existed (always canonical) loads as the same table it
 described, and `canonicalOrder` is what "Reset order" restores. The full set is wider than a phone and wider than many
@@ -810,5 +811,7 @@ once is a question about how the card gets used — which takes people using it 
   the sidebar tree — its location changes through the item editor or the bulk bar's Move
   action — and the ordered lists reorder with buttons, per the decision above.
 - Large lists rely on paging; no row virtualization.
-- The backend cannot sort by category, location or tags, filter by due date, or bulk-create
-  items — the UI is shaped around those limits rather than hiding them.
+- The backend cannot sort by status, category or tags, and cannot bulk-create items — the
+  UI is shaped around those limits rather than hiding them. Due, inspection and reminder
+  dates filter through the overdue / due-now flags; `created_*` and `updated_*` are the
+  only date windows.
