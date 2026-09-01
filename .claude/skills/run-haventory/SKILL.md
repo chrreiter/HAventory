@@ -591,7 +591,7 @@ three ways: **BLOCKING** — an HAventory traceback, an `unknown_error`, or a
 client-recoverable code logged at ERROR; **EXPECTED** — the contract's WARNING rejections,
 which fuzz layers produce by the hundred; **KNOWN** — ERROR lines HA core writes on its own
 account for a rejection the integration already logged at WARNING: type-loose frames it
-rejects before `ws_guard` runs (open item 53), a refused `haventory.*` service call (core's
+rejects before `ws_guard` runs, a refused `haventory.*` service call (core's
 `call_service` logs every `HomeAssistantError` at ERROR, its own `ServiceValidationError`
 included) and the REST `/api/services` view's 500 for the same refusal — surfaced without
 failing the sweep, because no change in the integration can quiet them. Exits 1 on any
