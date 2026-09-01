@@ -141,8 +141,8 @@ client + OS version, date. Put it in the results log.
 | A9 | Save a manual from the browser: open an item's Documents row, save the file | It saves under the attachment's title — or the original filename when untitled — never the attachment UUID, and clicking still opens it in a tab rather than downloading it | |
 
 Fixtures for A6–A8 are generated, never committed: `scripts/probe_fixtures.py` writes them
-(~30 MB) into a temporary directory each run, and `--fixtures-dir DIR` reuses one across
-runs. Reading the stored bytes needs either `HA_CONFIG_DIR` (a bind-mounted config) or
+into a temporary directory each run — its header says how much disk that takes — and
+`--fixtures-dir DIR` reuses one across runs. Reading the stored bytes needs either `HA_CONFIG_DIR` (a bind-mounted config) or
 `HA_CONTAINER` (read out through `docker exec`). Pillow comes from the non-default `probes`
 dependency group — `uv sync --group probes` first.
 

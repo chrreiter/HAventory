@@ -409,8 +409,8 @@ sub-threshold JPEG round-tripping byte-identical, the `206`/`404`/no-answer pres
 semantics, and the `Content-Disposition` name. Exit codes: `0` pass, `1` a probe failed,
 `2` setup error, `3` timeout.
 
-`scripts/probe_fixtures.py --out DIR` writes those fixtures on their own (~30 MB of
-generated images — they are never committed).
+`scripts/probe_fixtures.py --out DIR` writes those fixtures on their own; its header says
+what the five frames are for and how much disk they take. They are never committed.
 
 ---
 

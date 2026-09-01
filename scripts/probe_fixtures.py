@@ -13,7 +13,7 @@ Environment variables: none — everything is an argument.
 The five frames are what the attachment path has to survive: an oversized
 photographic JPEG, the same frame carrying an EXIF orientation tag, an oversized
 PNG with real transparency, an animated GIF, and a small JPEG that must arrive
-byte for byte. Together they are ~20 MB, which is why they are generated and
+byte for byte. Together they are ~30 MB, which is why they are generated and
 never committed — and generating them is also the only way the orientation tag
 is readable rather than buried in a blob. That case is the one attachment defect
 that looks correct in every automated test and wrong on every phone.
