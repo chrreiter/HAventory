@@ -741,76 +741,6 @@ def _envelope(item: dict) -> dict:
 
 
 @pytest.mark.parametrize(
-    ("overrides", "path"),
-    [
-        ({"name": "n" * (NAME_MAX_LENGTH + 1)}, "items[0].name"),
-        ({"due_date": "2026-01-01"}, "items[0].due_date"),
-        ({"inspection_date": "soon"}, "items[0].inspection_date"),
-        ({"reminder_date": "next week"}, "items[0].reminder_date"),
-        ({"reminder_date": "2026-02-30"}, "items[0].reminder_date"),
-        # A misspelled unit is the one the tolerant loader would drop in silence.
-        (
-            {"reminder_date": "2026-09-01", "reminder_interval": {"unit": "month", "count": 3}},
-            "items[0].reminder_interval",
-        ),
-        (
-            {"reminder_date": "2026-09-01", "reminder_interval": {"unit": "months", "count": 0}},
-            "items[0].reminder_interval",
-        ),
-        # An interval with nothing to count from produces no occurrence, ever.
-        (
-            {"reminder_interval": {"unit": "months", "count": 3}},
-            "items[0].reminder_interval",
-        ),
-    ],
-)
-def test_preview_holds_an_imported_item_to_the_always_enforced_rules(
-    overrides: dict, path: str
-) -> None:
-    """Rules every release has enforced on writes still refuse a document.
-
-    No store can carry data that violates them, so a document that does was
-    never an export of one. Reported per field rather than dropped, because
-    ``plan_import`` reports to the caller — a refused import, not lost rows.
-    """
-
-    repo = Repository()
-    report, target = ie.plan_import(
-        repo, _envelope(_item_doc(**overrides)), current_schema_version=CURRENT_SCHEMA_VERSION
-    )
-
-    assert report["valid"] is False
-    assert target is None
-    assert path in {e["path"] for e in report["errors"]}
-
-
-@pytest.mark.parametrize(
-    ("overrides", "field"),
-    [
-        ({"inspection_date": "2026-13-01"}, "inspection_date"),
-        ({"reminder_date": "2026-02-30"}, "reminder_date"),
-        (
-            {"reminder_date": "2026-09-01", "reminder_anchor": "2026-02-30"},
-            "reminder_anchor",
-        ),
-    ],
-)
-def test_a_refused_document_date_names_the_field_its_path_points_at(
-    overrides: dict, field: str
-) -> None:
-    """Path and message have to agree, or the author is sent to another line."""
-
-    repo = Repository()
-    report, target = ie.plan_import(
-        repo, _envelope(_item_doc(**overrides)), current_schema_version=CURRENT_SCHEMA_VERSION
-    )
-
-    assert target is None
-    reported = {e["path"]: e["message"] for e in report["errors"]}
-    assert reported[f"items[0].{field}"] == f"{field} must be a valid calendar date (YYYY-MM-DD)"
-
-
-@pytest.mark.parametrize(
     "overrides",
     [
         {"description": "d" * (DESCRIPTION_MAX_LENGTH + 1)},
@@ -1003,6 +933,11 @@ _ITEM_REFUSALS: tuple[tuple[dict, str, str], ...] = (
         "due_date must be in 'YYYY-MM-DD' format",
     ),
     (
+        {"inspection_date": "soon"},
+        "items[0].inspection_date",
+        "inspection_date must be in 'YYYY-MM-DD' format",
+    ),
+    (
         {"inspection_date": "2026-02-30"},
         "items[0].inspection_date",
         "inspection_date must be a valid calendar date (YYYY-MM-DD)",
@@ -1011,6 +946,11 @@ _ITEM_REFUSALS: tuple[tuple[dict, str, str], ...] = (
         {"reminder_date": "next week"},
         "items[0].reminder_date",
         "reminder_date must be in 'YYYY-MM-DD' format",
+    ),
+    (
+        {"reminder_date": "2026-02-30"},
+        "items[0].reminder_date",
+        "reminder_date must be a valid calendar date (YYYY-MM-DD)",
     ),
     (
         {"reminder_anchor": "2026-01-01"},
@@ -1023,10 +963,22 @@ _ITEM_REFUSALS: tuple[tuple[dict, str, str], ...] = (
         "reminder_anchor must not be later than reminder_date",
     ),
     (
+        {"reminder_date": "2026-09-01", "reminder_anchor": "2026-02-30"},
+        "items[0].reminder_anchor",
+        "reminder_anchor must be a valid calendar date (YYYY-MM-DD)",
+    ),
+    # A misspelled unit is the one the tolerant loader would drop in silence.
+    (
         {"reminder_date": "2026-09-01", "reminder_interval": {"unit": "month", "count": 3}},
         "items[0].reminder_interval",
         "reminder_interval.unit must be one of days, weeks, months",
     ),
+    (
+        {"reminder_date": "2026-09-01", "reminder_interval": {"unit": "months", "count": 0}},
+        "items[0].reminder_interval",
+        "reminder_interval.count must be an integer >= 1",
+    ),
+    # An interval with nothing to count from produces no occurrence, ever.
     (
         {"reminder_interval": {"unit": "months", "count": 3}},
         "items[0].reminder_interval",

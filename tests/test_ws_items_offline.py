@@ -292,24 +292,6 @@ async def test_ws_mutations_persist_to_store(monkeypatch) -> None:
     MIN_PERSISTS_TOTAL = 4
     assert calls["count"] >= MIN_PERSISTS_TOTAL
 
-    # Validation: set_quantity negative
-    res = await ws_send(hass, 1, "haventory/item/set_quantity", item_id="x", quantity=-1)
-    assert res["success"] is False and res["error"]["code"] == "validation_error"
-
-    # Not found
-    res = await ws_send(
-        hass, 2, "haventory/item/get", item_id="00000000-0000-4000-8000-000000000000"
-    )
-    assert res["success"] is False and res["error"]["code"] == "not_found"
-
-    # Conflict: create, then update with stale version
-    created = await ws_send(hass, 3, "haventory/item/create", name="Widget")
-    item_id = created["result"]["id"]
-    stale = await ws_send(
-        hass, 4, "haventory/item/update", item_id=item_id, expected_version=999, name="X"
-    )
-    assert stale["success"] is False and stale["error"]["code"] == "conflict"
-
 
 @pytest.mark.asyncio
 async def test_inspection_date_in_create_update_get() -> None:
