@@ -11,15 +11,10 @@ import {
   mountComponent,
   q,
   settle,
+  stubClipboard,
   stubViewport,
 } from '../test.utils';
-// The clipboard itself is `ui/clipboard`'s own test; what the editor owes is
-// asking the helper and believing its answer, which needs both answers.
-vi.mock('../ui/clipboard', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../ui/clipboard')>()),
-  copyText: vi.fn(async () => true),
-}));
-import { copyText } from '../ui/clipboard';
+import type { ClipboardStub } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
@@ -2935,13 +2930,14 @@ describe('hv-item-editor: reminders', () => {
 
 describe('hv-item-editor: the id an automation names', () => {
   const UUID = '0f2c4a11-6b3d-4a5e-9c8f-2d1e0b7a4c63';
-  const copy = vi.mocked(copyText);
   const button = (el: HVItemEditor) => q<HTMLButtonElement>(el, '[data-testid="editor-copy-id"]')!;
+  let clipboard: ClipboardStub;
 
   beforeEach(() => {
-    copy.mockReset();
-    copy.mockResolvedValue(true);
+    clipboard = stubClipboard();
   });
+
+  afterEach(() => clipboard());
 
   // The editor is the only surface a desktop gets: the detail sheet that also
   // prints the id opens on a card ≤600px and in the full view below 700px.
@@ -2970,50 +2966,20 @@ describe('hv-item-editor: the id an automation names', () => {
     expect(button(el).closest('.actions')).toBeNull();
   });
 
-  it('copies the id and says so once the copy has happened', async () => {
+  // What raising the label takes and how it goes away are `CopyFlash`'s own
+  // spec in `ui/clipboard.test.ts`. What the form owes is the wiring: the id it
+  // is editing goes in, the label comes back off the controller, and the move
+  // to another item takes it back — a label left standing would name the id of
+  // the item before this one.
+  it('copies the id it is editing, and forgets it on the next item', async () => {
     const el = await mount(makeItem({ id: UUID }));
     expect(button(el).textContent?.trim()).toBe('Copy');
 
     button(el).click();
     await settle(el);
 
-    expect(copy).toHaveBeenCalledWith(UUID);
+    expect(clipboard.writes).toEqual([UUID]);
     expect(button(el).textContent?.trim()).toBe('Copied');
-  });
-
-  // Home Assistant on the LAN over plain http:// is not a secure context, and
-  // an old browser there has no fallback either. "Copied" would name whatever
-  // was on the clipboard before, so the value stays on screen and unclaimed.
-  it('claims nothing when the browser refused the copy', async () => {
-    copy.mockResolvedValue(false);
-    const el = await mount(makeItem({ id: UUID }));
-
-    button(el).click();
-    await settle(el);
-
-    expect(button(el).textContent?.trim()).toBe('Copy');
-  });
-
-  it('goes back to offering the copy a couple of seconds later', async () => {
-    const el = await mount(makeItem({ id: UUID }));
-    vi.useFakeTimers();
-    try {
-      button(el).click();
-      await settle(el);
-      expect(button(el).textContent?.trim()).toBe('Copied');
-
-      await vi.advanceTimersByTimeAsync(2500);
-      await el.updateComplete;
-      expect(button(el).textContent?.trim()).toBe('Copy');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('forgets it copied when the form moves to another item', async () => {
-    const el = await mount(makeItem({ id: UUID }));
-    button(el).click();
-    await settle(el);
 
     el.item = makeItem({ id: 'i-8' });
     await settle(el);

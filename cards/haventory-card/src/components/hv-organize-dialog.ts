@@ -33,7 +33,7 @@ import { areaChangePreview, areaNameById } from '../ui/area';
 import type { AreaChangePreview } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
 import { countLocations } from '../store/location-tree';
-import { COPIED_MS, copyText } from '../ui/clipboard';
+import { CopyFlash, idRow } from '../ui/clipboard';
 import { describeFailure } from './hv-bulk-bar';
 import { makeBulkOp } from '../store/store';
 import type { Store } from '../store/store';
@@ -106,6 +106,7 @@ export class HVOrganizeDialog extends LitElement {
     base,
     chip,
     modalChrome,
+    idRow,
     css`
       :host {
         /*
@@ -509,27 +510,6 @@ export class HVOrganizeDialog extends LitElement {
       :host([mobile]) .cell.wide {
         grid-column: span 1;
       }
-      /* The id is not read, it is pasted — printed in full and offered to one
-         tap: user-select: all takes the whole uuid from a single click or
-         long-press, which is the copy route left when the browser has no
-         clipboard API (Home Assistant over plain http:// is not a secure
-         context). A uuid carries no space to break at, so it is allowed to break
-         anywhere rather than push the button out of the dialog. */
-      .id-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        min-width: 0;
-      }
-      .id-row code {
-        min-width: 0;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 11.5px;
-        color: var(--hv-text-secondary);
-        overflow-wrap: anywhere;
-        -webkit-user-select: all;
-        user-select: all;
-      }
       .control {
         box-sizing: border-box;
         width: 100%;
@@ -712,6 +692,8 @@ export class HVOrganizeDialog extends LitElement {
   /** The parent picker and the merge target: one location each, so a pick ends it. */
   private readonly _parentPicker = new LocationPicker(this);
   private readonly _mergePicker = new LocationPicker(this);
+  /** The "Copied" label on the open location editor's id row. */
+  private readonly _copyFlash = new CopyFlash(this);
 
   @state() private _filter = '';
   /** Location being edited, `'new'` for the create row, or null. */
@@ -720,13 +702,6 @@ export class HVOrganizeDialog extends LitElement {
   @state() private _locArea: string | null = null;
   @state() private _locParent: string | null = null;
   @state() private _locError: string | null = null;
-  /**
-   * Whether the open editor's id was copied a moment ago. Set only on a copy the
-   * browser confirmed — the button is the only feedback there is, so it must not
-   * announce a clipboard that still holds something else.
-   */
-  @state() private _copiedId = false;
-  private _copiedTimer?: ReturnType<typeof setTimeout>;
   @state() private _guard: { locationId: string; message: string } | null = null;
   /** Location being merged away, with the location it is merging into. */
   @state() private _mergingLocation: string | null = null;
@@ -778,27 +753,6 @@ export class HVOrganizeDialog extends LitElement {
     super.disconnectedCallback();
     this._storeUnsub?.();
     this._storeUnsub = undefined;
-    this._clearCopied();
-  }
-
-  private _clearCopied() {
-    clearTimeout(this._copiedTimer);
-    this._copiedTimer = undefined;
-    this._copiedId = false;
-  }
-
-  /**
-   * Put the open location's id on the clipboard, and say so only if it got
-   * there. The label reverts on its own: left standing it reads as the name of
-   * what the button does, and the next copy looks like a press that did nothing.
-   */
-  private async _copyId(id: string) {
-    if (!(await copyText(id))) return;
-    clearTimeout(this._copiedTimer);
-    this._copiedId = true;
-    this._copiedTimer = setTimeout(() => {
-      this._copiedId = false;
-    }, COPIED_MS);
   }
 
   /** Whether this update is the one that puts the dialog on screen. */
@@ -999,7 +953,7 @@ export class HVOrganizeDialog extends LitElement {
     this._parentPicker.close();
     this._locError = null;
     this._guard = null;
-    this._clearCopied();
+    this._copyFlash.reset();
   }
 
   private async _saveLocation() {
@@ -1435,9 +1389,9 @@ export class HVOrganizeDialog extends LitElement {
                     <button
                       class="hv-text-button"
                       data-testid="location-copy-id"
-                      @click=${() => void this._copyId(nodeId)}
+                      @click=${() => void this._copyFlash.copy(nodeId)}
                     >
-                      ${this._copiedId ? t('hv.action.copied') : t('hv.action.copy')}
+                      ${this._copyFlash.copied ? t('hv.action.copied') : t('hv.action.copy')}
                     </button>
                   </div>
                 </div>`

@@ -22,9 +22,9 @@ import {
   pictures,
 } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
-import { renderDocumentRow, renderLightboxHost, renderPhotoFigure } from '../ui/attachments';
+import { docIcon, renderDocumentRow, renderLightboxHost, renderPhotoFigure } from '../ui/attachments';
 import type { ConfirmDiscard } from '../ui/discard';
-import { COPIED_MS, copyText } from '../ui/clipboard';
+import { CopyFlash } from '../ui/clipboard';
 import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
@@ -64,6 +64,7 @@ export class HVDetailSheet extends LitElement {
     tokens,
     base,
     chip,
+    docIcon,
     css`
       :host {
         display: block;
@@ -391,12 +392,6 @@ export class HVDetailSheet extends LitElement {
         padding: 8px 12px;
         background: var(--hv-surface);
       }
-      .documents .doc-icon {
-        display: inline-grid;
-        place-items: center;
-        flex: none;
-        color: var(--hv-text-secondary);
-      }
       .documents .doc-text {
         flex: 1;
         min-width: 0;
@@ -476,15 +471,10 @@ export class HVDetailSheet extends LitElement {
   @state() private _checkoutOpen = false;
   /** Which picture the lightbox was opened on, or null when it is closed. */
   @state() private _lightbox: number | null = null;
-  /**
-   * Whether the id was copied a moment ago. Set only on a copy the browser
-   * confirmed — the button is the only feedback there is, so it must not
-   * announce a clipboard that still holds something else.
-   */
-  @state() private _copiedId = false;
-  private _copiedTimer?: ReturnType<typeof setTimeout>;
 
   private readonly _urls = new MediaUrls(this);
+  /** The "Copied" label on the id fact's button. */
+  private readonly _copyFlash = new CopyFlash(this);
   /**
    * The item id the sheet is showing. `undefined` until the first update, so
    * that pass settles the view the same way a move to another item does.
@@ -508,7 +498,7 @@ export class HVDetailSheet extends LitElement {
       this._mode = 'read';
       this._checkoutOpen = false;
       this._lightbox = null;
-      this._clearCopied();
+      this._copyFlash.reset();
     }
   }
 
@@ -525,31 +515,9 @@ export class HVDetailSheet extends LitElement {
     super.disconnectedCallback();
     this._dayUnsub?.();
     this._dayUnsub = undefined;
-    this._clearCopied();
   }
 
   private _dayUnsub?: () => void;
-
-  private _clearCopied() {
-    clearTimeout(this._copiedTimer);
-    this._copiedTimer = undefined;
-    this._copiedId = false;
-  }
-
-  /**
-   * Put the item's id on the clipboard, and say so only if it got there.
-   *
-   * The label reverts on its own: a button that stays "Copied" reads as the
-   * name of what it does, and the next copy would then look like a no-op.
-   */
-  private async _copyId(id: string) {
-    if (!(await copyText(id))) return;
-    clearTimeout(this._copiedTimer);
-    this._copiedId = true;
-    this._copiedTimer = setTimeout(() => {
-      this._copiedId = false;
-    }, COPIED_MS);
-  }
 
   /** True when the edit form is open with unsaved changes. */
   get dirty(): boolean {
@@ -868,9 +836,9 @@ export class HVDetailSheet extends LitElement {
           <button
             class="text-action"
             data-testid="sheet-copy-id"
-            @click=${() => void this._copyId(item.id)}
+            @click=${() => void this._copyFlash.copy(item.id)}
           >
-            ${this._copiedId ? t('hv.action.copied') : t('hv.action.copy')}
+            ${this._copyFlash.copied ? t('hv.action.copied') : t('hv.action.copy')}
           </button>
         </div>
       </div>
