@@ -126,8 +126,8 @@ class LoadReport:
     without the dropped rows, turning a readable corrupt file into a permanent
     loss.
 
-    #225 replaces the refusal with a repairs issue offering "load anyway"; this is
-    the payload that flow needs, which is why it carries ids and not just counts.
+    The repair that offers "load anyway" quotes the ids back to the user, so
+    this carries them rather than counts alone.
     """
 
     dropped_item_ids: tuple[str, ...] = ()
@@ -1831,11 +1831,6 @@ class Repository:
 
         if not isinstance(data, dict):
             return
-
-        # Stores written by older builds carry a `_generation` key. Nothing
-        # reads it: the counter it belonged to counted one process's mutations
-        # and is gone, and the item `version` field — which is persisted — is
-        # what optimistic concurrency runs on.
 
         # Statuses BEFORE the item loop, or the tolerant status read would see
         # only the built-ins and rewrite every item on a custom status to "ok"

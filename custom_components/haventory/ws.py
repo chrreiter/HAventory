@@ -472,12 +472,9 @@ async def ws_distinct_values(
 async def ws_health(
     hass: HomeAssistant, conn: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
-    # `healthy` and `issues` answered a set of checks that compared the
-    # repository's indexes against the entities they index. Every hit named a
-    # bug in this integration rather than anything a household had done, so the
-    # answer was empty on every install that ever asked; the checks run in the
-    # test suite instead, where a disagreement fails a build. The two fields
-    # stay in the result, and stay constant, because clients read them.
+    # `healthy` and `issues` are constant: an index disagreeing with what it
+    # indexes is a bug in this integration, and the test suite is where that
+    # fails a build. The two fields stay in the result because clients read them.
     result = {
         "healthy": True,
         "issues": [],

@@ -286,8 +286,7 @@ def _list_can_delete(hass: HomeAssistant, entity_id: str) -> bool:
 
     Only a list that positively says it cannot delete is treated as one. An
     entity missing from the state machine, or one publishing no
-    `supported_features` at all, answers yes and is left to the ordinary path —
-    the old behaviour, for anything this cannot read.
+    `supported_features` at all, answers yes and is left to the ordinary path.
     """
 
     state = hass.states.get(entity_id)

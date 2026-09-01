@@ -941,8 +941,8 @@ def validate_item_status(
     same as any other unknown value ("ok" is the way to clear a flagged state).
 
     ``known_statuses`` is an explicit parameter rather than module-level mutable
-    state: the default keeps every caller that has no repository to ask meaning
-    what it has always meant, and nothing global needs resetting between tests.
+    state: the default answers for every caller with no repository to ask, and
+    nothing global needs resetting between tests.
 
     ``default`` is what a load path passes to read a stored payload tolerantly:
     a store written before the field existed (or hand-edited into an unknown
@@ -1875,8 +1875,8 @@ def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
     """The selected location ids as UUIDs, dropping any that will not parse.
 
     An unparsable id contributes nothing rather than raising, so a selection
-    of only bad ids matches nothing — which is what a single bad id has always
-    done. The parse belongs here rather than in the per-item predicate: the
+    of only bad ids matches nothing — which is what a single bad id among good
+    ones does too. The parse belongs here rather than in the per-item predicate: the
     selection is constant for a whole query, and rebuilding the same UUID once
     per candidate is measurable on an inventory of any size.
     """
@@ -1896,8 +1896,8 @@ def _item_matches_locations(
     """True when the item sits in — or under — any of the selected locations.
 
     An empty selection keeps nothing, which is what a selection of only
-    unparsable ids has always meant: the filter names locations, and none of
-    them is this item's.
+    unparsable ids amounts to: the filter names locations, and none of them is
+    this item's.
     """
 
     if not item.location_id:
@@ -1972,8 +1972,9 @@ def _timestamp_predicates(flt: ItemFilter) -> list[Callable[[Item], bool]]:
     """The timestamp filters a filter carries, refusing a malformed bound.
 
     A bound the filter names as null is no filter at all; one it names as empty
-    is not a timestamp to parse but is still compared against, which is what
-    keeps ``updated_before: ""`` meaning what it has always meant.
+    is not a timestamp to parse but is still compared against, so
+    ``updated_before: ""`` keeps every item out and ``updated_after: ""`` lets
+    every item through.
     """
 
     predicates: list[Callable[[Item], bool]] = []
