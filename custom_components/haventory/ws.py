@@ -105,14 +105,9 @@ def _require_loaded(hass: HomeAssistant) -> None:
 
 
 def _ctx(op: str, **extra: Any) -> dict[str, Any]:
-    """Build a structured logging context for WS operations.
+    """The `extra=` payload a WS log record carries, always naming its `op`."""
 
-    Ensures the `op` field is always present and merges any additional fields.
-    """
-    base: dict[str, Any] = {"op": op}
-    if extra:
-        base.update(extra)
-    return base
+    return {"op": op, **extra}
 
 
 # Sent to clients when a non-domain exception escapes a handler. Deliberately
@@ -269,7 +264,7 @@ def _validate_bulk_ops(operations: Any) -> list[dict[str, Any]]:
         raise ValidationError("operations must be a list")
     validated: list[dict[str, Any]] = []
     seen_op_ids: set[str] = set()
-    for _idx, op in enumerate(operations):
+    for op in operations:
         if not isinstance(op, dict):
             raise ValidationError("each operation must be an object")
         if "op_id" not in op:
