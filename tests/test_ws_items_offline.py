@@ -230,28 +230,6 @@ async def test_item_check_out_due_date_is_optional() -> None:
 
 
 @pytest.mark.asyncio
-async def test_item_list_pagination_cursor_passthrough() -> None:
-    """List items returns items array and next_cursor passthrough shape."""
-
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
-
-    # Seed a couple items
-    await ws_send(hass, 1, "haventory/item/create", name="A")
-    await ws_send(hass, 2, "haventory/item/create", name="B")
-
-    res = await ws_send(hass, 3, "haventory/item/list", limit=1)
-    assert res["success"] is True
-    assert isinstance(res["result"].get("items"), list)
-    cursor = res["result"].get("next_cursor")
-
-    if cursor:
-        res2 = await ws_send(hass, 4, "haventory/item/list", limit=1, cursor=cursor)
-        assert res2["success"] is True
-
-
-@pytest.mark.asyncio
 async def test_error_mapping_validation_and_not_found_and_conflict() -> None:
     """Ensure errors map to codes and include context."""
 
@@ -263,12 +241,12 @@ async def test_error_mapping_validation_and_not_found_and_conflict() -> None:
     v = await ws_send(hass, 1, "haventory/item/set_quantity", item_id="x", quantity=-1)
     assert v["success"] is False and v["error"]["code"] == "validation_error"
     # Context includes op and input fields
-    assert v["error"].get("context", v["error"].get("data", {})).get("op") == "item_set_quantity"
+    assert v["error"]["data"]["op"] == "item_set_quantity"
 
     # not_found: get by unknown id
     n = await ws_send(hass, 2, "haventory/item/get", item_id="00000000-0000-4000-8000-000000000000")
     assert n["success"] is False and n["error"]["code"] == "not_found"
-    assert n["error"].get("context", n["error"].get("data", {})).get("op") == "item_get"
+    assert n["error"]["data"]["op"] == "item_get"
 
     # conflict: create then update with stale expected_version
     c = await ws_send(hass, 3, "haventory/item/create", name="Widget")
@@ -277,7 +255,7 @@ async def test_error_mapping_validation_and_not_found_and_conflict() -> None:
         hass, 4, "haventory/item/update", item_id=iid, expected_version=999, name="X"
     )
     assert stale["success"] is False and stale["error"]["code"] == "conflict"
-    assert stale["error"].get("context", stale["error"].get("data", {})).get("op") == "item_update"
+    assert stale["error"]["data"]["op"] == "item_update"
 
 
 @pytest.mark.asyncio

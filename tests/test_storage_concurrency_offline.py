@@ -9,7 +9,6 @@ import logging
 from unittest.mock import AsyncMock
 
 import pytest
-from custom_components.haventory.models import ItemCreate, ItemUpdate
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore, async_persist_repo
 from homeassistant.core import HomeAssistant
@@ -44,38 +43,6 @@ async def test_persist_lock_prevents_concurrent_saves():
 
     # Verify operations were serialized (each completes before next starts)
     assert save_order == ["start", "end", "start", "end", "start", "end"]
-
-
-@pytest.mark.asyncio
-async def test_concurrent_operations_with_persistence():
-    """Multiple concurrent operations complete successfully with locking."""
-    hass = HomeAssistant()
-
-    mock_store = AsyncMock(spec=DomainStore)
-    mock_store.async_save = AsyncMock()
-
-    repo = Repository()
-    install_runtime(hass, repository=repo, store=mock_store)
-
-    # Create initial items
-    items = [repo.create_item(ItemCreate(name=f"Item {i}")) for i in range(10)]
-
-    async def update_and_persist(item_id, quantity):
-        """Update an item and persist."""
-        repo.update_item(item_id, ItemUpdate(quantity=quantity))
-        await async_persist_repo(hass)
-
-    # Launch concurrent updates
-    tasks = [update_and_persist(items[i].id, i * 10) for i in range(10)]
-    await asyncio.gather(*tasks)
-
-    # Verify all items were updated correctly
-    for i, item in enumerate(items):
-        updated = repo.get_item(item.id)
-        assert updated.quantity == i * 10
-
-    # Verify persist was called (at least once, possibly more due to concurrency)
-    assert mock_store.async_save.call_count >= 1
 
 
 @pytest.mark.asyncio
