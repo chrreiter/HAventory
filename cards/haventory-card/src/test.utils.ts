@@ -1060,6 +1060,35 @@ export function stubElementWidth(width: number): () => void {
   };
 }
 
+/** The restore a {@link stubClipboard} hands back, and what was copied to it. */
+export type ClipboardStub = (() => void) & { writes: string[] };
+
+/**
+ * Stand in the async clipboard jsdom does not implement, and hand back the
+ * restore.
+ *
+ * A copy button reaches the clipboard through `ui/clipboard`'s `CopyFlash`,
+ * which calls `copyText` inside that same module — a module mock replaces what
+ * importers see and not that call, so the seam a surface test holds is the
+ * browser API underneath. Without the stub both routes are missing, the copy
+ * fails, and the button correctly claims nothing.
+ */
+export function stubClipboard(): ClipboardStub {
+  const writes: string[] = [];
+  Object.defineProperty(navigator, 'clipboard', {
+    value: {
+      writeText: async (text: string) => {
+        writes.push(text);
+      },
+    },
+    configurable: true,
+  });
+  const restore = () => {
+    Reflect.deleteProperty(navigator, 'clipboard');
+  };
+  return Object.assign(restore, { writes });
+}
+
 /** A captured discard question, and the two answers a host can give it. */
 export interface DiscardAsker {
   /** Hand this to a `confirmDiscard` property. */

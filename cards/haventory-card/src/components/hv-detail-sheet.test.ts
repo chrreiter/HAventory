@@ -11,14 +11,9 @@ import {
   mountComponent,
   q,
   settle as settleEl,
+  stubClipboard,
 } from '../test.utils';
-// The clipboard itself is `ui/clipboard`'s own test; what the sheet owes is
-// asking the helper and believing its answer, which needs both answers.
-vi.mock('../ui/clipboard', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../ui/clipboard')>()),
-  copyText: vi.fn(async () => true),
-}));
-import { copyText } from '../ui/clipboard';
+import type { ClipboardStub } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, attachmentNameToken } from '../ui/media';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVDetailSheet } from './hv-detail-sheet';
@@ -1212,13 +1207,14 @@ describe('hv-detail-sheet: documents', () => {
 
 describe('hv-detail-sheet: the id an automation names', () => {
   const UUID = '0f2c4a11-6b3d-4a5e-9c8f-2d1e0b7a4c63';
-  const copy = vi.mocked(copyText);
   const button = (el: HVDetailSheet) => q<HTMLButtonElement>(el, '[data-testid="sheet-copy-id"]')!;
+  let clipboard: ClipboardStub;
 
   beforeEach(() => {
-    copy.mockReset();
-    copy.mockResolvedValue(true);
+    clipboard = stubClipboard();
   });
+
+  afterEach(() => clipboard());
 
   it('prints the whole id, last in the facts', async () => {
     const el = await mount({ id: UUID });
@@ -1234,50 +1230,20 @@ describe('hv-detail-sheet: the id an automation names', () => {
     expect(componentCss('hv-detail-sheet')).toMatch(/\.fact \.value\.id \{[^}]*user-select: all/);
   });
 
-  it('copies the id and says so once the copy has happened', async () => {
+  // What raising the label takes and how it goes away are `CopyFlash`'s own
+  // spec in `ui/clipboard.test.ts`. What the sheet owes is the wiring: the id
+  // it is showing goes in, the label comes back off the controller, and the
+  // move to another item takes it back — a label left standing would name the
+  // id of the item before this one.
+  it('copies the id it is showing, and forgets it on the next item', async () => {
     const el = await mount({ id: UUID });
     expect(button(el).textContent?.trim()).toBe('Copy');
 
     button(el).click();
     await settle(el);
 
-    expect(copy).toHaveBeenCalledWith(UUID);
+    expect(clipboard.writes).toEqual([UUID]);
     expect(button(el).textContent?.trim()).toBe('Copied');
-  });
-
-  // Home Assistant on the LAN over plain http:// is not a secure context, and
-  // an old browser there has no fallback either. "Copied" would name whatever
-  // was on the clipboard before, so the value stays on screen and unclaimed.
-  it('claims nothing when the browser refused the copy', async () => {
-    copy.mockResolvedValue(false);
-    const el = await mount({ id: UUID });
-
-    button(el).click();
-    await settle(el);
-
-    expect(button(el).textContent?.trim()).toBe('Copy');
-  });
-
-  it('goes back to offering the copy a couple of seconds later', async () => {
-    const el = await mount({ id: UUID });
-    vi.useFakeTimers();
-    try {
-      button(el).click();
-      await settle(el);
-      expect(button(el).textContent?.trim()).toBe('Copied');
-
-      await vi.advanceTimersByTimeAsync(2500);
-      await el.updateComplete;
-      expect(button(el).textContent?.trim()).toBe('Copy');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('forgets it copied when the sheet moves to another item', async () => {
-    const el = await mount({ id: UUID });
-    button(el).click();
-    await settle(el);
 
     el.item = makeItem({ id: 'i-8' });
     await settle(el);

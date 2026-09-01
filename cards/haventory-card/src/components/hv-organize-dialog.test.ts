@@ -1,13 +1,7 @@
 import { setLanguage } from '../i18n';
 import './hv-organize-dialog';
-import { all, componentCss, makeItem, mountHost, q, settle } from '../test.utils';
-// The clipboard itself is `ui/clipboard`'s own test; what the dialog owes is
-// asking the helper and believing its answer, which needs both answers.
-vi.mock('../ui/clipboard', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../ui/clipboard')>()),
-  copyText: vi.fn(async () => true),
-}));
-import { copyText } from '../ui/clipboard';
+import { all, componentCss, makeItem, mountHost, q, settle, stubClipboard } from '../test.utils';
+import type { ClipboardStub } from '../test.utils';
 import { HVOrganizeDialog } from './hv-organize-dialog';
 import type { OrganizeTab } from './hv-organize-dialog';
 import type { AreaRef, Item, Location, StatusDefinition } from '../store/types';
@@ -1755,7 +1749,7 @@ describe('hv-organize-dialog: disclosures come into view', () => {
 
 describe('hv-organize-dialog: the id an automation names', () => {
   const locations = [loc('garage', 'Garage', null, 'area-garage'), loc('shelf-a', 'Shelf A', 'garage')];
-  const copy = vi.mocked(copyText);
+  let clipboard: ClipboardStub;
 
   /** Open the editor over an existing location, the way the tree's ✎ does. */
   async function editing(id: string) {
@@ -1769,11 +1763,16 @@ describe('hv-organize-dialog: the id an automation names', () => {
   }
 
   beforeEach(() => {
-    copy.mockReset();
-    copy.mockResolvedValue(true);
+    clipboard = stubClipboard();
   });
 
-  it('shows a location its id, and copies it', async () => {
+  afterEach(() => clipboard());
+
+  // What raising the label takes and how it goes away are `CopyFlash`'s own
+  // spec in `ui/clipboard.test.ts`. What the dialog owes is the wiring: the id
+  // of the location under edit goes in, the label comes back off the
+  // controller, and the next open of the editor takes it back.
+  it('shows a location its id, copies it, and forgets it on the next open', async () => {
     const { el, sr } = await editing('garage');
     expect(q(sr, '[data-testid="location-id"]')?.textContent?.trim()).toBe('garage');
 
@@ -1782,18 +1781,15 @@ describe('hv-organize-dialog: the id an automation names', () => {
     button.click();
     await settle(el);
 
-    expect(copy).toHaveBeenCalledWith('garage');
+    expect(clipboard.writes).toEqual(['garage']);
     expect(q(sr, '[data-testid="location-copy-id"]')?.textContent?.trim()).toBe('Copied');
-  });
 
-  // The same refusal the detail sheet answers for: over plain http:// there may
-  // be no clipboard at all, and a button that says Copied anyway names whatever
-  // was on it before.
-  it('claims nothing when the browser refused the copy', async () => {
-    copy.mockResolvedValue(false);
-    const { el, sr } = await editing('garage');
-
-    q<HTMLButtonElement>(sr, '[data-testid="location-copy-id"]')!.click();
+    (q(sr, '[data-testid="location-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
 
     expect(q(sr, '[data-testid="location-copy-id"]')?.textContent?.trim()).toBe('Copy');
@@ -1807,23 +1803,6 @@ describe('hv-organize-dialog: the id an automation names', () => {
     expect(q(sr, '[data-testid="location-editor"]')).toBeTruthy();
     expect(q(sr, '[data-testid="location-id"]')).toBe(null);
     expect(q(sr, '[data-testid="location-copy-id"]')).toBe(null);
-  });
-
-  it('forgets it copied when the editor is opened again', async () => {
-    const { el, sr } = await editing('garage');
-    q<HTMLButtonElement>(sr, '[data-testid="location-copy-id"]')!.click();
-    await settle(el);
-    expect(q(sr, '[data-testid="location-copy-id"]')?.textContent?.trim()).toBe('Copied');
-
-    (q(sr, '[data-testid="location-cancel"]') as HTMLButtonElement).click();
-    await settle(el);
-    const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (
-      tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement
-    ).click();
-    await settle(el);
-
-    expect(q(sr, '[data-testid="location-copy-id"]')?.textContent?.trim()).toBe('Copy');
   });
 });
 

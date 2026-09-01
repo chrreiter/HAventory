@@ -11,7 +11,7 @@ import { onDayChange } from '../ui/day-clock';
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
 import type { ConfirmDiscard } from '../ui/discard';
-import { COPIED_MS, copyText } from '../ui/clipboard';
+import { CopyFlash, idRow } from '../ui/clipboard';
 import { ViewportNarrow } from '../ui/responsive';
 import { focusStranded } from '../ui/dialog-focus';
 import { LocationPicker } from '../ui/location-picker';
@@ -138,6 +138,7 @@ export class HVItemEditor extends LitElement {
     base,
     chip,
     dayOffsets,
+    idRow,
     css`
       :host {
         display: block;
@@ -667,28 +668,6 @@ export class HVItemEditor extends LitElement {
         min-height: var(--hv-tap-min, auto);
         padding: 0 8px;
       }
-      /* The id is not read, it is pasted: user-select: all takes the whole uuid
-         from a single click or long-press, which is the copy route left when
-         the browser has no clipboard API (Home Assistant over plain http:// is
-         not a secure context). A uuid carries no space to break at, so it may
-         break anywhere rather than push the button off a phone's row — and it
-         takes a row of its own above Delete, Cancel and Save, which have 343px
-         to spend at 375px. */
-      .id-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        min-width: 0;
-      }
-      .id-row code {
-        min-width: 0;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-        font-size: 11.5px;
-        color: var(--hv-text-secondary);
-        overflow-wrap: anywhere;
-        -webkit-user-select: all;
-        user-select: all;
-      }
       /* Delete is hv-text-button danger from the shared sheet — the same
          borderless red every other destructive action in the card uses. The row
          is Delete, Cancel and Save, and only three labels wide: at 375px it has
@@ -1144,13 +1123,6 @@ export class HVItemEditor extends LitElement {
   @state() private _dropTarget: AttachmentKind | null = null;
   /** Which photo the lightbox was opened on, or null when it is closed. */
   @state() private _lightbox: number | null = null;
-  /**
-   * Whether the item's id was copied a moment ago. Set only on a copy the
-   * browser confirmed — the button is the only feedback there is, so it must
-   * not announce a clipboard that still holds something else.
-   */
-  @state() private _copiedId = false;
-  private _copiedTimer?: ReturnType<typeof setTimeout>;
   /** Why creating a first location from the picker failed. */
   @state() private _locationError: string | null = null;
   /**
@@ -1165,6 +1137,8 @@ export class HVItemEditor extends LitElement {
   @state() private _createdLocations: Location[] = [];
 
   private readonly _urls = new MediaUrls(this);
+  /** The "Copied" label on the id row's button. */
+  private readonly _copyFlash = new CopyFlash(this);
   /** Window width, for the two dialogs this form raises over itself. */
   private readonly _viewport = new ViewportNarrow(this);
   /** The location field: one location, so a pick finishes the job. */
@@ -1229,7 +1203,7 @@ export class HVItemEditor extends LitElement {
       this._lightbox = null;
       this._locationError = null;
       this._createdLocations = [];
-      this._clearCopied();
+      this._copyFlash.reset();
       this._closeCategory();
       return;
     }
@@ -1533,31 +1507,9 @@ export class HVItemEditor extends LitElement {
     this._dayUnsub?.();
     this._dayUnsub = undefined;
     this._closeCategory();
-    this._clearCopied();
   }
 
   private _dayUnsub?: () => void;
-
-  private _clearCopied() {
-    clearTimeout(this._copiedTimer);
-    this._copiedTimer = undefined;
-    this._copiedId = false;
-  }
-
-  /**
-   * Put the item's id on the clipboard, and say so only if it got there.
-   *
-   * The label reverts on its own: a button that stays "Copied" reads as the
-   * name of what it does, and the next copy would then look like a no-op.
-   */
-  private async _copyId(id: string) {
-    if (!(await copyText(id))) return;
-    clearTimeout(this._copiedTimer);
-    this._copiedId = true;
-    this._copiedTimer = setTimeout(() => {
-      this._copiedId = false;
-    }, COPIED_MS);
-  }
 
   private _chooseCategory(value: string) {
     this._patch({ category: value });
@@ -2417,9 +2369,9 @@ export class HVItemEditor extends LitElement {
         <button
           class="hv-text-button"
           data-testid="editor-copy-id"
-          @click=${() => void this._copyId(id)}
+          @click=${() => void this._copyFlash.copy(id)}
         >
-          ${this._copiedId ? t('hv.action.copied') : t('hv.action.copy')}
+          ${this._copyFlash.copied ? t('hv.action.copied') : t('hv.action.copy')}
         </button>
       </div>
     </div>`;

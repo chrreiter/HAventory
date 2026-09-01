@@ -1,4 +1,5 @@
-import { copyText } from './clipboard';
+import type { ReactiveController, ReactiveControllerHost } from 'lit';
+import { COPIED_MS, CopyFlash, copyText } from './clipboard';
 
 /**
  * jsdom ships neither half of the browser's clipboard: `navigator.clipboard` is
@@ -92,5 +93,137 @@ describe('copyText', () => {
     await copyText('shelf-b');
     expect(document.activeElement).toBe(input);
     input.remove();
+  });
+});
+
+/**
+ * The half of a Lit host a controller reaches for: it collects what is added to
+ * it, counts the redraws it is asked for, and disconnects the way
+ * `ReactiveElement` does.
+ */
+class Host implements ReactiveControllerHost {
+  readonly controllers: ReactiveController[] = [];
+  updates = 0;
+
+  addController(controller: ReactiveController): void {
+    this.controllers.push(controller);
+  }
+
+  removeController(controller: ReactiveController): void {
+    const at = this.controllers.indexOf(controller);
+    if (at >= 0) this.controllers.splice(at, 1);
+  }
+
+  requestUpdate(): void {
+    this.updates += 1;
+  }
+
+  get updateComplete(): Promise<boolean> {
+    return Promise.resolve(true);
+  }
+
+  disconnect(): void {
+    for (const controller of [...this.controllers]) controller.hostDisconnected?.();
+  }
+}
+
+describe('CopyFlash', () => {
+  it('offers the copy until one has happened', () => {
+    expect(new CopyFlash(new Host()).copied).toBe(false);
+  });
+
+  it('says so once the copy is confirmed, and asks its host to draw it', async () => {
+    withClipboard(async () => undefined);
+    const host = new Host();
+    const flash = new CopyFlash(host);
+
+    await flash.copy('shelf-b');
+
+    expect(flash.copied).toBe(true);
+    expect(host.updates).toBe(1);
+  });
+
+  // Home Assistant on the LAN over plain http:// is not a secure context, and
+  // an old browser there has no fallback either. "Copied" would name whatever
+  // was on the clipboard before, so the value stays on screen and unclaimed.
+  it('claims nothing when neither route copied it', async () => {
+    const host = new Host();
+    const flash = new CopyFlash(host);
+
+    await flash.copy('shelf-b');
+
+    expect(flash.copied).toBe(false);
+    expect(host.updates).toBe(0);
+  });
+
+  it('goes back to offering the copy a couple of seconds later', async () => {
+    withClipboard(async () => undefined);
+    const flash = new CopyFlash(new Host());
+    vi.useFakeTimers();
+    try {
+      await flash.copy('shelf-b');
+      await vi.advanceTimersByTimeAsync(COPIED_MS - 1);
+      expect(flash.copied).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(flash.copied).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives a second copy a window of its own', async () => {
+    withClipboard(async () => undefined);
+    const flash = new CopyFlash(new Host());
+    vi.useFakeTimers();
+    try {
+      await flash.copy('shelf-b');
+      await vi.advanceTimersByTimeAsync(COPIED_MS - 1);
+      await flash.copy('shelf-b');
+
+      // The first copy's timer would land here, on a label the second one put
+      // up a moment ago.
+      await vi.advanceTimersByTimeAsync(1);
+      expect(flash.copied).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('takes the label back when the surface moves to another id', async () => {
+    withClipboard(async () => undefined);
+    const host = new Host();
+    const flash = new CopyFlash(host);
+    await flash.copy('shelf-b');
+
+    flash.reset();
+
+    expect(flash.copied).toBe(false);
+    expect(host.updates).toBe(2);
+  });
+
+  it('asks for nothing when there was no label to take back', () => {
+    const host = new Host();
+    new CopyFlash(host).reset();
+
+    expect(host.updates).toBe(0);
+  });
+
+  it('leaves no timer behind on a host that went away', async () => {
+    withClipboard(async () => undefined);
+    const host = new Host();
+    const flash = new CopyFlash(host);
+    vi.useFakeTimers();
+    try {
+      await flash.copy('shelf-b');
+      host.disconnect();
+      expect(flash.copied).toBe(false);
+
+      const asked = host.updates;
+      await vi.advanceTimersByTimeAsync(COPIED_MS);
+      expect(host.updates).toBe(asked);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
