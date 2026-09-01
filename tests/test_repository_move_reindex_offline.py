@@ -10,6 +10,8 @@ These tests pin the invariants that must survive:
 - effective-area buckets follow the subtree to its new ancestry
 - an edit that changes neither the name nor the parent link rebuilds nothing,
   and each edit that does leaves the derived state a full rebuild would leave
+- an item that moves under its own power walks both ancestor chains itself:
+  nothing rebuilds the subtree index behind an item write
 """
 
 from __future__ import annotations
@@ -100,6 +102,34 @@ async def test_move_rewrites_paths_without_touching_versions() -> None:
         assert item.location_path.display_path.startswith("Attic")
         assert item.version == old_version
         assert item.updated_at == old_updated
+
+
+@pytest.mark.asyncio
+async def test_an_item_move_leaves_one_subtree_and_joins_another() -> None:
+    """A location edit rebuilds the subtree index; an item edit maintains it.
+
+    The item write path walks the chain it leaves and the chain it joins on its
+    own, so the two halves have to agree without a rebuild behind them.
+    """
+
+    repo, t = _build_tree()
+    hammer = t["items"][0]
+
+    under_garage = repo.list_items(
+        flt=ItemFilter(location_id=str(t["garage"].id), include_subtree=True)
+    )
+    assert {i.name for i in under_garage["items"]} == {"Hammer", "Garage opener"}
+
+    repo.update_item(hammer.id, ItemUpdate(location_id=str(t["attic"].id)))
+
+    under_garage = repo.list_items(
+        flt=ItemFilter(location_id=str(t["garage"].id), include_subtree=True)
+    )
+    assert {i.name for i in under_garage["items"]} == {"Garage opener"}
+    under_attic = repo.list_items(
+        flt=ItemFilter(location_id=str(t["attic"].id), include_subtree=True)
+    )
+    assert {i.name for i in under_attic["items"]} == {"Hammer"}
 
 
 @pytest.mark.asyncio
