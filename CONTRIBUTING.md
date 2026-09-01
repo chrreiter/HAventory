@@ -57,7 +57,7 @@ uv run ruff format --check .   # CI fails on formatting alone; `ruff check` does
 uv run mypy
 
 # Frontend (in cards/haventory-card)
-npm audit --audit-level=high
+npm audit --audit-level=moderate
 npx eslint .
 npm run typecheck
 npx vitest run
@@ -67,7 +67,11 @@ npm run build
 The audit is the only place a development-scope npm vulnerability becomes
 visible: the repository's Dependabot auto-triage rule dismisses dev-scope
 alerts, so the alert dashboard is not ground truth for the card's lockfile —
-CI is.
+CI is. `moderate` rather than `high` for the same reason: a moderate
+development-scope advisory is dismissed on the dashboard, so a gate that let it
+through would leave it surfacing nowhere. CI (`.github/workflows/ci.yml`) and
+`scripts/ci_local.sh` run the same level; a lower one here is green against a
+red CI.
 
 Or run everything at once with `scripts/ci_local.sh`. CI runs the same checks
 plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
@@ -101,6 +105,9 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   behind reads as pending work.
 - **Preserve the core invariants**: case-insensitive search, denormalized
   `location_path` on items, and optimistic concurrency via the item `version`.
+  `location_path` is derived — no client writes it, and rewriting it leaves
+  `version` and `updated_at` alone, because a location rename is not an item
+  edit.
 - **The card renders no `ha-*` element.** Home Assistant's frontend components
   — `ha-form`, `ha-dialog`, `ha-selector`, `ha-data-table` — are registered
   lazily inside HA's own bundle, are not published for card authors to import,

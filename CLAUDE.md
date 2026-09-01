@@ -70,19 +70,11 @@ and a `dev/` document that disagrees with an issue is stale.
 
 ## Running tests / lint / build
 
-Backend at the repo root, frontend in `cards/haventory-card`. `docs/developing.md` carries
-the bootstrap, the helper scripts and the online smokes; this is the gate, which runs
-before every commit.
-
-```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
-uv run ruff check .
-uv run ruff format --check .   # CI fails on formatting alone; `ruff check` does not cover it
-uv run mypy                    # strict per-module for the core; see [[tool.mypy.overrides]]
-
-npm audit --audit-level=high   # dev-scope alerts are auto-dismissed on GitHub; CI is the gate
-npx eslint . && npm run typecheck && npx vitest run && npm run build
-```
+Backend at the repo root, frontend in `cards/haventory-card`. The gate — both halves,
+green before every commit — is written out once in
+[`CONTRIBUTING.md`](CONTRIBUTING.md) → "The gate", audit level included;
+[`docs/developing.md`](docs/developing.md) carries the bootstrap, the helper scripts and
+the online smokes.
 
 In-process HA tests are a **second, separate mode** — the integration inside a real HA core
 via `pytest-homeassistant-custom-component`, run with `scripts/test_integration.sh`. What it
@@ -91,9 +83,6 @@ not discoverable from the code are in `docs/developing.md` → "In-process HA in
 tests". The one that bites hardest: **do not set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` for that
 mode** — phacc must load, and the flag makes it silently collect nothing.
 
-Everything else is Linux/bash: `scripts/` holds no `.ps1`, CI runs on `ubuntu-latest`, and the
-helpers assume a UTF-8 terminal. Develop on Windows through WSL2.
-
 ## Conventions
 
 - **TDD**: every feature/fix ships with tests — happy path plus at least one edge/error case,
@@ -101,22 +90,21 @@ helpers assume a UTF-8 terminal. Develop on Windows through WSL2.
   commit.
 - **The WebSocket contract lives in `docs/`** — an API change moves `ws.py`,
   `backend_api_contract.md` and `data_shapes.md` together.
-- **Case-insensitive search**, the **denormalized `location_path`** and **optimistic
-  concurrency** via the item `version` are invariants the rest of the code depends on.
-  `location_path` is derived: no client writes it, and rewriting it must not touch an item's
-  `version` or `updated_at` — a location rename is not an item edit.
+- **The core invariants** — case-insensitive search, the denormalized `location_path`,
+  optimistic concurrency via the item `version`: [`CONTRIBUTING.md`](CONTRIBUTING.md) →
+  "Conventions" states them, the derived path included.
 - **Persistence**: every write is awaited where it is made — WS and service handlers save
   immediately, errors propagating as `storage_error`; shutdown and unload flush immediately.
   There is one persist path and no scheduled one.
 - **Deleting or renaming a file inside `custom_components/haventory/`** means appending its old
-  path to `RETIRED_PATHS` in the same PR — a HACS upgrade leaves it behind otherwise.
+  path to `RETIRED_PATHS` in the same PR: [`CONTRIBUTING.md`](CONTRIBUTING.md) →
+  "Conventions" says what an upgrade does otherwise.
 - **Logging**: take the module logger from `logs.context_logger(__name__)`, never
   `logging.getLogger` (`tests/test_logs_offline.py` sweeps for it), and keep attaching context
   through `extra=` — it is folded into the message text because HA's formatter drops everything
   else. Avoid reserved `LogRecord` keys there: `item_name`, not `name`.
-- **User-facing text is never a literal** — the card reads every string through `t()` / `tn()`,
-  the integration through `strings.json` and `translations/`. `CONTRIBUTING.md` → "Adding a
-  language".
+- **User-facing text is never a literal**: [`CONTRIBUTING.md`](CONTRIBUTING.md) →
+  "Conventions" and "Adding a language" carry the rule and the shape.
 - **Comments encode constraints, not history**, and everything written for this repository uses
   plain words rather than stock AI-review vocabulary — issues and PR bodies included.
   `CONTRIBUTING.md` → "Comments explain constraints, not history" is the rule in full;
