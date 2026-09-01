@@ -719,8 +719,8 @@ Any other key in that record is ignored, so an older or newer payload never brea
 - **Per-operation results.** `haventory/items/bulk` returns a result per operation and
   partial failure is normal, so the result panel names every failed row, translates its
   error, and offers a retry scoped to those. Retries rebuild their operations rather than
-  replaying them, because an `op_id` must never be reused (duplicates collapse silently
-  server-side).
+  replaying them, because an `op_id` must never be reused: a repeat costs the whole batch,
+  which the backend refuses with `validation_error` and runs none of.
 - **Tag and category rename/merge have no endpoint.** They are batch rewrites over every
   affected item, each carrying `expected_version`.
 - **Location deletes are guarded client-side** before the request, using the tree's own
