@@ -24,7 +24,7 @@ def effective_area_id_for_item(hass: HomeAssistant, item: Item) -> str | None:
     serialization that is otherwise complete.
     """
     try:
-        if getattr(item, "location_id", None) is None:
+        if item.location_id is None:
             return None
         runtime = find_runtime(hass)
         if runtime is None:
