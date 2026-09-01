@@ -2,12 +2,8 @@
 
 Wraps Home Assistant's Store with schema-aware load/save and migrations.
 
-Data shape persisted (Phase 1):
-    {
-        "schema_version": int,
-        "items": {id -> ItemDict},
-        "locations": {id -> LocationDict},
-    }
+The persisted payload is a ``schema_version`` stamp beside one id-keyed map per
+entry in ``STORE_COLLECTIONS``.
 
 The manager ensures first load initializes an empty dataset, gives a payload
 every collection it predates, and refuses one written by a schema version this
@@ -341,7 +337,7 @@ class DomainStore:
 
         try:
             migrated = migrations.migrate(raw, from_version=from_version, to_version=to_version)
-        except Exception as exc:  # pragma: no cover - exercised via tests
+        except Exception as exc:  # pragma: no cover - no migration step can fail today
             # Do not overwrite on-disk payload; surface as a typed error
             _LOGGER.error(
                 "Storage migration failed",

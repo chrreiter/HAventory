@@ -1018,7 +1018,7 @@ async def ws_item_attachment_update(
     )
     serialized = serialize_item(hass, updated)
     await _persist_repo(hass)
-    # No counts event: a title and an order move nothing any count reads.
+    # No counts event: a title moves nothing any count reads.
     notify_mutation(hass, action="updated", item=serialized, counts=False)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 
@@ -1052,7 +1052,7 @@ async def ws_item_attachment_reorder(
     )
     serialized = serialize_item(hass, updated)
     await _persist_repo(hass)
-    # No counts event: a title and an order move nothing any count reads.
+    # No counts event: the order of attachments moves nothing any count reads.
     notify_mutation(hass, action="updated", item=serialized, counts=False)
     conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
 

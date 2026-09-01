@@ -56,9 +56,9 @@ STATUS_SLUG_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 # without a second parser.
 STATUS_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
-# What an item can carry as an attachment. "picture" is the kind the card
-# renders; "manual" exists on the backend so a document does not have to be
-# migrated onto the shape later.
+# What an item can carry as an attachment. The kind decides which MIME types are
+# accepted and which per-item cap applies — `const.py` holds both — and it scopes
+# ordering: position 0 of an item's pictures is its cover.
 AttachmentKind = Literal["picture", "manual"]
 ATTACHMENT_KINDS: Final[tuple[AttachmentKind, ...]] = ("picture", "manual")
 

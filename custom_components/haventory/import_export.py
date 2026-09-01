@@ -11,7 +11,7 @@ Document shape (``haventory_export_version = 1``)::
         "haventory_export_version": 1,
         "schema_version": <int>,
         "exported_at": "YYYY-MM-DDTHH:MM:SSZ",
-        "integration_version": "0.0.1",
+        "integration_version": <this build's INTEGRATION_VERSION>,
         "items": [ <ItemDoc>, ... ],
         "locations": [ <LocationDoc>, ... ],
         "statuses": [ <StatusDefinitionDoc>, ... ]

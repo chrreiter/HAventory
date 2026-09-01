@@ -117,7 +117,7 @@ def _todo_schema(current: dict[str, Any]) -> vol.Schema:
 
 
 def _quick_filters_selector() -> SelectSelector:
-    """Build the pill picker: the five names, as a checkbox list.
+    """Build the pill picker as a checkbox list.
 
     `LIST` rather than a dropdown because the vocabulary is fixed and short, and
     a household deciding which pills it wants should see all of them at once.
