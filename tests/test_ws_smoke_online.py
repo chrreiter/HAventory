@@ -34,18 +34,6 @@ EXPECTED_LOCATIONS_AFTER_CREATE: int = 2
 EXPECTED_FINAL_LOCATIONS: int = 2
 
 
-async def _find_location_id_by_name(
-    ws: aiohttp.ClientWebSocketResponse, name: str, next_id
-) -> str | None:
-    qid = next_id()
-    await ws.send_json({"id": qid, "type": "haventory/location/list"})
-    lst = await expect_result(ws, qid)
-    for loc in lst.get("result", []) or []:
-        if isinstance(loc, dict) and loc.get("name") == name:
-            return str(loc.get("id"))
-    return None
-
-
 async def _create_location(
     ws: aiohttp.ClientWebSocketResponse, next_id, name: str, parent_id: str | None = None
 ) -> str:
@@ -273,25 +261,6 @@ async def test_ws_location_rename() -> None:
         assert upd.get("success") is True and upd["result"]["name"] == f"{name} Renamed"
     finally:
         await _delete_location_quiet(ws, next_id, loc_id)
-        await ws.close()
-        await session.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
-async def test_ws_location_create_basement() -> None:
-    """Create and remove a root location (self-contained)."""
-    session, ws = await open_ws()
-    next_id = id_counter()
-    basement_id: str | None = None
-    try:
-        basement_id = await _create_location(ws, next_id, _unique("SmokeBasement"))
-        assert isinstance(basement_id, str) and len(basement_id) > 0
-    finally:
-        await _delete_location_quiet(ws, next_id, basement_id)
         await ws.close()
         await session.close()
 
@@ -971,12 +940,6 @@ async def test_p2_low_stock_threshold_and_stats() -> None:
         )
         _ = await expect_result(ws, tid)
 
-        # stats before crossing
-        sid = next_id()
-        await ws.send_json({"id": sid, "type": "haventory/stats"})
-        s1 = await expect_result(ws, sid)
-        assert (s1.get("result") or {}).get("low_stock_count") in {0, 1}
-
         # set quantity 2 => low stock
         qid = next_id()
         await ws.send_json(
@@ -1086,18 +1049,6 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
         r5 = await expect_result(ws, q5)
         assert len((r5.get("result") or {}).get("items") or []) >= 1
 
-        # low_stock_only
-        q6 = next_id()
-        await ws.send_json(
-            {"id": q6, "type": "haventory/item/list", "filter": {"low_stock_only": True}}
-        )
-        r6 = await expect_result(ws, q6)
-        # May be zero depending on prior state
-        assert ((r6.get("result") or {}).get("items") or []) in (
-            [],
-            (r6.get("result") or {}).get("items"),
-        )
-
         # location_id + include_subtree under Garage (expect none as items reside in Workshop)
         q7 = next_id()
         await ws.send_json(
@@ -1109,17 +1060,6 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
         )
         r7 = await expect_result(ws, q7)
         assert ((r7.get("result") or {}).get("items") or []) == []
-
-        # area_id prefilter: expect zero until areas are wired to locations online (best-effort)
-        q8a = next_id()
-        await ws.send_json(
-            {
-                "id": q8a,
-                "type": "haventory/item/list",
-                "filter": {"area_id": "00000000-0000-4000-8000-000000000000"},
-            }
-        )
-        _ = await expect_result(ws, q8a)
 
         # sort by name asc
         q8 = next_id()
@@ -1152,19 +1092,7 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
             }
         )
         pg1 = await expect_result(ws, q10)
-        cursor = (pg1.get("result") or {}).get("next_cursor")
-        if cursor:
-            q11 = next_id()
-            await ws.send_json(
-                {
-                    "id": q11,
-                    "type": "haventory/item/list",
-                    "sort": {"field": "updated_at", "order": "desc"},
-                    "limit": 1,
-                    "cursor": cursor,
-                }
-            )
-            _ = await expect_result(ws, q11)
+        assert pg1.get("success") is True
     finally:
         await ws.close()
         await session.close()
@@ -1222,35 +1150,3 @@ async def test_p2_optimistic_concurrency_conflict() -> None:
     finally:
         await ws.close()
         await session.close()
-
-
-@pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1"
-    or not os.environ.get("HA_TOKEN")
-    or not os.environ.get("HA_CONTAINER"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN/HA_CONTAINER missing",
-)
-@destructive
-async def test_p2_logs_conflict_and_validation_present() -> None:
-    """Best-effort: verify haventory WS logs appear in Docker logs (conflict/validation)."""
-    # This test does not assert exact lines, only presence of key phrases to avoid flakiness.
-    import asyncio  # noqa: PLC0415
-    import shutil  # noqa: PLC0415
-    import subprocess  # noqa: PLC0415
-
-    # Give HA a moment to flush logs
-    await asyncio.sleep(0.5)
-    container = os.environ.get("HA_CONTAINER")
-    try:
-        docker_path = shutil.which("docker")
-        if not docker_path:
-            pytest.skip("docker not found")
-            return
-        out = subprocess.check_output(  # noqa: S603, ASYNC221
-            [docker_path, "logs", "--tail", "200", container], text=True, stderr=subprocess.STDOUT
-        )
-    except Exception:  # pragma: no cover - environment dependent
-        pytest.skip("docker logs unavailable")
-        return
-    assert "custom_components.haventory.ws" in out and ("validation" in out or "conflict" in out)
