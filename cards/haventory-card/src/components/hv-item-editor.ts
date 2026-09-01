@@ -38,7 +38,7 @@ import {
   pictures,
 } from '../ui/media';
 import { prepareForUpload } from '../ui/downscale';
-import { renderDocumentRow, renderLightboxHost, renderPhotoFigure } from '../ui/attachments';
+import { docIcon, renderDocumentRow, renderLightboxHost, renderPhotoFigure } from '../ui/attachments';
 import type { MediaBindings } from '../ui/media';
 import type {
   AreaRef,
@@ -138,6 +138,7 @@ export class HVItemEditor extends LitElement {
     base,
     chip,
     dayOffsets,
+    docIcon,
     idRow,
     css`
       :host {
@@ -908,12 +909,6 @@ export class HVItemEditor extends LitElement {
         display: flex;
         align-items: center;
         gap: 8px;
-      }
-      .documents .doc-icon {
-        display: inline-grid;
-        place-items: center;
-        flex: none;
-        color: var(--hv-text-secondary);
       }
       .documents .doc-title {
         flex: 1;

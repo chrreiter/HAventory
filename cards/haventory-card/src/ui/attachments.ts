@@ -1,4 +1,4 @@
-import { html } from 'lit';
+import { css, html } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import type { TemplateResult } from 'lit';
 import { t } from '../i18n';
@@ -28,6 +28,25 @@ import '../components/hv-lightbox';
 
 /** Two classes into one attribute, without the gap an absent one would leave. */
 const classes = (...parts: (string | undefined)[]) => parts.filter(Boolean).join(' ');
+
+/**
+ * The glyph {@link renderDocumentRow} puts at the head of every document row.
+ *
+ * It is drawn here, so its box is declared here too: the rows are a flex line
+ * and the glyph is the one part that must not give up width to the file name
+ * beside it, whatever the surface sizes the row at.
+ *
+ * Usage: `static styles = [tokens, base, docIcon, css\`...\`]`, on a surface
+ * whose list carries `documents`.
+ */
+export const docIcon = css`
+  .documents .doc-icon {
+    display: inline-grid;
+    place-items: center;
+    flex: none;
+    color: var(--hv-text-secondary);
+  }
+`;
 
 /** What the backend can say about one attachment's file. */
 export interface AttachmentFile {

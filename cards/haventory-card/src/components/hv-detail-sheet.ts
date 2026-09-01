@@ -22,7 +22,7 @@ import {
   pictures,
 } from '../ui/media';
 import type { MediaBindings } from '../ui/media';
-import { renderDocumentRow, renderLightboxHost, renderPhotoFigure } from '../ui/attachments';
+import { docIcon, renderDocumentRow, renderLightboxHost, renderPhotoFigure } from '../ui/attachments';
 import type { ConfirmDiscard } from '../ui/discard';
 import { CopyFlash } from '../ui/clipboard';
 import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
@@ -64,6 +64,7 @@ export class HVDetailSheet extends LitElement {
     tokens,
     base,
     chip,
+    docIcon,
     css`
       :host {
         display: block;
@@ -390,12 +391,6 @@ export class HVDetailSheet extends LitElement {
         min-height: 52px;
         padding: 8px 12px;
         background: var(--hv-surface);
-      }
-      .documents .doc-icon {
-        display: inline-grid;
-        place-items: center;
-        flex: none;
-        color: var(--hv-text-secondary);
       }
       .documents .doc-text {
         flex: 1;
