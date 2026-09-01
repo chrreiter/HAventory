@@ -1,10 +1,8 @@
 import type { Sort, SortField, SortOrder } from './types';
 
 /**
- * Returns the default sort order for a given sort field.
- * - name, quantity, location: ascending (human-friendly)
- * - due_date, inspection_date, reminder_date: ascending (soonest first; undated last)
- * - created_at, updated_at: descending (newest first)
+ * The order a sort field opens in: a date soonest first, a timestamp newest
+ * first, everything else ascending.
  *
  * `location` opens ascending for the reason `name` does — a path is text, and
  * a list of them read top-down is what "sorted by location" means. Items filed

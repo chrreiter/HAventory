@@ -610,7 +610,7 @@ export class Store {
         ? [...this.state.value.filters.locationIds]
         : undefined,
       area_id: this.state.value.filters.areaId ?? undefined,
-      include_subtree: true, // Always include sublocations
+      include_subtree: true,
       onError,
       onOpen,
     });
@@ -729,7 +729,7 @@ export class Store {
     this.subscribeRetry.schedule(delay, () => this.openSubscriptions(false));
   }
 
-  /** Tear down the four subscriptions and any pending tree refresh. */
+  /** Release everything this store holds outside itself. */
   dispose() {
     this.itemsUnsub?.();
     this.statsUnsub?.();
@@ -1408,7 +1408,8 @@ export class Store {
   async createItem(input: ItemCreate) {
     try {
       const created = await this.run(() => this.ws.createItem(input));
-      // Insert optimistically already covered by items event; ensure presence
+      // The items event carries this row too, so merge by id: whichever of the
+      // two arrives first, the row is there once.
       const items = mergeUniqueById(this.state.value.items, [created]);
       this.stateObs.set({ items });
     } catch (err) {

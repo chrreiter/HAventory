@@ -1755,9 +1755,7 @@ export class HVOrganizeDialog extends LitElement {
     </div>`;
   }
 
-  // -----------------------------
-  // Statuses
-  // -----------------------------
+  // ---------- Statuses ----------
 
   /** The live vocabulary, or the built-ins until `haventory/config` answers. */
   private get _statusDefs(): readonly StatusDefinition[] {
