@@ -23,7 +23,7 @@ Run it after any change to the mark:
 
 The rasteriser is written out longhand so regenerating needs no imaging library, and
 the wordmark comes in as outlines (`scripts/brand_wordmark.py`) so it needs no font
-either: the integration ships no image code and the offline suite installs none.
+either: `uv sync` installs neither, and this script has to run in that environment.
 """
 
 from __future__ import annotations
