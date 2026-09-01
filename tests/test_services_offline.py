@@ -253,11 +253,6 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
     # Simulate storage failure during persist
     caplog.clear()
 
-    async def _raise(_payload):  # type: ignore[no-untyped-def]
-        raise RuntimeError("save failed")
-
-    monkeypatch.setattr(DomainStore(hass), "async_save", _raise)
-
     # Monkeypatch helper to raise StorageError at boundary
     async def _persist(_hass):  # type: ignore[no-untyped-def]
         raise StorageError("persist failed")

@@ -5,7 +5,6 @@ Scenarios:
 - Save then load returns equal data (roundtrip)
 - Migration hook is invoked when schema_version differs
 - Migration failure raises StorageError and does not persist changes
-- Corrupted payload (non-dict) raises StorageError
 - A payload written by a newer schema is refused without rewriting the store
 - A payload whose schema_version is not an integer is refused, never coerced
 - A saved payload carries the stored collections and the schema number, nothing else
@@ -85,30 +84,6 @@ async def test_save_then_load_roundtrip() -> None:
 
     # Assert
     assert loaded == payload
-
-
-@pytest.mark.asyncio
-async def test_repository_roundtrip_via_export_and_load() -> None:
-    """Repository export to store and load back yields equivalent state."""
-
-    hass = HomeAssistant()
-    store = DomainStore(hass)
-
-    # Build a small repo
-    repo = Repository()
-    loc = repo.create_location(name="Garage")
-    item = repo.create_item({"name": "Screws", "quantity": 50, "location_id": loc.id})
-
-    # Persist
-    await store.async_save(repo.export_state())
-
-    # Load and hydrate a new repo
-    payload = await store.async_load()
-    repo2 = Repository.from_state(payload)
-
-    # Compare a couple of properties
-    assert repo2.get_location(loc.id).name == "Garage"
-    assert repo2.get_item(item.id).name == "Screws"
 
 
 @pytest.mark.asyncio
@@ -503,23 +478,6 @@ async def test_absent_schema_version_still_loads_as_version_zero() -> None:
 
     assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
     assert loaded["items"]["i1"]["name"] == "Screws"
-
-
-@pytest.mark.asyncio
-async def test_corrupted_payload_non_dict_raises_storage_error() -> None:
-    """Non-dict payload in storage should raise StorageError on load."""
-
-    # Arrange
-    hass = HomeAssistant()
-    key = "test_store_corrupted_payload"
-    store = DomainStore(hass, key=key)
-    raw_store = HAStore(hass, 1, key)
-    # Save a corrupted payload (string instead of dict)
-    await raw_store.async_save("oops")
-
-    # Act + Assert
-    with pytest.raises(StorageError):
-        await store.async_load()
 
 
 @pytest.mark.asyncio

@@ -135,7 +135,7 @@ including the destructive and area-registry scenarios:
 export RUN_ONLINE=1
 export HA_BASE_URL=http://localhost:8123
 export HA_TOKEN=<your-long-lived-token>
-export HA_CONTAINER=home-assistant     # docker-logs assertions; also lets reload_addon.sh deploy
+export HA_CONTAINER=home-assistant     # lets smoke_online.sh purge and reload_addon.sh deploy
 export HAV_ONLINE_DESTRUCTIVE=1        # unlocks the purging tests — disposable instances only!
 export HA_ALLOW_AREA_MUTATIONS=1       # unlocks the area-registry e2e test
 
