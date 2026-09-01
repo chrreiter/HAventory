@@ -5,12 +5,11 @@ import type { TemplateResult } from 'lit';
 /**
  * Material Design Icons path data, inlined.
  *
- * The design handoff specifies `<ha-icon icon="mdi:…">`, but `ha-icon` only
- * resolves inside the Home Assistant frontend: in Vitest/jsdom it is an
- * unresolved custom element that renders nothing, and it leaves the card
- * silently icon-less anywhere HA has not loaded its icon set. Inlining the
- * ~30 glyphs the design uses keeps the same artwork, renders everywhere and
- * is assertable in tests, at a cost of well under 3 kB.
+ * `ha-icon` resolves only inside the Home Assistant frontend: in Vitest/jsdom
+ * it is an unresolved custom element that renders nothing, and it leaves the
+ * card icon-less anywhere HA has not loaded its icon set. Inlined path data
+ * renders everywhere and is assertable in a test. The rule this follows is
+ * CONTRIBUTING.md's "The card renders no `ha-*` element".
  *
  * Path data is Material Design Icons (Pictogrammers), Apache License 2.0 —
  * the same licence as this repository.
