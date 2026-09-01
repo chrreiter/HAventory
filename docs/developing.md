@@ -297,8 +297,10 @@ user-facing string is a literal, and a component test mounts through `mountCompo
   3.14), a dedicated **integration** job (in-process HA via phacc, Python 3.14),
   frontend (npm audit + eslint + tsc + vitest + build, Node 22/24 matrix), actionlint,
   hassfest + HACS validation, CodeQL, and dependency review.
-  Third-party actions are pinned to an immutable revision; first-party `actions/*` are
-  pinned by major tag (`tests/test_repo_hardening_offline.py` holds both).
+  Third-party actions — a `docker://` image among them — name an immutable revision, a
+  commit SHA or an image digest, which `tests/test_repo_hardening_offline.py` enforces:
+  a tag can be repointed by whoever owns it. GitHub's own `actions/*` are exempt from that
+  check and pinned by major tag.
 - **`ha-latest`** runs the same integration suite against the *newest* Home Assistant on
   the 8th of each month (and on demand via *Run workflow*). The `integration` job above
   pins the declared floor, so this is the only thing in CI that meets a current core. A
