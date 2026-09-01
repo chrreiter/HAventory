@@ -36,17 +36,6 @@ from custom_components.haventory.storage import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
 
-#: What the load path fills in on an item that carries none of it — the fields a
-#: store written before each of them existed lacks. A fixture naming them is one
-#: the load hands back unchanged, which is what makes a roundtrip an equality.
-_STORED_ITEM_FIELDS: dict[str, Any] = {
-    "status": "ok",
-    "attachments": [],
-    "reminder_date": None,
-    "reminder_interval": None,
-    "reminder_anchor": None,
-}
-
 #: One above every stamp this project used before the collapse: a store only a
 #: genuinely newer build could have written, which is what the downgrade wording
 #: is for.
@@ -83,7 +72,7 @@ async def test_save_then_load_roundtrip() -> None:
     store = DomainStore(hass, key="test_store_roundtrip")
     payload = {
         "schema_version": CURRENT_SCHEMA_VERSION,
-        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 50, **_STORED_ITEM_FIELDS}},
+        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 50}},
         "locations": {"l1": {"id": "l1", "name": "Garage"}},
         # Save backfills any collection the caller omits, so naming every one
         # of them is what keeps this an equality test rather than a subset one.
@@ -214,42 +203,8 @@ async def test_migration_failure_raises_and_does_not_persist(monkeypatch) -> Non
 
 
 @pytest.mark.asyncio
-async def test_a_store_stamped_before_the_collapse_gave_v1_its_meaning_is_filled_in() -> None:
-    """A store stamped 1 by an early build reads as current and predates every field.
-
-    Nothing about the number says which of the two v1s it is, so the load fills
-    in what is absent either way. Without that, such a store reaches the
-    repository with no ``statuses`` collection and no per-item status.
-    """
-
-    hass = HomeAssistant()
-    key = "test_store_early_v1"
-    store = DomainStore(hass, key=key)
-
-    pre_payload = {
-        "schema_version": 1,
-        "items": {"i1": {"id": "i1", "name": "Screws", "quantity": 5}},
-        "locations": {"l1": {"id": "l1", "name": "Garage"}},
-    }
-    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
-    await raw_store.async_save(deepcopy(pre_payload))
-
-    loaded = await store.async_load()
-
-    assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert loaded["items"] == {"i1": {**pre_payload["items"]["i1"], **_STORED_ITEM_FIELDS}}
-    assert loaded["locations"] == pre_payload["locations"]
-    assert sorted(loaded["statuses"]) == ["missing", "needs_repair", "ok"]
-
-    # Written back, so the next boot is the ordinary one.
-    persisted = await raw_store.async_load()
-    assert persisted["items"]["i1"]["status"] == "ok"
-    assert sorted(persisted["statuses"]) == ["missing", "needs_repair", "ok"]
-
-
-@pytest.mark.asyncio
 async def test_a_store_already_holding_everything_is_not_rewritten(monkeypatch) -> None:
-    """A current store that needs no fill is handed back without touching the file.
+    """A store already at the current version is handed back without touching the file.
 
     Every boot reads the store; a load that wrote it back unconditionally would
     rewrite the whole inventory on each of them for nothing.
@@ -282,9 +237,9 @@ async def test_a_store_with_no_stamp_lands_at_v1() -> None:
     """The forward path: a store below the current version loads, intact, stamped v1.
 
     0 is what an absent ``schema_version`` reads as, so this is every store
-    written before the key existed. It lands at the collapsed version with the
-    fields it predates filled in, because what a store carries is what it was
-    written with, not what its number claims.
+    written before the key existed. It lands at the collapsed version carrying
+    exactly what it held: the rows are read as they are, and an absent field is
+    read as its default where the row is read.
     """
 
     hass = HomeAssistant()
@@ -302,9 +257,11 @@ async def test_a_store_with_no_stamp_lands_at_v1() -> None:
     loaded = await store.async_load()
 
     assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert loaded["items"] == {"i1": {**pre_payload["items"]["i1"], **_STORED_ITEM_FIELDS}}
+    # The rows cross as they are: an absent field is read as its default where
+    # the row is read, not written into the store on the way past.
+    assert loaded["items"] == pre_payload["items"]
     assert loaded["locations"] == pre_payload["locations"]
-    assert sorted(loaded["statuses"]) == ["missing", "needs_repair", "ok"]
+    assert loaded["statuses"] == {}
 
     # Restamped on disk, so the crossing happens once.
     persisted = await raw_store.async_load()

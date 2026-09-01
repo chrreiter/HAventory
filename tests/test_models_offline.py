@@ -591,6 +591,29 @@ def test_every_colour_has_a_light_and_a_strong_variant() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_a_stored_reminder_without_an_anchor_reads_as_its_own_date() -> None:
+    """A store written before the anchor existed carries none, and nothing rewrites it.
+
+    Before the anchor was stored, `reminder_date` was both the next occurrence
+    and the series origin, because a bump wrote one over the other. Reading the
+    absent anchor as the date is what keeps such a series walking; without it a
+    stored reminder would come back with no origin at all.
+    """
+
+    item = Item.from_dict(
+        {
+            "id": "3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f",
+            "name": "HVAC filter",
+            "reminder_date": "2026-09-30",
+            "reminder_interval": {"unit": "months", "count": 1},
+        }
+    )
+
+    assert item.reminder_anchor == "2026-09-30"
+    # No reminder, no anchor: the pair does not exist one half at a time.
+    assert Item.from_dict({"id": str(item.id), "name": "Ladder"}).reminder_anchor is None
+
+
 def test_a_reminder_survives_creation_and_serialization() -> None:
     item = create_item_from_create(
         ItemCreate(

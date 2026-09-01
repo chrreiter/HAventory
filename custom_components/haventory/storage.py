@@ -9,11 +9,11 @@ Data shape persisted (Phase 1):
         "locations": {id -> LocationDict},
     }
 
-The manager ensures first load initializes an empty dataset, fills in the fields
-a payload predates, and refuses a payload written by a schema version this build
-does not know. There are two such refusals, because there are two ways out: a
-stamp this project used before the schema was collapsed to 1 is reached by a
-0.8.x build, and anything above them by a newer HAventory.
+The manager ensures first load initializes an empty dataset, gives a payload
+every collection it predates, and refuses one written by a schema version this
+build does not know. There are two such refusals, because there are two ways
+out: a stamp this project used before the schema was collapsed to 1 is reached
+by a 0.8.x build, and anything above them by a newer HAventory.
 """
 
 from __future__ import annotations
@@ -77,10 +77,11 @@ def _normalized(payload: Mapping[str, Any], *, schema_version: int) -> dict[str,
     that knew a key this one does not has to survive the trip, and be handed back
     unchanged.
 
-    The copy is one level deep on purpose. The collections underneath are handed
-    over, not duplicated — the save path's caller builds them fresh on every call
-    and keeps no reference, and a deep copy of a thousand items measured longer
-    than building the payload and encoding it put together.
+    The copy is one level deep on purpose: a deep copy of a thousand items
+    measured longer than building the payload and encoding it put together. The
+    collections underneath are handed over, not duplicated, and nothing reaches
+    them through the result — the save path's caller builds them fresh on every
+    call and keeps no reference, and the load path deep-copies what it hands out.
     """
 
     normalized: dict[str, Any] = {"schema_version": schema_version}
@@ -237,36 +238,36 @@ class DomainStore:
         )
         await self._store.async_save(payload)
 
-    async def _async_adopted(
+    async def _async_stamped(
         self, payload: dict[str, Any], *, from_version: int, to_version: int
     ) -> dict[str, Any]:
-        """Fill in what ``payload`` predates, writing it back when that changed it.
+        """Hand back ``payload`` carrying every collection and this build's version.
 
-        Every payload this build accepts comes through here, the ones already
-        stamped ``to_version`` included: a store stamped 1 before the collapse
-        gave 1 its meaning carries none of the fields the fills provide and
-        reads as current, so the fills have to reach it too. Writing the result
-        back is what keeps that a one-time cost rather than one paid on every
-        boot; a payload the fills left alone at the version it already carries is
-        handed back without touching the file.
+        Nothing rewrites the rows underneath: an absent field reads as the value
+        the build that introduced it writes, both in ``Item.from_dict`` and in
+        the repository's ``statuses``, so a store predating a field reaches the
+        repository correctly without being rewritten first. What has to be there
+        is the collections themselves, which ``_normalized`` defaults.
+
+        The file is written back only when the number changed. Every boot reads
+        the store, and rewriting the whole inventory on each of them for a
+        payload nothing altered is a cost paid for nothing.
         """
 
-        adopted = migrations.adopt_dev_schema(payload)
-        filled = adopted != payload
+        normalized = _normalized(payload, schema_version=to_version)
         # The version is this build's, not whatever the payload carried: a
         # payload saved under a version it does not carry is one nothing can read
         # back correctly.
-        adopted["schema_version"] = to_version
-        normalized = _normalized(adopted, schema_version=to_version)
-        if filled or from_version != to_version:
+        normalized["schema_version"] = to_version
+        if from_version != to_version:
             await self._store.async_save(normalized)
         return normalized
 
     async def async_migrate_if_needed(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Bring ``raw`` to the current schema, or refuse it.
 
-        A payload at or below the current version is filled in where it predates
-        a field and persisted back.
+        A payload below the current version is restamped and persisted back; one
+        already carrying it is handed on without touching the file.
 
         Raises ``SchemaDowngradeError`` when ``raw`` carries a version above the
         current one, with the message that names the way out of the version it
@@ -291,7 +292,7 @@ class DomainStore:
         from_version = read_schema_version(raw, missing=0)
         to_version = self._schema_version
         if from_version == to_version:
-            return await self._async_adopted(raw, from_version=from_version, to_version=to_version)
+            return await self._async_stamped(raw, from_version=from_version, to_version=to_version)
 
         if to_version == 1 and from_version in migrations.PRE_COLLAPSE_SCHEMA_VERSIONS:
             # The literal is deliberate: these numbers name this project's own
@@ -367,7 +368,7 @@ class DomainStore:
                 },
             )
             raise StorageError("storage migration returned non-dict payload")
-        return await self._async_adopted(migrated, from_version=from_version, to_version=to_version)
+        return await self._async_stamped(migrated, from_version=from_version, to_version=to_version)
 
 
 async def async_persist_repo(hass: HomeAssistant) -> None:
