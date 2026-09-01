@@ -21,7 +21,7 @@ from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, S
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from functools import partial
-from typing import Any, Final, Literal, NotRequired, TypedDict
+from typing import Any, Final, Literal, NotRequired, TypedDict, get_args, get_type_hints
 
 from homeassistant.util import dt as dt_util
 
@@ -843,22 +843,15 @@ def selected_location_ids(flt: ItemFilter) -> list[str]:
     return selection
 
 
-#: The fields :func:`sort_items` can order by, and the two orders it accepts.
-SORT_FIELDS: Final[frozenset[str]] = frozenset(
-    {
-        "updated_at",
-        "created_at",
-        "name",
-        "quantity",
-        "due_date",
-        "inspection_date",
-        "reminder_date",
-        "location",
-    }
-)
-SORT_ORDERS: Final[frozenset[str]] = frozenset({"asc", "desc"})
-#: The keys a sort object carries. Anything else is a client typo.
-SORT_KEYS: Final[frozenset[str]] = frozenset({"field", "order"})
+#: The fields :func:`sort_items` can order by, the two orders it accepts, and the
+#: keys a sort object carries — anything else is a client typo. Read off
+#: :class:`Sort`, the way :data:`ITEM_FILTER_KEYS` is read off
+#: :class:`ItemFilter`, so a field added there is accepted the moment it is
+#: declared, with no second list to keep in step.
+_SORT_HINTS: Final[dict[str, Any]] = get_type_hints(Sort)
+SORT_FIELDS: Final[frozenset[str]] = frozenset(get_args(_SORT_HINTS["field"]))
+SORT_ORDERS: Final[frozenset[str]] = frozenset(get_args(_SORT_HINTS["order"]))
+SORT_KEYS: Final[frozenset[str]] = frozenset(_SORT_HINTS)
 
 
 def validate_area_filter(value: object) -> str | None:
