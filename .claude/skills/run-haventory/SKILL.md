@@ -554,10 +554,14 @@ values read back out of the form so the instance's own settings are restored). W
 the `unavailable` notice on each open topic, for the card re-subscribing on its own, for a
 mutation afterwards still repainting it, and for the sidebar entry still being there.
 
-Two of its lines are worth reading rather than just passing: `panel after reload` records
-whether the open `/haventory` tab is still on `/haventory` — the frontend takes it to the
-default dashboard when the panel is briefly unregistered ([#507](https://github.com/chrreiter/HAventory/issues/507)) — and the run leaves one item
-behind only if the delete at the end failed.
+Two of its lines are worth reading rather than just passing. `panel after reload` records
+whether the open `/haventory` tab still carries the panel element at `/haventory`; it does,
+because a reload re-applies the same title and module URL and an unchanged registration is
+left in place — a count of 0, or a URL that has become the default dashboard, means the
+reload dropped the panel. `panel mid-change` is the line where that redirect can legitimately
+show: a rename or a sidebar toggle has to remove the registration before it can re-add it,
+and for that moment the frontend sends whoever is standing on the page to the default
+dashboard. The run leaves one item behind only if the delete at the end failed.
 
 ### Import policy cross-check
 
@@ -587,7 +591,7 @@ three ways: **BLOCKING** — an HAventory traceback, an `unknown_error`, or a
 client-recoverable code logged at ERROR; **EXPECTED** — the contract's WARNING rejections,
 which fuzz layers produce by the hundred; **KNOWN** — ERROR lines HA core writes on its own
 account for a rejection the integration already logged at WARNING: type-loose frames it
-rejects before `ws_guard` runs (open item 53), a refused `haventory.*` service call (core's
+rejects before `ws_guard` runs, a refused `haventory.*` service call (core's
 `call_service` logs every `HomeAssistantError` at ERROR, its own `ServiceValidationError`
 included) and the REST `/api/services` view's 500 for the same refusal — surfaced without
 failing the sweep, because no change in the integration can quiet them. Exits 1 on any
@@ -695,10 +699,9 @@ clean-start mode), then `Online smoke test completed successfully.`
   localStorage entry (`{"dark":true}`) before load, the OS side with
   `page.emulateMedia({ colorScheme })`.
 - **The harness browser speaks the host's language.** Chromium takes its locale from the
-  host, which reports `navigator.language = "de"` on this machine, and Home Assistant falls
-  back to the browser language whenever the profile has none — so with the profile cleared
-  the whole UI, HAventory included, still comes up German and a screenshot proves nothing
-  about which language a string came from. Name it: `screenshot.mjs --locale en-US`, or set
+  host and Home Assistant falls back to the browser language whenever the profile has none
+  — so with the profile cleared the whole UI, HAventory included, comes up in the host's
+  language and a screenshot proves nothing about which language a string came from. Name it: `screenshot.mjs --locale en-US`, or set
   the profile language over WS (see "Screenshot the setup and options screens"). Only
   `screenshot.mjs` and `probe.mjs` take `--locale`; drive the others by setting the
   profile.

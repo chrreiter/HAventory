@@ -2,7 +2,7 @@
 # Exploratory agent stress harness — deliberately NOT held to the product lint gate.
 r"""HAventory online stress-test regimen (adversarial "break-it" driver).
 
-Robust, connection-per-worker WS client: one connection per concurrent task;
+Connection-per-worker WS client: one connection per concurrent task;
 send_no_wait + dedup-by-id for in-flight bursts; no count-tolerance oracles;
 every send wrapped. Every scenario prefixes its data with `stress_test_` so
 `cleanup` can sweep it, and
@@ -626,7 +626,7 @@ async def cmd_bulkfuzz() -> None:
             f"  ok1 applied (qty 5->6): {it0['quantity']}  ok2 applied (qty->10): {it2['quantity']}"
         )
 
-        print("\n  -- duplicate op_ids (results dict -> last-wins, silent loss) --")
+        print("\n  -- duplicate op_ids (expect validation_error, nothing applied) --")
         dup = [
             {
                 "op_id": "same",
@@ -641,12 +641,11 @@ async def cmd_bulkfuzz() -> None:
             {"op_id": "same", "kind": "item_delete", "payload": {"item_id": missing}},
         ]
         fr = await conn.call("haventory/items/bulk", operations=dup, timeout=30)
-        res = fr.get("result", {}).get("results", {}) if fr.get("success") else {}
-        print(
-            f"  sent 3 ops with same op_id; results entries={len(res)} "
-            f"({'DOCUMENTED silent per-op loss' if len(res) < 3 else 'all present'})"
-        )
-        print(f"  result for 'same': {res.get('same')}")
+        code = "SUCCESS" if fr.get("success") else fr.get("error", {}).get("code", "?")
+        verdict = "PASS" if code == "validation_error" else f"?? {code}"
+        after = (await conn.call("haventory/item/get", item_id=ids[0][0]))["result"]
+        print(f"  sent 3 ops with the same op_id -> {code:<18} {verdict}")
+        print(f"  nothing applied (qty {it0['quantity']} -> {after['quantity']})")
 
         # cleanup targets
         for iid, _ in ids:

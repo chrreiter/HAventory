@@ -21,8 +21,9 @@ log() { printf '[session-start] %s\n' "$1" >&2; }
 # and venv write `Scripts/` instead, so `bin/python` never appears no matter how
 # well the environment was built. Teaching this one script both layouts would
 # produce an environment the rest of the repo still cannot run, so the Python
-# blocks are skipped outright instead. CLAUDE.md is explicit: there is no Windows
-# host support — develop through WSL2, where these paths are the Linux ones.
+# blocks are skipped outright instead. CONTRIBUTING.md → "Development setup" is
+# explicit: there is no Windows host support — develop through WSL2, where these
+# paths are the Linux ones.
 #
 # macOS is deliberately not excluded: it is POSIX and `bin/` is correct there.
 case "$(uname -s 2>/dev/null || echo unknown)" in
@@ -31,16 +32,16 @@ case "$(uname -s 2>/dev/null || echo unknown)" in
 esac
 
 # --- Backend: Python environment + dev dependencies -------------------------
-# `uv sync` is the documented bootstrap (CLAUDE.md) and the only one that
-# reproduces the locked set: requirements-dev.txt carries its own header saying
-# it is a generated pip fallback for environments without uv, not a second source
-# of truth. The fallback searches for Python 3.14 first because that is the floor
-# `requires-python` declares, and the source uses PEP 758 unparenthesized
-# `except A, B:`, which does not parse on 3.13 — an older interpreter yields an
-# environment that cannot import the integration at all, which is worse than no
-# environment.
+# `uv sync` is what docs/developing.md → "Setup" bootstraps with — scripts/setup.sh
+# runs it — and the only one that reproduces the locked set: requirements-dev.txt
+# carries its own header saying it is a generated pip fallback for environments
+# without uv, not a second source of truth. The fallback searches for Python 3.14
+# first because that is the floor `requires-python` declares, and the source uses
+# PEP 758 unparenthesized `except A, B:`, which does not parse on 3.13 — an older
+# interpreter yields an environment that cannot import the integration at all,
+# which is worse than no environment.
 if [ "$POSIX_VENV_HOST" -eq 0 ]; then
-  log "Windows shell detected; skipping the Python bootstrap (develop through WSL2, see CLAUDE.md)"
+  log "Windows shell detected; skipping the Python bootstrap (develop through WSL2, see CONTRIBUTING.md)"
 elif command -v uv >/dev/null 2>&1; then
   log "syncing backend environment (uv sync)"
   uv sync

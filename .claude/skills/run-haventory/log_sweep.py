@@ -19,8 +19,8 @@ Three findings are reported separately, because they mean different things:
               the hundred; they are the policy working.
   KNOWN       ERROR lines HA core writes on its own account for a rejection
               this integration already logged at WARNING: type-loose frames
-              rejected by core's schema check before ``ws_guard`` runs (open
-              item 53), a ``haventory.*`` service call the handler refused (the
+              rejected by core's schema check before ``ws_guard`` runs, a
+              ``haventory.*`` service call the handler refused (the
               WebSocket ``call_service`` command logs every ``HomeAssistantError``
               at ERROR, core's own ``ServiceValidationError`` included), and the
               REST ``/api/services`` view's 500 for the same refusal. Surfaced
@@ -70,7 +70,7 @@ ANSI = re.compile(r"\x1b\[[0-9;]*m")
 LINE_START = re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}")
 LEVEL = re.compile(r"\b(DEBUG|INFO|WARNING|ERROR|CRITICAL)\b")
 HAVENTORY = re.compile(r"haventory", re.IGNORECASE)
-# HA core rejects a type-loose frame before ws_guard can map it (open item 53).
+# HA core rejects a type-loose frame before ws_guard can map it.
 CORE_SCHEMA_REJECT = re.compile(
     r"websocket_api\.http\.connection.*(expected |invalid |required key|extra keys)", re.IGNORECASE
 )
@@ -149,7 +149,7 @@ def classify(record: list[str]) -> tuple[str, str]:
     if "unknown_error" in body:
         return "BLOCKING", "unknown_error reached the boundary"
     if loud and CORE_SCHEMA_REJECT.search(body):
-        return "KNOWN", "HA core schema rejection before ws_guard (item 53)"
+        return "KNOWN", "HA core schema rejection before ws_guard"
     if loud and CORE_SERVICE_CALL_REJECT.search(head) and not has_traceback:
         return "KNOWN", "HA core logs a refused service call at ERROR (core's own severity)"
     if loud and CORE_REST_SERVICE_REJECT.search(head) and recoverable:

@@ -157,5 +157,3 @@ To delete the data as well — after exporting a backup, if you might want it la
 
 Upgrading from a version that copied the card into `<config>/www/haventory/`? That copy is
 no longer used and can be deleted; the integration ignores it either way.
-
----

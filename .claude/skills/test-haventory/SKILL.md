@@ -137,7 +137,7 @@ $RUN cleanup       # sweep any leftover stress_test_ data
 |---|---|
 | `baseline` | counts + version snapshot (pass gate reference) |
 | `fuzz` | malformed inputs → typed error codes, no `unknown_error`, dataset untouched |
-| `bulkfuzz` | whole-batch rejects, per-op errors, duplicate-op_id loss |
+| `bulkfuzz` | whole-batch rejects, per-op errors, a repeated `op_id` refusing the batch |
 | `subteardown` | `unsubscribe_events` + dedicated unsubscribe both tear down cleanly |
 | `statsprobe` | counts events broadcast on every mutation |
 | `bulk [N]` | bulk create/delete scale; prints p50/p95/p99 latency curve |
@@ -197,8 +197,8 @@ suite (`scripts/test_integration.sh`, phacc, real HA core) are documented in
 
 - **`--no-project` is the fallback, not the rule** — plain `uv run` works. Add `--no-project`
   and the `--with` list to run from an ephemeral env whenever the project venv is unusable.
-  [Windows/Git Bash] the way that shows up here is `failed to remove file .venv/lib64:
-  Zugriff verweigert`, OneDrive refusing to delete the symlink.
+  [Windows/Git Bash] the way that shows up here is `failed to remove file .venv/lib64`
+  with a permission error, a file-sync client holding the symlink.
 - **Offline suite needs Python 3.14** (PEP 758 source) and `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`;
   `--with aiohttp` is only so the `*_online.py` / stress modules import at collection time.
 - **Frontend `node_modules` is often partial** (missing the platform's `@rolldown/binding-*`
@@ -206,9 +206,12 @@ suite (`scripts/test_integration.sh`, phacc, real HA core) are documented in
 - **`stress.py restart` needs `HA_CONTAINER`**, and leaves the container restarted
   (disposable). [Windows/Git Bash] it also needs `MSYS_NO_PATHCONV=1`, or Git Bash rewrites
   the `/config/...` docker path.
-- **Expected non-bugs the layers surface — do NOT file as regressions** (tracked as
-  GitHub issues): duplicate bulk `op_id` → silent last-wins loss (issue #197); bulk-create
-  p50 grows superlinearly (O(N²) persist, issue #200) — a **WARN**, not a failure.
+- **Two results that read like findings and are neither.** `bulkfuzz` sends three
+  operations under one `op_id`: the batch is refused whole with `validation_error` and
+  applies nothing, which is what `docs/backend_api_contract.md` promises. `bulk`'s p50
+  climbs with the size of the store, because every write re-serializes the whole
+  inventory; a batch is one write, so the curve tracks the store and not the batch.
+  README → "Known limitations" carries the measured numbers to compare a run against.
 - **E2E: assert on the item NAME, not the quantity cell** — the card renders quantity only
   when that column is active, but the name always renders.
 - **Log scan is part of the pass gate** — subscription/connection bugs can pass offline unit
@@ -219,8 +222,9 @@ suite (`scripts/test_integration.sh`, phacc, real HA core) are documented in
 
 - **`Cannot find module '@rolldown/binding-…'`** — `npm ci` in `cards/haventory-card`.
 - **`No module named 'aiohttp'`** during pytest collection — add `--with aiohttp` to the uv run.
-- [Windows/Git Bash] **`failed to remove file .venv/lib64: Zugriff verweigert`** — the project
-  venv is unusable; re-run with `--no-project` plus the `--with` list.
+- [Windows/Git Bash] **`failed to remove file .venv/lib64`**, with a permission error in the
+  host's language — the project venv is unusable; re-run with `--no-project` plus the
+  `--with` list.
 - [Windows/Git Bash] **`GetFileAttributesEx C:\c:` on `docker cp`** — host-path mangling; use
   the tar-pipe deploy above instead.
 - **`stress.py` baseline errors / `unknown command`** — check `.env` has `HA_BASE_URL`/`HA_TOKEN`

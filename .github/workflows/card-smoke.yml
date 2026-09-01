@@ -7,8 +7,7 @@ name: card-smoke
 # it survives HA upgrades is that it renders no `ha-*` element. Nothing in the
 # unit suite can check that: a mock is only as truthful as its author's model of
 # the contract, and `e2e/live-updates.smoke.mjs` exists because one once was not.
-# That smoke drives the real card against a real HA, and until now it never ran
-# unattended.
+# That smoke drives the real card against a real HA.
 #
 # Two channels. `stable` says what users have; `beta` says what they will have in
 # a few weeks, which is the whole point of running it early.
