@@ -203,8 +203,7 @@ class DomainStore:
 
     @property
     def key(self) -> str:
-        # Store exposes ``key`` in tests via stub; keep a stable attribute here
-        return getattr(self._store, "key", STORAGE_KEY)
+        return self._store.key
 
     async def async_load(self) -> dict[str, Any]:
         """Load the persisted dataset, applying migrations if needed.
