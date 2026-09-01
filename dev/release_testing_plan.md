@@ -79,7 +79,7 @@ Run `debug` for groups A–H. Before the group-J soak, confirm the debug log vol
 sane over 24 h; if it is not, drop to `info` for the soak and note that in the results.
 Review logs for accidental PII and for anything at WARNING+ that is **not** a
 contract-defined client-recoverable rejection — `validation_error`, `not_found` and
-`conflict` each log exactly one WARNING line, no traceback, by design (item 32); a
+`conflict` each log exactly one WARNING line, no traceback, by design; a
 traceback from `custom_components.haventory` is always a finding (exit criterion 4).
 
 **2. Objective consistency check.** `haventory/health` (`ws.py`) reports the `counts`
@@ -186,8 +186,8 @@ store around D7–D9.
 | D5 | HA **next beta** | Same; any breakage is filed before it reaches stable | |
 | D6 | Minimum supported HA, the `hacs.json` floor (ENV-C). The phacc suite already runs the integration in-process at that version in CI; D6 is the live counterpart — a real container, the card, and the browser | Integration sets up and the full CRUD path works on the declared floor; if it does not, the floor is wrong and must be raised before release | ✅ |
 | D7 | Integration update N → N+1 **with real data** | Data intact and `haventory/health`'s `counts` unchanged; a restart that changes nothing writes nothing to the store | ✅ |
-| D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is **refused loudly**: setup fails with `ConfigEntryError` naming both versions and the store file is left byte-identical — never migrated down, never silently relabeled (decided; item 25 fixed by #120). An export taken before the update is the way back across a schema change | ✅ |
-| D9 | Card update with a warm browser cache: update the integration, then reload normally (no hard refresh), on desktop **and** in the companion app | New card version actually loads; check `haventory/version` vs. the card build. The resource is now registered as `…haventory-card.js?v=<manifest version>` and a stale entry is rewritten in place (item 26, fixed by #122) | ✅ |
+| D8 | Integration **rollback** N+1 → N (ENV-B only) | Newer-schema data is **refused loudly**: setup fails with `ConfigEntryError` naming both versions and the store file is left byte-identical — never migrated down, never silently relabeled (decided; fixed by #120). An export taken before the update is the way back across a schema change | ✅ |
+| D9 | Card update with a warm browser cache: update the integration, then reload normally (no hard refresh), on desktop **and** in the companion app | New card version actually loads; check `haventory/version` vs. the card build. The resource is now registered as `…haventory-card.js?v=<manifest version>` and a stale entry is rewritten in place (fixed by #122) | ✅ |
 
 ### E — Backup & restore
 
@@ -196,7 +196,7 @@ store around D7–D9.
 | E1 | Take a full HA backup; inspect the archive | Contains `.storage/haventory_store`, `.storage/lovelace_resources`, and `custom_components/haventory/www/haventory-card.js` | ✅ |
 | E2 | Backup taken **while HAventory is being written to** (run a bulk import during the backup), restore into ENV-D | Restored store is valid JSON; `haventory/health`'s `counts` match the pre-backup numbers ±the in-flight batch | ✅ |
 | E3 | Restore an **older** backup into the **current** integration (ENV-D) | A backup carrying no stamp, or stamped 1, loads and lands at v1 with the fields it predates filled in; data intact, `haventory/health`'s `counts` unchanged | ✅ |
-| E4 | Restore a backup stamped **2–9**, and one stamped **above every number this project ever used**, into the current integration (ENV-D) | Both are refused loudly, as D8 — never migrated down, never silently relabeled (item 25, fixed by #120) — and each names its own way out: the 2–9 stamp says to install 0.8.x and let it read the store once, the higher one says to upgrade HAventory | ✅ |
+| E4 | Restore a backup stamped **2–9**, and one stamped **above every number this project ever used**, into the current integration (ENV-D) | Both are refused loudly, as D8 — never migrated down, never silently relabeled (fixed by #120) — and each names its own way out: the 2–9 stamp says to install 0.8.x and let it read the store once, the higher one says to upgrade HAventory | ✅ |
 | E5 | Partial/selective backup | Document the minimum set a user must select to fully restore HAventory. The card bundle now rides inside `custom_components/haventory/`, so the set is the store plus the integration folder — or "reinstall the integration and restore only the store". The Lovelace resource is rebuilt on setup and no longer has to be backed up | ✅ |
 
 ### F — Data integrity & scale
@@ -205,9 +205,9 @@ store around D7–D9.
 |----|----------|---------------|---------|
 | F1 | Structural audit of the store after a mixed workload (creates, moves, renames, deletes, bulk ops) | `jq` parses it; no duplicate ids; every `item.location_id` resolves to an existing location; every `location_path` matches the current tree; every `version` ≥ 1 | ✅ |
 | F2 | `haventory/health`'s `counts` after each of D1–D9 and E2–E4 | `counts` match the pre-scenario numbers, allowing for what the scenario changed | ✅ |
-| F3 | Scale on **real** hardware: load ~2× the real inventory and measure create/update/list latency | Latency is acceptable at the target size; record the size at which it degrades and publish it as a supported ceiling. Known: whole-dataset rewrite per mutation, ~200 ms/create @1000 items (open item 19) | ✅ |
+| F3 | Scale on **real** hardware: load ~2× the real inventory and measure create/update/list latency | Latency is acceptable at the target size; record the size at which it degrades and publish it as a supported ceiling. Known: whole-dataset rewrite per mutation, ~200 ms/create @1000 items | ✅ |
 | F4 | Store file size across the run | Growth is proportional to content — no unbounded growth from repeated edits | |
-| F5 | Rename a location near the root of a deep tree | All descendant items' `location_path` rewritten; their `version` and `updated_at` unchanged (item 23); `haventory/health`'s `counts` unchanged | |
+| F5 | Rename a location near the root of a deep tree | All descendant items' `location_path` rewritten; their `version` and `updated_at` unchanged; `haventory/health`'s `counts` unchanged | |
 
 ### G — Multi-client & permissions
 
