@@ -23,11 +23,11 @@ export default defineConfig({
       fileName: () => 'haventory-card.js'
     },
     rollupOptions: {
-      external: [],  // Bundle everything since HA doesn't provide dependencies
       output: {
         // The integration serves exactly one bundle at
         // /haventory_static/haventory-card.js, so the build must emit a single
-        // file — no chunk may be split out.
+        // file — no chunk may be split out. Vite leaves this unset for an `es`
+        // lib build, so a dynamic import would otherwise become a second chunk.
         codeSplitting: false
       }
     },
