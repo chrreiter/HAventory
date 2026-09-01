@@ -386,16 +386,17 @@ def test_preview_schema_version_newer_than_supported() -> None:
     }
     report, _ = ie.plan_import(repo, doc, current_schema_version=CURRENT_SCHEMA_VERSION)
     assert report["valid"] is False
-    assert any(e["path"] == "schema_version" for e in report["errors"])
+    message = next(e["message"] for e in report["errors"] if e["path"] == "schema_version")
+    assert "upgrade HAventory" in message
 
 
 @pytest.mark.parametrize("stamped", sorted(PRE_COLLAPSE_SCHEMA_VERSIONS))
-def test_a_document_stamped_before_the_collapse_previews_and_imports(stamped: int) -> None:
-    """Every export in the wild carries such a stamp, the pre-upgrade one included.
+def test_a_document_stamped_before_the_collapse_is_sent_back_to_0_8(stamped: int) -> None:
+    """The refusal names re-exporting on 0.8.x, not upgrading.
 
-    The document's number is above this build's, so without the same closed set
-    the storage side uses, the backup a user is told to take before upgrading
-    would be the one document the upgraded build refuses.
+    Every export taken before the collapse carries such a stamp, and the number
+    is above this build's — so it lands in the same check as a document from a
+    newer build, where "upgrade HAventory" is advice nothing can act on.
     """
 
     source = Repository()
@@ -407,11 +408,12 @@ def test_a_document_stamped_before_the_collapse_previews_and_imports(stamped: in
         target, doc, policy="merge", current_schema_version=CURRENT_SCHEMA_VERSION
     )
 
-    assert report["valid"] is True, report["errors"]
-    assert report["counts"]["items"]["add"] == SEEDED_ITEMS
-    assert payload is not None
-    target.load_state(payload)
-    assert len(target.list_items()["items"]) == SEEDED_ITEMS
+    assert report["valid"] is False
+    assert payload is None
+    message = next(e["message"] for e in report["errors"] if e["path"] == "schema_version")
+    assert str(stamped) in message
+    assert "0.8" in message
+    assert "upgrade HAventory" not in message
 
 
 def test_plan_import_rejects_unknown_policy() -> None:

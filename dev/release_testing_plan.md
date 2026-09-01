@@ -226,7 +226,7 @@ store around D7–D9.
 | H2 | Round trip: export → wipe → import | Resulting dataset is equivalent to the original (ids, quantities, locations, custom fields, check-out state) | ✅ |
 | H3 | Import onto a **non-empty** store under each policy — `merge`, `replace`, `skip` | Preview matches the executed result for each policy; `add`/`update`/`conflict` classifications are correct | ✅ |
 | H4 | Import malformed input: truncated JSON, valid JSON of the wrong shape, a foreign export, an empty file | Rejected with actionable validation errors; **store untouched** (verify by snapshot diff) | ✅ |
-| H5 | Import an export whose `schema_version` is newer than the running build — above the adoptable set, since a document stamped 2–9 is accepted while the adopter lives | Refused with a clear "upgrade HAventory" message (already implemented — confirm the card shows it). Also import an export taken *before* the collapse: it must preview and apply cleanly | |
+| H5 | Import an export whose `schema_version` is above the running build's: one stamped 2–9, one stamped higher still | Both refused, and the card shows the message each earns — the 2–9 stamp is told to re-export on 0.8.x, the higher one to upgrade HAventory | |
 | H6 | Export + re-import the **full real inventory** from the phone | Completes without timeout; see also B10 | ✅ |
 
 ### I — Services & automations

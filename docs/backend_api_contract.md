@@ -465,10 +465,11 @@ and locations; a round-trip (export → import into an empty instance) reproduce
 data. See `data_shapes.md` for the full document, preview, and summary shapes.
 
 `import/preview` and `import/execute` accept a document stamped **1** — the current
-schema — and, for one release, one stamped **2 through 9**: the versions this project
-used before the schema was collapsed, which every export taken on an earlier build
-carries. Anything above that is refused with a `schema_version` error naming both
-numbers, and the exception disappears with the store-side adopter it belongs to.
+schema — or lower. A higher stamp is refused with a `schema_version` error, and which
+error depends on the number: **2 through 9** are the versions this project used before
+the schema was collapsed, and no newer build reads one, so the message says to open the
+document on HAventory 0.8.x and export again. Anything above them was written by a newer
+build, and the message names both numbers and says to upgrade.
 
 - `haventory/export`
   - Payload: `{filter?: <ItemFilter>}` (a non-object `filter`, or one carrying an unknown key, → `validation_error`).
