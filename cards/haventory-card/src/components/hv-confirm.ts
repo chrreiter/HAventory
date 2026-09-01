@@ -58,7 +58,6 @@ export class HVConfirm extends LitElement {
   /** Optional warning strip rendered above the actions. */
   @property({ type: String }) warning: string | null = null;
   @property({ type: String }) confirmLabel = t('hv.action.confirm');
-  @property({ type: String }) cancelLabel = t('hv.action.cancel');
   @property({ type: Boolean }) destructive = false;
   /**
    * The host's answer when focus cannot go back to what raised the question —
@@ -102,7 +101,7 @@ export class HVConfirm extends LitElement {
           : null}
         <div class="actions">
           <button class="hv-text-button" data-testid="confirm-cancel" @click=${this._cancel}>
-            ${this.cancelLabel}
+            ${t('hv.action.cancel')}
           </button>
           <button
             class="hv-pill ${this.destructive ? 'danger' : ''}"

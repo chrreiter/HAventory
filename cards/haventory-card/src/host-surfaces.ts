@@ -442,8 +442,7 @@ export class HostSurfaces {
   }
 }
 
-/** Trigger a browser download of the given text as a JSON file. */
-export function triggerDownload(filename: string, text: string): void {
+function triggerDownload(filename: string, text: string): void {
   const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
