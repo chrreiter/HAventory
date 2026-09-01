@@ -40,7 +40,6 @@ async def test_item_create_and_update_flow_logs_and_mutates() -> None:
     hass = HomeAssistant()
     install_runtime(hass)
 
-    # Create
     await services_mod.service_item_create(
         hass,
         {
@@ -53,7 +52,6 @@ async def test_item_create_and_update_flow_logs_and_mutates() -> None:
     repo: Repository = repo_of(hass)
     assert repo.get_counts()["items_total"] == 1
 
-    # Update name and quantity
     item_id = str(repo.list_items()["items"][0].id)
     updated_quantity = 3
     await services_mod.service_item_update(
@@ -92,10 +90,8 @@ async def test_item_move_and_quantity_helpers() -> None:
     repo = Repository()
     install_runtime(hass, repository=repo)
 
-    # Create locations and item
     await services_mod.service_location_create(hass, {"name": "Garage"})
     loc_id = str(next(repo.iter_locations()).id)
-    # Update location name via service
     await services_mod.service_location_update(hass, {"location_id": loc_id, "name": "Garage2"})
     assert repo.get_location(loc_id).name == "Garage2"
     await services_mod.service_item_create(
@@ -103,11 +99,9 @@ async def test_item_move_and_quantity_helpers() -> None:
     )
     item_id = str(repo.list_items()["items"][0].id)
 
-    # Move to root
     await services_mod.service_item_move(hass, {"item_id": item_id, "new_location_id": None})
     assert repo.get_item(item_id).location_id is None
 
-    # Adjust and set
     target_quantity = 5
     await services_mod.service_item_set_quantity(
         hass, {"item_id": item_id, "quantity": target_quantity}
@@ -117,7 +111,6 @@ async def test_item_move_and_quantity_helpers() -> None:
     await services_mod.service_item_check_out(hass, {"item_id": item_id, "due_date": "2030-01-01"})
     assert repo.get_item(item_id).checked_out is True
 
-    # Delete
     await services_mod.service_item_delete(hass, {"item_id": item_id})
     assert repo.get_counts()["items_total"] == 0
 
@@ -138,13 +131,11 @@ async def test_services_persist_after_mutations(monkeypatch) -> None:
 
     monkeypatch.setattr(store, "async_save", _spy_save)
 
-    # Create item + location
     await services_mod.service_item_create(hass, {"name": "Widget"})
     await services_mod.service_location_create(hass, {"name": "Root"})
     MIN_PERSISTS_AFTER_CREATE = 2
     assert calls["count"] >= MIN_PERSISTS_AFTER_CREATE
 
-    # Also ensure delete persists
     repo: Repository = repo_of(hass)
     loc_id = str(next(repo.iter_locations()).id)
     await services_mod.service_location_delete(hass, {"location_id": loc_id})
@@ -158,11 +149,9 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
 
     hass = HomeAssistant()
 
-    # Wire repository and store
     install_runtime(hass)
 
     services_mod.setup(hass)
-    # Ensure all expected services are registered
     names = {name for (_d, name, _h, _s, _r) in hass.services.registered}
     assert {
         "item_create",
@@ -195,10 +184,8 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
     ]
     assert not not_awaitable
 
-    # Grab a handler and feed invalid payload to trigger vol.Invalid
     caplog.clear()
     caplog.set_level("WARNING")
-    # Find item_update handler
     _domain, _name, handler, _schema, _response = next(
         r for r in hass.services.registered if r[1] == "item_update"
     )
@@ -207,10 +194,8 @@ async def test_service_registration_and_schema_errors(monkeypatch, caplog) -> No
         def __init__(self, data):
             self.data = data
 
-    # Missing required item_id should fail schema and bubble up
     with pytest.raises(vol.Invalid):
         await handler(_Call({}))
-    # Assert an error log from our boundary with op context
     assert any(getattr(r, "op", None) == "item_update" for r in caplog.records)
 
 
@@ -222,11 +207,9 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
     repo = Repository()
     install_runtime(hass, repository=repo)
 
-    # Create one item to operate on
     await services_mod.service_item_create(hass, {"name": "Widget"})
     item_id = str(repo.list_items()["items"][0].id)
 
-    # Force NotFoundError: delete then try update
     await services_mod.service_item_delete(hass, {"item_id": item_id})
     caplog.clear()
     caplog.set_level("WARNING")
@@ -234,7 +217,6 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
         await services_mod.service_item_update(hass, {"item_id": item_id, "name": "Nope"})
     assert any(getattr(r, "op", None) == "item_update" for r in caplog.records)
 
-    # Force ConflictError via expected_version mismatch
     await services_mod.service_item_create(hass, {"name": "Widget2"})
     item_id2 = str(repo.list_items()["items"][0].id)
     caplog.clear()
@@ -244,10 +226,8 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
         )
     assert any(getattr(r, "op", None) == "item_update" for r in caplog.records)
 
-    # Simulate storage failure during persist
     caplog.clear()
 
-    # Monkeypatch helper to raise StorageError at boundary
     async def _persist(_hass):  # type: ignore[no-untyped-def]
         raise StorageError("persist failed")
 

@@ -68,13 +68,11 @@ async def test_subscribe_receives_item_created_and_counts() -> None:
 
     conn = RecordingConn()
 
-    # Subscribe to items and stats on same connection with different ids
     res = await ws_send(hass, 101, "haventory/subscribe", conn=conn, topic="items")
     assert res["success"] is True
     res = await ws_send(hass, 102, "haventory/subscribe", conn=conn, topic="stats")
     assert res["success"] is True
 
-    # Trigger mutation
     created = await ws_send(hass, 1, "haventory/item/create", conn=conn, name="Hammer", quantity=1)
     assert created["success"] is True
 
@@ -97,22 +95,17 @@ async def test_unsubscribe_stops_events() -> None:
 
     conn = RecordingConn()
 
-    # Subscribe to items
     res = await ws_send(hass, 201, "haventory/subscribe", conn=conn, topic="items")
     assert res["success"] is True
 
-    # First create triggers an item event
     await ws_send(hass, 1, "haventory/item/create", conn=conn, name="Box")
     assert len(conn.events(topic="items")) >= 1
 
-    # Unsubscribe using the subscription id
     res = await ws_send(hass, 202, "haventory/unsubscribe", conn=conn, subscription=201)
     assert res["success"] is True
 
-    # Clear previous messages
     conn.messages.clear()
 
-    # Further mutations should not deliver to this subscription
     await ws_send(hass, 2, "haventory/item/create", conn=conn, name="Tape")
     assert conn.events(topic="items") == []
 
@@ -125,15 +118,12 @@ async def test_double_subscribe_and_unsubscribe_edge() -> None:
 
     conn = RecordingConn()
 
-    # Two subscriptions for same topic with different ids
     await ws_send(hass, 401, "haventory/subscribe", conn=conn, topic="stats")
     await ws_send(hass, 402, "haventory/subscribe", conn=conn, topic="stats")
 
-    # Unsubscribe unknown id should succeed and not crash
     res = await ws_send(hass, 499, "haventory/unsubscribe", conn=conn, subscription=999)
     assert res["success"] is True
 
-    # Trigger mutation and ensure at least one event delivered
     await ws_send(hass, 1, "haventory/item/create", conn=conn, name="Hammer")
     events = conn.events(topic="stats")
     assert any(ev.get("action") == "counts" for ev in events)
@@ -164,7 +154,6 @@ async def test_location_filters_subtree_and_direct_only() -> None:
 
     conn = RecordingConn()
 
-    # Create a small location tree: root -> child
     root = await ws_send(hass, 1, "haventory/location/create", conn=conn, name="Root")
     root_id = root["result"]["id"]
     child = await ws_send(
@@ -194,13 +183,11 @@ async def test_location_filters_subtree_and_direct_only() -> None:
         include_subtree=False,
     )
 
-    # Create in child: both subs should receive (subtree and direct child)
     conn.messages.clear()
     item1 = await ws_send(
         hass, 3, "haventory/item/create", conn=conn, name="Wrench", quantity=1, location_id=child_id
     )
     assert item1["success"] is True
-    # Expect 2 events with different ids (subscription ids)
     EXPECTED_EVENTS_MIN = 2
     SUB_ID_SUBTREE = 301
     SUB_ID_DIRECT = 302
@@ -208,7 +195,6 @@ async def test_location_filters_subtree_and_direct_only() -> None:
     ids = {m.get("id") for m in conn.messages if m.get("type") == "event"}
     assert SUB_ID_SUBTREE in ids and SUB_ID_DIRECT in ids
 
-    # Create in root: only subtree subscription (301) should receive
     conn.messages.clear()
     item2 = await ws_send(
         hass,
@@ -648,7 +634,6 @@ async def test_framework_unsubscribe_events_tears_down_subscription() -> None:
     assert sub_id in conn.subscriptions
     assert callable(conn.subscriptions[sub_id])
 
-    # Events flow while subscribed.
     await ws_send(hass, 1, "haventory/item/create", conn=conn, name="Box")
     assert len(conn.events(topic="items")) >= 1
 
@@ -657,7 +642,6 @@ async def test_framework_unsubscribe_events_tears_down_subscription() -> None:
     assert sub_id not in conn.subscriptions
     assert conn not in open_subscriptions(hass)  # our bucket was cleaned up too
 
-    # No further deliveries after teardown.
     conn.messages.clear()
     await ws_send(hass, 2, "haventory/item/create", conn=conn, name="Tape")
     assert conn.events(topic="items") == []

@@ -100,13 +100,11 @@ async def test_log_context_on_corrupted_payload_via_storage(
     store = DomainStore(hass, key=key)
     raw_store = HAStore(hass, 1, key)
 
-    # Save a corrupted payload (string)
     await raw_store.async_save("oops")
 
     with pytest.raises(StorageError):
         await store.async_load()
 
-    # Assert log record includes structured context
     found = False
     for rec in caplog.records:
         if (

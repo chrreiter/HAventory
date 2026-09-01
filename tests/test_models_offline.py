@@ -61,7 +61,6 @@ def _make_location(id: str, name: str, parent_id: str | None) -> Location:
 
 
 def test_create_with_defaults_and_optionals() -> None:
-    # Create with minimal payload → defaults applied, UUID/ISO timestamps, version=1
     payload: ItemCreate = {"name": "Hammer", "tags": ["Tools", "  tools  ", "DIY"]}
     item = create_item_from_create(payload)
 
@@ -79,13 +78,11 @@ def test_create_with_defaults_and_optionals() -> None:
 
 
 def test_invalid_due_date_requires_checked_out() -> None:
-    # Invalid: due_date without checked_out → ValidationError
     with pytest.raises(ValidationError):
         create_item_from_create({"name": "Cordless Drill", "due_date": "2024-12-31"})
 
 
 def test_tag_normalization_and_update_clears_fields() -> None:
-    # Normalize tags on create and allow clearing via update.
     item = create_item_from_create({"name": "Battery", "tags": ["Li-Ion", " li-ion ", "Spare"]})
     assert item.tags == ["li-ion", "spare"]
 
@@ -128,7 +125,6 @@ def test_a_tag_list_is_normalized_and_a_null_clears() -> None:
 
 
 def test_denormalized_location_path_generation() -> None:
-    # Build a simple 3-level location chain and ensure display/sort paths
     root_id = str(uuid.uuid4())
     mid_id = str(uuid.uuid4())
     leaf_id = str(uuid.uuid4())
@@ -143,7 +139,6 @@ def test_denormalized_location_path_generation() -> None:
     assert path.display_path == "Garage / Shelf A / Bin 3"
     assert path.sort_key == "garage / shelf a / bin 3"
 
-    # When creating with a valid location_id and map, item has location_path
     by_id: dict[str, Location] = {root_id: root, mid_id: mid, leaf_id: leaf}
     item = create_item_from_create(
         {"name": "Tape", "location_id": leaf_id, "checked_out": True, "due_date": "2024-01-02"},
@@ -152,7 +147,6 @@ def test_denormalized_location_path_generation() -> None:
     assert str(item.location_id) == leaf_id
     assert item.location_path.display_path == "Garage / Shelf A / Bin 3"
 
-    # And lookup via map works from leaf
     path2 = build_location_path_from_map(uuid.UUID(leaf_id), locations_by_id=by_id)
     assert path2.display_path == path.display_path
 
@@ -200,7 +194,6 @@ def test_a_chain_that_reaches_no_root_is_refused(parent_id: str | None, message:
 
 
 def test_invalid_location_reference() -> None:
-    # Invalid: location_id unknown → ValidationError
     fake_id = str(uuid.uuid4())
     with pytest.raises(ValidationError):
         create_item_from_create(
@@ -210,7 +203,6 @@ def test_invalid_location_reference() -> None:
 
 
 def test_update_version_and_updated_at_changes() -> None:
-    # Update increments version and refreshes updated_at
     item = create_item_from_create({"name": "Saw"})
     updated = apply_item_update(item, ItemUpdate(quantity=3))
     assert updated.version == item.version + 1
@@ -218,7 +210,6 @@ def test_update_version_and_updated_at_changes() -> None:
 
 
 def test_monotonic_timestamp_after_strictly_increases() -> None:
-    # monotonic_timestamp_after returns a value strictly greater than prev and ends with 'Z'
     prev = iso_utc_now()
     nxt = monotonic_timestamp_after(prev)
     assert nxt.endswith("Z")
@@ -253,20 +244,17 @@ def test_monotonic_timestamp_after_reads_the_clock_itself() -> None:
 
 
 def test_create_trims_name_and_accepts_trailing_spaces() -> None:
-    # Create accepts name with spaces and stores trimmed value
     item = create_item_from_create({"name": "  Widget  "})
     assert item.name == "Widget"
 
 
 def test_update_trims_name_and_accepts_trailing_spaces() -> None:
-    # Update accepts name with spaces and stores trimmed value
     item = create_item_from_create({"name": "Start"})
     updated = apply_item_update(item, ItemUpdate(name="  Wrench  "))
     assert updated.name == "Wrench"
 
 
 def test_rejects_name_empty_after_trim_on_create_and_update() -> None:
-    # Reject names that become empty after trimming on create and update
     with pytest.raises(ValidationError):
         create_item_from_create({"name": "   "})
 
@@ -281,14 +269,12 @@ def test_inspection_date_accepted_without_checked_out() -> None:
     assert item.inspection_date == "2024-12-31"
     assert item.checked_out is False
 
-    # Update inspection_date on non-checked-out item
     updated = apply_item_update(item, ItemUpdate(inspection_date="2025-01-15"))
     assert updated.inspection_date == "2025-01-15"
     assert updated.checked_out is False
 
 
 def test_invalid_inspection_date_format_raises_validation_error() -> None:
-    # Invalid inspection_date format → ValidationError
     with pytest.raises(ValidationError):
         create_item_from_create({"name": "Equipment", "inspection_date": "12/31/2024"})
 

@@ -22,7 +22,6 @@ async def test_add_remove_tags_success_and_normalization() -> None:
     created = await ws_send(hass, 1, "haventory/item/create", name="Thing")
     item_id = created["result"]["id"]
 
-    # Add tags with mixed case/whitespace and duplicates
     res = await ws_send(
         hass,
         2,
@@ -31,10 +30,8 @@ async def test_add_remove_tags_success_and_normalization() -> None:
         tags=["  Alpha ", "beta", "ALPHA", "Beta"],
     )
     assert res["success"] is True
-    # normalized unique order: ["alpha", "beta"]
     assert res["result"]["tags"] == ["alpha", "beta"]
 
-    # Remove tags (normalize) and ensure subtraction
     res = await ws_send(
         hass,
         3,
@@ -61,7 +58,6 @@ async def test_update_custom_fields_set_unset_and_validation_error() -> None:
     created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
 
-    # Set two fields
     res = await ws_send(
         hass,
         2,
@@ -74,7 +70,6 @@ async def test_update_custom_fields_set_unset_and_validation_error() -> None:
     SIZE_VALUE = 42
     assert res["result"]["custom_fields"]["size"] == SIZE_VALUE
 
-    # Unset one field
     res = await ws_send(
         hass,
         3,
@@ -105,7 +100,6 @@ async def test_set_low_stock_threshold_affects_counts() -> None:
     created = await ws_send(hass, 1, "haventory/item/create", name="Nails", quantity=1)
     item_id = created["result"]["id"]
 
-    # Initially, with no threshold, low_stock_count should be 0
     stats = await ws_send(hass, 2, "haventory/stats")
     assert stats["success"] is True and stats["result"]["low_stock_count"] == 0
 
@@ -147,11 +141,9 @@ async def test_unknown_command_and_type_errors() -> None:
 
     hass = ws_hass()
 
-    # Unknown command type: ensure no handler responds
     with pytest.raises(AssertionError):
         await ws_send(hass, 99, "haventory/does_not_exist")
 
-    # Type errors inside payload for wrappers that validate
     created = await ws_send(hass, 1, "haventory/item/create", name="Thing")
     iid = created["result"]["id"]
     res = await ws_send(

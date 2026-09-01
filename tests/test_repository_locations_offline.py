@@ -19,11 +19,9 @@ def test_create_get_and_delete_location_constraints() -> None:
     root = repo.create_location(name="Garage")
     leaf = repo.create_location(name="Bin 1", parent_id=root.id)
 
-    # Cannot delete parent while it has a child
     with pytest.raises(ValidationError):
         repo.delete_location(root.id)
 
-    # Deleting leaf works
     repo.delete_location(leaf.id)
     with pytest.raises(NotFoundError):
         repo.get_location(leaf.id)
@@ -43,17 +41,14 @@ def test_move_and_rename_updates_paths_and_items() -> None:
     )  # type: ignore[arg-type]
     assert "A / B / C" in repo.get_item(item.id).location_path.display_path
 
-    # Rename B -> B2 and ensure subtree paths and item path update
     repo.update_location(b.id, name="B2")
     assert repo.get_location(c.id).path.display_path == "A / B2 / C"
     assert "A / B2 / C" in repo.get_item(item.id).location_path.display_path
 
-    # Move C under A (C becomes A/C)
     repo.update_location(c.id, new_parent_id=a.id)
     assert repo.get_location(c.id).path.display_path == "A / C"
     assert "A / C" in repo.get_item(item.id).location_path.display_path
 
-    # Attempt to move A under C (descendant) → invalid
     with pytest.raises(ValidationError):
         repo.update_location(a.id, new_parent_id=c.id)
 
@@ -65,11 +60,9 @@ def test_move_to_root_and_disallow_self_parent() -> None:
     a = repo.create_location(name="A")
     b = repo.create_location(name="B", parent_id=a.id)
 
-    # Self-parent invalid
     with pytest.raises(ValidationError):
         repo.update_location(a.id, new_parent_id=a.id)
 
-    # Move B to root
     updated_b = repo.update_location(b.id, new_parent_id=None)
     assert updated_b.parent_id is None
     assert updated_b.path.display_path == "B"
@@ -98,7 +91,6 @@ def test_location_item_counts_and_no_location_count() -> None:
     expected_orphans = 2
     assert repo.get_counts()["no_location_count"] == expected_orphans
 
-    # Unknown location id raises NotFoundError
     with pytest.raises(NotFoundError):
         repo.get_location_item_counts("00000000-0000-4000-8000-000000000000")
 

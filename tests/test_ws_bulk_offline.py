@@ -32,7 +32,6 @@ async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
 
     monkeypatch.setattr(store, "async_save", _spy_save)
 
-    # Seed an item
     created = await ws_send(hass, 1, "haventory/item/create", name="Hammer", quantity=1)
     item_id = created["result"]["id"]
 
@@ -61,7 +60,6 @@ async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
     assert results["ok1"]["success"] is True and results["ok2"]["success"] is True
     assert results["bad1"]["success"] is False and results["bad2"]["success"] is False
 
-    # Persist should have been called at least once (for the successes)
     assert calls["count"] >= 1
 
 
@@ -79,7 +77,6 @@ async def test_bulk_empty_and_invalid_operations_and_duplicate_ids(monkeypatch) 
 
     monkeypatch.setattr(store, "async_save", _spy_save)
 
-    # Empty operations list
     res = await ws_send(hass, 1, "haventory/items/bulk", operations=[])
     assert res["success"] is True and res["result"]["results"] == {}
     assert calls["count"] == 0  # nothing to persist

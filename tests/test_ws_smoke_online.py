@@ -26,11 +26,6 @@ def _unique(name: str) -> str:
     return f"{name} {uuid.uuid4().hex[:8]}"
 
 
-MAGIC_MIN_ADDED_LOCATIONS: int = 2
-EXPECTED_LOCATIONS_AFTER_CREATE: int = 2
-EXPECTED_FINAL_LOCATIONS: int = 2
-
-
 async def _create_location(
     ws: aiohttp.ClientWebSocketResponse, next_id, name: str, parent_id: str | None = None
 ) -> str:
@@ -62,7 +57,6 @@ async def test_ws_areas_list_and_location_area_field_presence() -> None:
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        # areas/list returns {areas: []}
         aid = next_id()
         await ws.send_json({"id": aid, "type": "haventory/areas/list"})
         areas = await expect_result(ws, aid)
@@ -70,14 +64,12 @@ async def test_ws_areas_list_and_location_area_field_presence() -> None:
             pytest.skip("areas/list not available in this HA runtime")
         assert isinstance((areas.get("result") or {}).get("areas"), list)
 
-        # Create a location without area_id and ensure serializer includes area_id: null
         cid = next_id()
         probe_name = _unique("AreaProbe")
         await ws.send_json({"id": cid, "type": "haventory/location/create", "name": probe_name})
         cre = await expect_result(ws, cid)
         loc = cre.get("result") or {}
         assert "area_id" in loc and loc.get("area_id") is None
-        # Clean up the probe location so the test leaves no trace
         await _delete_location_quiet(ws, next_id, loc.get("id"))
     finally:
         await ws.close()
@@ -117,51 +109,46 @@ async def test_ws_ping_and_version() -> None:
 
 @pytest.mark.asyncio
 @destructive
-async def test_ws_smoke_phase0_phase1_locations() -> None:  # noqa: PLR0915
-    """End-to-end online smoke: Phase 0 and Phase 1 (locations CRUD and validation).
+async def test_an_emptied_instance_reports_nothing_then_counts_what_it_is_given() -> None:  # noqa: PLR0915
+    """Ping, version, stats, health and the first locations, on an emptied instance.
 
-    Preconditions:
-    - Intended to run against a clean dataset (fresh storage) so Phase 0 stats are zero.
+    The counts are absolute rather than relative, which is what makes the purge
+    part of the test rather than tidiness: an instance with data left on it
+    would pass a "grew by two" assertion while hiding a leak.
     """
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        # Purge any existing items/locations to ensure a clean dataset
         await purge_items(ws, next_id)
         await purge_locations(ws, next_id)
 
-        # Phase 0.1: ping
         await ws.send_json({"id": 101, "type": "haventory/ping", "echo": "hi"})
         msg = await expect_result(ws, 101)
-        assert msg.get("success") is True  # scenario: WS echo should succeed
-        assert msg.get("result", {}).get("echo") == "hi"  # expected: echo roundtrip
+        assert msg.get("success") is True
+        assert msg.get("result", {}).get("echo") == "hi"
 
-        # Phase 0.2: version and stats
         await ws.send_json({"id": 102, "type": "haventory/version"})
         ver = await expect_result(ws, 102)
-        assert ver.get("success") is True  # scenario: version endpoint works
+        assert ver.get("success") is True
         vres = ver.get("result")
         assert isinstance(vres, dict) and vres.get("schema_version") == CURRENT_SCHEMA_VERSION
 
         await ws.send_json({"id": 103, "type": "haventory/stats"})
         stats = await expect_result(ws, 103)
         sres = stats.get("result", {})
-        # Expect clean storage (script purges before running)
-        assert sres.get("items_total") == 0  # scenario: no items initially
-        assert sres.get("locations_total") == 0  # scenario: no locations initially
+        assert sres.get("items_total") == 0
+        assert sres.get("locations_total") == 0
 
-        # Phase 0.3: health
         await ws.send_json({"id": 104, "type": "haventory/health"})
         health = await expect_result(ws, 104)
         hres = health.get("result", {})
-        assert hres.get("healthy") is True  # expected: healthy on empty dataset
-        assert hres.get("issues") == []  # expected: no issues
+        assert hres.get("healthy") is True
+        assert hres.get("issues") == []
 
-        # Phase 1.1: create root and child
         await ws.send_json({"id": 201, "type": "haventory/location/create", "name": "Garage"})
         cre_g = await expect_result(ws, 201)
         garage_id = cre_g.get("result", {}).get("id")
-        assert isinstance(garage_id, str) and len(garage_id) > 0  # expected: UUID
+        assert isinstance(garage_id, str) and len(garage_id) > 0
 
         await ws.send_json(
             {
@@ -178,13 +165,11 @@ async def test_ws_smoke_phase0_phase1_locations() -> None:  # noqa: PLR0915
         await ws.send_json({"id": 203, "type": "haventory/location/list"})
         lst = await expect_result(ws, 203)
         lres = lst.get("result")
-        assert (
-            isinstance(lres, list) and len(lres) >= MAGIC_MIN_ADDED_LOCATIONS
-        )  # minimum expected additions
+        assert isinstance(lres, list)
         ids = {loc.get("id") for loc in lres if isinstance(loc, dict)}
-        assert garage_id in ids and shelf_id in ids  # created ids present
+        assert garage_id in ids and shelf_id in ids
         shelf_entry = next(loc for loc in lres if loc.get("id") == shelf_id)
-        assert shelf_entry.get("parent_id") == garage_id  # parent relation
+        assert shelf_entry.get("parent_id") == garage_id
 
         await ws.send_json({"id": 204, "type": "haventory/location/tree"})
         tree = await expect_result(ws, 204)
@@ -194,17 +179,13 @@ async def test_ws_smoke_phase0_phase1_locations() -> None:  # noqa: PLR0915
         garage_node = find_in_tree(tres, garage_id)
         assert garage_node is not None
         child_ids = [c.get("id") for c in garage_node.get("children") or []]
-        assert shelf_id in child_ids  # Shelf A under Garage
+        assert shelf_id in child_ids
 
-        # Stats should reflect exactly +2 locations after creation
+        created_locations = 2  # Garage and Shelf A
         await ws.send_json({"id": 205, "type": "haventory/stats"})
         stats_after_create = await expect_result(ws, 205)
         s_after = stats_after_create.get("result", {})
-        assert (
-            s_after.get("locations_total") == EXPECTED_LOCATIONS_AFTER_CREATE
-        )  # initial two locations
-
-        # End of core creation checks; subsequent mechanics are validated in dedicated tests below
+        assert s_after.get("locations_total") == created_locations
     finally:
         await ws.close()
         await session.close()
@@ -257,7 +238,6 @@ async def test_ws_location_move_subtree() -> None:
         )
         mv = await expect_result(ws, mid)
         assert mv.get("success") is True
-        # Verify via tree
         tid = next_id()
         await ws.send_json({"id": tid, "type": "haventory/location/tree"})
         tree2 = await expect_result(ws, tid)
@@ -368,18 +348,17 @@ async def test_ws_location_delete_leaf_and_get_not_found() -> None:
 
 @pytest.mark.asyncio
 @destructive
-async def test_ws_final_stats_after_all_location_ops() -> None:
-    """Final stats: expect 2 locations remaining (Basement + Garage West)."""
+async def test_stats_counts_exactly_the_locations_that_exist() -> None:
+    """The count is the tree's size, not a running total the deletes forgot."""
+
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        # Make this test independent: purge all locations, then create exactly two roots
         await purge_locations(ws, next_id)
-        # Create 'Basement'
+        created_roots = 2
         bid = next_id()
         await ws.send_json({"id": bid, "type": "haventory/location/create", "name": "Basement"})
         _ = await expect_result(ws, bid)
-        # Create 'Garage West'
         gid = next_id()
         await ws.send_json({"id": gid, "type": "haventory/location/create", "name": "Garage West"})
         _ = await expect_result(ws, gid)
@@ -387,7 +366,7 @@ async def test_ws_final_stats_after_all_location_ops() -> None:
         await ws.send_json({"id": fid, "type": "haventory/stats"})
         stats_final = await expect_result(ws, fid)
         s_final = stats_final.get("result", {})
-        assert s_final.get("locations_total") == EXPECTED_FINAL_LOCATIONS  # Basement + Garage West
+        assert s_final.get("locations_total") == created_roots
     finally:
         await ws.close()
         await session.close()
@@ -398,12 +377,12 @@ L_WORKSHOP = "Workshop"
 L_SHELF_A = "Shelf A"
 
 
-async def _ensure_phase2_base(ws: aiohttp.ClientWebSocketResponse, next_id) -> dict[str, str]:
-    # Purge everything
+async def _reset_to_base_locations(ws: aiohttp.ClientWebSocketResponse, next_id) -> dict[str, str]:
+    """Empty the instance and rebuild Garage, Workshop and Garage / Shelf A."""
+
     await purge_items(ws, next_id)
     await purge_locations(ws, next_id)
 
-    # Create base locations: Garage, Workshop, Shelf A under Garage
     gid = next_id()
     await ws.send_json({"id": gid, "type": "haventory/location/create", "name": L_GARAGE})
     cre_g = await expect_result(ws, gid)
@@ -431,14 +410,13 @@ async def _ensure_phase2_base(ws: aiohttp.ClientWebSocketResponse, next_id) -> d
 
 @pytest.mark.asyncio
 @destructive
-async def test_p2_item_create_defaults_and_rich() -> None:
+async def test_item_create_fills_the_defaults_and_takes_every_optional() -> None:
     """Create default item and rich item with all optionals."""
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        ids = await _ensure_phase2_base(ws, next_id)
+        ids = await _reset_to_base_locations(ws, next_id)
 
-        # Default
         cid = next_id()
         await ws.send_json({"id": cid, "type": "haventory/item/create", "name": "Hammer"})
         cre = await expect_result(ws, cid)
@@ -446,7 +424,7 @@ async def test_p2_item_create_defaults_and_rich() -> None:
         item = cre.get("result") or {}
         assert item.get("version") == 1 and item.get("quantity") == 1
 
-        # Rich
+        rich_quantity = 3
         rid = next_id()
         await ws.send_json(
             {
@@ -454,7 +432,7 @@ async def test_p2_item_create_defaults_and_rich() -> None:
                 "type": "haventory/item/create",
                 "name": "Hammer",
                 "description": "16 oz claw hammer",
-                "quantity": 3,
+                "quantity": rich_quantity,
                 "tags": ["tool", "garage"],
                 "category": "tools",
                 "low_stock_threshold": 1,
@@ -463,8 +441,7 @@ async def test_p2_item_create_defaults_and_rich() -> None:
         )
         rich = await expect_result(ws, rid)
         ritem = rich.get("result") or {}
-        TARGET_QTY_RICH = 3  # avoid magic numbers
-        assert ritem.get("quantity") == TARGET_QTY_RICH and ritem.get("category") == "tools"
+        assert ritem.get("quantity") == rich_quantity and ritem.get("category") == "tools"
         lp = ritem.get("location_path") or {}
         assert lp.get("display_path") == "Garage / Shelf A"
     finally:
@@ -474,27 +451,24 @@ async def test_p2_item_create_defaults_and_rich() -> None:
 
 @pytest.mark.asyncio
 @destructive
-async def test_p2_item_get_update_delete_recreate() -> None:
+async def test_an_item_can_be_read_edited_deleted_and_created_again() -> None:
     """Get, update (version++), delete (with expected), then re-create."""
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        _ = await _ensure_phase2_base(ws, next_id)
+        _ = await _reset_to_base_locations(ws, next_id)
 
-        # Create
         cid = next_id()
         await ws.send_json({"id": cid, "type": "haventory/item/create", "name": "Hammer"})
         cre = await expect_result(ws, cid)
         item_id = cre["result"]["id"]
         ver = int(cre["result"]["version"])
 
-        # Get
         gid = next_id()
         await ws.send_json({"id": gid, "type": "haventory/item/get", "item_id": item_id})
         got = await expect_result(ws, gid)
         assert got.get("success") is True and got["result"]["id"] == item_id
 
-        # Update name/description/category
         uid = next_id()
         await ws.send_json(
             {
@@ -511,7 +485,6 @@ async def test_p2_item_get_update_delete_recreate() -> None:
         ver = int(upd["result"]["version"])
         assert upd["result"]["name"] == "Hammer Pro"
 
-        # Delete
         did = next_id()
         await ws.send_json(
             {
@@ -524,7 +497,7 @@ async def test_p2_item_get_update_delete_recreate() -> None:
         del_ack = await expect_result(ws, did)
         assert del_ack.get("success") is True
 
-        # Re-create for later tests
+        # The id is free again once the delete lands.
         rcid = next_id()
         await ws.send_json({"id": rcid, "type": "haventory/item/create", "name": "Hammer R"})
         re = await expect_result(ws, rcid)
@@ -536,20 +509,18 @@ async def test_p2_item_get_update_delete_recreate() -> None:
 
 @pytest.mark.asyncio
 @destructive
-async def test_p2_item_move_between_locations() -> None:
+async def test_moving_an_item_rewrites_its_location_path() -> None:
     """Move item to Workshop; verify location_path and version bump."""
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        ids = await _ensure_phase2_base(ws, next_id)
-        # Create item
+        ids = await _reset_to_base_locations(ws, next_id)
         cid = next_id()
         await ws.send_json({"id": cid, "type": "haventory/item/create", "name": "Hammer R"})
         cre = await expect_result(ws, cid)
         item_id = cre["result"]["id"]
         ver = int(cre["result"]["version"])
 
-        # Move
         mid = next_id()
         await ws.send_json(
             {
@@ -570,20 +541,18 @@ async def test_p2_item_move_between_locations() -> None:
 
 @pytest.mark.asyncio
 @destructive
-async def test_p2_quantity_operations() -> None:
+async def test_quantity_is_set_and_adjusted_and_never_goes_negative() -> None:
     """Invalid set_quantity (-1) then adjust +2 and set=5."""
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        _ = await _ensure_phase2_base(ws, next_id)
-        # Create item
+        _ = await _reset_to_base_locations(ws, next_id)
         cid = next_id()
         await ws.send_json({"id": cid, "type": "haventory/item/create", "name": "Hammer R"})
         cre = await expect_result(ws, cid)
         item_id = cre["result"]["id"]
         ver = int(cre["result"]["version"])
 
-        # Invalid set_quantity
         sid = next_id()
         await ws.send_json(
             {
@@ -600,7 +569,6 @@ async def test_p2_quantity_operations() -> None:
             and (neg.get("error") or {}).get("code") == "validation_error"
         )
 
-        # adjust +2
         aid = next_id()
         await ws.send_json(
             {
@@ -613,23 +581,22 @@ async def test_p2_quantity_operations() -> None:
         )
         adj = await expect_result(ws, aid)
         ver = int(adj["result"]["version"])
-        QTY_AFTER_ADJUST = 3
-        assert adj["result"]["quantity"] == QTY_AFTER_ADJUST
+        after_adjust = 3  # the default 1, plus the delta above
+        assert adj["result"]["quantity"] == after_adjust
 
-        # set = 5
+        set_quantity = 5
         sid2 = next_id()
         await ws.send_json(
             {
                 "id": sid2,
                 "type": "haventory/item/set_quantity",
                 "item_id": item_id,
-                "quantity": 5,
+                "quantity": set_quantity,
                 "expected_version": ver,
             }
         )
         setq = await expect_result(ws, sid2)
-        TARGET_QTY_FINAL = 5
-        assert setq["result"]["quantity"] == TARGET_QTY_FINAL
+        assert setq["result"]["quantity"] == set_quantity
     finally:
         await ws.close()
         await session.close()
@@ -637,20 +604,18 @@ async def test_p2_quantity_operations() -> None:
 
 @pytest.mark.asyncio
 @destructive
-async def test_p2_checkout_checkin_and_due_dates() -> None:
+async def test_a_due_date_needs_a_checked_out_item() -> None:
     """Check-out with due_date, check-in, then negative due_date without checked_out."""
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        _ = await _ensure_phase2_base(ws, next_id)
-        # Create item
+        _ = await _reset_to_base_locations(ws, next_id)
         cid = next_id()
         await ws.send_json({"id": cid, "type": "haventory/item/create", "name": "Hammer R"})
         cre = await expect_result(ws, cid)
         item_id = cre["result"]["id"]
         ver = int(cre["result"]["version"])
 
-        # check_out
         coid = next_id()
         await ws.send_json(
             {
@@ -665,7 +630,6 @@ async def test_p2_checkout_checkin_and_due_dates() -> None:
         ver = int(co["result"]["version"])
         assert co["result"]["checked_out"] is True
 
-        # check_in
         ciid = next_id()
         await ws.send_json(
             {
@@ -679,7 +643,7 @@ async def test_p2_checkout_checkin_and_due_dates() -> None:
         ver = int(ci["result"]["version"])
         assert ci["result"]["checked_out"] is False
 
-        # Negative due_date without checked_out
+        # A due date on an item nobody has out has nothing to be due.
         nid = next_id()
         await ws.send_json(
             {
@@ -702,20 +666,18 @@ async def test_p2_checkout_checkin_and_due_dates() -> None:
 
 @pytest.mark.asyncio
 @destructive
-async def test_p2_tags_and_custom_fields() -> None:
+async def test_tags_normalize_and_custom_fields_are_set_and_unset() -> None:
     """Add/remove tags; set/unset custom fields; verify normalization and result."""
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        _ = await _ensure_phase2_base(ws, next_id)
-        # Create item
+        _ = await _reset_to_base_locations(ws, next_id)
         cid = next_id()
         await ws.send_json({"id": cid, "type": "haventory/item/create", "name": "Hammer R"})
         cre = await expect_result(ws, cid)
         item_id = cre["result"]["id"]
         ver = int(cre["result"]["version"])
 
-        # add_tags (Tool, TOOL, garage) -> garage
         tid = next_id()
         await ws.send_json(
             {
@@ -728,11 +690,9 @@ async def test_p2_tags_and_custom_fields() -> None:
         )
         tadd = await expect_result(ws, tid)
         ver = int(tadd["result"]["version"])
-        # Normalization preserves insertion order of unique, casefolded tags
-        # Given ["Tool","TOOL","garage"] -> ["tool","garage"]
+        # Casefolded, deduplicated, and in the order they were first seen.
         assert tadd["result"]["tags"] == ["tool", "garage"]
 
-        # remove tag 'tool' (normalized)
         rid = next_id()
         await ws.send_json(
             {
@@ -745,10 +705,9 @@ async def test_p2_tags_and_custom_fields() -> None:
         )
         trem = await expect_result(ws, rid)
         ver = int(trem["result"]["version"])
-        # We removed 'tool', leaving 'garage'
+        # The removal is matched against the normalized tag, not the one sent.
         assert trem["result"]["tags"] == ["garage"]
 
-        # custom_fields set
         sid = next_id()
         await ws.send_json(
             {
@@ -764,7 +723,6 @@ async def test_p2_tags_and_custom_fields() -> None:
         ver = int(cset["result"]["version"])
         assert (cset["result"].get("custom_fields") or {}).get("color") == "red"
 
-        # custom_fields unset weight
         uid = next_id()
         await ws.send_json(
             {
@@ -786,12 +744,12 @@ async def test_p2_tags_and_custom_fields() -> None:
 
 @pytest.mark.asyncio
 @destructive
-async def test_p2_low_stock_threshold_and_stats() -> None:
+async def test_crossing_the_threshold_moves_the_low_stock_count() -> None:
     """Set threshold and cross it to verify low_stock_count in stats."""
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        _ = await _ensure_phase2_base(ws, next_id)
+        _ = await _reset_to_base_locations(ws, next_id)
         # Create item quantity 5
         cid = next_id()
         await ws.send_json({"id": cid, "type": "haventory/item/create", "name": "Hammer R"})
@@ -799,7 +757,6 @@ async def test_p2_low_stock_threshold_and_stats() -> None:
         item_id = cre["result"]["id"]
         ver = int(cre["result"]["version"])
 
-        # threshold 3
         tid = next_id()
         await ws.send_json(
             {
@@ -812,7 +769,6 @@ async def test_p2_low_stock_threshold_and_stats() -> None:
         )
         _ = await expect_result(ws, tid)
 
-        # set quantity 2 => low stock
         qid = next_id()
         await ws.send_json(
             {
@@ -830,7 +786,6 @@ async def test_p2_low_stock_threshold_and_stats() -> None:
         s2 = await expect_result(ws, sid2)
         assert (s2.get("result") or {}).get("low_stock_count") >= 1
 
-        # raise to 5 => not low
         qid2 = next_id()
         await ws.send_json(
             {
@@ -854,14 +809,12 @@ async def test_p2_low_stock_threshold_and_stats() -> None:
 
 @pytest.mark.asyncio
 @destructive
-async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
+async def test_item_list_filters_sorts_and_paginates() -> None:  # noqa: PLR0915
     """Exercise list filters, sorts, and cursor pagination."""
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        ids = await _ensure_phase2_base(ws, next_id)
-        # Create items
-        # Hammer R in Workshop with tag garage and category tools
+        ids = await _reset_to_base_locations(ws, next_id)
         rid = next_id()
         await ws.send_json(
             {
@@ -879,13 +832,11 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
         await ws.send_json({"id": did, "type": "haventory/item/create", "name": "Hammer"})
         _ = await expect_result(ws, did)
 
-        # q
         q1 = next_id()
         await ws.send_json({"id": q1, "type": "haventory/item/list", "filter": {"q": "hammer"}})
         r1 = await expect_result(ws, q1)
         assert len((r1.get("result") or {}).get("items") or []) >= 1
 
-        # tags_any
         q2 = next_id()
         await ws.send_json(
             {"id": q2, "type": "haventory/item/list", "filter": {"tags_any": ["garage"]}}
@@ -893,7 +844,6 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
         r2 = await expect_result(ws, q2)
         assert len((r2.get("result") or {}).get("items") or []) >= 1
 
-        # tags_all
         q3 = next_id()
         await ws.send_json(
             {"id": q3, "type": "haventory/item/list", "filter": {"tags_all": ["garage"]}}
@@ -901,7 +851,7 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
         r3 = await expect_result(ws, q3)
         assert len((r3.get("result") or {}).get("items") or []) >= 1
 
-        # category (none expected)
+        # No item carries this category; the match is case-sensitive on purpose.
         q4 = next_id()
         await ws.send_json(
             {"id": q4, "type": "haventory/item/list", "filter": {"category": "TOOLS"}}
@@ -909,7 +859,6 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
         r4 = await expect_result(ws, q4)
         assert ((r4.get("result") or {}).get("items") or []) == []
 
-        # checked_out
         q5 = next_id()
         await ws.send_json(
             {"id": q5, "type": "haventory/item/list", "filter": {"checked_out": False}}
@@ -917,7 +866,7 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
         r5 = await expect_result(ws, q5)
         assert len((r5.get("result") or {}).get("items") or []) >= 1
 
-        # location_id + include_subtree under Garage (expect none as items reside in Workshop)
+        # Both items are in Workshop, which is not under Garage.
         q7 = next_id()
         await ws.send_json(
             {
@@ -929,7 +878,6 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
         r7 = await expect_result(ws, q7)
         assert ((r7.get("result") or {}).get("items") or []) == []
 
-        # sort by name asc
         q8 = next_id()
         await ws.send_json(
             {"id": q8, "type": "haventory/item/list", "sort": {"field": "name", "order": "asc"}}
@@ -937,7 +885,6 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
         r8 = await expect_result(ws, q8)
         assert r8.get("success") is True
 
-        # sort by quantity desc
         q9 = next_id()
         await ws.send_json(
             {
@@ -949,7 +896,6 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
         r9 = await expect_result(ws, q9)
         assert r9.get("success") is True
 
-        # pagination: limit 1
         q10 = next_id()
         await ws.send_json(
             {
@@ -968,20 +914,18 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
 
 @pytest.mark.asyncio
 @destructive
-async def test_p2_optimistic_concurrency_conflict() -> None:
+async def test_a_stale_expected_version_is_refused_as_a_conflict() -> None:
     """Demonstrate conflict on stale expected_version with error envelope."""
     session, ws = await open_ws()
     next_id = id_counter()
     try:
-        _ = await _ensure_phase2_base(ws, next_id)
-        # Create item
+        _ = await _reset_to_base_locations(ws, next_id)
         cid = next_id()
         await ws.send_json({"id": cid, "type": "haventory/item/create", "name": "Hammer R"})
         cre = await expect_result(ws, cid)
         item_id = cre["result"]["id"]
         ver_a = int(cre["result"]["version"])
 
-        # Valid update to bump
         uid = next_id()
         await ws.send_json(
             {
@@ -996,7 +940,6 @@ async def test_p2_optimistic_concurrency_conflict() -> None:
         ver_b = int(good["result"]["version"])
         assert ver_b == ver_a + 1
 
-        # Stale update with old expected_version
         sid = next_id()
         await ws.send_json(
             {

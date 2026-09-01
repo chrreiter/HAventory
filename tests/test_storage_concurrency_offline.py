@@ -33,11 +33,9 @@ async def test_persist_lock_prevents_concurrent_saves():
 
     mock_store.async_save = slow_save
 
-    # Create repository and store
     repo = Repository()
     install_runtime(hass, repository=repo, store=mock_store)
 
-    # Launch multiple concurrent persist operations
     tasks = [async_persist_repo(hass) for _ in range(3)]
     await asyncio.gather(*tasks)
 
@@ -60,8 +58,6 @@ async def test_persist_with_timing_logs(caplog):
 
     await async_persist_repo(hass)
 
-    # Check for timing logs
     assert any("Persisting repository state" in rec.message for rec in caplog.records)
     assert any("Repository persisted successfully" in rec.message for rec in caplog.records)
-    # Check that elapsed_ms is in the extra dict of at least one record
     assert any(hasattr(rec, "elapsed_ms") for rec in caplog.records)

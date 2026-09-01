@@ -254,7 +254,6 @@ def test_replace_into_empty_and_add_new_item() -> None:
     repo = Repository()
     _seed(repo)
     doc = _doc_from(repo)
-    # Add a brand-new item id to the document.
     new_id = "11111111-1111-4111-8111-111111111111"
     doc["items"].append(
         {

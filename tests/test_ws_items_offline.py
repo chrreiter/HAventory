@@ -30,21 +30,17 @@ async def test_item_create_get_update_delete_success() -> None:
 
     hass = ws_hass()
 
-    # Create
     res = await ws_send(hass, 1, "haventory/item/create", name="Hammer", quantity=2)
     assert res["id"] == 1 and res["type"] == "result" and res["success"] is True
     assert isinstance(res.get("result"), dict) and "id" in res["result"]
     item_id = res["result"]["id"]
 
-    # Get
     res = await ws_send(hass, 2, "haventory/item/get", item_id=item_id)
     assert res["success"] is True and res["result"]["id"] == item_id
 
-    # Update
     res = await ws_send(hass, 3, "haventory/item/update", item_id=item_id, name="Hammer Pro")
     assert res["success"] is True and res["result"]["name"] == "Hammer Pro"
 
-    # Delete
     res = await ws_send(hass, 4, "haventory/item/delete", item_id=item_id)
     assert res["success"] is True and res["result"] is None
 
@@ -185,7 +181,6 @@ async def test_item_check_out_due_date_is_optional() -> None:
     created = await ws_send(hass, 1, "haventory/item/create", name="Drill")
     item_id = created["result"]["id"]
 
-    # Omitted entirely
     res = await ws_send(hass, 2, "haventory/item/check_out", item_id=item_id)
     assert res["success"] is True
     assert res["result"]["checked_out"] is True
@@ -193,7 +188,6 @@ async def test_item_check_out_due_date_is_optional() -> None:
 
     await ws_send(hass, 3, "haventory/item/check_in", item_id=item_id)
 
-    # Explicit null
     res = await ws_send(hass, 4, "haventory/item/check_out", item_id=item_id, due_date=None)
     assert res["success"] is True
     assert res["result"]["checked_out"] is True
@@ -206,18 +200,14 @@ async def test_error_mapping_validation_and_not_found_and_conflict() -> None:
 
     hass = ws_hass()
 
-    # validation_error: negative quantity
     v = await ws_send(hass, 1, "haventory/item/set_quantity", item_id="x", quantity=-1)
     assert v["success"] is False and v["error"]["code"] == "validation_error"
-    # Context includes op and input fields
     assert v["error"]["data"]["op"] == "item_set_quantity"
 
-    # not_found: get by unknown id
     n = await ws_send(hass, 2, "haventory/item/get", item_id="00000000-0000-4000-8000-000000000000")
     assert n["success"] is False and n["error"]["code"] == "not_found"
     assert n["error"]["data"]["op"] == "item_get"
 
-    # conflict: create then update with stale expected_version
     c = await ws_send(hass, 3, "haventory/item/create", name="Widget")
     iid = c["result"]["id"]
     stale = await ws_send(
@@ -238,21 +228,16 @@ async def test_ws_mutations_persist_to_store(monkeypatch) -> None:
 
     async def _spy_save(payload):  # type: ignore[no-untyped-def]
         calls["count"] += 1
-        # Minimal assertions
         assert isinstance(payload, dict)
         assert "items" in payload and "locations" in payload
 
     monkeypatch.setattr(store, "async_save", _spy_save)
 
-    # Create triggers persist
     created = await ws_send(hass, 1, "haventory/item/create", name="Hammer")
     assert calls["count"] >= 1
     item_id = created["result"]["id"]
-    # Update triggers persist
     await ws_send(hass, 2, "haventory/item/update", item_id=item_id, name="HammerX")
-    # Adjust quantity triggers persist
     await ws_send(hass, 3, "haventory/item/adjust_quantity", item_id=item_id, delta=1)
-    # Delete triggers persist
     await ws_send(hass, 4, "haventory/item/delete", item_id=item_id)
     MIN_PERSISTS_TOTAL = 4
     assert calls["count"] >= MIN_PERSISTS_TOTAL
@@ -264,7 +249,6 @@ async def test_inspection_date_in_create_update_get() -> None:
 
     hass = ws_hass()
 
-    # Create item with inspection_date
     res = await ws_send(
         hass, 1, "haventory/item/create", name="Calibration Tool", inspection_date="2024-03-15"
     )
@@ -272,19 +256,16 @@ async def test_inspection_date_in_create_update_get() -> None:
     assert res["result"]["inspection_date"] == "2024-03-15"
     item_id = res["result"]["id"]
 
-    # Get item and verify inspection_date is returned
     res = await ws_send(hass, 2, "haventory/item/get", item_id=item_id)
     assert res["success"] is True
     assert res["result"]["inspection_date"] == "2024-03-15"
 
-    # Update inspection_date
     res = await ws_send(
         hass, 3, "haventory/item/update", item_id=item_id, inspection_date="2024-09-30"
     )
     assert res["success"] is True
     assert res["result"]["inspection_date"] == "2024-09-30"
 
-    # Clear inspection_date
     res = await ws_send(hass, 4, "haventory/item/update", item_id=item_id, inspection_date=None)
     assert res["success"] is True
     assert res["result"]["inspection_date"] is None

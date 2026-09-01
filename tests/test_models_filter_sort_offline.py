@@ -150,7 +150,6 @@ def test_low_stock_first_orders_without_filtering() -> None:
     c.updated_at = "2024-01-03T00:00:00Z"
     d.updated_at = "2024-01-04T00:00:00Z"
 
-    # Base order by updated_at desc (no preference applied yet)
     items = sort_items(
         filter_items([a, b, c, d], ItemFilter()),
         Sort(field="updated_at", order="desc"),
@@ -395,7 +394,6 @@ def test_sort_default_and_fields_with_tiebreak() -> None:
     expected = [b, c] if b.id < c.id else [c, b]
     assert [x.id for x in out_default][:2] == [x.id for x in expected]
 
-    # By name asc (case-insensitive)
     n1 = create_item_from_create({"name": "Äfter"})
     n2 = create_item_from_create({"name": "alpha"})
     n3 = create_item_from_create({"name": "Bravo"})

@@ -59,9 +59,7 @@ async def test_returns_and_sends_error_when_validation_fails() -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
-    # Envelope should have been sent as well
     assert conn.last == res
-    # Context data should include op and relevant fields
     data = res["error"].get("data", {})
     assert data.get("op") == "item_set_quantity"
     assert data.get("quantity") == -1

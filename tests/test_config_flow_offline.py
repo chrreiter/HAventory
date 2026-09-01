@@ -64,7 +64,6 @@ async def test_single_instance_guard_aborts(monkeypatch) -> None:
 
     flow = HAventoryConfigFlow()
 
-    # Simulate existing entries
     monkeypatch.setattr(flow, "_async_current_entries", lambda: [object()], raising=False)
 
     result = await flow.async_step_user(user_input=None)
@@ -93,7 +92,6 @@ async def test_user_step_creates_entry(monkeypatch) -> None:
 
     flow = HAventoryConfigFlow()
 
-    # No current entries
     monkeypatch.setattr(flow, "_async_current_entries", lambda: [], raising=False)
 
     result = await flow.async_step_user(user_input={})

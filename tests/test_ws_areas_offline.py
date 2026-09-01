@@ -18,7 +18,6 @@ async def test_ws_areas_list_returns_registry_entries() -> None:
 
     hass = ws_hass()
 
-    # Seed HA's area registry stub
     reg = ar.async_get(hass)
     reg._add("a1", "Garage")  # type: ignore[attr-defined]
     reg._add("a2", "Office")  # type: ignore[attr-defined]
