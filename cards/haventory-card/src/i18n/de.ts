@@ -226,7 +226,6 @@ export const de: CompleteDictionary = {
 
   'hv.sheet.documentAdded': 'hinzugefügt {when}',
   'hv.sheet.openPhoto': '{photo} öffnen',
-  'hv.sheet.lowStockAt': 'niedriger Bestand ab {threshold}',
   'hv.sheet.updatedValue': '{when} · v{version}',
   'hv.sheet.markDone': 'Erledigen',
   'hv.sheet.markDoneTitle':

@@ -259,7 +259,6 @@ export const en = {
   // hv-detail-sheet.
   'hv.sheet.documentAdded': 'added {when}',
   'hv.sheet.openPhoto': 'Open {photo}',
-  'hv.sheet.lowStockAt': 'low-stock at {threshold}',
   'hv.sheet.updatedValue': '{when} · v{version}',
   'hv.sheet.markDone': 'Mark done',
   'hv.sheet.markDoneTitle': 'Mark this reminder done and move it to its next occurrence',
