@@ -1,9 +1,9 @@
-"""Integration: reminders end to end, and the v7 store that boots into v8.
+"""Integration: reminders end to end.
 
 The offline suite covers the projection, the validation and the command
-handlers. What only exists here is the round trip through a real `Store` — a
-v7 payload migrating on boot and being written back — and the reminders reaching
-`calendar.haventory` as events a calendar dashboard would draw.
+handlers. What only exists here is the round trip through a real `Store` and the
+reminders reaching `calendar.haventory` as events a calendar dashboard would
+draw.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import uuid
 from datetime import timedelta
 
 from custom_components.haventory.runtime import find_runtime
-from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
+from custom_components.haventory.storage import STORAGE_KEY
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
@@ -23,61 +23,6 @@ REMINDER_ITEM_ID = str(uuid.uuid4())
 _HAMMER_QUANTITY = 2
 _EVERY_THREE_MONTHS = 3
 _OCCURRENCES_IN_A_YEAR = 4
-
-
-def _store_without_the_reminder_fields() -> dict:
-    """A production-shaped payload from before either reminder field existed."""
-
-    return {
-        "schema_version": 7,
-        "items": {
-            PLAIN_ITEM_ID: {
-                "id": PLAIN_ITEM_ID,
-                "name": "Hammer",
-                "quantity": 2,
-                "status": "ok",
-                "attachments": [],
-            },
-            REMINDER_ITEM_ID: {
-                "id": REMINDER_ITEM_ID,
-                "name": "HVAC filter",
-                "quantity": 1,
-                "status": "ok",
-                "inspection_date": "2027-01-01",
-                "attachments": [],
-            },
-        },
-        "locations": {},
-        "statuses": {},
-    }
-
-
-async def test_a_store_without_the_reminder_fields_boots_with_them_filled_in(
-    hass: HomeAssistant, hass_storage: dict, setup_entry
-) -> None:
-    """The upgrade an existing install takes, against a real `Store`."""
-
-    hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "key": STORAGE_KEY,
-        "data": _store_without_the_reminder_fields(),
-    }
-
-    await setup_entry()
-
-    persisted = hass_storage[STORAGE_KEY]["data"]
-    assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
-    for item_id in (PLAIN_ITEM_ID, REMINDER_ITEM_ID):
-        assert persisted["items"][item_id]["reminder_date"] is None
-        assert persisted["items"][item_id]["reminder_anchor"] is None
-        assert persisted["items"][item_id]["reminder_interval"] is None
-
-    # Nothing else moved: the upgrade adds nulls and takes nothing away.
-    repo = find_runtime(hass).repository
-    assert repo.get_item(PLAIN_ITEM_ID).name == "Hammer"
-    assert repo.get_item(PLAIN_ITEM_ID).quantity == _HAMMER_QUANTITY
-    assert repo.get_item(REMINDER_ITEM_ID).inspection_date == "2027-01-01"
-    assert repo.get_item(REMINDER_ITEM_ID).reminder_date is None
 
 
 async def test_a_reminder_set_over_websocket_survives_a_reload(
@@ -249,36 +194,6 @@ async def test_an_evening_bump_west_of_greenwich_keeps_the_calendar_day(
 
     assert result["success"], result
     assert result["result"]["reminder_date"] == "2026-08-15"
-
-
-async def test_a_store_without_anchors_gains_one_for_every_reminder_it_holds(
-    hass: HomeAssistant, hass_storage: dict, setup_entry
-) -> None:
-    """The upgrade an install with reminders on it takes, through a real `Store`.
-
-    Before the anchor was stored, `reminder_date` was both the next occurrence
-    and the series origin, because a bump wrote one over the other. Nothing can recover how far
-    such a series had already drifted, and nothing needs to: from here on it is
-    measured from wherever it currently stands.
-    """
-
-    data = _store_without_the_reminder_fields()
-    data["schema_version"] = 8
-    data["items"][REMINDER_ITEM_ID]["reminder_date"] = "2026-09-30"
-    data["items"][REMINDER_ITEM_ID]["reminder_interval"] = {"unit": "months", "count": 1}
-    data["items"][PLAIN_ITEM_ID]["reminder_date"] = None
-    data["items"][PLAIN_ITEM_ID]["reminder_interval"] = None
-    hass_storage[STORAGE_KEY] = {"version": 1, "key": STORAGE_KEY, "data": data}
-
-    await setup_entry()
-
-    persisted = hass_storage[STORAGE_KEY]["data"]
-    assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert persisted["items"][REMINDER_ITEM_ID]["reminder_anchor"] == "2026-09-30"
-    assert persisted["items"][PLAIN_ITEM_ID]["reminder_anchor"] is None
-    assert find_runtime(hass).repository.get_item(REMINDER_ITEM_ID).reminder_anchor == (
-        "2026-09-30"
-    )
 
 
 async def test_a_bumped_month_end_series_keeps_its_day_across_a_reload(

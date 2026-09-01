@@ -204,8 +204,9 @@ async def _async_load_repository(
     """Read the store into a repository, or stop setup and say why in Repairs.
 
     Four conditions end setup here. Two are refusals about the whole file —
-    written by a newer build, or carrying a `schema_version` that is not a
-    number — and one is about rows inside it this build cannot read; each puts
+    stamped with a schema version this build cannot read, or carrying a
+    `schema_version` that is not a number — and one is about rows inside it
+    this build cannot read; each puts
     a card in Settings → Repairs beside the entry's error state, and only the
     last is fixable. The fourth, a store that cannot be read at all right now,
     is transient and gets a retry rather than a card.
@@ -216,13 +217,13 @@ async def _async_load_repository(
         _log_storage_health(payload, schema_version=store.schema_version)
     except SchemaDowngradeError as exc:
         LOGGER.error(
-            "Refusing to set up against storage written by a newer HAventory version",
+            "Refusing to set up against storage whose schema version this build cannot read",
             extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
             exc_info=True,
         )
         _create_refusal_issue(hass, ISSUE_SCHEMA_DOWNGRADE, exc, store_key=store.key)
         # ConfigEntryError, not ConfigEntryNotReady: retrying cannot teach this build
-        # a newer schema, and the message reaches the user in the entry's error state.
+        # another schema, and the message reaches the user in the entry's error state.
         raise ConfigEntryError(str(exc)) from exc
     except CorruptSchemaVersionError as exc:
         LOGGER.error(

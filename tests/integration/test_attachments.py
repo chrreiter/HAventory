@@ -721,47 +721,6 @@ async def test_setup_sweeps_a_tile_an_earlier_encoder_generation_wrote(
     assert not current.exists()
 
 
-async def test_a_store_without_attachment_lists_boots_with_them_filled_in(
-    hass: HomeAssistant, hass_storage: dict, hass_ws_client, setup_entry
-) -> None:
-    """The upgrade an install written before the field takes, through a real `Store`.
-
-    The write-back to the real ``Store`` is only observable here — and so is the
-    fact that a household's own status survives it, both on disk and on the wire.
-    """
-
-    item_id = "3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f"
-    stored_statuses = {
-        "ok": {"slug": "ok", "label": "OK", "order": 0, "color": "green", "icon": "check"},
-        "lent_out": {"slug": "lent_out", "label": "Lent out", "order": 9},
-    }
-    hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "key": STORAGE_KEY,
-        "data": {
-            "schema_version": 5,
-            "items": {item_id: {"id": item_id, "name": "Ladder", "status": "lent_out"}},
-            "locations": {},
-            "statuses": stored_statuses,
-        },
-    }
-
-    await setup_entry()
-
-    persisted = hass_storage[STORAGE_KEY]["data"]
-    assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert persisted["items"][item_id]["attachments"] == []
-    # The vocabulary crosses as it stands: nothing added to a store that has one.
-    assert set(persisted["statuses"]) == set(stored_statuses)
-    # The definition loaded before the item loop, so the slug was not coerced.
-    assert find_runtime(hass).repository.get_item(item_id).status == "lent_out"
-
-    ws = await hass_ws_client(hass)
-    await ws.send_json({"id": 1, "type": "haventory/config"})
-    config = await ws.receive_json()
-    assert {s["slug"] for s in config["result"]["statuses"]} == {"ok", "lent_out"}
-
-
 async def test_a_pdf_round_trips_as_a_manual_and_can_be_retitled(
     hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:

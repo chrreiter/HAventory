@@ -1205,9 +1205,10 @@ def validate_reminder_rules(
 def load_reminder_anchor(value: object, *, reminder_date: str | None) -> str | None:
     """Read a stored series anchor, falling back to the date it belongs to.
 
-    Tolerant, the way `load_reminder_interval` is: every store written before v9
-    carries no anchor, and a reminder that has never been bumped has one equal to
-    its date anyway — so "absent" and "equal" have to reach the same answer.
+    Tolerant, the way `load_reminder_interval` is: a store written before the
+    anchor existed carries none, and a reminder that has never been bumped has
+    one equal to its date anyway — so "absent" and "equal" have to reach the
+    same answer.
 
     An anchor *after* its date describes no series this build can walk (the
     occurrences would all start beyond the date they are supposed to lead to), so

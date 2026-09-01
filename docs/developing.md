@@ -200,11 +200,11 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
 - `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`, `services.yaml`.
 - Store: `entry.runtime_data.store` with a versioned schema and safe writes. The schema is
   at **1**, and the load fills in every field a store predates rather than stepping it
-  through versions. A store written by a **newer** version is refused (setup fails with an
-  "upgrade HAventory" message) and never rewritten, so a rollback cannot relabel data the
-  running build cannot read. The one exception is a closed set — the stamps 2 through 9,
-  used before the collapse to 1 — which `migrations.adopt_dev_schema` takes in and
-  restamps for one release; `import_export` accepts the same set, and both go together.
+  through versions. A store stamped above 1 is refused and never rewritten, so a rollback
+  cannot relabel data the running build cannot read. Two refusals, because there are two
+  ways out: the stamps 2 through 9 are this project's own from before the collapse to 1,
+  and a 0.8.x build is what reads one; anything above them was written by a newer
+  HAventory. `import_export` draws the same line on a document's `schema_version`.
 - Persistence architecture:
   - **WebSocket / service handlers**: immediate saves via `async_persist_repo` — storage
     errors propagate to clients as `storage_error`.

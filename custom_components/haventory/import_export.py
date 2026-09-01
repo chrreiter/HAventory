@@ -65,7 +65,7 @@ from typing import Any, Literal
 
 from .const import INTEGRATION_VERSION
 from .exceptions import ValidationError
-from .migrations import ADOPTABLE_SCHEMA_VERSIONS
+from .migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
 from .models import (
     DEFAULT_ITEM_STATUS,
     EMPTY_LOCATION_PATH,
@@ -311,16 +311,21 @@ def _parse_envelope(
         errors.append(_err("schema_version", "missing schema_version"))
     elif not isinstance(sv, int) or isinstance(sv, bool):
         errors.append(_err("schema_version", "schema_version must be an integer"))
-    # A document stamped inside `ADOPTABLE_SCHEMA_VERSIONS` reads as newer than
-    # this build and is taken in anyway, for the one release that set exists:
-    # every export written before the schema collapsed carries such a stamp,
-    # the pre-upgrade backup included, and the item and location shapes under it
-    # are the shapes validated field by field below.
-    elif (
-        current_schema_version is not None
-        and sv > current_schema_version
-        and sv not in ADOPTABLE_SCHEMA_VERSIONS
-    ):
+    # Two refusals above the current version, because they have two different
+    # ways out. A document stamped inside `PRE_COLLAPSE_SCHEMA_VERSIONS` was
+    # written by this project before the schema was collapsed to 1, and only a
+    # 0.8.x build still reads it — so the way to this build is through one,
+    # never through an upgrade.
+    elif current_schema_version == 1 and sv in PRE_COLLAPSE_SCHEMA_VERSIONS:
+        errors.append(
+            _err(
+                "schema_version",
+                f"document schema version {sv} predates the collapse to "
+                f"{current_schema_version} and no newer build reads it; open it on "
+                "HAventory 0.8.x and export again",
+            )
+        )
+    elif current_schema_version is not None and sv > current_schema_version:
         errors.append(
             _err(
                 "schema_version",

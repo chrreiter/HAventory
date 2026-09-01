@@ -67,12 +67,6 @@ button above opens your own Home Assistant and does steps 1 and 2 for you.
 5. Reload the browser page once (Ctrl/Cmd+Shift+R), so the card reaches the tab you already
    had open.
 
-**Upgrading an install from before 0.8.0?** The stored schema was renumbered to 1 in that
-release. Your existing data is adopted in place on the first start — there is nothing to
-export, import or convert. Still, take a JSON export first (⋮ → **Export backup**): if
-anything about the upgrade surprises you, the export is your way back, because HAventory
-refuses to read a store written by a schema it does not know.
-
 HACS installs **released versions only**: it downloads the `haventory.zip` attached to a
 GitHub release, which already contains the built card. Installing from the default branch is
 deliberately not offered — the card bundle is a build artifact and is not in git, so a

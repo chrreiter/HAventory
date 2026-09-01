@@ -1,10 +1,10 @@
 """Offline tests for the per-item status field (ok / missing / needs_repair).
 
 What the field means, wherever the meaning is decided rather than served: the
-model's creation defaults, validation and filtering, the load-time fill that
-gives it to an item written before it existed, tolerant loading of such
-payloads, the repository round-trip, import/export, the service schemas, and the
-live status set a household can extend. The repository and WebSocket layers keep their own
+model's creation defaults, validation and filtering, tolerant loading of a
+payload written before the field existed, the repository round-trip,
+import/export, the service schemas, and the live status set a household can
+extend. The repository and WebSocket layers keep their own
 homes in ``test_repository_statuses_offline.py`` and
 ``test_ws_statuses_offline.py``.
 """
@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory import import_export as ie
-from custom_components.haventory import migrations
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
     DEFAULT_ITEM_STATUS,
@@ -142,66 +141,49 @@ def test_load_state_tolerates_missing_and_unknown_status() -> None:
 
 
 # -----------------------------
-# The load-time fill
+# The load path
 # -----------------------------
 
 
-def _payload_written_before_the_field() -> dict:
-    return {
-        "schema_version": 4,
-        "items": {
-            "a": {"id": "a", "name": "Hammer"},
-            "b": {"id": "b", "name": "Drill", "status": "needs_repair"},
-            "c": {"id": "c", "name": "Wrench", "status": "shattered"},
-        },
-        "locations": {},
-    }
-
-
-def test_adopt_backfills_and_coerces_status() -> None:
-    adopted = migrations.adopt_dev_schema(_payload_written_before_the_field())
-    items = adopted["items"]
-    assert items["a"]["status"] == "ok"
-    assert items["b"]["status"] == "needs_repair"
-    # Nothing in the store names this one, so it reads as the default.
-    assert items["c"]["status"] == "ok"
-
-
-def test_adopt_is_idempotent() -> None:
-    once = migrations.adopt_dev_schema(_payload_written_before_the_field())
-    twice = migrations.adopt_dev_schema(once)
-    assert twice == once
-
-
-def test_a_store_with_no_stamp_arrives_with_a_status_and_a_version() -> None:
-    payload = {"schema_version": 0, "items": {"a": {"id": "a", "name": "Hammer"}}}
-    migrated = migrations.adopt_dev_schema(
-        migrations.migrate(payload, from_version=0, to_version=CURRENT_SCHEMA_VERSION)
-    )
-    assert migrated["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert migrated["items"]["a"]["status"] == "ok"
-    assert migrated["locations"] == {}
-
-
 @pytest.mark.asyncio
-async def test_domain_store_fills_in_the_status_on_load() -> None:
-    """A store written before the field existed loads with every status filled in."""
+async def test_a_store_written_before_the_field_loads_with_every_status() -> None:
+    """An item with no stored status reads as the default, and one naming a slug
+    the store does not define reads as it too.
+
+    Nothing rewrites the rows on the way in, so the tolerance has to be in the
+    read itself — otherwise a store written before the field existed reaches the
+    repository with items carrying no status at all.
+    """
 
     hass = HomeAssistant()
-    key = "test_status_fill_on_load"
+    key = "test_status_on_load"
     store = DomainStore(hass, key=key)
     raw_store = HAStore(hass, 1, key)
-    await raw_store.async_save(_payload_written_before_the_field())
+    plain, flagged, unknown = (
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+        "33333333-3333-4333-8333-333333333333",
+    )
+    await raw_store.async_save(
+        {
+            "schema_version": 0,
+            "items": {
+                plain: {"id": plain, "name": "Hammer"},
+                flagged: {"id": flagged, "name": "Drill", "status": "needs_repair"},
+                unknown: {"id": unknown, "name": "Wrench", "status": "shattered"},
+            },
+            "locations": {},
+        }
+    )
 
-    loaded = await store.async_load()
-    assert loaded["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert loaded["items"]["a"]["status"] == "ok"
-    assert loaded["items"]["b"]["status"] == "needs_repair"
+    repo = Repository.from_state(await store.async_load())
 
-    # The filled-in payload was persisted back, not just returned.
-    on_disk = await raw_store.async_load()
-    assert on_disk["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert on_disk["items"]["a"]["status"] == "ok"
+    by_name = {item.name: item for item in repo._items_by_id.values()}
+    assert by_name["Hammer"].status == "ok"
+    assert by_name["Drill"].status == "needs_repair"
+    assert by_name["Wrench"].status == "ok"
+    # The store predates the collection too, so the built-ins are what it gets.
+    assert sorted(repo.status_slugs()) == ["missing", "needs_repair", "ok"]
 
 
 # -----------------------------

@@ -495,10 +495,9 @@ With a filter on the request, each category and tag entry also carries `matching
   empty. Envelope problems (bad/missing versions, malformed `items`/`locations`, a
   `schema_version` newer than supported), invalid entities, duplicate ids, and broken
   references (e.g. an item's `location_id` with no matching location) all surface here.
-  One closed set of versions is the exception to "newer than supported": 2 through 9, the
-  stamps this project used before the schema was collapsed to 1. Every export taken on a
-  build before the collapse carries one of them and imports cleanly. That exception lives
-  for one release and is removed with the store-side adopter it belongs to.
+  "Newer than supported" is two errors, not one: a stamp of 2 through 9 is one this project
+  used before the schema was collapsed to 1, which no newer build reads, so the message
+  says to open the document on HAventory 0.8.x and export again rather than to upgrade.
   A document is held to what `Repository.load_state` accepts, not to the write path's input
   caps: the rules every release has enforced — the 120-character name limit, canonical
   timestamps, the `due_date` ⇔ `checked_out` invariant, every date's calendar validity
