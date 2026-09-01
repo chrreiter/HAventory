@@ -1224,11 +1224,6 @@ class Repository:
         if not has_indexed_filter:
             return None
 
-        # Defensive: with an indexed filter present the loop above either
-        # returned early or appended at least one candidate set.
-        if not candidate_sets:
-            return None
-
         # Sort by size to intersect smallest sets first (optimization)
         candidate_sets.sort(key=len)
 
