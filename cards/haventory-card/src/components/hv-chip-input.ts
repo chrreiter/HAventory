@@ -102,7 +102,6 @@ export class HVChipInput extends LitElement {
   @property({ attribute: false }) values: string[] = [];
   @property({ attribute: false }) suggestions: string[] = [];
   @property({ type: String }) placeholder = t('hv.chipInput.placeholder');
-  @property({ type: Number }) maxSuggestions = 3;
 
   @state() private _draft = '';
 
@@ -125,7 +124,7 @@ export class HVChipInput extends LitElement {
     return this.suggestions
       .filter((s) => !this.values.includes(s.toLowerCase()))
       .filter((s) => !needle || s.toLowerCase().includes(needle))
-      .slice(0, this.maxSuggestions);
+      .slice(0, 3);
   }
 
   render() {

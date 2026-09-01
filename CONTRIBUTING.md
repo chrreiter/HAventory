@@ -84,7 +84,7 @@ plus `actionlint`, `hassfest`, HACS validation, CodeQL, and dependency review.
   test can assert on the answer, on what the handler pushed on the connection,
   or on both. A card component test mounts through `mountComponent` from
   `cards/haventory-card/src/test.utils.ts` and reads it with `q` / `all` /
-  `settle` / `componentCss` / `ownCss` from the same place — never a per-file
+  `settle` / `componentCss` from the same place — never a per-file
   copy, which is how the mount helpers drifted into dropping half the mock
   config.
 - **Conventional Commits** for commit messages *and PR titles* (a CI check

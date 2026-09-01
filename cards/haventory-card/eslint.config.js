@@ -4,13 +4,10 @@ import tsParser from '@typescript-eslint/parser';
 import tsPlugin from '@typescript-eslint/eslint-plugin';
 
 export default [
-  // Ignore generated and vendor directories
   { ignores: ['coverage/**', 'www/**', 'dist/**', 'node_modules/**'] },
 
-  // Base JS recommended rules
   js.configs.recommended,
 
-  // TypeScript support
   {
     files: ['**/*.ts'],
     languageOptions: {
@@ -35,7 +32,6 @@ export default [
     }
   },
 
-  // Test globals (Vitest)
   {
     files: ['src/**/*.test.ts'],
     languageOptions: {
@@ -52,13 +48,11 @@ export default [
       }
     },
     rules: {
-      // Loosen strictness for test files to keep tests concise
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }]
     }
-  }
-  ,
-  // Test utilities
+  },
+
   {
     files: ['src/test.utils.ts'],
     rules: {

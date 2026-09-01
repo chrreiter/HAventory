@@ -57,7 +57,6 @@ export const tokens = css`
     --hv-warn: light-dark(#b26b00, #ffb74d);
     --hv-warn-bg: light-dark(#fff4e0, rgba(255, 167, 38, 0.14));
     --hv-warn-deep: light-dark(#7a4d00, #ffb74d);
-    --hv-warn-border: light-dark(#e0c98f, rgba(255, 167, 38, 0.4));
     --hv-amber: #ffa726;
     /* Ink for text laid directly on --hv-amber. That fill is one fixed hue in
        both themes, so what reads on it is fixed too — a light-dark() pair here

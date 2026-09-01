@@ -1260,19 +1260,6 @@ export function componentCss(tag: string): string {
 }
 
 /**
- * A component's *own* block — the last fragment, after the shared ones.
- *
- * The distinction decides what a `not.toMatch` proves: against
- * {@link componentCss} it says "nothing draws this", which a shared fragment
- * would falsify; against this it says "this component does not restate what the
- * shared fragment already gives it".
- */
-export function ownCss(tag: string): string {
-  const sheets = sheetsOf(tag);
-  return String(sheets[sheets.length - 1].cssText).replace(/\s+/g, ' ');
-}
-
-/**
  * A component's style fragments, in the order it lists them.
  *
  * The fragments themselves rather than their text, so a test can assert that a
