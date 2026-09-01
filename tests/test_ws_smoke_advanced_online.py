@@ -1,11 +1,16 @@
-import os
-
-import aiohttp
 import pytest
 
-from online_helpers import expect_result, id_counter, open_ws
+from online_helpers import (
+    destructive,
+    expect_result,
+    id_counter,
+    open_ws,
+    purge_items,
+    purge_locations,
+    requires_online,
+)
 
-pytestmark = pytest.mark.online
+pytestmark = [pytest.mark.online, requires_online]
 
 
 BASELINE_ITEMS_COUNT = 3
@@ -13,62 +18,16 @@ BASELINE_LOCATIONS_COUNT = 3
 AFTER_MIXED_ITEMS_COUNT = 2
 
 
-async def _purge_items(ws: aiohttp.ClientWebSocketResponse, next_id) -> None:
-    qid = next_id()
-    await ws.send_json({"id": qid, "type": "haventory/item/list"})
-    lst = await expect_result(ws, qid)
-    items = (lst.get("result") or {}).get("items") or []
-    for it in items:
-        did = next_id()
-        await ws.send_json(
-            {
-                "id": did,
-                "type": "haventory/item/delete",
-                "item_id": it.get("id"),
-                "expected_version": int(it.get("version", 1)),
-            }
-        )
-        _ = await expect_result(ws, did)
-
-
-async def _purge_locations(ws: aiohttp.ClientWebSocketResponse, next_id) -> None:
-    qid = next_id()
-    await ws.send_json({"id": qid, "type": "haventory/location/list"})
-    lst = await expect_result(ws, qid)
-    locs = lst.get("result") or []
-    locs_sorted = sorted(
-        [loc for loc in locs if isinstance(loc, dict)],
-        key=lambda loc: len((loc.get("path") or {}).get("name_path") or []),
-        reverse=True,
-    )
-    for loc in locs_sorted:
-        did = next_id()
-        await ws.send_json(
-            {"id": did, "type": "haventory/location/delete", "location_id": loc.get("id")}
-        )
-        _ = await expect_result(ws, did)
-
-
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
-@pytest.mark.skipif(
-    os.environ.get("HAV_ONLINE_DESTRUCTIVE") != "1",
-    reason=(
-        "destructive online test (purges ALL HAventory data on the target HA); "
-        "set HAV_ONLINE_DESTRUCTIVE=1 only against a disposable instance"
-    ),
-)
+@destructive
 async def test_p3_bulk_operations_mixed_and_all_failure() -> None:  # noqa: PLR0915
     """Phase 3: mixed-success bulk then all-failure bulk; verify stats and per-op outcomes."""
     session, ws = await open_ws()
     next_id = id_counter()
     try:
         # Clean slate
-        await _purge_items(ws, next_id)
-        await _purge_locations(ws, next_id)
+        await purge_items(ws, next_id)
+        await purge_locations(ws, next_id)
 
         # Create base locations: Garage, Pantry, Pantry/Shelf A
         cid = next_id()

@@ -28,15 +28,10 @@ import pytest
 from custom_components.haventory import events as events_mod
 from custom_components.haventory import media as media_mod
 from custom_components.haventory import ws as ws_mod
-from custom_components.haventory.repository import Repository
 from homeassistant.core import HomeAssistant
 
 from runtime_helpers import repo_of, runtime_of, ws_hass
 from ws_helpers import ws_send
-
-
-def _repo_of(hass: HomeAssistant) -> Repository:
-    return repo_of(hass)
 
 
 @pytest.mark.asyncio
@@ -543,7 +538,7 @@ async def test_attachment_add_refuses_a_file_whose_bytes_are_not_an_image(upload
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
-    assert _repo_of(hass).get_item(created["result"]["id"]).attachments == []
+    assert repo_of(hass).get_item(created["result"]["id"]).attachments == []
 
 
 @pytest.mark.asyncio
@@ -652,7 +647,7 @@ async def test_attachment_remove_deletes_the_file_and_the_item_delete_cascades(u
     added = await ws_send(
         hass, 2, "haventory/item/attachment/add", item_id=item_id, file_id="upload-1"
     )
-    meta = _repo_of(hass).get_item(item_id).attachments[0]
+    meta = repo_of(hass).get_item(item_id).attachments[0]
     path = media_mod.attachment_path(media_mod.media_root(hass), item_id, str(meta.id), meta.mime)
     assert path.is_file()
 
@@ -668,7 +663,7 @@ async def test_attachment_remove_deletes_the_file_and_the_item_delete_cascades(u
     # And deleting the item takes its remaining files with it.
     upload("upload-2")
     await ws_send(hass, 4, "haventory/item/attachment/add", item_id=item_id, file_id="upload-2")
-    second = _repo_of(hass).get_item(item_id).attachments[0]
+    second = repo_of(hass).get_item(item_id).attachments[0]
     second_path = media_mod.attachment_path(
         media_mod.media_root(hass), item_id, str(second.id), second.mime
     )
@@ -812,7 +807,7 @@ async def test_attachment_reorder_refuses_a_partial_list(upload) -> None:
 
 def _hass_with_items(count: int = 3) -> HomeAssistant:
     hass = ws_hass()
-    repo = _repo_of(hass)
+    repo = repo_of(hass)
     for i in range(count):
         repo.create_item({"name": f"Item {i}"})
     return hass

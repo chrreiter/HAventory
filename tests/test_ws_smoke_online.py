@@ -6,22 +6,19 @@ import aiohttp
 import pytest
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 
-from online_helpers import expect_result, id_counter, open_ws, ws_url_from_base
-
-pytestmark = pytest.mark.online
-
-# Destructive online tests PURGE ALL HAventory data on the target instance.
-# They are opt-in twice: RUN_ONLINE=1 *and* HAV_ONLINE_DESTRUCTIVE=1, and must
-# only ever be pointed at a disposable HA. Everything not marked destructive is
-# self-contained: it creates uniquely-named entities and cleans them up.
-DESTRUCTIVE_ONLINE = os.environ.get("HAV_ONLINE_DESTRUCTIVE") == "1"
-destructive = pytest.mark.skipif(
-    not DESTRUCTIVE_ONLINE,
-    reason=(
-        "destructive online test (purges ALL HAventory data on the target HA); "
-        "set HAV_ONLINE_DESTRUCTIVE=1 only against a disposable instance"
-    ),
+from online_helpers import (
+    destructive,
+    expect_result,
+    find_in_tree,
+    id_counter,
+    open_ws,
+    purge_items,
+    purge_locations,
+    requires_online,
+    ws_url_from_base,
 )
+
+pytestmark = [pytest.mark.online, requires_online]
 
 
 def _unique(name: str) -> str:
@@ -59,10 +56,6 @@ async def _delete_location_quiet(
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 async def test_ws_areas_list_and_location_area_field_presence() -> None:
     """Verify areas/list shape and that location serialization includes area_id."""
 
@@ -92,10 +85,6 @@ async def test_ws_areas_list_and_location_area_field_presence() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 async def test_ws_ping_and_version() -> None:
     """Connect to HA WS and validate ping + version."""
     base = os.environ.get("HA_BASE_URL", "http://localhost:8123")
@@ -127,10 +116,6 @@ async def test_ws_ping_and_version() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 @destructive
 async def test_ws_smoke_phase0_phase1_locations() -> None:  # noqa: PLR0915
     """End-to-end online smoke: Phase 0 and Phase 1 (locations CRUD and validation).
@@ -142,8 +127,8 @@ async def test_ws_smoke_phase0_phase1_locations() -> None:  # noqa: PLR0915
     next_id = id_counter()
     try:
         # Purge any existing items/locations to ensure a clean dataset
-        await _purge_items(ws, next_id)
-        await _purge_locations(ws, next_id)
+        await purge_items(ws, next_id)
+        await purge_locations(ws, next_id)
 
         # Phase 0.1: ping
         await ws.send_json({"id": 101, "type": "haventory/ping", "echo": "hi"})
@@ -206,17 +191,7 @@ async def test_ws_smoke_phase0_phase1_locations() -> None:  # noqa: PLR0915
         tres = tree.get("result")
         assert isinstance(tres, list) and len(tres) >= 1
 
-        # find Garage node somewhere in the forest
-        def _dfs(nodes, target_id):
-            for n in nodes:
-                if n.get("id") == target_id:
-                    return n
-                child = _dfs(n.get("children") or [], target_id)
-                if child:
-                    return child
-            return None
-
-        garage_node = _dfs(tres, garage_id)
+        garage_node = find_in_tree(tres, garage_id)
         assert garage_node is not None
         child_ids = [c.get("id") for c in garage_node.get("children") or []]
         assert shelf_id in child_ids  # Shelf A under Garage
@@ -236,10 +211,6 @@ async def test_ws_smoke_phase0_phase1_locations() -> None:  # noqa: PLR0915
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 async def test_ws_location_rename() -> None:
     """Rename a test-created location (self-contained, cleans up after itself)."""
     session, ws = await open_ws()
@@ -266,10 +237,6 @@ async def test_ws_location_rename() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 async def test_ws_location_move_subtree() -> None:
     """Move a test-created subtree under another test-created root (self-contained)."""
     session, ws = await open_ws()
@@ -297,17 +264,7 @@ async def test_ws_location_move_subtree() -> None:
         roots = tree2.get("result")
         assert isinstance(roots, list)
 
-        # Reuse local DFS
-        def _dfs(nodes, target_id):
-            for n in nodes:
-                if n.get("id") == target_id:
-                    return n
-                child = _dfs(n.get("children") or [], target_id)
-                if child:
-                    return child
-            return None
-
-        basement_node = _dfs(roots, basement_id)
+        basement_node = find_in_tree(roots, basement_id)
         assert basement_node is not None
         b_child_ids = [c.get("id") for c in basement_node.get("children") or []]
         assert garage_id in b_child_ids
@@ -320,10 +277,6 @@ async def test_ws_location_move_subtree() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 async def test_ws_location_move_subtree_negative_self() -> None:
     """Negative: cannot move a location under itself (self-contained)."""
     session, ws = await open_ws()
@@ -352,10 +305,6 @@ async def test_ws_location_move_subtree_negative_self() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 async def test_ws_location_move_subtree_negative_descendant() -> None:
     """Negative: cannot move a location under a descendant (self-contained)."""
     session, ws = await open_ws()
@@ -390,10 +339,6 @@ async def test_ws_location_move_subtree_negative_descendant() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 async def test_ws_location_delete_leaf_and_get_not_found() -> None:
     """Delete a test-created leaf and verify get returns not_found (self-contained)."""
     session, ws = await open_ws()
@@ -422,10 +367,6 @@ async def test_ws_location_delete_leaf_and_get_not_found() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 @destructive
 async def test_ws_final_stats_after_all_location_ops() -> None:
     """Final stats: expect 2 locations remaining (Basement + Garage West)."""
@@ -433,7 +374,7 @@ async def test_ws_final_stats_after_all_location_ops() -> None:
     next_id = id_counter()
     try:
         # Make this test independent: purge all locations, then create exactly two roots
-        await _purge_locations(ws, next_id)
+        await purge_locations(ws, next_id)
         # Create 'Basement'
         bid = next_id()
         await ws.send_json({"id": bid, "type": "haventory/location/create", "name": "Basement"})
@@ -452,56 +393,15 @@ async def test_ws_final_stats_after_all_location_ops() -> None:
         await session.close()
 
 
-# -----------------------------
-# Phase 2 — Items WebSocket tests (online)
-# -----------------------------
-
 L_GARAGE = "Garage"
 L_WORKSHOP = "Workshop"
 L_SHELF_A = "Shelf A"
 
 
-async def _purge_items(ws: aiohttp.ClientWebSocketResponse, next_id) -> None:
-    qid = next_id()
-    await ws.send_json({"id": qid, "type": "haventory/item/list"})
-    lst = await expect_result(ws, qid)
-    items = (lst.get("result") or {}).get("items") or []
-    for it in items:
-        did = next_id()
-        await ws.send_json(
-            {
-                "id": did,
-                "type": "haventory/item/delete",
-                "item_id": it.get("id"),
-                "expected_version": int(it.get("version", 1)),
-            }
-        )
-        _ = await expect_result(ws, did)
-
-
-async def _purge_locations(ws: aiohttp.ClientWebSocketResponse, next_id) -> None:
-    qid = next_id()
-    await ws.send_json({"id": qid, "type": "haventory/location/list"})
-    lst = await expect_result(ws, qid)
-    locs = lst.get("result") or []
-    # deepest-first by path length
-    locs_sorted = sorted(
-        [loc for loc in locs if isinstance(loc, dict)],
-        key=lambda loc: len((loc.get("path") or {}).get("name_path") or []),
-        reverse=True,
-    )
-    for loc in locs_sorted:
-        did = next_id()
-        await ws.send_json(
-            {"id": did, "type": "haventory/location/delete", "location_id": loc.get("id")}
-        )
-        _ = await expect_result(ws, did)
-
-
 async def _ensure_phase2_base(ws: aiohttp.ClientWebSocketResponse, next_id) -> dict[str, str]:
     # Purge everything
-    await _purge_items(ws, next_id)
-    await _purge_locations(ws, next_id)
+    await purge_items(ws, next_id)
+    await purge_locations(ws, next_id)
 
     # Create base locations: Garage, Workshop, Shelf A under Garage
     gid = next_id()
@@ -530,10 +430,6 @@ async def _ensure_phase2_base(ws: aiohttp.ClientWebSocketResponse, next_id) -> d
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 @destructive
 async def test_p2_item_create_defaults_and_rich() -> None:
     """Create default item and rich item with all optionals."""
@@ -577,10 +473,6 @@ async def test_p2_item_create_defaults_and_rich() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 @destructive
 async def test_p2_item_get_update_delete_recreate() -> None:
     """Get, update (version++), delete (with expected), then re-create."""
@@ -643,10 +535,6 @@ async def test_p2_item_get_update_delete_recreate() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 @destructive
 async def test_p2_item_move_between_locations() -> None:
     """Move item to Workshop; verify location_path and version bump."""
@@ -681,10 +569,6 @@ async def test_p2_item_move_between_locations() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 @destructive
 async def test_p2_quantity_operations() -> None:
     """Invalid set_quantity (-1) then adjust +2 and set=5."""
@@ -752,10 +636,6 @@ async def test_p2_quantity_operations() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 @destructive
 async def test_p2_checkout_checkin_and_due_dates() -> None:
     """Check-out with due_date, check-in, then negative due_date without checked_out."""
@@ -821,10 +701,6 @@ async def test_p2_checkout_checkin_and_due_dates() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 @destructive
 async def test_p2_tags_and_custom_fields() -> None:
     """Add/remove tags; set/unset custom fields; verify normalization and result."""
@@ -909,10 +785,6 @@ async def test_p2_tags_and_custom_fields() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 @destructive
 async def test_p2_low_stock_threshold_and_stats() -> None:
     """Set threshold and cross it to verify low_stock_count in stats."""
@@ -981,10 +853,6 @@ async def test_p2_low_stock_threshold_and_stats() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 @destructive
 async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
     """Exercise list filters, sorts, and cursor pagination."""
@@ -1099,10 +967,6 @@ async def test_p2_list_filters_sorts_pagination() -> None:  # noqa: PLR0915
 
 
 @pytest.mark.asyncio
-@pytest.mark.skipif(
-    os.environ.get("RUN_ONLINE") != "1" or not os.environ.get("HA_TOKEN"),
-    reason="RUN_ONLINE!=1 or HA_TOKEN missing",
-)
 @destructive
 async def test_p2_optimistic_concurrency_conflict() -> None:
     """Demonstrate conflict on stale expected_version with error envelope."""

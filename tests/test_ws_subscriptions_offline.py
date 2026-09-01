@@ -225,11 +225,7 @@ async def test_location_filters_subtree_and_direct_only() -> None:
         location_id=root_id,
     )
     assert item2["success"] is True
-    ids = {
-        m.get("id")
-        for m in conn.messages
-        if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-    }
+    ids = conn.subscription_ids(topic="items")
     assert ids == {SUB_ID_SUBTREE}
 
     # A payload-less items event has no item to match a filter against, so it
@@ -239,11 +235,7 @@ async def test_location_filters_subtree_and_direct_only() -> None:
     # watching one shelf has just as much reason to re-list as any other.
     conn.messages.clear()
     broadcast_event(hass, topic="items", action="updated", payload=None)
-    ids = {
-        m.get("id")
-        for m in conn.messages
-        if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-    }
+    ids = conn.subscription_ids(topic="items")
     assert ids == {SUB_ID_SUBTREE, SUB_ID_DIRECT}
     delivered = next(m for m in conn.messages if m.get("type") == "event")["event"]
     assert "item" not in delivered
@@ -269,13 +261,6 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
     )
     await ws_send(hass, SUB_ID_EVERYTHING, "haventory/subscribe", conn=conn, topic="items")
 
-    def item_event_ids() -> set[object]:
-        return {
-            m.get("id")
-            for m in conn.messages
-            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-        }
-
     # A missed inspection reaches both subscriptions.
     conn.messages.clear()
     late = await ws_send(
@@ -287,7 +272,7 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
         inspection_date=day_offset(-1),
     )
     assert late["success"] is True
-    assert item_event_ids() == {SUB_ID_INSPECTION, SUB_ID_EVERYTHING}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_INSPECTION, SUB_ID_EVERYTHING}
 
     # Due today is not late yet, so the filtered subscription hears nothing —
     # the same strictly-before boundary the filter and the count use.
@@ -301,13 +286,13 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
         inspection_date=day_offset(0),
     )
     assert due_today["success"] is True
-    assert item_event_ids() == {SUB_ID_EVERYTHING}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_EVERYTHING}
 
     # And an item with no inspection date at all never matches.
     conn.messages.clear()
     undated = await ws_send(hass, 5, "haventory/item/create", conn=conn, name="Bucket")
     assert undated["success"] is True
-    assert item_event_ids() == {SUB_ID_EVERYTHING}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_EVERYTHING}
 
 
 @pytest.mark.asyncio
@@ -336,20 +321,17 @@ async def test_area_filter_constrains_delivered_events() -> None:
         hass, SUB_ID_NULL_AREA, "haventory/subscribe", conn=conn, topic="items", area_id=None
     )
 
-    def item_event_ids() -> set[object]:
-        return {
-            m.get("id")
-            for m in conn.messages
-            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-        }
-
     # An item deep under the kitchen inherits its area and reaches all three.
     conn.messages.clear()
     inside = await ws_send(
         hass, 1, "haventory/item/create", conn=conn, name="Whisk", location_id=str(drawer.id)
     )
     assert inside["success"] is True
-    assert item_event_ids() == {SUB_ID_KITCHEN, SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
+    assert conn.subscription_ids(topic="items") == {
+        SUB_ID_KITCHEN,
+        SUB_ID_EVERYTHING,
+        SUB_ID_NULL_AREA,
+    }
 
     # An item in another area does not.
     conn.messages.clear()
@@ -357,7 +339,7 @@ async def test_area_filter_constrains_delivered_events() -> None:
         hass, 2, "haventory/item/create", conn=conn, name="Spanner", location_id=str(garage.id)
     )
     assert outside["success"] is True
-    assert item_event_ids() == {SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
 
     # Neither does an item with no location: its effective_area_id is null, and a
     # null resolves to no area rather than to every area.
@@ -365,7 +347,7 @@ async def test_area_filter_constrains_delivered_events() -> None:
     orphan = await ws_send(hass, 3, "haventory/item/create", conn=conn, name="Loose screw")
     assert orphan["success"] is True
     assert orphan["result"]["effective_area_id"] is None
-    assert item_event_ids() == {SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_EVERYTHING, SUB_ID_NULL_AREA}
 
 
 @pytest.mark.asyncio
@@ -397,25 +379,18 @@ async def test_area_and_location_filters_are_conjunctive() -> None:
         hass, SUB_ID_UNUSED_AREA, "haventory/subscribe", conn=conn, topic="items", area_id="attic"
     )
 
-    def item_event_ids() -> set[object]:
-        return {
-            m.get("id")
-            for m in conn.messages
-            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-        }
-
     conn.messages.clear()
     await ws_send(
         hass, 1, "haventory/item/create", conn=conn, name="Whisk", location_id=str(drawer.id)
     )
-    assert item_event_ids() == {SUB_ID_BOTH}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_BOTH}
 
     # Right area, wrong location.
     conn.messages.clear()
     await ws_send(
         hass, 2, "haventory/item/create", conn=conn, name="Jar", location_id=str(shelf.id)
     )
-    assert item_event_ids() == set()
+    assert conn.subscription_ids(topic="items") == set()
 
 
 @pytest.mark.asyncio
@@ -802,35 +777,28 @@ async def test_location_ids_scopes_a_subscription_to_several_locations() -> None
         location_ids=[str(garage.id)],
     )
 
-    def item_event_ids() -> set[object]:
-        return {
-            m.get("id")
-            for m in conn.messages
-            if m.get("type") == "event" and m.get("event", {}).get("topic") == "items"
-        }
-
     conn.messages.clear()
     await ws_send(
         hass, 1, "haventory/item/create", conn=conn, name="Whisk", location_id=str(drawer.id)
     )
-    assert item_event_ids() == {SUB_ID_TWO}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_TWO}
 
     conn.messages.clear()
     await ws_send(
         hass, 2, "haventory/item/create", conn=conn, name="Spanner", location_id=str(garage.id)
     )
-    assert item_event_ids() == {SUB_ID_TWO, SUB_ID_DIRECT, SUB_ID_UNION}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_TWO, SUB_ID_DIRECT, SUB_ID_UNION}
 
     conn.messages.clear()
     await ws_send(
         hass, 3, "haventory/item/create", conn=conn, name="Jam", location_id=str(cellar.id)
     )
-    assert item_event_ids() == {SUB_ID_UNION}
+    assert conn.subscription_ids(topic="items") == {SUB_ID_UNION}
 
     # An item with no location reaches no location-scoped subscription.
     conn.messages.clear()
     await ws_send(hass, 4, "haventory/item/create", conn=conn, name="Loose screw")
-    assert item_event_ids() == set()
+    assert conn.subscription_ids(topic="items") == set()
 
 
 @pytest.mark.asyncio
