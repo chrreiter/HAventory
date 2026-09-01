@@ -85,11 +85,10 @@ traceback from `custom_components.haventory` is always a finding (exit criterion
 **2. Objective consistency check.** `haventory/health` (`ws.py`) reports the `counts`
 aggregates over the **in-memory** repository. Called *after a restart* they describe what
 was rehydrated from disk, which makes them the corruption check for this plan — a count
-that dropped is data that did not come back. Prefer it over eyeballing the JSON. The
-index cross-checks that used to ride along here run in the test suite instead
-(`tests/repository_invariants.py`), so `issues` is empty on every build and `healthy` is
-always `true`: **the counts are the whole oracle**, and a scenario that says "healthy"
-means nothing. Read `counts` and compare the numbers.
+that dropped is data that did not come back. Prefer it over eyeballing the JSON. The index
+cross-checks live in the test suite (`tests/repository_invariants.py`), so `issues` is
+empty on every build and `healthy` is always `true`: **the counts are the whole oracle**,
+and a scenario that says "healthy" means nothing. Read `counts` and compare the numbers.
 
 ```bash
 HAVENTORY_IGNORE_ENV_FILE=1 HA_BASE_URL=http://<host>:8123 HA_TOKEN=<token> \
