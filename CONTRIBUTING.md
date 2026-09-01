@@ -306,7 +306,7 @@ and it is sticky: left in place, every later release repeats the same version.
 
 ### The version files
 
-Six files carry the version, each rewritten by a different release-please
+Seven files carry the version, each rewritten by a different release-please
 mechanism, so each can fail to update independently:
 
 | File | Mechanism |
@@ -314,12 +314,18 @@ mechanism, so each can fail to update independently:
 | `pyproject.toml` | `release-type: python` |
 | `custom_components/haventory/manifest.json` | `extra-files` json + jsonpath |
 | `cards/haventory-card/package.json` | `extra-files` json + jsonpath |
+| `cards/haventory-card/package-lock.json` | `extra-files` json + **two** jsonpaths |
 | `custom_components/haventory/const.py` (`INTEGRATION_VERSION`) | `extra-files` generic + an `x-release-please-version` line annotation |
 | `uv.lock` | `extra-files` toml + jsonpath |
 | `.release-please-manifest.json` | release-please's own bookkeeping |
 
 `INTEGRATION_VERSION` is the one users see: `haventory/version` returns it and
 every export document is stamped with it.
+
+The card's lockfile takes two entries because npm writes the root package's
+version twice — at the top level and again under `packages[""]` — and one
+`extra-files` entry rewrites one jsonpath. A copy left behind is rewritten by
+the next `npm install`, which dirties the working tree for whoever runs it.
 
 `uv.lock` is the odd one: nothing reads its version, but uv writes `pyproject`'s
 version into the project's own `[[package]]` entry, so a lockfile left at the
@@ -331,7 +337,7 @@ because release-please's TOML updater parses string values into
 matches nothing, and release-please treats no match as a warning rather than an
 error. That is the failure this check exists to make loud.
 
-`scripts/check_version_consistency.py` compares all six (and, on a tag build,
+`scripts/check_version_consistency.py` compares all seven (and, on a tag build,
 the tag) — run it locally any time:
 
 ```bash
