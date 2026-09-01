@@ -148,33 +148,49 @@ session may assume unless the owner says otherwise before M1 starts.
    owner actually runs — holds, and **M1 may start**. The reasoning stays for the record:
    the deletion is safe only after the owner's own store has been read once by 0.8.x
    (`Adopting … from_version=9 to_version=1`; the dev instance crossed on 2026-08-30).
-2. **Decided: four of the Dependabot six are pulled for v0.9.0; two wait for after the
-   HACS release.** Taken 2026-09-01 from each PR's CI and failure logs (all six are
-   dev-scope; the evidence is in the 2026-09-01 comment on #236):
+2. **Decided and done (2026-09-01): four of the Dependabot six were pulled for v0.9.0,
+   two wait for after the HACS release.** Taken from each PR's CI and failure logs (all
+   six are dev-scope; the evidence is in the 2026-09-01 comment on #236) and executed the
+   same day — **after M1 and M2 had merged, before M3**, rather than inside M3 where the
+   first draft put them.
+
+   Ideally they would have gone in ahead of the sweeps: these are the linter, the
+   formatter and the test DOM the swept code is judged by, and a bump landing afterwards
+   asks a fresh ruff and a fresh eslint to re-judge ~2,000 freshly rewritten lines on a
+   tree whose review is over. That was checked rather than assumed — both gates were run
+   on the combined result (backend 1,359 passed, ruff 0.16.4 / format / mypy clean;
+   frontend 2,042 passed, eslint clean under the new jsdom) — and nothing the sweeps
+   wrote falls foul of the newer rules. What was done:
    - **#665** (codeql-action 4.37.7 → 4.37.9) and **#653** (the card-deps group: seven
-     minor/patch bumps) — every check green. **Merge as-is**; the base has moved since
-     their runs, so the full gate is re-run at merge time.
-   - **#657** (the python-dev group) — 1,407 tests pass; the only two failures are the
-     pin sweep itself: Dependabot bumped ruff 0.16.3 → 0.16.4 in `pyproject.toml` but not
-     the pinned copy `test_toolchain_pins.py` enumerates in `.pre-commit-config.yaml`.
-     **Merge, with one companion commit on the branch** aligning that pin — the failing
-     tests name every copy.
-   - **#654** (jsdom 26 → 30) — 2,014 of 2,015 tests pass; the one failure is
+     minor/patch bumps — eslint, typescript-eslint, vitest, vite, playwright, coverage) —
+     every check green, no change needed. **Merged** (`8ce193c`, `006ebee`).
+   - **#657** (the python-dev group) — 1,407 tests passed; the only two failures were the
+     pin sweep itself, since Dependabot moved ruff 0.16.3 → 0.16.4 in `pyproject.toml` and
+     `requirements-dev.txt` but not the two copies `test_toolchain_pins.py` also
+     enumerates. **Merged with a companion commit** aligning `.pre-commit-config.yaml`'s
+     hook rev and the lint command in `test-haventory/SKILL.md`; the backend gate then ran
+     clean on ruff 0.16.4 (1,409 passed, format and mypy clean).
+   - **#654** (jsdom 26 → 30) — 2,014 of 2,015 tests passed; the failure was
      `hv-overflow-menu.test.ts`'s two `:scope > …` lookups, which jsdom 30 answers with
-     `null`. `:scope` appears nowhere in production code, so the bump touches tests only.
-     **Merge, with one companion commit** rewriting the two lookups to assert the same
-     fact (a direct-child check), never weakening them.
-   - **#655** (typescript 6.0.3 → 7.0.2) — **wait**: `npm ci` fails with ERESOLVE;
+     `null`. **Merged with a companion commit** reading the children directly instead.
+     Worth recording: only one of the two assertions failed — the other, "no direct-child
+     `.meta`", had turned into a test that would pass whatever the row rendered, so the
+     bump exposed a silently dead assertion rather than merely breaking a working one.
+     `:scope` appears nowhere in production code; the whole blast is in that one spec.
+   - **#655** (typescript 6.0.3 → 7.0.2) — **waits.** `npm ci` fails with ERESOLVE:
      `@typescript-eslint` peer-requires `typescript >=4.8.4 <6.1.0`, so the toolchain
-     itself refuses TS 7 and nothing in-repo fixes that honestly. Close it, and add a
-     dependabot ignore rule for typescript majors (npm section, in the style of the uv
-     section's), with the lift condition in the comment: typescript-eslint supporting
-     TS 7.
-   - **#656** (@types/node 22 → 26) — **wait**: the typings would describe Node 26 while
-     `engines` floors at `^22.13.0 || >=24` and CI runs a 22/24 matrix, and typecheck is
-     already red under them (TS2550 `.at()` lib errors). Close it, and add the matching
-     ignore rule for @types/node majors; both lift together with a deliberate Node-floor
-     bump — post-release housekeeping, not this milestone's.
+     refuses TS 7 before a test runs and nothing in-repo fixes that honestly. **Closed**,
+     with a dependabot ignore rule for typescript majors carrying the lift condition:
+     typescript-eslint declaring support for 7.
+   - **#656** (@types/node 22 → 26) — **waits.** The typings would describe a runtime
+     newer than the card supports (`engines` floors at `^22.13.0 || >=24`, CI runs a 22/24
+     matrix) and `tsc` already rejects them (TS2550 `.at()` lib errors). **Closed**, with
+     the matching ignore rule; it lifts with a deliberate Node-floor bump, which moves
+     `engines`, the CI matrix and `test_toolchain_pins.py` together.
+
+   Both ignore rules are scoped to `semver-major`, so minor and patch releases of either —
+   and a security update for either — still open a pull request. Left for the owner: none;
+   no Dependabot PR is open at the start of M1.
 3. **Repository visibility — recommended: flip after V, with #196.** The sweep exists so
    the first public read happens after it lands; the earliest sensible flip is after M1–M3
    merge, and #236 stage 7 puts it at the HACS release. Flipping earlier costs the sweep
@@ -269,8 +285,7 @@ M1  backend + tests: the adopter deletion (#668); the backend      4 PRs   cloud
 M2  card: the copy-id fold; the dead surface; the comment          3 PRs   cloud   (may run beside M1)
     and spec-preamble sweep (#686)
 M3  docs/process: the wrong claims; one home per fact and          3 PRs   cloud   (after M1 and M2)
-    the residue; the release-testing-plan rows (#687);           + 4 merges,
-    the Dependabot six (§2 item 2: 4 merge, 2 close)               2 closes
+    the residue; the release-testing-plan rows (#687)
 L1  local: deploy main, every regimen, the "Validate locally"              local, Fable 5
     blocks; then the owner merges release-please's 0.9.0 PR
 V   the validation run (#276) against v0.9.x per                            local, Fable 5
@@ -283,7 +298,7 @@ Serial order: **M1, M2, M3, L1, V.** M2 may run beside M1 — the card sessions 
 backend file and every subagent branches from `origin/main` at the moment it starts. M3
 runs after both: its skills PR restates test counts the M1 cuts change, and its
 CLAUDE.md/CONTRIBUTING edits should land on the swept tree. Ten planned PRs plus six
-Dependabot merges plus whatever L1 and V ship. A session starts when the previous one in
+whatever L1 and V ship. A session starts when the previous one in
 the order has merged everything.
 
 ## 5. Rules every session follows
@@ -338,7 +353,10 @@ its closing comment on #236.
 - **Dictionaries are edited by nobody.** No i18n key moves in this milestone; #686's fold
   keeps every `data-testid`, class and key as-is. A session that needs a new key has left
   the milestone's scope and says so.
-- **Only M3 touches Dependabot PRs. Release-please PRs are never touched.**
+- **Dependabot and release-please PRs are never touched.** The six open at the start of
+  the milestone were resolved before M1 (§2 item 2); anything Dependabot opens while the
+  milestone runs waits for the owner, so no session merges a dependency bump under a
+  sweep it is in the middle of reviewing.
 - `tests/test_min_ha_version.py`, `test_toolchain_pins.py` and
   `test_release_version_consistency.py` stay exactly as they are.
 
@@ -445,9 +463,9 @@ build with the bundle size unchanged (±1 kB) in the PR body.
 and the organize dialog — the flash appears and reverts on each; nothing else should have
 changed on any surface.
 
-### 6.M3 — docs and process: the claims, the homes, the residue, the Dependabot six
+### 6.M3 — docs and process: the claims, the homes, the residue
 
-Three PRs, in order, then the Dependabot merges. Start condition: M1 and M2 merged (the
+Three PRs, in order. Start condition: M1 and M2 merged (the
 skills PR restates test counts M1 changes), no V0.9.0 PR open.
 
 1. **"docs: the plan tests what ships"** — refs #687, refs #276. The
@@ -478,23 +496,16 @@ skills PR restates test counts M1 changes), no V0.9.0 PR open.
    pointer; the `op_id` and #507 corrections in the two SKILL.md files and
    `frontend_architecture.md`.
 
-Then, **no subagents**: the Dependabot six per §2 item 2's decided verdict. Merge #665 and
-#653 with the full gate re-run on the moved base; push the ruff-pin companion commit onto
-#657 and merge; push the `:scope` test rewrite onto #654 and merge; close #655 and #656
-with the recorded reasons, adding the two dependabot ignore rules (npm section, each with
-its lift condition in the comment) in this session's residue PR.
-
 No phacc. **Live checks the master runs**: `test_docs_links_offline.py`,
 `test_docs_contract_offline.py`, `test_docs_examples_offline.py` and the backend gate
-green; the README rendered once on the branch (the badges resolve); after each Dependabot
-merge, the full frontend gate.
+green; the README rendered once on the branch (the badges resolve).
 
 **Validate locally** (L1): `[browser]` the README and `docs/installing.md` read once as a
 stranger — the install steps agree with each other; nothing else is user-visible.
 
 ### 6.L1 — local validation, then the release
 
-Start condition: M1–M3 merged, the Dependabot six resolved, no V0.9.0 PR open. Local
+Start condition: M1–M3 merged, no V0.9.0 PR open. Local
 session on the owner's host, Fable 5 at `xhigh`; implementer subagents for what it finds,
 one per defect.
 
@@ -557,8 +568,13 @@ proceed with #196's submission — V1.0.0's milestone, a new session, not this p
   it describes.
 - **The release-testing-plan rows first in M3**: V executes that document; its rows must
   be right before anything else competes for attention.
-- **The Dependabot six inside M3, last**: they are dev-scope and mechanical, and putting
-  them behind the docs PRs keeps the gate-run cost to one session.
+- **The Dependabot six out of M3**: they move the linter, the formatter and the test DOM,
+  which makes them inputs to the sweeps rather than housekeeping after them — the earlier
+  they land, the fewer freshly rewritten lines a new rule can surprise. In the event they
+  went in between M2 and M3, once the sweeps had already merged, so the combined result
+  was gated explicitly instead of assumed (§2 item 2). Two of the four earned their keep
+  on the way in: the ruff bump needed two more pin sites than Dependabot can see, and
+  jsdom 30 exposed an assertion that had been passing for the wrong reason.
 - **L1 before the release, V after it**: L1 validates the tree the tag is cut from; V
   validates the released artifact through the install path a stranger uses — the same
   split #276's restagings kept insisting on.
@@ -654,11 +670,8 @@ full (§2 items 2 and 4, §3, §5, §6.M3, §8.S), then CLAUDE.md and CONTRIBUTI
 merged, no V0.9.0 PR open.
 
 The three PRs of §6.M3 in order, one subagent each, one at a time — the release-testing-
-plan rows first, the backend gate run before any README edit is believed. Then, yourself,
-no subagents: the Dependabot six per §2 item 2's decided verdict — merge #665 and #653
-(full gate on the moved base), push the ruff-pin commit onto #657 and merge, push the
-:scope test rewrite onto #654 and merge, close #655 and #656 with the recorded reasons and
-add the two ignore rules. Release-please PRs are never touched.
+plan rows first, the backend gate run before any README edit is believed. The Dependabot
+six were resolved before M1 (§2 item 2); Dependabot and release-please PRs are not yours.
 
 End with the six-part handover as your last message and as a comment on #236.
 ```
@@ -672,7 +685,7 @@ Assistant.
 You are local validation session L1 of the V0.9.0 plan, dev/V0_9_0_implementation.md —
 read it in full (§3, §5, §6.L1), then CLAUDE.md, CONTRIBUTING.md and
 dev/release_testing_plan.md, then every V0.9.0 comment on #236. Start condition: M1–M3
-merged, the Dependabot six resolved, no V0.9.0 PR open.
+merged, no V0.9.0 PR open.
 
 Do §6.L1's five steps in order: deploy main to the dev HA; every regimen, stopping to file
 on the first red; every "Validate locally" block, each result in a comment on the PR it

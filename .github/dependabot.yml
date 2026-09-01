@@ -17,6 +17,28 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 3
+    ignore:
+      # Two majors the toolchain around them refuses, so each arrives as a red
+      # pull request that reopens every week until something else moves first.
+      #
+      # typescript 7: `@typescript-eslint` peer-requires `typescript >=4.8.4
+      # <6.1.0`, so `npm ci` fails to resolve before a single test runs. It
+      # returns when typescript-eslint declares support for 7.
+      #
+      # @types/node 26: the typings would describe a runtime newer than the card
+      # supports — `engines` floors at Node ^22.13.0 || >=24 and CI runs a 22/24
+      # matrix — and `tsc` rejects them against that lib set today. It returns
+      # with a deliberate Node-floor bump, which moves `engines`, the CI matrix
+      # and tests/test_toolchain_pins.py together.
+      #
+      # Scoped to major version updates: minor and patch releases of both, and a
+      # security update for either, must still be able to open a pull request.
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
+      - dependency-name: "@types/node"
+        update-types:
+          - "version-update:semver-major"
     groups:
       card-deps:
         patterns: ["*"]
