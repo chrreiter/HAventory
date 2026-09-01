@@ -1,7 +1,6 @@
-"""Offline tests for haventory WebSocket areas commands.
+"""Offline tests for the `haventory/areas/*` commands.
 
-Scenarios:
-- areas/list returns registry areas (id, name) from HA stubs.
+Areas are Home Assistant's; the command reads its registry and creates nothing.
 """
 
 from __future__ import annotations

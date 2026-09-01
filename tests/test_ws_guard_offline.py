@@ -1,11 +1,8 @@
-"""Offline tests for ws_guard error handling behavior.
+"""Offline tests for `ws_guard`.
 
-Scenarios:
-- handlers return the error envelope while also attempting to send it
-- send_message raising does not prevent returning the error envelope
-- missing send_message still returns the error envelope
-- the loaded-entry refusal: answered while `LOADED`, `storage_error` when the
-  entry is gone and when it exists in any other state
+The guard answers whatever the connection does: a `send_message` that raises,
+or a connection that has none, still leaves the caller with an error envelope
+rather than an exception crossing the WebSocket layer.
 """
 
 from __future__ import annotations

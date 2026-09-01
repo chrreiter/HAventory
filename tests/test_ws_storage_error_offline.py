@@ -63,11 +63,6 @@ async def test_ws_maps_storage_error_and_logs(caplog, monkeypatch) -> None:
     assert getattr(logs[0], "op", None) == "item_create"
 
 
-# -----------------------------------------------------------------------------
-# A failing persist lets nothing onto the wire — every mutation shape
-# -----------------------------------------------------------------------------
-
-
 # One entry per distinct mutation shape in ws.py: everything that persists.
 # (command, payload builder over the seeded ids)
 MUTATIONS: list[tuple[str, str, Callable[[str, str], dict[str, Any]]]] = [
@@ -219,11 +214,6 @@ async def test_failed_persist_in_bulk_discards_the_whole_batch(monkeypatch, capl
     assert conn.events() == []
 
 
-# -----------------------------------------------------------------------------
-# A succeeding persist broadcasts only once the write has resolved
-# -----------------------------------------------------------------------------
-
-
 @pytest.mark.asyncio
 async def test_event_reaches_subscriber_only_after_the_write_resolves(monkeypatch) -> None:
     """Assert the ordering directly, not just the absence of a broadcast.
@@ -264,11 +254,6 @@ async def test_event_reaches_subscriber_only_after_the_write_resolves(monkeypatc
     assert res["success"] is True
     actions = [ev.get("action") for ev in conn.events()]
     assert actions == ["created"], "the created event must arrive once, after the write"
-
-
-# -----------------------------------------------------------------------------
-# What a failed persist still leaves behind: in-memory divergence, told to nobody
-# -----------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

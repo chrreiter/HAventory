@@ -1,12 +1,7 @@
 """Offline tests for the `haventory/reminder/*` commands.
 
-Scenarios:
-- set a one-off and a recurring reminder, and read them back on the item
-- clear one, including on an item that never had one
-- bump a recurring reminder, from the anchor and from an anchor long past
-- the refusals: no reminder to bump, a one-off with nothing to bump to,
-  an interval with no anchor, a zero count
-- optimistic concurrency: a stale `expected_version` is a `conflict`
+A bump moves the series by whole intervals measured from its anchor, so a
+series stays on its own day however far past the anchor the bump happens.
 """
 
 from __future__ import annotations
@@ -336,11 +331,6 @@ async def test_a_bump_counts_from_the_household_day_not_the_utc_one(monkeypatch)
     assert res["result"]["reminder_date"] == "2026-08-15"
 
 
-# -----------------------------
-# The series' own day, across any number of bumps
-# -----------------------------
-
-
 @pytest.mark.asyncio
 async def test_a_month_end_series_still_lands_on_the_31st_after_a_bump(monkeypatch) -> None:
     """The guarantee the projection makes, now true for a reminder somebody uses.
@@ -476,11 +466,6 @@ async def test_a_bump_answers_conflict_on_a_stale_version() -> None:
     assert res["error"]["code"] == "conflict"
 
 
-# -----------------------------
-# An ordinary edit is not a re-anchoring
-# -----------------------------
-
-
 @pytest.mark.asyncio
 async def test_an_edit_that_resends_the_same_date_leaves_the_anchor_alone(monkeypatch) -> None:
     """The whole walk: a series on the 31st survives edits landing between bumps.
@@ -614,11 +599,6 @@ async def test_an_edit_that_moves_the_date_still_re_anchors() -> None:
 
     assert moved["result"]["reminder_date"] == "2026-03-15"
     assert moved["result"]["reminder_anchor"] == "2026-03-15"
-
-
-# -----------------------------
-# Finding the reminders: sort, filter and count
-# -----------------------------
 
 
 async def _item_with_reminder(hass: HomeAssistant, name: str, date_str: str, msg_id: int) -> str:

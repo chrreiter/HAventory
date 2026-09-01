@@ -434,11 +434,6 @@ def test_list_items_total_counts_all_matches() -> None:
     assert none["items"] == []
 
 
-# -----------------------------
-# Malformed cursors
-# -----------------------------
-
-
 @pytest.mark.parametrize(
     "bad_cursor",
     [
@@ -498,10 +493,6 @@ def test_a_valid_cursor_still_pages_to_the_end() -> None:
     assert seen == [f"Item {i}" for i in range(5)]
     assert cursor is None
 
-
-# -----------------------------
-# low_stock_first pagination
-# -----------------------------
 
 GROUPED_CATALOG_SIZE = 10
 LOW_STOCK_ROWS = frozenset({2, 5, 7, 9})

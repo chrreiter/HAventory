@@ -7,15 +7,6 @@ the real connection would refuse is refused here too, before the handler body
 runs. Without it a handler can appear to tolerate input no client can send, and
 a refusal expressed purely as a schema constraint is invisible to this suite —
 neither assertable nor able to regress visibly.
-
-Scenarios:
-- a valid frame reaches the handler, carrying the schema's transformed payload
-- a missing required field, a wrong-typed field and an undeclared field are each
-  refused as `invalid_format` with the handler body never entered
-- a command declaring nothing but its type accepts no key beyond id and type
-- the id/type envelope is checked ahead of the command schema
-- a `vol.All` schema's cross-field validator refuses through the same path
-- registering a handler that carries no schema is refused outright
 """
 
 from __future__ import annotations

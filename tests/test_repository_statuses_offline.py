@@ -17,10 +17,6 @@ from custom_components.haventory.repository import Repository
 
 from repository_invariants import internal_indexes
 
-# -----------------------------
-# Creating and updating
-# -----------------------------
-
 
 def test_a_created_status_joins_the_live_vocabulary() -> None:
     repo = Repository()
@@ -78,11 +74,6 @@ def test_a_slug_cannot_be_edited() -> None:
         repo.update_status("missing", {"slug": "gone"})
 
 
-# -----------------------------
-# Reordering
-# -----------------------------
-
-
 def test_reordering_rewrites_display_order() -> None:
     repo = Repository()
 
@@ -99,11 +90,6 @@ def test_reordering_must_name_every_slug_exactly_once() -> None:
 
     with pytest.raises(ValidationError, match="every status"):
         repo.reorder_statuses(["ok", "missing", "missing"])
-
-
-# -----------------------------
-# Deleting — the only edit that can orphan an item
-# -----------------------------
 
 
 def test_the_default_status_can_never_be_deleted() -> None:
@@ -174,11 +160,6 @@ def test_reassigning_to_an_unknown_or_identical_status_is_refused() -> None:
 
     with pytest.raises(ValidationError):
         repo.delete_status("missing", reassign_to="missing")
-
-
-# -----------------------------
-# The item field the vocabulary describes
-# -----------------------------
 
 
 def test_counts_and_index_follow_status_changes() -> None:

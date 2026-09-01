@@ -49,11 +49,6 @@ def _topics(seen: list[Broadcast]) -> list[tuple[str, str]]:
     return [(topic, action) for topic, action, _payload in seen]
 
 
-# -----------------------------
-# Reading
-# -----------------------------
-
-
 @pytest.mark.asyncio
 async def test_list_returns_the_vocabulary_in_display_order() -> None:
     hass = _new_hass()
@@ -64,11 +59,6 @@ async def test_list_returns_the_vocabulary_in_display_order() -> None:
     assert [d["slug"] for d in res["result"]] == ["ok", "missing", "needs_repair"]
     assert res["result"][0]["color"] == "green"
     assert res["result"][0]["icon"] == "check"
-
-
-# -----------------------------
-# Creating and updating
-# -----------------------------
 
 
 @pytest.mark.asyncio
@@ -185,11 +175,6 @@ async def test_reorder_refuses_a_partial_list() -> None:
     assert res["error"]["code"] == "validation_error"
 
 
-# -----------------------------
-# Deleting
-# -----------------------------
-
-
 @pytest.mark.asyncio
 async def test_delete_refuses_the_default_status() -> None:
     hass = _new_hass()
@@ -265,11 +250,6 @@ async def test_delete_refuses_an_unknown_reassign_target() -> None:
     assert res["error"]["code"] == "validation_error"
 
 
-# -----------------------------
-# Subscribing
-# -----------------------------
-
-
 @pytest.mark.asyncio
 async def test_statuses_is_a_subscribable_topic() -> None:
     """Without it, a card cannot learn a status was renamed while it was open."""
@@ -289,11 +269,6 @@ async def test_an_unknown_topic_is_still_refused() -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
-
-
-# -----------------------------
-# The item field the vocabulary describes
-# -----------------------------
 
 
 @pytest.mark.asyncio

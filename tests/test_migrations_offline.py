@@ -1,11 +1,4 @@
-"""Offline tests for HAventory schema handling.
-
-Scenarios:
-- The driver stamps a payload below the current version and refuses a downgrade
-- The pre-collapse set starts right above the current version, so every member
-  reaches the refusal that names a 0.8.x build and nothing below it does
-- Corrupt payload reaches the storage layer's log with its context attached
-"""
+"""Offline tests for HAventory schema handling."""
 
 from __future__ import annotations
 
@@ -126,11 +119,6 @@ async def test_log_context_on_corrupted_payload_via_storage(
             assert getattr(rec, "to_version", None) == store.schema_version
             break
     assert found, "expected migration error log with context"
-
-
-# -----------------------------
-# The closed set
-# -----------------------------
 
 
 def test_the_pre_collapse_set_starts_right_above_the_current_schema() -> None:

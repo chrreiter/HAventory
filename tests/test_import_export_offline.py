@@ -81,11 +81,6 @@ def _seed(repo: Repository) -> dict[str, str]:
     }
 
 
-# -----------------------------
-# Export (module + WS)
-# -----------------------------
-
-
 def test_build_export_document_full() -> None:
     repo = Repository()
     ids = _seed(repo)
@@ -155,11 +150,6 @@ async def test_ws_export_unknown_filter_key_is_named() -> None:
     assert "search" in res["error"]["message"]
 
 
-# -----------------------------
-# Round-trip guarantee (unit)
-# -----------------------------
-
-
 def test_round_trip_into_empty_reproduces_data() -> None:
     source = Repository()
     _seed(source)
@@ -200,11 +190,6 @@ async def test_round_trip_via_ws_execute() -> None:
     re_export = (await ws_send(dst, 4, "haventory/export"))["result"]
     assert re_export["items"] == exported["items"]
     assert re_export["locations"] == exported["locations"]
-
-
-# -----------------------------
-# Preview classification & policies
-# -----------------------------
 
 
 def _doc_from(repo: Repository) -> dict:
@@ -286,11 +271,6 @@ def test_replace_into_empty_and_add_new_item() -> None:
     )
     assert new_id in report["items"]["add"]
     assert new_id in target["items"]
-
-
-# -----------------------------
-# Invalid documents
-# -----------------------------
 
 
 @pytest.mark.parametrize(
@@ -419,11 +399,6 @@ def test_plan_import_rejects_unknown_policy() -> None:
         ie.plan_import(repo, _doc_from(repo), policy="bogus")  # type: ignore[arg-type]
 
 
-# -----------------------------
-# WS import/execute — errors & rollback
-# -----------------------------
-
-
 @pytest.mark.asyncio
 async def test_ws_import_execute_invalid_document_is_validation_error() -> None:
     hass = _new_hass()
@@ -468,11 +443,6 @@ async def test_ws_import_execute_rolls_back_on_persist_failure() -> None:
     # State rolled back: the new item must NOT be present and counts unchanged.
     assert repo.get_counts() == before_counts
     assert "44444444-4444-4444-8444-444444444444" not in repo._items_by_id
-
-
-# -----------------------------
-# Status definitions in the document
-# -----------------------------
 
 
 def _repo_with_custom_status() -> Repository:
@@ -559,11 +529,6 @@ def test_a_malformed_status_definition_is_reported_with_its_path() -> None:
 
     assert report["valid"] is False
     assert any(e["path"] == "statuses[0]" for e in report["errors"])
-
-
-# -----------------------------
-# Attachment metadata in the document
-# -----------------------------
 
 
 def _attachment_doc(**overrides) -> dict:
@@ -709,11 +674,6 @@ async def test_import_merge_keeps_a_file_the_document_does_not_mention() -> None
     assert res["success"] is True, res
     assert [str(a.id) for a in repo.get_item(item.id).attachments] == [str(meta.id)]
     assert path.is_file()
-
-
-# -----------------------------
-# Import-side parity with the write path
-# -----------------------------
 
 
 def _item_doc(**overrides: object) -> dict:
@@ -1084,11 +1044,6 @@ def test_a_clean_round_trip_still_imports() -> None:
 
     assert report["valid"] is True, report["errors"]
     assert target is not None
-
-
-# -----------------------------
-# Name-collision warnings
-# -----------------------------
 
 
 def _rebuilt_item_doc(name: str, item_id: str = "44444444-4444-4444-8444-444444444444") -> dict:

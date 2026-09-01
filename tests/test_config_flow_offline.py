@@ -1,11 +1,9 @@
-"""Offline tests for HAventory config flow.
+"""Offline tests for the HAventory config flow and its options form.
 
-Scenarios:
-- Single-instance guard aborts with reason, and the manifest declares the same rule
-- async_step_user happy path creates entry
-- The card title is asked for at setup, normalized, and seeded into the options
-- Import path: create entry if no existing (if supported)
-- Validation errors surfaced to form (simulated)
+The translation trees are held here too: Home Assistant reads `strings.json`
+for the flow it renders and `translations/<tag>.json` for the language a
+household set, and a key present in one and missing from the other shows up as
+a raw key on a form nobody on this side of the release will see.
 """
 
 from __future__ import annotations

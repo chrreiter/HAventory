@@ -86,11 +86,6 @@ def test_cursor_returns_empty_page_when_tail_deleted() -> None:
     assert page2["next_cursor"] is None
 
 
-# -----------------------------
-# Statuses: the two data-loss traps
-# -----------------------------
-
-
 def _payload_with_custom_status() -> dict:
     """A store carrying a status this build does not seed, with items on it."""
 
@@ -184,11 +179,6 @@ def test_an_unreadable_status_definition_is_skipped_not_fatal() -> None:
 
     assert "lent_out" in repo.status_slugs()
     assert "broken" not in repo.status_slugs()
-
-
-# -----------------------------
-# Attachments
-# -----------------------------
 
 
 def test_attachments_survive_export_state_to_load_state() -> None:

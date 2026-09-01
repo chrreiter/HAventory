@@ -1,14 +1,7 @@
-"""Offline tests for HAventory storage manager.
+"""Offline tests for the HAventory store.
 
-Scenarios:
-- Initial load returns an empty dataset with correct schema_version
-- Save then load returns equal data (roundtrip)
-- Migration hook is invoked when schema_version differs
-- Migration failure raises StorageError and does not persist changes
-- A payload written by a newer schema is refused without rewriting the store
-- A payload whose schema_version is not an integer is refused, never coerced
-- A saved payload carries the stored collections and the schema number, nothing else
-- A store still carrying `_generation` loads, and the key is not read back
+A refusal must leave the file untouched: the store on disk is the household's
+only copy, and a build that cannot read it has no business rewriting it.
 """
 
 from __future__ import annotations

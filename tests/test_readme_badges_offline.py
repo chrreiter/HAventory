@@ -10,11 +10,6 @@ The Install section is held to its first element for the same reason. The My HA
 button is the only badge here that *does* something rather than reporting
 something, and it collapses the opening steps of the instructions only for a
 reader who meets it before them.
-
-Scenarios:
-- the header carries exactly the four badges, in order, each pointing where it says
-- the Install section opens with the My HA "open this repository in HACS" button
-- a fifth badge, a reordered row and a section opening with prose are all reported
 """
 
 from __future__ import annotations

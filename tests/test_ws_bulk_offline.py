@@ -1,12 +1,7 @@
-"""Offline tests for haventory/items/bulk WebSocket command.
+"""Offline tests for the `haventory/items/bulk` command.
 
-Scenarios:
-- mixed success and failure results are mapped by op_id
-- single persist when at least one operation succeeds (spy DomainStore.async_save)
-- a deleted row frees its attachment files, after the batch's one write
-- a failed write frees nothing
-- only the rows that were deleted free files
-- a row whose payload has the wrong shape fails only itself
+A batch is one write, whatever it holds: the rows are applied in memory, the
+store is saved once, and a row that fails takes only itself down.
 """
 
 from __future__ import annotations

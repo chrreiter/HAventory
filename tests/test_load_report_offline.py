@@ -257,11 +257,6 @@ def test_has_corruption_covers_every_kind(report: LoadReport, expected: bool) ->
     assert report.has_corruption is expected
 
 
-# --------------------------------------------------------------------------- #
-# The reset a load starts from
-# --------------------------------------------------------------------------- #
-
-
 def test_a_reload_leaves_exactly_what_a_fresh_repository_holds() -> None:
     """One list of fields, so neither construction path can outgrow the other.
 
@@ -300,11 +295,6 @@ def test_a_payload_that_is_not_a_dict_reports_an_empty_load() -> None:
 
     assert repo.last_load_report == LoadReport()
     assert repo.export_state()["items"] == {}
-
-
-# --------------------------------------------------------------------------- #
-# Names the load path used to invent
-# --------------------------------------------------------------------------- #
 
 
 #: Marks a key a case wants *absent* rather than set to something unreadable.

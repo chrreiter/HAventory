@@ -1,14 +1,8 @@
 """Offline tests for the Home Assistant bus events.
 
-Scenarios:
-- every item mutation fires exactly one `haventory_item_changed` with the
-  documented keys, and the action vocabulary matches the WebSocket one
-- low-stock transitions fire once on the crossing and not again below it
-- a restock fires `cleared`; deleting a low item fires `cleared` with no name
-- the snapshot seeded at setup keeps a restart from re-announcing
-- a torn-down entry makes the helper a no-op rather than a `KeyError`
-- setup tracks the instance's local midnight, the tick broadcasts the counts to
-  a `stats` subscriber, unload cancels it, and a failing broadcast is logged
+An automation trigger and a card subscription describe the same mutation, so
+the bus action is asserted against the action the WebSocket event carried
+rather than on its own.
 """
 
 from __future__ import annotations
@@ -250,11 +244,6 @@ def test_low_stock_ids_are_a_snapshot_not_the_live_index() -> None:
     assert before == frozenset({str(item.id)})
 
 
-# -----------------------------
-# Bulk rewrites and location edits
-# -----------------------------
-
-
 @pytest.mark.asyncio
 async def test_deleting_a_status_with_reassign_to_announces_every_item_it_rewrote() -> None:
     """The one mutation path that moved items and told nobody.
@@ -426,11 +415,6 @@ async def test_the_location_services_repaint_the_count_too() -> None:
     await services_mod.service_location_delete(hass, {"location_id": created["location"]["id"]})
     assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
     assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
-
-
-# -----------------------------
-# The day rollover
-# -----------------------------
 
 
 def _rollover_action(hass: HomeAssistant):

@@ -90,11 +90,6 @@ def hass_with(repo: Repository) -> HomeAssistant:
     return hass
 
 
-# --------------------------------------------------------------------------- #
-# The store
-# --------------------------------------------------------------------------- #
-
-
 def test_the_stored_payload_is_byte_for_byte_what_it_was() -> None:
     """The golden document, loaded and exported again, is the golden document.
 
@@ -155,11 +150,6 @@ def test_a_changed_entity_breaks_the_golden_comparison(collection: str) -> None:
     assert dumped(Repository.from_state(payload).export_state()) != golden_text()
 
 
-# --------------------------------------------------------------------------- #
-# The way back
-# --------------------------------------------------------------------------- #
-
-
 def test_every_stored_field_reads_back_into_the_model() -> None:
     """``from_dict`` is the inverse of ``to_dict``, field for field.
 
@@ -194,11 +184,6 @@ def test_a_path_of_the_wrong_shape_is_refused(broken: object) -> None:
 
     with pytest.raises(ValidationError):
         LocationPath.from_dict(broken)
-
-
-# --------------------------------------------------------------------------- #
-# The three surfaces
-# --------------------------------------------------------------------------- #
 
 
 def test_the_export_document_carries_the_stored_item_shape() -> None:
@@ -257,11 +242,6 @@ def test_an_item_with_no_location_serializes_a_null_area() -> None:
 
     assert payload["effective_area_id"] is None
     assert payload["location_path"] == EMPTY_LOCATION_PATH.to_dict()
-
-
-# --------------------------------------------------------------------------- #
-# The copies
-# --------------------------------------------------------------------------- #
 
 
 def test_a_serialized_payload_cannot_be_edited_back_into_the_repository() -> None:

@@ -300,10 +300,6 @@ def test_invalid_inspection_date_format_raises_validation_error() -> None:
         apply_item_update(item, ItemUpdate(inspection_date="invalid-date"))
 
 
-# -----------------------------
-# Date fields
-# -----------------------------
-
 FORMAT_REFUSAL = "{field} must be in 'YYYY-MM-DD' format"
 CALENDAR_REFUSAL = "{field} must be a valid calendar date (YYYY-MM-DD)"
 
@@ -360,11 +356,6 @@ def test_an_update_names_the_date_field_it_refused() -> None:
 def test_an_absent_optional_date_is_not_a_refusal() -> None:
     assert validate_optional_date(None, field_name="inspection_date") is None
     assert validate_optional_date("2026-02-28", field_name="inspection_date") == "2026-02-28"
-
-
-# -----------------------------
-# Attachment metadata
-# -----------------------------
 
 
 def _attachment_doc(**overrides) -> dict:
@@ -466,11 +457,6 @@ def test_a_malformed_title_or_order_is_rejected(overrides: dict, match: str) -> 
         validate_attachment_meta(_attachment_doc(**overrides))
 
 
-# -----------------------------
-# Status definitions
-# -----------------------------
-
-
 def test_the_seed_is_the_three_built_ins_in_display_order() -> None:
     seeded = seed_status_definitions()
 
@@ -570,11 +556,6 @@ def test_every_colour_has_a_light_and_a_strong_variant() -> None:
 
     assert light
     assert sorted(f"{hue}_strong" for hue in light) == sorted(strong)
-
-
-# ---------------------------------------------------------------------------
-# Reminders
-# ---------------------------------------------------------------------------
 
 
 def test_a_stored_reminder_without_an_anchor_reads_as_its_own_date() -> None:

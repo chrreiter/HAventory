@@ -11,12 +11,6 @@ Assistant this repository supports that wants the older words.
 Only automation- and script-shaped blocks are swept. ``platform:`` is still
 current YAML for an integration platform (``sensor:`` / ``- platform: template``),
 so a fenced block carrying no automation marker is left alone.
-
-Scenarios:
-- no automation example in the tracked documents carries a retired key
-- the extractor finds blocks at all, so a green run cannot mean "found none"
-- the sweep reports each retired key rather than passing over it
-- a current example passes, and integration config is not swept
 """
 
 from __future__ import annotations

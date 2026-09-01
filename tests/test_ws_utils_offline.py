@@ -1,12 +1,8 @@
-"""Offline tests for haventory WebSocket utility commands.
+"""Offline tests for `haventory/ping`, `version`, `config`, `stats` and `health`.
 
-Scenarios:
-- ping returns echo and timestamp
-- version reports integration_version and schema_version
-- config reports the configured card title, and the default when unset
-- config carries the status vocabulary and the attachment caps
-- stats returns repository counts, including the per-slug map
-- health answers the four fields it is documented to, with an empty issue list
+`config` is what the card reads before it renders anything, so every key it
+carries — the title, the pills, the status vocabulary, the attachment caps — is
+asserted here against the entry the household configured.
 """
 
 from __future__ import annotations

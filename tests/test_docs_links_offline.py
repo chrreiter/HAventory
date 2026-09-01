@@ -9,12 +9,6 @@ Only *relative* targets are checked. An `http(s)://` link is a network call and 
 bare `#anchor` is a heading this test would have to render Markdown to know about;
 both are out of scope, and saying so is what keeps the check honest about what it
 does not cover.
-
-Scenarios:
-- every relative link in the tracked documents points at a path that exists
-- the resolver reports a missing target rather than passing over it
-- the extractor finds links at all, so a green run cannot mean "found none"
-- every image the README names by raw URL is a file git actually holds
 """
 
 from __future__ import annotations
@@ -104,9 +98,6 @@ def test_the_resolver_reports_a_missing_target(tmp_path: Path) -> None:
     ]
 
 
-# --------------------------------------------------------------------------
-# Images
-# --------------------------------------------------------------------------
 #
 # `hacs.json` sets `render_readme`, so the HACS info panel renders `README.md`
 # from outside this repository, where a relative image path resolves against

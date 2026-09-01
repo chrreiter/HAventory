@@ -1,14 +1,4 @@
-"""Offline tests for haventory WebSocket item commands.
-
-Scenarios:
-- create/get/update/delete item with envelope success
-- adjust/set quantity and check_out/check_in
-- list items with pagination cursor passthrough
-- error mapping for validation/not_found/conflict with contextual data
-- optimistic concurrency: with and without expected_version
-- tag normalization, and the null tag every command taking tags refuses
-- a wrong-typed field answers validation_error and writes nothing
-- attachment add/remove: version bumps, refusals, and the file-deletion cascade
+"""Offline tests for the `haventory/item/*` commands.
 
 The attachment tests stand in for core's `file_upload` component, which the
 offline harness does not carry. Everything past the upload handle is the real
@@ -330,11 +320,6 @@ async def test_item_list_reports_filtered_total() -> None:
     empty = await ws_send(hass, 7, "haventory/item/list", filter={"q": "zzz-not-there"})
     assert empty["result"]["total"] == 0
     assert empty["result"]["items"] == []
-
-
-# -----------------------------
-# Attachments
-# -----------------------------
 
 
 @contextmanager
@@ -798,11 +783,6 @@ async def test_attachment_reorder_refuses_a_partial_list(upload) -> None:
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
-
-
-# -----------------------------
-# item/list input hardening
-# -----------------------------
 
 
 def _hass_with_items(count: int = 3) -> HomeAssistant:

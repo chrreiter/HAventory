@@ -1,12 +1,9 @@
-"""Offline tests for effective_area_id in WS item serialization.
+"""Offline tests for `effective_area_id` on a serialized item.
 
-Scenarios:
-- effective_area_id reflects first ancestor with area_id
-- effective_area_id is null when no ancestor has area_id
-- area-only changes update effective_area_id without bumping item.version
-- the subscription matcher and item/list agree on which area an item is in
-- an area_id that names no area is refused by item/list and by subscribe
-- a real but empty area answers with no items, and an area holds against `q`
+The field is derived from the location tree's nearest area-bearing ancestor, so
+re-anchoring a subtree rewrites it on every item beneath — without touching an
+item's `version`, because a location edit is not an item edit. The subscription
+matcher and `item/list` answer the same question and are held to each other.
 """
 
 from __future__ import annotations

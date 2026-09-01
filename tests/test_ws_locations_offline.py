@@ -1,11 +1,4 @@
-"""Offline tests for haventory WebSocket location commands.
-
-Scenarios:
-- create/get/update/move_subtree/delete location via WS success
-- list locations returns array
-- tree returns nested structure
-- error mapping for validation and not_found
-"""
+"""Offline tests for the `haventory/location/*` commands."""
 
 from __future__ import annotations
 

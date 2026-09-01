@@ -123,11 +123,6 @@ def hav_init(monkeypatch, tmp_path):
     return module
 
 
-# --------------------------------------------------------------------------- #
-# Serving the bundle
-# --------------------------------------------------------------------------- #
-
-
 def test_the_card_build_emits_a_single_file() -> None:
     """The card build keeps code splitting off, so the bundle has no siblings.
 
@@ -199,11 +194,6 @@ async def test_a_failed_static_route_logs_at_error(hav_init, caplog):
     assert extra_js_urls(hass) == set()
 
 
-# --------------------------------------------------------------------------- #
-# The versioned URL
-# --------------------------------------------------------------------------- #
-
-
 @pytest.mark.asyncio
 async def test_registered_url_carries_the_integration_version(hav_init):
     """The `?v=` value is the version this build declares.
@@ -221,11 +211,6 @@ async def test_registered_url_carries_the_integration_version(hav_init):
 
     assert [c["url"] for c in lovelace_data.resources.created] == [CURRENT_CARD_URL]
     assert extra_js_urls(hass) == {CURRENT_CARD_URL}
-
-
-# --------------------------------------------------------------------------- #
-# The Lovelace resource: one entry, always current
-# --------------------------------------------------------------------------- #
 
 
 @pytest.mark.asyncio
@@ -397,11 +382,6 @@ async def test_skips_when_resources_is_none(hav_init):
     assert extra_js_urls(hass) == {CURRENT_CARD_URL}
 
 
-# --------------------------------------------------------------------------- #
-# Degrading when the frontend is out of reach
-# --------------------------------------------------------------------------- #
-
-
 @pytest.mark.asyncio
 async def test_missing_frontend_component_degrades_gracefully(monkeypatch, tmp_path):
     """No `frontend` module to import => the Lovelace resource carries the card alone."""
@@ -432,11 +412,6 @@ async def test_frontend_without_a_url_manager_degrades_gracefully(hav_init):
     await hav_init.async_unload_entry(hass, ConfigEntry())
 
     assert [c["url"] for c in lovelace_data.resources.created] == [CURRENT_CARD_URL]
-
-
-# --------------------------------------------------------------------------- #
-# The sidebar panel
-# --------------------------------------------------------------------------- #
 
 
 def test_the_sidebar_icon_is_the_one_the_card_bundle_publishes() -> None:

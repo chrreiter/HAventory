@@ -192,11 +192,6 @@ def test_a_part_day_window_finds_the_all_day_event_it_overlaps() -> None:
     assert [e.summary for e in events] == ["Ladder due back"]
 
 
-# ---------------------------------------------------------------------------
-# Recurring reminders — the anchor plus its interval, expanded on read
-# ---------------------------------------------------------------------------
-
-
 def _reminder(name: str, *, anchor: str, unit: str | None = None, count: int = 1) -> Item:
     item = _item(name)
     item.reminder_date = anchor
@@ -334,11 +329,6 @@ def test_next_occurrence_after_a_one_off_is_none() -> None:
     assert next_occurrence_after(date(2026, 8, 14), None, date(2026, 8, 14)) is None
 
 
-# -----------------------------
-# Dates this build cannot read — one row's problem, not the entity's
-# -----------------------------
-
-
 def test_a_reminder_date_that_cannot_be_parsed_costs_only_that_item(caplog) -> None:
     """One unreadable row used to answer 500 for every window and every item.
 
@@ -395,11 +385,6 @@ def test_one_unreadable_value_is_reported_once_however_often_it_is_read(caplog) 
     assert len(matching) == 1
 
 
-# -----------------------------
-# A bumped series: measured from the anchor, starting at the date
-# -----------------------------
-
-
 def test_a_bumped_series_keeps_the_anchor_s_day_of_month() -> None:
     """The stored pair, projected: anchor 31 August, marked done through September.
 
@@ -442,10 +427,6 @@ def test_a_reminder_with_no_anchor_projects_from_its_own_date() -> None:
 
     assert [e.start for e in events] == [date(2026, 8, 10), date(2026, 9, 10), date(2026, 10, 10)]
 
-
-# ---------------------------------------------------------------------------
-# Summary patterns — the household's language reaches every kind
-# ---------------------------------------------------------------------------
 
 GERMAN = {
     KIND_DUE: "Rückgabe: {name}",

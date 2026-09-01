@@ -1,10 +1,8 @@
-"""Offline tests for new HAventory WebSocket item wrapper commands.
+"""Offline tests for the item commands that edit one field at a time.
 
-Scenarios:
-- add/remove tags normalize and preserve order; error mapping on invalid tags
-- update_custom_fields set/unset; validation errors for non-scalar values
-- set_low_stock_threshold updates item and affects low_stock_count
-- item/move updates location_id and returns updated item
+Tags, custom fields, the low-stock threshold and the location each have their
+own command beside `item/update`, and each answers the same envelope and the
+same refusals as the general edit does.
 """
 
 from __future__ import annotations

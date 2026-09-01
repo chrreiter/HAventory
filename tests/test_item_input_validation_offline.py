@@ -32,10 +32,6 @@ from custom_components.haventory.repository import Repository
 from runtime_helpers import ws_hass
 from ws_helpers import ws_send
 
-# -----------------------------
-# Repository / model boundary
-# -----------------------------
-
 
 @pytest.mark.parametrize("bad", [["oops"], {"a": 1}, 5, 1.5])
 def test_create_rejects_non_text_category(bad: object) -> None:
@@ -94,11 +90,6 @@ def test_low_stock_threshold_rejects_bool() -> None:
     item = repo.create_item(ItemCreate(name="Widget", quantity=1))
     with pytest.raises(ValidationError):
         repo.update_item(item.id, ItemUpdate(low_stock_threshold=True))
-
-
-# -----------------------------
-# WS surface (phantom-free, validation_error)
-# -----------------------------
 
 
 @pytest.mark.asyncio
@@ -267,11 +258,6 @@ async def test_a_reorder_still_refuses_a_list_naming_one_member_twice() -> None:
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
     assert res["error"]["message"] == "reorder must name every status exactly once"
-
-
-# -----------------------------
-# Size caps (one case at each boundary, one over)
-# -----------------------------
 
 
 @pytest.mark.parametrize(

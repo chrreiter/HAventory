@@ -493,11 +493,6 @@ def test_filter_then_sort_pipeline() -> None:
     assert [x.name for x in out] == ["B", "C"]
 
 
-# -----------------------------
-# Unknown filter and sort keys
-# -----------------------------
-
-
 def test_validate_item_filter_accepts_every_declared_key() -> None:
     """Keyed off the TypedDict, so a new filter key needs no second list.
 
@@ -566,11 +561,6 @@ def test_validate_sort_accepts_the_vocabulary_and_rejects_the_rest() -> None:
         validate_sort({"by": "name", "order": "asc"})
     with pytest.raises(ValidationError, match=r"sort must be an object"):
         validate_sort("name")
-
-
-# -----------------------------
-# Multi-select categories and locations
-# -----------------------------
 
 
 def test_filter_categories_unions_the_selection() -> None:
@@ -713,11 +703,6 @@ def test_validate_item_filter_accepts_the_multi_select_keys() -> None:
 
     assert {"categories", "location_ids"} <= set(ItemFilter.__annotations__)
     validate_item_filter({"categories": ["Tools"], "location_ids": [str(uuid.uuid4())]})
-
-
-# -----------------------------
-# Ordering by location path
-# -----------------------------
 
 
 def _located(name: str, chain: list[Location]) -> Item:

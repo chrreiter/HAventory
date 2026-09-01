@@ -1,13 +1,8 @@
-"""Offline tests for the haventory distinct-values WebSocket command.
+"""Offline tests for the `haventory/distinct_values` command.
 
-Scenarios:
-- distinct_values returns distinct categories and tags with usage counts
-- categories are grouped case-insensitively with a representative display label
-- an empty repository yields empty lists
-- a filtered request prices both facets without shrinking either list
-- an unfiltered request carries no matching_count key at all
-- unknown filter keys are refused by name; unknown/extra request fields are
-  refused before the handler runs, as real Home Assistant refuses them
+The facets are priced against a filter but never shrunk by it: a value the
+current filter excludes still has to be offered, or the filter panel can never
+be widened again.
 """
 
 from __future__ import annotations

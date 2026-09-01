@@ -1,14 +1,9 @@
-"""Offline tests for haventory WebSocket subscriptions and events.
+"""Offline tests for the subscription registry and the event fan-out.
 
-Scenarios:
-- subscribe/unsubscribe lifecycle and echo policy
-- item events delivered with correct shape; stats counts emitted on mutations
-- location_id + include_subtree filters constrain delivered events, and a
-  payload-less items event reaches every subscription regardless, because it is
-  a refetch signal rather than a per-item patch
-- inspection_overdue_only narrows item events the way item/list narrows a page
-- area_id narrows item events to the payload's own effective_area_id, and never
-  delivers an item that has no location
+A subscription's filter is applied to the payload as it stands after the
+mutation, and answers the same question the matching `item/list` filter does —
+so the two are asserted against each other rather than each against a
+hand-written expectation.
 """
 
 from __future__ import annotations

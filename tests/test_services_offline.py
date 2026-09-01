@@ -1,10 +1,8 @@
-"""Offline tests for haventory services layer.
+"""Offline tests for the `haventory.*` services.
 
-Scenarios:
-- item_create validates and creates an item; logs context on success
-- item_update applies update and logs validation errors without stack trace
-- location_create and update wire through to repository
-- the service catalog agrees across registration, `services.yaml` and `strings.json`
+A service is declared in three places — the registration in `services.py`,
+`services.yaml`, and `strings.json` — and Home Assistant reads all three, so
+the catalogue is held to itself here rather than to any one of them.
 """
 
 from __future__ import annotations
@@ -369,11 +367,6 @@ async def test_a_refusal_logs_the_fields_its_own_service_names(caplog) -> None:
     assert refusal.item_name == "   "
 
 
-# -----------------------------
-# Service responses
-# -----------------------------
-
-
 async def _seeded(hass: HomeAssistant) -> tuple[Repository, str, str]:
     """A repository holding one location and one item inside it."""
 
@@ -552,11 +545,6 @@ async def test_a_failed_persist_answers_nothing(monkeypatch) -> None:
     monkeypatch.setattr(services_mod, "async_persist_repo", _persist)
     with pytest.raises(StorageError):
         await services_mod.service_item_create(hass, {"name": "Widget"})
-
-
-# -----------------------------
-# Reminders from an automation
-# -----------------------------
 
 
 @pytest.mark.asyncio

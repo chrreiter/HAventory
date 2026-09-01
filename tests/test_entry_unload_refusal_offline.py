@@ -151,11 +151,6 @@ async def test_unloaded_service_refuses() -> None:
         await services_mod.service_item_create(hass, {"name": "After"})
 
 
-# -----------------------------
-# Telling open subscribers the topics stopped
-# -----------------------------
-
-
 @pytest.mark.asyncio
 async def test_unload_tells_open_subscribers_their_topic_stopped() -> None:
     """Every open subscription is told, on its own id and its own topic.
@@ -201,11 +196,6 @@ async def test_unload_drops_live_subscriptions() -> None:
 
     assert conn.messages == []
     assert hass.data[DOMAIN].get("subscriptions") in (None, {})
-
-
-# -----------------------------
-# Coming back
-# -----------------------------
 
 
 @pytest.mark.asyncio

@@ -4,10 +4,6 @@ Two claims in that document are lists of names the code owns: the `items/bulk`
 kinds a row may name, and the quick-filter vocabulary `haventory/config` reports.
 A list nobody checks is a promise a client author reads once and builds against,
 so each is compared here against its source of truth.
-
-Scenarios:
-- the contract's `items/bulk` kinds are the subset of the op table a row may name
-- the contract's `quick_filters` vocabulary is `QUICK_FILTER_KEYS`
 """
 
 from __future__ import annotations
