@@ -31,7 +31,11 @@ Each module documents its own traps; this is the map to which file to open.
   registration, and the sidebar panel (`panel_custom` at `/haventory`).
 - `runtime.py` — `HAventoryRuntime`, plus the two lookups whose difference decides whether
   teardown works at all: `loaded_runtime` against `find_runtime`.
-- `models.py` — `Item` / `Location`, validation, serializers, `SORT_FIELDS`.
+- `models.py` — `Item` / `Location`, the create/update/filter/sort schemas beside them, and
+  the validation every surface refuses through, so one value is refused for one reason
+  everywhere; `SORT_FIELDS` is read off `Sort`. Free of I/O.
+- `serialization.py` — one serializer per entity, shared by the WebSocket API and the
+  services so the two surfaces cannot answer with different shapes.
 - `repository.py` — the in-memory indexed source of truth, and the search normalization.
 - `storage.py` — HA `Store`, schema versioning, serialized writes, and the refusal to read a
   store a newer schema wrote. `migrations.py` is forward-only and **idempotent**.
@@ -43,6 +47,21 @@ Each module documents its own traps; this is the map to which file to open.
   the event the write earns, and the order persist / announce / answer happen in.
 - `services.py` / `services.yaml` — `haventory.*`; read the registration comment before changing
   how a handler is bound.
+- `sensor.py` — the promoted counts as entities on one HAventory device. Push only: a
+  mutation's dispatcher signal and the instance's local midnight are what move a state.
+- `media.py` — attachment bytes under `<config>/haventory/attachments/`, and the
+  authenticated view that serves them. A file's kind is decided by its own leading bytes
+  rather than by the type the browser declares, and every path is built from stored metadata
+  and re-checked for containment before a read or an unlink. Pillow is optional — without it
+  a thumbnail request serves the original.
+- `todo_bridge.py` — the low-stock set mirrored onto an HA to-do list. Every trigger runs
+  one converging pass against the persisted map of lines this integration wrote, so a
+  restart, a dropped event and an import land on the same list; a list that refuses is a
+  warning, never a rollback of the write that ran first.
+- `repairs.py` — the fix flow behind the corrupt-store refusal. Home Assistant imports it
+  when the user presses **Fix**, which is why nothing in the package imports it.
+- `diagnostics.py` — the entry's downloadable dump: aggregates only — no item or location
+  bodies, and none of the household's own words.
 - `stale_files.py` — `RETIRED_PATHS`, swept on setup because a HACS upgrade never deletes.
 - `logs.py` — `context_logger`, where every module's logger comes from.
 - `import_export.py` (**identity is the id, never the
@@ -107,8 +126,7 @@ mode** — phacc must load, and the flag makes it silently collect nothing.
   "Conventions" and "Adding a language" carry the rule and the shape.
 - **Comments encode constraints, not history**, and everything written for this repository uses
   plain words rather than stock AI-review vocabulary — issues and PR bodies included.
-  `CONTRIBUTING.md` → "Comments explain constraints, not history" is the rule in full;
-  [#231](https://github.com/chrreiter/HAventory/issues/231) sweeps the card's remaining ones.
+  `CONTRIBUTING.md` → "Comments explain constraints, not history" is the rule in full.
 - **Conventional Commits**; small, focused commits. Update `README.md` when behavior changes,
   and report out-of-scope findings under a "Follow-ups" note rather than fixing them.
 - Naming: package and domain `haventory`, services `haventory.*`, built assets served at
@@ -134,10 +152,11 @@ mode** — phacc must load, and the flag makes it silently collect nothing.
 
 **GitHub issues**, filed with the templates in `.github/ISSUE_TEMPLATE/`. Milestones say which
 release an issue is staged for, and there is no second tracker. The release that matters is the
-first public one — public repository, HACS custom repository, default-store submission — and it
-ships as **v1.0.0** at the end of the planned `0.x` milestones;
-[#236](https://github.com/chrreiter/HAventory/issues/236) is its tracker and says what is
-mandatory before it and what is staged after. There is **no feature freeze**.
+first public one — public repository, HACS custom repository, default-store submission — cut
+from whatever `0.x` carries the work it needs. `1.0.0` is deferred indefinitely and gates
+nothing ([#278](https://github.com/chrreiter/HAventory/issues/278)); the release boundary is
+the HACS listing, and [#236](https://github.com/chrreiter/HAventory/issues/236) is its tracker
+and says what is mandatory before it and what is staged after. There is **no feature freeze**.
 
 **A finding earns an issue only when it can matter in the real world.** Purely academic findings,
 and edge cases a typical install would not hit once in a hundred years, do not get filed — a
