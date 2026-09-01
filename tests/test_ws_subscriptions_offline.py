@@ -17,14 +17,11 @@ from typing import Any
 
 import pytest
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from custom_components.haventory.subscriptions import broadcast_event, open_subscriptions
-from custom_components.haventory.ws import setup as ws_setup
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 
 from date_helpers import day_offset
-from runtime_helpers import install_runtime, runtime_of
+from runtime_helpers import ws_hass
 from ws_helpers import RecordingConn, ws_send
 
 
@@ -72,9 +69,7 @@ class _SlottedHAConn:
 async def test_subscribe_receives_item_created_and_counts() -> None:
     """Subscribe to items and stats; creating an item emits item+counts events."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
 
@@ -103,9 +98,7 @@ async def test_subscribe_receives_item_created_and_counts() -> None:
 async def test_unsubscribe_stops_events() -> None:
     """Unsubscribe removes further deliveries for the subscription id."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
 
@@ -133,9 +126,7 @@ async def test_unsubscribe_stops_events() -> None:
 async def test_double_subscribe_and_unsubscribe_edge() -> None:
     """Double subscribing reuses conn bucket; unsubscribe of unknown id is benign."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
 
@@ -157,9 +148,7 @@ async def test_double_subscribe_and_unsubscribe_edge() -> None:
 async def test_subscriptions_cleanup_on_connection_close() -> None:
     """Connection close should remove all subscriptions for that connection."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
     await ws_send(hass, 901, "haventory/subscribe", conn=conn, topic="items")
@@ -176,9 +165,7 @@ async def test_subscriptions_cleanup_on_connection_close() -> None:
 async def test_location_filters_subtree_and_direct_only() -> None:
     """location_id + include_subtree filters constrain delivered item events."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
 
@@ -266,9 +253,7 @@ async def test_location_filters_subtree_and_direct_only() -> None:
 async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
     """`inspection_overdue_only` narrows item events the same way `item/list` does."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = RecordingConn()
 
@@ -329,11 +314,8 @@ async def test_inspection_overdue_filter_constrains_delivered_events() -> None:
 async def test_area_filter_constrains_delivered_events() -> None:
     """`area_id` narrows item events to the area the item's location tree is anchored to."""
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     conn = RecordingConn()
 
@@ -390,11 +372,8 @@ async def test_area_filter_constrains_delivered_events() -> None:
 async def test_area_and_location_filters_are_conjunctive() -> None:
     """`area_id` and `location_id` on one subscription both have to match."""
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     conn = RecordingConn()
 
@@ -450,11 +429,8 @@ async def test_location_area_change_emits_no_item_events() -> None:
     departure event.
     """
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     conn = RecordingConn()
 
@@ -503,11 +479,8 @@ async def test_reassigning_a_locations_own_area_announces_one_moved_event() -> N
     tells it to. Still no item events: the items themselves did not change.
     """
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
@@ -547,11 +520,8 @@ async def test_an_area_set_on_a_nested_location_is_announced_too() -> None:
     filtered to the area the tree just left has to hear about it.
     """
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
@@ -596,11 +566,8 @@ async def test_an_area_a_nested_location_already_resolves_to_is_silent() -> None
     is whether the tree ended up somewhere else, and here it did not.
     """
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
@@ -637,11 +604,8 @@ async def test_location_update_announces_what_changed_once() -> None:
     request that changes nothing announces nothing.
     """
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     reg = ar.async_get(hass)
     reg._add("garage", "Garage")  # type: ignore[attr-defined]
@@ -702,9 +666,7 @@ async def test_framework_unsubscribe_events_tears_down_subscription() -> None:
     rejection in the card.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     sub_id = 501
     conn = RecordingConn()
@@ -736,9 +698,7 @@ async def test_dedicated_unsubscribe_clears_framework_registry() -> None:
     """``haventory/unsubscribe`` also clears the HA-registry entry, keeping the two
     teardown paths symmetric (no stale callback left in ``connection.subscriptions``)."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     sub_id = 601
     conn = RecordingConn()
@@ -763,9 +723,7 @@ async def test_subscribe_on_slotted_connection_never_stamps_attribute() -> None:
     derives from the ``"haventory/cleanup"`` key already present in ``subscriptions``.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     conn = _SlottedHAConn()
 
@@ -800,11 +758,8 @@ async def test_subscribe_on_slotted_connection_never_stamps_attribute() -> None:
 async def test_location_ids_scopes_a_subscription_to_several_locations() -> None:
     """The multi-select filter's own delivery path, unioned like the query's."""
 
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
 
     conn = RecordingConn()
 
@@ -888,9 +843,7 @@ async def test_subscribe_refuses_location_ids_that_is_not_a_list_of_strings(bad:
     delivered nothing instead of being told what was wrong.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
     conn = RecordingConn()
 
     res = await ws_send(

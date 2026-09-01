@@ -26,7 +26,6 @@ from custom_components.haventory.const import (
 )
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.serialization import serialize_item
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
 from runtime_helpers import (
@@ -36,6 +35,7 @@ from runtime_helpers import (
     setup_entry,
     unload_entry,
     unload_runtime,
+    ws_hass,
 )
 from ws_helpers import ITEM_ACTIONS, RecordingConn, ws_send
 
@@ -67,10 +67,8 @@ async def test_every_websocket_item_mutation_reaches_the_bus() -> None:
     so the bus action is asserted against the one the WS event carried.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Widget", quantity=5)
     item_id = created["result"]["id"]
@@ -267,10 +265,8 @@ async def test_deleting_a_status_with_reassign_to_announces_every_item_it_rewrot
     event fires on every path.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
     repo = repo_of(hass)
     moved = [repo.create_item({"name": f"Item {n}", "status": "missing"}) for n in range(3)]
     repo.create_item({"name": "Untouched"})
@@ -309,10 +305,8 @@ async def test_renaming_a_location_repaints_without_announcing_an_item_change() 
     vocabulary has no location word.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
     repo = repo_of(hass)
     garage = repo.create_location(name="Garage")
     repo.create_item({"name": "Ladder", "location_id": str(garage.id)})
@@ -332,10 +326,8 @@ async def test_renaming_a_location_repaints_without_announcing_an_item_change() 
 async def test_a_location_save_that_changes_no_path_repaints_nothing() -> None:
     """The control: a re-save with the same name is not a reason to recount."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
     repo = repo_of(hass)
     garage = repo.create_location(name="Garage")
     hass.dispatcher_sends.clear()
@@ -352,10 +344,8 @@ async def test_a_location_save_that_changes_no_path_repaints_nothing() -> None:
 async def test_moving_a_subtree_repaints_the_paths_it_rewrote() -> None:
     """`move_subtree` rewrites every path below the moved node."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
     repo = repo_of(hass)
     garage = repo.create_location(name="Garage")
     cellar = repo.create_location(name="Cellar")
@@ -403,10 +393,8 @@ async def test_creating_and_deleting_a_location_repaints_the_count() -> None:
     edit.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
+    hass = ws_hass()
     events_mod.seed_low_stock_snapshot(hass)
-    ws_setup(hass)
     hass.dispatcher_sends.clear()
 
     created = await ws_send(hass, 1, "haventory/location/create", name="Garage")

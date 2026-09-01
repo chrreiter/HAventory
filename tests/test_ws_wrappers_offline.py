@@ -10,10 +10,8 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.ws import setup as ws_setup
-from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime
+from runtime_helpers import ws_hass
 from ws_helpers import ws_send
 
 
@@ -21,9 +19,7 @@ from ws_helpers import ws_send
 async def test_add_remove_tags_success_and_normalization() -> None:
     """add/remove tags should normalize case/whitespace and preserve order on union/subtract."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Thing")
     item_id = created["result"]["id"]
@@ -62,9 +58,7 @@ async def test_add_remove_tags_success_and_normalization() -> None:
 async def test_update_custom_fields_set_unset_and_validation_error() -> None:
     """update_custom_fields sets/unsets and rejects non-scalar values."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Widget")
     item_id = created["result"]["id"]
@@ -108,9 +102,7 @@ async def test_update_custom_fields_set_unset_and_validation_error() -> None:
 async def test_set_low_stock_threshold_affects_counts() -> None:
     """Setting low_stock_threshold should update low_stock_count via stats."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Nails", quantity=1)
     item_id = created["result"]["id"]
@@ -139,9 +131,7 @@ async def test_set_low_stock_threshold_affects_counts() -> None:
 async def test_item_move_updates_location() -> None:
     """item/move should set location_id and return updated item."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Box")
     item_id = created["result"]["id"]
@@ -157,9 +147,7 @@ async def test_item_move_updates_location() -> None:
 async def test_unknown_command_and_type_errors() -> None:
     """Unknown command type and bad payloads produce validation_error envelopes."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     # Unknown command type: ensure no handler responds
     with pytest.raises(AssertionError):

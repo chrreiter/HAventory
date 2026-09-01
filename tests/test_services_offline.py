@@ -29,7 +29,6 @@ from custom_components.haventory.exceptions import (
 )
 from custom_components.haventory.models import AttachmentMeta, iso_utc_now, new_uuid4
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import DomainStore
 from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.util import dt as dt_util
 
@@ -94,7 +93,6 @@ async def test_item_move_and_quantity_helpers() -> None:
     hass = HomeAssistant()
     repo = Repository()
     install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
 
     # Create locations and item
     await services_mod.service_location_create(hass, {"name": "Garage"})
@@ -132,8 +130,7 @@ async def test_services_persist_after_mutations(monkeypatch) -> None:
 
     hass = HomeAssistant()
     install_runtime(hass)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
+    store = runtime_of(hass).store
 
     calls = {"count": 0}
 
@@ -226,7 +223,6 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
     hass = HomeAssistant()
     repo = Repository()
     install_runtime(hass, repository=repo)
-    runtime_of(hass).store = DomainStore(hass)
 
     # Create one item to operate on
     await services_mod.service_item_create(hass, {"name": "Widget"})
@@ -722,8 +718,7 @@ async def test_item_delete_service_frees_the_files_after_the_save(monkeypatch) -
     hass = HomeAssistant()
     repo = Repository()
     install_runtime(hass, repository=repo)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
+    store = runtime_of(hass).store
     item = repo.create_item({"name": "Drill"})
     meta = _attachment_meta()
     repo.add_attachment(item.id, meta)

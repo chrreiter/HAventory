@@ -18,10 +18,9 @@ from custom_components.haventory import media as media_mod
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.models import AttachmentMeta, iso_utc_now, new_uuid4
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime
+from runtime_helpers import ws_hass
 from ws_helpers import ws_send
 
 Surface = Callable[[HomeAssistant, str], Awaitable[None]]
@@ -55,10 +54,8 @@ async def _service(hass: HomeAssistant, item_id: str) -> None:
 async def test_a_delete_frees_the_items_files_through_one_call(
     surface: Surface, monkeypatch
 ) -> None:
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
     item = repo.create_item({"name": "Drill"})
     repo.add_attachment(
         item.id,

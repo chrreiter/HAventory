@@ -17,10 +17,9 @@ from custom_components.haventory.exceptions import StorageError
 from custom_components.haventory.models import AttachmentMeta, iso_utc_now, new_uuid4
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, runtime_of
+from runtime_helpers import runtime_of, ws_hass
 from ws_helpers import ws_send
 
 
@@ -28,11 +27,8 @@ from ws_helpers import ws_send
 async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
     """Bulk should return per-op results and persist once if any success."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
+    hass = ws_hass()
+    store = runtime_of(hass).store
 
     calls = {"count": 0}
 
@@ -78,11 +74,8 @@ async def test_bulk_mixed_results_and_single_persist(monkeypatch) -> None:
 async def test_bulk_empty_and_invalid_operations_and_duplicate_ids(monkeypatch) -> None:
     """Bulk: empty returns empty results; invalid type rejected; dup op_id rejects."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
+    hass = ws_hass()
+    store = runtime_of(hass).store
 
     calls = {"count": 0}
 
@@ -170,12 +163,9 @@ def _meta() -> AttachmentMeta:
 
 
 def _hass_with_store() -> tuple[HomeAssistant, Repository, DomainStore]:
-    hass = HomeAssistant()
     repo = Repository()
-    install_runtime(hass, repository=repo)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
+    hass = ws_hass(repository=repo)
+    store = runtime_of(hass).store
     return hass, repo, store
 
 
@@ -294,9 +284,7 @@ async def test_a_row_whose_tags_are_a_string_fails_only_itself() -> None:
     had while the rest of the batch runs.
     """
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     created = await ws_send(hass, 1, "haventory/item/create", name="Chisel", tags=["tools"])
     item_id = created["result"]["id"]

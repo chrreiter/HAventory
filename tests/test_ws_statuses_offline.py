@@ -17,17 +17,14 @@ from __future__ import annotations
 import pytest
 from custom_components.haventory import events as events_mod
 from custom_components.haventory.const import DEFAULT_STATUS_COLOR, DEFAULT_STATUS_ICON
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime
+from runtime_helpers import ws_hass
 from ws_helpers import ws_send
 
 
 def _new_hass() -> HomeAssistant:
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
     return hass
 
 

@@ -38,10 +38,9 @@ from custom_components.haventory.models import (
 )
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
-from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime, repo_of, runtime_of
+from runtime_helpers import repo_of, runtime_of, ws_hass
 from ws_helpers import ws_send
 
 # The `_seed` helper always creates exactly this many items and locations.
@@ -54,9 +53,7 @@ FROM_A_NEWER_BUILD = max(PRE_COLLAPSE_SCHEMA_VERSIONS) + 1
 
 
 def _new_hass() -> HomeAssistant:
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
     return hass
 
 

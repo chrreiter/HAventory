@@ -10,12 +10,9 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.storage import DomainStore
-from custom_components.haventory.ws import setup as ws_setup
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 
-from runtime_helpers import install_runtime, repo_of, runtime_of
+from runtime_helpers import repo_of, runtime_of, ws_hass
 from ws_helpers import ws_send
 
 
@@ -23,9 +20,7 @@ from ws_helpers import ws_send
 async def test_location_crud_and_tree() -> None:
     """Create a small tree, list, get, move via WS, and delete."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     # Seed areas and create root and child
     reg = ar.async_get(hass)
@@ -59,9 +54,7 @@ async def test_location_crud_and_tree() -> None:
 async def test_ws_location_create_update_area_validation() -> None:
     """Create/update with area validation and serialization of area_id."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     # Unknown area on create → validation_error
     bad = await ws_send(hass, 1, "haventory/location/create", name="X", area_id="missing")
@@ -96,9 +89,7 @@ async def test_ws_location_create_update_area_validation() -> None:
 async def test_ws_location_create_update_area_with_non_uuid_id() -> None:
     """WS accepts non-UUID area ids when present in HA area registry."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     reg = ar.async_get(hass)
     reg._add("kitchen", "Kitchen")  # type: ignore[attr-defined]
@@ -118,20 +109,23 @@ async def test_ws_location_create_update_area_with_non_uuid_id() -> None:
 async def test_location_error_mapping() -> None:
     """Invalid operations yield validation/not_found errors."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
+
+    res = await ws_send(
+        hass, 1, "haventory/location/get", location_id="00000000-0000-4000-8000-000000000000"
+    )
+    assert res["success"] is False and res["error"]["code"] == "not_found"
+
+    res = await ws_send(hass, 2, "haventory/location/create", name="")
+    assert res["success"] is False and res["error"]["code"] == "validation_error"
 
 
 @pytest.mark.asyncio
 async def test_ws_location_mutations_persist_to_store(monkeypatch) -> None:
     """Location create/update/delete should persist via DomainStore.save."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
+    hass = ws_hass()
+    store = runtime_of(hass).store
 
     calls = {"count": 0}
 
@@ -147,26 +141,13 @@ async def test_ws_location_mutations_persist_to_store(monkeypatch) -> None:
     MIN_PERSISTS_TOTAL = 3
     assert calls["count"] >= MIN_PERSISTS_TOTAL
 
-    # Not found
-    res = await ws_send(
-        hass, 1, "haventory/location/get", location_id="00000000-0000-4000-8000-000000000000"
-    )
-    assert res["success"] is False and res["error"]["code"] == "not_found"
-
-    # Validation: create with empty name
-    res = await ws_send(hass, 2, "haventory/location/create", name="")
-    assert res["success"] is False and res["error"]["code"] == "validation_error"
-
 
 @pytest.mark.asyncio
 async def test_location_move_subtree_persists(monkeypatch) -> None:
     """move_subtree persists via DomainStore.async_save."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    store = DomainStore(hass)
-    runtime_of(hass).store = store
-    ws_setup(hass)
+    hass = ws_hass()
+    store = runtime_of(hass).store
 
     calls = {"count": 0}
 
@@ -198,9 +179,7 @@ async def test_location_move_subtree_persists(monkeypatch) -> None:
 async def test_location_tree_includes_item_counts() -> None:
     """Tree nodes carry direct and subtree item counts."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     root = await ws_send(hass, 1, "haventory/location/create", name="Garage")
     root_id = root["result"]["id"]
@@ -236,9 +215,7 @@ async def test_location_tree_includes_item_counts() -> None:
 async def test_location_tree_reports_matching_counts_for_a_filter() -> None:
     """With a filter, nodes also carry how much of themselves it keeps."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     root = await ws_send(hass, 1, "haventory/location/create", name="Garage")
     root_id = root["result"]["id"]

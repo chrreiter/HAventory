@@ -7,11 +7,9 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.ws import setup as ws_setup
-from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 
-from runtime_helpers import install_runtime
+from runtime_helpers import ws_hass
 from ws_helpers import ws_send
 
 
@@ -19,9 +17,7 @@ from ws_helpers import ws_send
 async def test_ws_areas_list_returns_registry_entries() -> None:
     """areas/list returns {areas:[{id,name}]} populated from registry."""
 
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
 
     # Seed HA's area registry stub
     reg = ar.async_get(hass)

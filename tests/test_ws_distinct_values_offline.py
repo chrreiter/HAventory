@@ -13,18 +13,15 @@ Scenarios:
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.ws import setup as ws_setup
 from custom_components.haventory.ws import ws_distinct_values
 from homeassistant.core import HomeAssistant
 
-from runtime_helpers import install_runtime
+from runtime_helpers import ws_hass
 from ws_helpers import ws_send
 
 
 def _fresh_hass() -> HomeAssistant:
-    hass = HomeAssistant()
-    install_runtime(hass)
-    ws_setup(hass)
+    hass = ws_hass()
     return hass
 
 
