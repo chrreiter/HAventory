@@ -104,6 +104,11 @@ describe('hv-chip-input', () => {
     expect(all(el, '[data-testid="chip-suggestion"]').map((s) => s.dataset.value)).toEqual(['wood']);
   });
 
+  it('offers three suggestions at most, however many are unused', async () => {
+    const el = await mount({ suggestions: ['m3', 'm4', 'm5', 'm6', 'm8'] });
+    expect(all(el, '[data-testid="chip-suggestion"]').map((s) => s.dataset.value)).toEqual(['m3', 'm4', 'm5']);
+  });
+
   it('adds a suggestion when it is clicked', async () => {
     const el = await mount({ suggestions: ['m4'] });
     const seen = changes(el);
