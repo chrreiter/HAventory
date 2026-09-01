@@ -434,8 +434,9 @@ throughout.
   try something first.
 - Deletes use an in-app confirmation, not `window.confirm`.
 - Card auto-registered as a Lovelace resource on integration setup.
-- **Note:** after first install, a browser refresh (F5 / Ctrl+Shift+R) is required for the
-  card to appear in the picker (standard for all custom cards).
+- A page already open when the card is installed or rebuilt has to be reloaded once
+  before the card is in it; an ordinary reload is enough, because the resource URL carries
+  the version and the bundle is served without a `Cache-Control` header.
 
 ## CI/CD & Ops
 
