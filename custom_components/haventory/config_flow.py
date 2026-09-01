@@ -217,7 +217,7 @@ class HAventoryOptionsFlowHandler(config_entries.OptionsFlow):
                 options[CONF_QUICK_FILTERS] = clean_quick_filters(options[CONF_QUICK_FILTERS])
             return self.async_create_entry(title="", data=options)
 
-        current = dict(getattr(self.config_entry, "options", None) or {})
+        current = dict(self.config_entry.options)
         return self.async_show_form(step_id="init", data_schema=_options_schema(current))
 
 

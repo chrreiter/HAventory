@@ -141,6 +141,6 @@ async def async_get_config_entry_diagnostics(
             # route or a panel is already in place.
             "shared_keys": sorted(str(key) for key in (hass.data.get(DOMAIN) or {})),
         },
-        "options": async_redact_data(dict(getattr(entry, "options", None) or {}), _REDACT_OPTIONS),
+        "options": async_redact_data(dict(entry.options), _REDACT_OPTIONS),
         "frontend_bundle": bundle,
     }

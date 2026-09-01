@@ -381,7 +381,7 @@ def _resolve_card_title(entry: ConfigEntry) -> str:
     Entries created before the option existed simply have no value for it, so
     an unset or blank title is the default rather than an empty heading.
     """
-    options = getattr(entry, "options", None) or {}
+    options = entry.options
     title = options.get(CONF_CARD_TITLE)
     if isinstance(title, str) and title.strip():
         return title.strip()
@@ -398,7 +398,7 @@ def _resolve_quick_filters(entry: ConfigEntry) -> list[str] | None:
     dropped rather than passed on — the card would drop them too, and dropping
     them here keeps the wire payload to the vocabulary both sides share.
     """
-    options = getattr(entry, "options", None) or {}
+    options = entry.options
     chosen = options.get(CONF_QUICK_FILTERS)
     if not isinstance(chosen, list):
         return None
@@ -714,7 +714,7 @@ def _sidebar_panel_enabled(entry: ConfigEntry) -> bool:
     panel is what makes a fresh install discoverable — so absence reads as on.
     Only an explicit opt-out turns it off.
     """
-    options = getattr(entry, "options", None) or {}
+    options = entry.options
     return bool(options.get(CONF_SIDEBAR_PANEL_ENABLED, DEFAULT_SIDEBAR_PANEL_ENABLED))
 
 
@@ -1074,7 +1074,7 @@ def _delete_refusal_issues(hass: HomeAssistant) -> None:
 def _lossy_load_allowed(entry: ConfigEntry) -> bool:
     """Whether the corrupt-store repair has been run and its reload is now arriving."""
 
-    options = getattr(entry, "options", None) or {}
+    options = entry.options
     return bool(options.get(CONF_ALLOW_LOSSY_LOAD))
 
 
@@ -1088,11 +1088,7 @@ def _clear_lossy_load_option(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if not _lossy_load_allowed(entry):
         return
 
-    options = {
-        key: value
-        for key, value in (getattr(entry, "options", None) or {}).items()
-        if key != CONF_ALLOW_LOSSY_LOAD
-    }
+    options = {key: value for key, value in entry.options.items() if key != CONF_ALLOW_LOSSY_LOAD}
     hass.config_entries.async_update_entry(entry, options=options)
 
 

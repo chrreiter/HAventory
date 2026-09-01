@@ -76,7 +76,7 @@ def summary_for(name: str, quantity: int, threshold: int) -> str:
 def configured_entity_id(entry: ConfigEntry) -> str:
     """The list this entry mirrors onto, or `""` when the bridge is off."""
 
-    options = getattr(entry, "options", None) or {}
+    options = entry.options
     value = options.get(CONF_TODO_ENTITY_ID, DEFAULT_TODO_ENTITY_ID)
     return value.strip() if isinstance(value, str) else DEFAULT_TODO_ENTITY_ID
 
