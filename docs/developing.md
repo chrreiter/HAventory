@@ -256,187 +256,38 @@ uniquely-named item and deletes it (best-effort cleanup even on failure).
   independently of a full-instance snapshot. See
   [`backend_api_contract.md`](backend_api_contract.md) and
   [`docs/data_shapes.md`](data_shapes.md).
-  - **Import matches entities by id, and only by id — never by name.** Every incoming item
-    and location is looked up by its id: an id already in the inventory is the same entity
-    (left `unchanged`, `update`d, or reported as a `conflict` under `skip`), an id that is
-    absent is added. Names are not consulted under any policy, which is deliberate —
-    matching by name would silently fuse two genuinely different "Shelf A"s.
-  - **So restoring a backup onto hand-rebuilt locations or items duplicates them; it does
-    not merge onto them.** Anything you delete and recreate by hand comes back with a fresh
-    id, so the backup's copies count as new entities and you end up with two of each.
-    The duplicates are not inert: each imported item carries the backup's `location_id`, so
-    the items repoint onto the *newly added* duplicate location, and the location you
-    rebuilt keeps its name while its contents move to its twin. Measured against a running
-    instance: a 40-location backup previewed against a 53-location inventory gives
-    `locations add=0 unchanged=40` when the ids are intact, but `add=17 unchanged=23` — 70
-    locations with 17 duplicate name pairs, and 402 items moving from `unchanged` to
-    `update` — when 17 of those locations had been rebuilt by hand first.
-  - **Safe restore paths:** restore into an **empty inventory**, or restore a backup whose
-    ids are still intact (the entities were never deleted and recreated). Either way run
-    `import/preview` first and read the `add` counts: entities you expect the import to
-    match onto must appear under `unchanged`/`update`, and a location you already have
-    showing up under `add` means you are about to duplicate it.
+  Identity is the entity id and never the name, which is what a restore onto entities
+  deleted and recreated by hand turns on: the contract's `haventory/import/execute` entry
+  states the rule and what follows from it.
 
 ## Frontend (Lovelace card)
 
-Lit + TypeScript + Vite; tests with Vitest; build outputs to
-`custom_components/haventory/www/`. Real-time over WebSocket with optimistic writes
-throughout.
+Lit + TypeScript + Vite, tests with Vitest, real-time over WebSocket with optimistic
+writes. The build writes one bundle to
+`custom_components/haventory/www/haventory-card.js` — git-ignored, and inside the
+integration package, which is the only tree HACS copies, so a card change reaches an
+install through a release like any backend change. That one bundle draws the dashboard
+card and the sidebar page and registers the icon set the backend's `PANEL_ICON` names;
+`tests/test_frontend_registration.py` holds the two sides together across a language
+boundary neither can check alone.
 
-- **Sidebar page** — HAventory gets an entry in Home Assistant's sidebar, opening the full
-  view as a page of its own with the same ⋮ menu, dialogs and editors the card's full view
-  has. It loads the one card bundle and is named after the card title. Turn it off under
-  Settings → Devices & services → HAventory → **Configure**; see
-  [Finding HAventory after install](installing.md#finding-haventory-after-install).
-- **Standard card** — one Add button and a single ⋮ menu (Select items, Organize, Refresh,
-  Diagnostics, Export backup / Export current view, Import); Columns is offered in the full
-  view, which is the only surface it changes. Live stat badges — items, low stock,
-  overdue, due for inspection, reminders to do, checked out — are click-to-filter, and
-  which of them a household offers is set under Settings → Devices & services →
-  HAventory → **Configure**, or per dashboard with the card's `quick_filters:`. Rows
-  carry a quantity stepper, a LOW badge, an overdue check-out chip, an "Inspection due"
-  chip, an amber status chip when an item is flagged Missing / Needs repair, and hover
-  actions.
-- **Filters** — a collapsible panel exposing the whole backend filter object: location
-  (from a real tree), area, include-subtree, category chips with counts, tag chips with an
-  any/all toggle, low-stock-only, checked-out, overdue, inspection-due, reminder-due and no-location —
-  each with the count of what it would keep — a single-select status row (OK / Missing /
-  Needs repair, the flagged two priced from the stats counts), plus updated / created
-  windows (each row's ≥ flips to ≤ for "before") and sort across every sortable field.
-  "Low stock" (a filter) and "Low stock first" (an ordering) are separate, independently
-  clearable controls. Active filters appear as removable chips.
-- **Editing** — the row expands in place; there is no dialog chain. Full field parity:
-  name, description, quantity, low-stock threshold, category, status, tags, location
-  (picked from a tree inside the form), checked-out with due date, next inspection (with the same
-  +7 / +31 / +90 / +X quick offsets the check-out popover offers), and typed
-  custom fields (text / number / yes-no / date). Saves send the item's expected version so
-  a concurrent edit surfaces as a conflict; a save that does not land says so in the form
-  you are looking at and leaves your edits in it. Escape takes back one thing at a time: an open
-  picker first, then the form. **Nothing throws typed edits away without asking** — Cancel,
-  the ✕, Escape, tapping the scrim or swiping a phone sheet down, switching to another row,
-  and closing the expanded view all raise the same question, and answering "keep" leaves the
-  form exactly as it was.
-  With no locations yet, the location picker creates the first one and files the item in
-  it, rather than pointing at a menu three steps away.
-- **Photos and manuals** attach from the same form, once the item exists — an upload is
-  filed against an item id, and the create form says so instead of leaving the sections
-  unexplained. On a desktop you can also **drop files straight onto the Photos or Documents
-  section**; the file's own type decides which it becomes, so a PDF dropped on the photo
-  strip attaches as a manual. Each queue reports itself under the section that started it,
-  with a moving indicator while a file is in flight; a refused file keeps its error and
-  Retry until you dismiss them. Removing an attachment asks first, because the file goes
-  with it. A thumbnail is 72px of a photo, so **clicking one opens it full-size** — arrows
-  and a counter to walk the strip, Escape to come back — on every surface the form appears
-  on, and from the detail sheet's gallery just the same.
-- **Full view** — a fullscreen workspace with a coloured app bar, a **browse sidebar**, and
-  a sortable table. Only columns the backend can sort by get a clickable header — Location
-  among them, ordering on the path each row shows, with items filed nowhere at the end
-  whichever way it runs. A browser
-  that has made no choice yet shows every optional column but one — quantity, status,
-  category, location, tags, due, next inspection, updated — and the ⋮ → **Columns** picker
-  is where you thin that down, switch on the one that starts off (**Reminder**), and put
-  the ones you keep in the order you want them, with the up/down buttons beside each shown
-  column and a **Reset order** back to the canonical one. Reminder is off by default
-  because the panel's table has no width to spare: one more column on by default would put
-  Location and Tags on their floors, and most households set no reminders at all. The
-  order and the selection are one per-browser preference; the table scrolls sideways rather
-  than dropping a column you kept.
-  The Status column names every row, OK included, and the name's amber status chip stands
-  down while it is shown so no row says the same word twice. The
-  sidebar leads with the location tree carrying the backend's own per-location counts and
-  an orphans row, then **Status**, **Categories** and **Tags** as sections of their own;
-  each heading collapses from a chevron and states how many there are — locations counted
-  at every depth, Status excepted because there that number would count the household's
-  vocabulary rather than anything in the inventory — and
-  Locations stays at the top. Every status row is priced from the backend's own per-status
-  counts, so a status nothing carries reads 0 rather than inheriting the rest of the
-  inventory. Locations, categories and tags all accumulate — pick a second and
-  the list widens to hold both, pick a selected one again and it drops out — while
-  status stays one value, matching how the backend treats each of them. Several
-  categories or locations can only ever mean *or*, since an item has one of each,
-  so neither carries the any/all control tags do. With a filter on, each location,
-  category and tag row reads "4 / 37" — matches over total — so you can see where the
-  matches are rather than a total that never moves. All three switch to the pair together,
-  as soon as anything is filtering. Each list drops its own dimension from what it measures
-  against, since that list is how you pick one: the location counts ignore the location
-  filter, and the category and tag counts ignore the chosen category and tags — so with a
-  category as the only filter its own list reads "43 / 43" while the locations beside it
-  narrow, rather than one column carrying two kinds of number.
-  No row disappears for matching nothing — the same list is what the item editor offers as
-  autocomplete. Each heading also offers a create action: Locations opens an inline
-  name field, while Categories, Tags and Status open the organize dialog on their own tab —
-  a category exists through the items using it, so that is where making one is explained.
-  The app bar carries an Organize button of its own, beside the ⋮ that also lists it.
-  From the second selected tag on, the Tags heading carries the same any/all control the
-  filter panel has, since that is the mode governing what the sidebar just selected. The
-  app bar's stat pills are the card's: low in amber, overdue in red, to-inspect in amber,
-  checked out, each click-to-filter. All four are derived from the item and mean the same
-  thing in every household, which is what lets them share the bar's fixed hues; a status is
-  the household's own word in the household's own colour, so the sidebar's Status section
-  and the filter chips are where statuses are priced and picked.
-  An empty table names the reason and offers a way out — the same
-  wording and the same offers as the card's list. Every row carries the same ⋮ the card's
-  rows do — Check out with a due date, Check in, Change due date, Delete — so the surface
-  built for working through the whole inventory is not the one with the fewest actions per
-  row.
+What the card does for a household is the [README](../README.md#what-it-is) and
+[`installing.md`](installing.md); how it is built — the component map, the store, the
+shared `ui/` layer, the column preferences, the phone breakpoints and the known gaps — is
+[`frontend_architecture.md`](frontend_architecture.md).
 
-  At phone width the sidebar folds away and the surface hands its own breakpoint down to
-  the edit form and the filter panel, so both take their phone layouts: one field per row,
-  and filters staged behind a "Show N items" commit row exactly as in the card's sheet.
-  Tapping a row there opens the same **detail sheet** the card opens — photos, documents,
-  facts and check-out, with Edit one tap deeper — rather than dropping you straight into a
-  form. On a screen wide enough for the table, the table is the read view and a row click
-  opens the form as before.
-- **Multi-select and bulk actions** — move, add/remove tags, set category, adjust
-  quantity, check out/in and delete over a selection. Work is chunked so progress is
-  determinate and cancellable, and the result is reported *per operation*: "39 of 42
-  succeeded", every failure named with its reason and a retry scoped to just those.
-  Select-all covers loaded rows only and says so, with an explicit "load the rest" path.
-- **Organize dialog** — Locations / Categories / Tags / Statuses in one place, reached from
-  the full view's app bar as well as its ⋮ menu, each tab stating its
-  total above the list and each row offering the same moves: an "N items" link that opens
-  the filtered list in the full view, plus rename, merge and delete. Locations keep their collapsible tree and edit inline, with a guarded
-  delete that explains what is in the way. Category and tag rename, merge and removal are
-  batch rewrites over every affected item; a location merge re-files that location's items,
-  re-parents its children and deletes the husk — all with the same progress and
-  partial-failure reporting. A location's Area field says what picking one will do before
-  you save it: an area belongs to a whole tree, so the line under the select names the tree
-  root it will be stored on and how many locations that reaches — and on a location that
-  merely inherits, it names the area it inherits. With no Home Assistant areas defined the
-  field is not shown at all. The **Parent location** picker offers the areas alongside the
-  locations, including areas nothing is filed under yet: picking one moves the whole
-  subtree out to the top level *and* into that area, which is how a tree changes rooms.
-  The merge target picker offers locations only — an area heads the tree without being part
-  of it and holds no items itself, so a merge, which has to hand this location's items to
-  something, always names a location. The Statuses tab also sets each status's colour and
-  glyph: ten tones that follow your Home Assistant theme, plus an eleventh swatch that
-  opens the browser's colour picker for a colour of your own. A colour picked that way is
-  used exactly as entered — it is the one mark on the card that does not follow the theme —
-  and the chip's text is black or white, whichever reads better on it.
-- **Check-out** invites an optional due date (+7 / +31 / +90 / +X day suggestions) rather
-  than silently checking out with none — the date is what makes overdue highlighting mean
-  anything. "No due date" stays a first-class choice. Checking out a whole selection asks
-  the same question once and gives every item the answer.
-- **Mobile** — the card switches layout from its own width. Tapping a row opens one bottom
-  sheet holding everything about the item; filters open as a staged sheet whose apply
-  button shows the live matching count. Every surface honours the same 44px touch minimum
-  and 16px field text (iOS zooms a page whose fields are smaller and never zooms back).
-- **Import** keeps the mandatory server-side dry run: paste or pick a file, choose
-  merge / replace / skip, preview add/update/conflict counts per items and locations, then
-  import. An invalid document is shown as a list of JSON paths, not one flat message.
-- **Diagnostics and degraded states** — the ⋮ menu carries a Diagnostics panel (counts,
-  subscription state, copyable report) badged only when something is wrong, plus banners
-  for connection loss and the payload-free reload an import broadcasts. Because
-  subscription events carry no sequence number, a dropped one is undetectable — so the
-  card says the list may be stale and offers an explicit Refresh. The banners are on **every** surface: the card, the expanded
-  view and the sidebar page, with the same wording and the same recovery actions. A view
-  left open when Home Assistant goes away says so on its own, without waiting for you to
-  try something first.
-- Deletes use an in-app confirmation, not `window.confirm`.
-- Card auto-registered as a Lovelace resource on integration setup.
+Three rules a card change is judged by, in full in
+[CONTRIBUTING.md](../CONTRIBUTING.md#conventions): the card renders no `ha-*` element, no
+user-facing string is a literal, and a component test mounts through `mountComponent` from
+`src/test.utils.ts` rather than a private copy.
+
+- The integration registers the card as a Lovelace resource on setup, under
+  `…/haventory-card.js?v=<version>`, and points an entry left at an older version at the
+  current URL rather than adding a second one.
 - A page already open when the card is installed or rebuilt has to be reloaded once
   before the card is in it; an ordinary reload is enough, because the resource URL carries
   the version and the bundle is served without a `Cache-Control` header.
+- Deletes ask through `hv-confirm`, never `window.confirm`.
 
 ## CI/CD & Ops
 
@@ -444,7 +295,8 @@ throughout.
   3.14), a dedicated **integration** job (in-process HA via phacc, Python 3.14),
   frontend (npm audit + eslint + tsc + vitest + build, Node 22/24 matrix), actionlint,
   hassfest + HACS validation, CodeQL, and dependency review.
-  Third-party actions are SHA-pinned; first-party `actions/*` use `@v7`.
+  Third-party actions are pinned to an immutable revision; first-party `actions/*` are
+  pinned by major tag (`tests/test_repo_hardening_offline.py` holds both).
 - **`ha-latest`** runs the same integration suite against the *newest* Home Assistant on
   the 8th of each month (and on demand via *Run workflow*). The `integration` job above
   pins the declared floor, so this is the only thing in CI that meets a current core. A
