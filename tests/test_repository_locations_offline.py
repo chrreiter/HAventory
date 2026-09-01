@@ -12,8 +12,7 @@ from custom_components.haventory.models import ItemCreate, ItemUpdate
 from custom_components.haventory.repository import Repository
 
 
-@pytest.mark.asyncio
-async def test_create_get_and_delete_location_constraints() -> None:
+def test_create_get_and_delete_location_constraints() -> None:
     """Create/get locations; deletion blocked when children or items exist."""
 
     repo = Repository()
@@ -30,8 +29,7 @@ async def test_create_get_and_delete_location_constraints() -> None:
         repo.get_location(leaf.id)
 
 
-@pytest.mark.asyncio
-async def test_move_and_rename_updates_paths_and_items() -> None:
+def test_move_and_rename_updates_paths_and_items() -> None:
     """Renaming/moving a location updates subtree paths and item location_path."""
 
     repo = Repository()
@@ -60,8 +58,7 @@ async def test_move_and_rename_updates_paths_and_items() -> None:
         repo.update_location(a.id, new_parent_id=c.id)
 
 
-@pytest.mark.asyncio
-async def test_move_to_root_and_disallow_self_parent() -> None:
+def test_move_to_root_and_disallow_self_parent() -> None:
     """Moving a node to root works and self-parent is disallowed."""
 
     repo = Repository()
@@ -78,8 +75,7 @@ async def test_move_to_root_and_disallow_self_parent() -> None:
     assert updated_b.path.display_path == "B"
 
 
-@pytest.mark.asyncio
-async def test_location_item_counts_and_no_location_count() -> None:
+def test_location_item_counts_and_no_location_count() -> None:
     """Per-location direct/subtree counts and the orphan count track item moves."""
 
     repo = Repository()
@@ -107,8 +103,7 @@ async def test_location_item_counts_and_no_location_count() -> None:
         repo.get_location_item_counts("00000000-0000-4000-8000-000000000000")
 
 
-@pytest.mark.asyncio
-async def test_moving_a_subtree_to_the_top_level_files_it_under_a_new_area() -> None:
+def test_moving_a_subtree_to_the_top_level_files_it_under_a_new_area() -> None:
     """One update does both halves of "move this subtree into an area".
 
     The parent change commits before the area propagates, so the area lands on
@@ -136,8 +131,7 @@ async def test_moving_a_subtree_to_the_top_level_files_it_under_a_new_area() -> 
     assert [i.id for i in in_cellar["items"]] == [drill.id]
 
 
-@pytest.mark.asyncio
-async def test_the_tree_is_readable_without_reaching_into_the_indexes() -> None:
+def test_the_tree_is_readable_without_reaching_into_the_indexes() -> None:
     """`location/list` and `location/tree` are ordinary reads, not introspection.
 
     Both used to walk the location index and the private child map directly, so

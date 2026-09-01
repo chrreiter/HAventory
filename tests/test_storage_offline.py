@@ -527,8 +527,7 @@ async def test_a_store_written_before_the_generation_was_dropped_still_loads() -
     assert [item.name for item in reloaded.list_items()["items"]] == ["Screws"]
 
 
-@pytest.mark.asyncio
-async def test_export_state_emits_every_stored_collection() -> None:
+def test_export_state_emits_every_stored_collection() -> None:
     """The repository must emit every collection the store persists.
 
     A save writes exactly ``Repository.export_state()``. The load path is wider —

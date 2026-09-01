@@ -23,8 +23,7 @@ LOW_STOCK_AFTER_ADJUST = 2
 LOADED_ITEM_COUNT = 2
 
 
-@pytest.mark.asyncio
-async def test_item_crud_and_concurrency() -> None:
+def test_item_crud_and_concurrency() -> None:
     """Create, get, update, and delete with version checks."""
 
     repo = Repository()
@@ -58,8 +57,7 @@ async def test_item_crud_and_concurrency() -> None:
     assert repo.get_counts()["items_total"] == 0
 
 
-@pytest.mark.asyncio
-async def test_filter_sort_and_cursor_pagination() -> None:
+def test_filter_sort_and_cursor_pagination() -> None:
     """Filter, sort, and paginate deterministically with a stable cursor."""
 
     repo = Repository()
@@ -89,8 +87,7 @@ async def test_filter_sort_and_cursor_pagination() -> None:
     assert [x.name for x in out["items"]] == ["alpha"]
 
 
-@pytest.mark.asyncio
-async def test_due_date_sort_cursor_pagination_with_nulls() -> None:
+def test_due_date_sort_cursor_pagination_with_nulls() -> None:
     """Cursor pagination stays consistent for due_date sort, undated items last."""
 
     repo = Repository()
@@ -124,8 +121,7 @@ async def test_due_date_sort_cursor_pagination_with_nulls() -> None:
     assert {names[3], names[4]} == {"UndatedA", "UndatedB"}
 
 
-@pytest.mark.asyncio
-async def test_orphaned_only_filter_through_list_items() -> None:
+def test_orphaned_only_filter_through_list_items() -> None:
     """orphaned_only composes with the index-first candidate path (q index)."""
 
     repo = Repository()
@@ -142,8 +138,7 @@ async def test_orphaned_only_filter_through_list_items() -> None:
     assert [x.name for x in out_q["items"]] == ["Orphan Saw"]
 
 
-@pytest.mark.asyncio
-async def test_overdue_count_and_filter_track_check_in() -> None:
+def test_overdue_count_and_filter_track_check_in() -> None:
     """`overdue_count` counts past-due items and follows the check-out state."""
 
     repo = Repository()
@@ -162,8 +157,7 @@ async def test_overdue_count_and_filter_track_check_in() -> None:
     assert repo.list_items(flt=ItemFilter(overdue_only=True))["items"] == []
 
 
-@pytest.mark.asyncio
-async def test_checked_out_due_count_includes_today_where_overdue_does_not() -> None:
+def test_checked_out_due_count_includes_today_where_overdue_does_not() -> None:
     """The two counts differ by exactly the items due back today.
 
     `due` includes today and `overdue` does not — the same vocabulary
@@ -189,8 +183,7 @@ async def test_checked_out_due_count_includes_today_where_overdue_does_not() -> 
     assert out["total"] == CHECKED_OUT_DUE
 
 
-@pytest.mark.asyncio
-async def test_checked_out_due_count_empties_on_check_in() -> None:
+def test_checked_out_due_count_empties_on_check_in() -> None:
     """Checking in clears the due date, so the due population empties with it."""
 
     repo = Repository()
@@ -214,8 +207,7 @@ async def test_checked_out_due_count_empties_on_check_in() -> None:
     assert repo.list_items(flt=ItemFilter(checked_out_due_only=True))["items"] == []
 
 
-@pytest.mark.asyncio
-async def test_inspection_overdue_count_walks_the_whole_inventory() -> None:
+def test_inspection_overdue_count_walks_the_whole_inventory() -> None:
     """`inspection_overdue_count` spans every item, not just the checked-out ones."""
 
     repo = Repository()
@@ -245,8 +237,7 @@ async def test_inspection_overdue_count_walks_the_whole_inventory() -> None:
     assert out["total"] == INSPECTION_OVERDUE
 
 
-@pytest.mark.asyncio
-async def test_inspection_overdue_count_follows_the_stored_date() -> None:
+def test_inspection_overdue_count_follows_the_stored_date() -> None:
     """Rescheduling or clearing the date moves the item out of the population."""
 
     repo = Repository()
@@ -265,8 +256,7 @@ async def test_inspection_overdue_count_follows_the_stored_date() -> None:
     assert repo.list_items(flt=ItemFilter(inspection_overdue_only=True))["items"] == []
 
 
-@pytest.mark.asyncio
-async def test_inspection_due_count_includes_today_where_overdue_does_not() -> None:
+def test_inspection_due_count_includes_today_where_overdue_does_not() -> None:
     """The two counts differ by exactly the items due today.
 
     `due` includes today and `overdue` does not — the vocabulary
@@ -287,8 +277,7 @@ async def test_inspection_due_count_includes_today_where_overdue_does_not() -> N
     assert counts["items_total"] == INSPECTION_DUE + 2
 
 
-@pytest.mark.asyncio
-async def test_inspection_due_count_is_never_below_the_overdue_count() -> None:
+def test_inspection_due_count_is_never_below_the_overdue_count() -> None:
     """Rescheduling moves an item between the two counts without inverting them."""
 
     repo = Repository()
@@ -312,8 +301,7 @@ async def test_inspection_due_count_is_never_below_the_overdue_count() -> None:
     assert repo.get_counts()["inspection_due_count"] == 0
 
 
-@pytest.mark.asyncio
-async def test_prefilter_by_area_and_and_logic_with_location() -> None:
+def test_prefilter_by_area_and_and_logic_with_location() -> None:
     """Pre-filter by area id and support AND with location_id."""
 
     repo = Repository()
@@ -339,8 +327,7 @@ async def test_prefilter_by_area_and_and_logic_with_location() -> None:
     assert [x.id for x in out2["items"]] == [i2.id]
 
 
-@pytest.mark.asyncio
-async def test_prefilter_by_area_with_non_uuid_ids_and_update_rebuckets() -> None:
+def test_prefilter_by_area_with_non_uuid_ids_and_update_rebuckets() -> None:
     """Repository accepts string area ids and re-buckets items on area change."""
 
     repo = Repository()
@@ -365,8 +352,7 @@ async def test_prefilter_by_area_with_non_uuid_ids_and_update_rebuckets() -> Non
     assert [x.id for x in out3["items"]] == []
 
 
-@pytest.mark.asyncio
-async def test_an_area_that_names_no_bucket_matches_nothing() -> None:
+def test_an_area_that_names_no_bucket_matches_nothing() -> None:
     """The area block answers every present value but `None`: no bucket, no items.
 
     The WebSocket refuses a blank area before it reaches here, so this is the
@@ -388,8 +374,7 @@ async def test_an_area_that_names_no_bucket_matches_nothing() -> None:
     assert len(repo.list_items(flt=ItemFilter(area_id=None))["items"]) == 1
 
 
-@pytest.mark.asyncio
-async def test_low_stock_and_checked_out_counts_update() -> None:
+def test_low_stock_and_checked_out_counts_update() -> None:
     """Derived counts reflect item state and update on writes."""
 
     repo = Repository()
@@ -416,8 +401,7 @@ async def test_low_stock_and_checked_out_counts_update() -> None:
     assert repo.get_counts()["checked_out_count"] == 0
 
 
-@pytest.mark.asyncio
-async def test_list_items_total_counts_all_matches() -> None:
+def test_list_items_total_counts_all_matches() -> None:
     """`total` reflects all filtered matches, independent of pagination."""
 
     repo = Repository()

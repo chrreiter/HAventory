@@ -24,8 +24,7 @@ from custom_components.haventory.models import (
 from custom_components.haventory.repository import Repository
 
 
-@pytest.mark.asyncio
-async def test_sort_key_survives_persistence_round_trip() -> None:
+def test_sort_key_survives_persistence_round_trip() -> None:
     repo = Repository()
     garage = repo.create_location(name="Garage")
     shelf = repo.create_location(name="Shelf Alpha", parent_id=garage.id)
@@ -45,8 +44,7 @@ async def test_sort_key_survives_persistence_round_trip() -> None:
     )
 
 
-@pytest.mark.asyncio
-async def test_legacy_store_without_sort_key_is_backfilled_on_load() -> None:
+def test_legacy_store_without_sort_key_is_backfilled_on_load() -> None:
     """Pre-WP4 stores never persisted sort_key; loading must derive it."""
 
     repo = Repository()
@@ -69,8 +67,7 @@ async def test_legacy_store_without_sort_key_is_backfilled_on_load() -> None:
     assert reloaded.get_item(item.id).location_path.sort_key == expected
 
 
-@pytest.mark.asyncio
-async def test_cursor_returns_empty_page_when_tail_deleted() -> None:
+def test_cursor_returns_empty_page_when_tail_deleted() -> None:
     repo = Repository()
     items = [repo.create_item(ItemCreate(name=f"Item {i:02d}", quantity=1)) for i in range(6)]
 

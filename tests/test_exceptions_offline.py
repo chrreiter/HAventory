@@ -7,7 +7,6 @@ exception rides out on, so that is the whole file: both schema refusals stay
 
 from __future__ import annotations
 
-import pytest
 from custom_components.haventory.exceptions import (
     CorruptSchemaVersionError,
     SchemaDowngradeError,
@@ -16,8 +15,7 @@ from custom_components.haventory.exceptions import (
 )
 
 
-@pytest.mark.asyncio
-async def test_schema_refusals_stay_storage_errors():
+def test_schema_refusals_stay_storage_errors():
     for cls in (SchemaDowngradeError, CorruptSchemaVersionError):
         message = f"{cls.__name__} message"
         exc = cls(message)

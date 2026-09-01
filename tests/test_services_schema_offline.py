@@ -24,8 +24,7 @@ from custom_components.haventory.services import (
 )
 
 
-@pytest.mark.asyncio
-async def test_item_create_schema_defaults_and_required() -> None:
+def test_item_create_schema_defaults_and_required() -> None:
     """item_create requires name and sets sane defaults."""
 
     # Defaults applied
@@ -40,8 +39,7 @@ async def test_item_create_schema_defaults_and_required() -> None:
         SCHEMA_ITEM_CREATE({})
 
 
-@pytest.mark.asyncio
-async def test_negative_schema_cases() -> None:
+def test_negative_schema_cases() -> None:
     """Negative cases: wrong types and missing required fields are rejected."""
 
     # item_update missing item_id
@@ -73,8 +71,7 @@ async def test_negative_schema_cases() -> None:
         SCHEMA_LOCATION_DELETE({})
 
 
-@pytest.mark.asyncio
-async def test_item_update_schema_shapes() -> None:
+def test_item_update_schema_shapes() -> None:
     """item_update requires item_id and accepts optional fields."""
 
     out = SCHEMA_ITEM_UPDATE({"item_id": "00000000-0000-4000-8000-000000000000"})
@@ -87,8 +84,7 @@ async def test_item_update_schema_shapes() -> None:
     assert "description" in out2 and out2["description"] is None
 
 
-@pytest.mark.asyncio
-async def test_item_helper_schemas_types() -> None:
+def test_item_helper_schemas_types() -> None:
     """Helper schemas enforce basic typing and required fields."""
 
     # adjust quantity
@@ -116,8 +112,7 @@ async def test_item_helper_schemas_types() -> None:
     assert dl["item_id"] == "i"
 
 
-@pytest.mark.asyncio
-async def test_location_schemas_required_and_optional() -> None:
+def test_location_schemas_required_and_optional() -> None:
     """Location create/update/delete schemas basic behavior."""
 
     lc = SCHEMA_LOCATION_CREATE({"name": "Garage"})

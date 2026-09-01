@@ -60,8 +60,7 @@ def _make_location(id: str, name: str, parent_id: str | None) -> Location:
     )
 
 
-@pytest.mark.asyncio
-async def test_create_with_defaults_and_optionals() -> None:
+def test_create_with_defaults_and_optionals() -> None:
     # Create with minimal payload → defaults applied, UUID/ISO timestamps, version=1
     payload: ItemCreate = {"name": "Hammer", "tags": ["Tools", "  tools  ", "DIY"]}
     item = create_item_from_create(payload)
@@ -79,15 +78,13 @@ async def test_create_with_defaults_and_optionals() -> None:
     assert item.location_path == EMPTY_LOCATION_PATH
 
 
-@pytest.mark.asyncio
-async def test_invalid_due_date_requires_checked_out() -> None:
+def test_invalid_due_date_requires_checked_out() -> None:
     # Invalid: due_date without checked_out → ValidationError
     with pytest.raises(ValidationError):
         create_item_from_create({"name": "Cordless Drill", "due_date": "2024-12-31"})
 
 
-@pytest.mark.asyncio
-async def test_tag_normalization_and_update_clears_fields() -> None:
+def test_tag_normalization_and_update_clears_fields() -> None:
     # Normalize tags on create and allow clearing via update.
     item = create_item_from_create({"name": "Battery", "tags": ["Li-Ion", " li-ion ", "Spare"]})
     assert item.tags == ["li-ion", "spare"]
@@ -130,8 +127,7 @@ def test_a_tag_list_is_normalized_and_a_null_clears() -> None:
     assert validate_tags(["Tools", "  tools  ", "DIY"]) == ["tools", "diy"]
 
 
-@pytest.mark.asyncio
-async def test_denormalized_location_path_generation() -> None:
+def test_denormalized_location_path_generation() -> None:
     # Build a simple 3-level location chain and ensure display/sort paths
     root_id = str(uuid.uuid4())
     mid_id = str(uuid.uuid4())
@@ -203,8 +199,7 @@ def test_a_chain_that_reaches_no_root_is_refused(parent_id: str | None, message:
         build_location_path_from_map(leaf_id, locations_by_id={leaf_id: leaf})
 
 
-@pytest.mark.asyncio
-async def test_invalid_location_reference() -> None:
+def test_invalid_location_reference() -> None:
     # Invalid: location_id unknown → ValidationError
     fake_id = str(uuid.uuid4())
     with pytest.raises(ValidationError):
@@ -214,8 +209,7 @@ async def test_invalid_location_reference() -> None:
         )
 
 
-@pytest.mark.asyncio
-async def test_update_version_and_updated_at_changes() -> None:
+def test_update_version_and_updated_at_changes() -> None:
     # Update increments version and refreshes updated_at
     item = create_item_from_create({"name": "Saw"})
     updated = apply_item_update(item, ItemUpdate(quantity=3))
@@ -223,8 +217,7 @@ async def test_update_version_and_updated_at_changes() -> None:
     assert updated.updated_at != item.updated_at
 
 
-@pytest.mark.asyncio
-async def test_monotonic_timestamp_after_strictly_increases() -> None:
+def test_monotonic_timestamp_after_strictly_increases() -> None:
     # monotonic_timestamp_after returns a value strictly greater than prev and ends with 'Z'
     prev = iso_utc_now()
     nxt = monotonic_timestamp_after(prev)
@@ -232,8 +225,7 @@ async def test_monotonic_timestamp_after_strictly_increases() -> None:
     assert nxt > prev
 
 
-@pytest.mark.asyncio
-async def test_monotonic_timestamp_after_steps_past_a_timestamp_in_the_future() -> None:
+def test_monotonic_timestamp_after_steps_past_a_timestamp_in_the_future() -> None:
     """A stamp the clock has not reached is stepped past by one second.
 
     The path a store written on a machine whose clock ran ahead reaches, and the
@@ -248,8 +240,7 @@ async def test_monotonic_timestamp_after_steps_past_a_timestamp_in_the_future() 
     assert is_canonical_utc_timestamp(nxt)
 
 
-@pytest.mark.asyncio
-async def test_monotonic_timestamp_after_reads_the_clock_itself() -> None:
+def test_monotonic_timestamp_after_reads_the_clock_itself() -> None:
     """One argument, so there is no clock the function can be told and ignore.
 
     A caller-supplied "now" was read on the fast path only and dropped on the
@@ -261,23 +252,20 @@ async def test_monotonic_timestamp_after_reads_the_clock_itself() -> None:
         monotonic_timestamp_after("2026-07-23T10:00:00Z", now_ts="2026-07-23T11:00:00Z")  # type: ignore[call-arg]
 
 
-@pytest.mark.asyncio
-async def test_create_trims_name_and_accepts_trailing_spaces() -> None:
+def test_create_trims_name_and_accepts_trailing_spaces() -> None:
     # Create accepts name with spaces and stores trimmed value
     item = create_item_from_create({"name": "  Widget  "})
     assert item.name == "Widget"
 
 
-@pytest.mark.asyncio
-async def test_update_trims_name_and_accepts_trailing_spaces() -> None:
+def test_update_trims_name_and_accepts_trailing_spaces() -> None:
     # Update accepts name with spaces and stores trimmed value
     item = create_item_from_create({"name": "Start"})
     updated = apply_item_update(item, ItemUpdate(name="  Wrench  "))
     assert updated.name == "Wrench"
 
 
-@pytest.mark.asyncio
-async def test_rejects_name_empty_after_trim_on_create_and_update() -> None:
+def test_rejects_name_empty_after_trim_on_create_and_update() -> None:
     # Reject names that become empty after trimming on create and update
     with pytest.raises(ValidationError):
         create_item_from_create({"name": "   "})
@@ -287,8 +275,7 @@ async def test_rejects_name_empty_after_trim_on_create_and_update() -> None:
         apply_item_update(item, ItemUpdate(name="    "))
 
 
-@pytest.mark.asyncio
-async def test_inspection_date_accepted_without_checked_out() -> None:
+def test_inspection_date_accepted_without_checked_out() -> None:
     # inspection_date can be set without checked_out=True (unlike due_date)
     item = create_item_from_create({"name": "Battery", "inspection_date": "2024-12-31"})
     assert item.inspection_date == "2024-12-31"
@@ -300,8 +287,7 @@ async def test_inspection_date_accepted_without_checked_out() -> None:
     assert updated.checked_out is False
 
 
-@pytest.mark.asyncio
-async def test_invalid_inspection_date_format_raises_validation_error() -> None:
+def test_invalid_inspection_date_format_raises_validation_error() -> None:
     # Invalid inspection_date format → ValidationError
     with pytest.raises(ValidationError):
         create_item_from_create({"name": "Equipment", "inspection_date": "12/31/2024"})
