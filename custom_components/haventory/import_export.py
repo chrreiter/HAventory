@@ -148,9 +148,10 @@ def build_export_document(
     stays referentially self-consistent.
     """
 
+    locations_by_id = {str(loc.id): loc for loc in repo.iter_locations()}
     if item_filter is None:
-        items = list(repo._items_by_id.values())
-        location_ids = set(repo._locations_by_id.keys())
+        items = list(repo.list_items(limit=None)["items"])
+        location_ids = set(locations_by_id)
     else:
         page = repo.list_items(flt=item_filter, limit=None)  # type: ignore[arg-type]
         items = list(page["items"])
@@ -165,10 +166,9 @@ def build_export_document(
                 location_ids.add(str(it.location_id))
 
     items_docs = [items[i].to_dict() for i in _sorted_index_by_id(items)]
-    locations = [
-        repo._locations_by_id[lid] for lid in sorted(location_ids) if lid in repo._locations_by_id
+    locations_docs = [
+        locations_by_id[lid].to_dict() for lid in sorted(location_ids) if lid in locations_by_id
     ]
-    locations_docs = [loc.to_dict() for loc in locations]
 
     return {
         "haventory_export_version": EXPORT_VERSION,
@@ -784,8 +784,8 @@ def _name_collision_warnings(  # noqa: PLR0913 - one document side, one stored s
     incoming: list[dict[str, Any]],
     ids: list[str],
     existing: dict[str, Any],
-    describe_stored,
-    describe_incoming,
+    describe_stored: Callable[[dict[str, Any]], str],
+    describe_incoming: Callable[[dict[str, Any], str], str],
 ) -> list[dict[str, Any]]:
     """Flag each incoming entity about to be created under a taken name.
 
@@ -1072,8 +1072,8 @@ def _plan_entities(  # noqa: PLR0913 - cohesive planning parameters
     target: dict[str, dict[str, Any]],
     bucket: dict[str, list[str]],
     policy: Policy,
-    canonical,
-    merge,
+    canonical: Callable[[dict[str, Any]], dict[str, Any]],
+    merge: Callable[[dict[str, Any], dict[str, Any]], dict[str, Any]],
 ) -> None:
     """Classify each incoming entity and write the resolved form into ``target``."""
 
