@@ -287,6 +287,8 @@ user-facing string is a literal, and a component test mounts through `mountCompo
 - A page already open when the card is installed or rebuilt has to be reloaded once
   before the card is in it; an ordinary reload is enough, because the resource URL carries
   the version and the bundle is served without a `Cache-Control` header.
+- Phone surfaces hold a 44px touch minimum (`--hv-tap-min`) and 16px field text — iOS
+  zooms a page whose fields are smaller and never zooms back.
 - Deletes ask through `hv-confirm`, never `window.confirm`.
 
 ## CI/CD & Ops
