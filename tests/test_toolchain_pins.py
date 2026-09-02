@@ -106,7 +106,6 @@ PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
     ("scripts/test_integration.sh", 4, 0),
     (".devcontainer/Dockerfile", 1, 0),
     (".devcontainer/develop.sh", 2, 0),
-    (".devcontainer/post-create.sh", 1, 0),
     (".claude/hooks/session-start.sh", 8, 0),
     (".claude/skills/run-haventory/SKILL.md", 1, 0),
     (".claude/skills/test-haventory/SKILL.md", 7, 0),
