@@ -13,9 +13,10 @@ without fighting the pins that file carries deliberately, without bumping them
 from the other block that reads the same file, and without proposing the dev
 toolchain a second time out of a generated export — and that the ruff pin and
 the pre-commit rev held equal to it move in one pull request, since apart each
-half arrives red for the copy it did not touch. The dev container's images are
-held to the same bar: its Dockerfile names every one on a ``FROM`` line, the
-only line Dependabot's docker updater takes a tag from, and a block reads it.
+half arrives red for the copy it did not touch. The dev container is held to
+the same bar: its Dockerfile names every image on a ``FROM`` line, the only line
+Dependabot's docker updater takes a tag from, and a block reads it, while
+``develop.sh`` clears no directory it has not first read a ``pyvenv.cfg`` in.
 
 Last, the two scheduled runs — ``ha-latest`` and ``card-smoke`` — each of which
 can be worthless in ways a green run of its own would not reveal: reporting a
@@ -65,6 +66,7 @@ ROOT_PYTHON_ECOSYSTEMS = ("uv", "pip")
 RUFF_PIN_ECOSYSTEMS = ("uv", "pre-commit")
 
 DEVCONTAINER_DOCKERFILE = REPO_ROOT / ".devcontainer" / "Dockerfile"
+DEVCONTAINER_DEVELOP = REPO_ROOT / ".devcontainer" / "develop.sh"
 
 #: `FROM [--platform=…] image [AS name]` — the one line Dependabot's docker
 #: updater reads a tag or digest from.
@@ -434,6 +436,26 @@ def test_a_copy_from_a_registry_image_is_reported() -> None:
     )
 
     assert images_copied_past_every_from_line(dockerfile) == ["ghcr.io/alexxit/go2rtc:1.9.14"]
+
+
+def test_develop_clears_no_directory_it_has_not_read_a_pyvenv_cfg_in() -> None:
+    """uv refuses to ``--clear`` a directory that is not a virtual environment.
+
+    Its hint is ``--force``, which removes the directory whatever it holds, and
+    ``HA_VENV`` is overridable — so on that hint the script would delete a path
+    the operator named and this script never made. The check for ``pyvenv.cfg``
+    is what turns that into a message naming the directory, and it has to come
+    first: past the ``uv venv`` call there is nothing left to refuse.
+    """
+    script = DEVCONTAINER_DEVELOP.read_text(encoding="utf-8")
+    creating = [line for line in script.splitlines() if "uv venv" in line]
+
+    assert creating, "develop.sh no longer builds the Home Assistant environment"
+    for line in creating:
+        assert "--force" not in line, f"--force removes whatever HA_VENV names: {line.strip()}"
+    assert script.index("pyvenv.cfg") < script.index("uv venv"), (
+        "the guard has to be read before the directory is cleared"
+    )
 
 
 def test_dependabot_keeps_pip_off_the_manifests_uv_owns() -> None:
