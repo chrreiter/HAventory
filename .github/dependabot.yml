@@ -108,6 +108,24 @@ updates:
     cooldown:
       default-days: 3
 
+  # The dev container's images (.devcontainer/Dockerfile). Every image there sits
+  # on a `FROM` line because that is the only line this updater reads a tag
+  # from — a registry image in a `COPY --from=` is a pin it never sees, and
+  # tests/test_repo_hardening_offline.py refuses one. The images move together.
+  - package-ecosystem: "docker"
+    directory: "/.devcontainer"
+    schedule:
+      interval: "weekly"
+    groups:
+      devcontainer-images:
+        patterns: ["*"]
+
+  # The dev container's features (.devcontainer/devcontainer.json).
+  - package-ecosystem: "devcontainers"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
   # Integration test harness (pip): `requirements-integration.txt` at the root.
   # The dependency graph already scans that file, so an advisory in it alerts;
   # what was missing is the pull request that fixes it.

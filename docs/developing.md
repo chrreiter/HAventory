@@ -325,7 +325,10 @@ user-facing string is a literal, and a component test mounts through `mountCompo
   multi-ecosystem group, so a ruff bump moves the `dev` pin and the hook rev that
   `tests/test_toolchain_pins.py` holds equal to it in the same pull request, and CI's
   `actionlint` job runs that pre-commit hook rather than its own copy of the tool, so the
-  hook rev is the only place either version is written. Both root Python blocks ignore
+  hook rev is the only place either version is written. A `docker` block reads
+  `.devcontainer/Dockerfile`, where every image sits on a `FROM` line because that is the
+  only line the updater takes a tag from, and a `devcontainers` block moves the features in
+  `devcontainer.json`. Both root Python blocks ignore
   *version* updates to `homeassistant` and `home-assistant-frontend` — they are the declared
   floor and the wheel that release asks for, not dependencies to keep current — and the
   `pip` block is scoped off `pyproject.toml` and the generated `requirements-dev.txt`,
@@ -356,9 +359,20 @@ user-facing string is a literal, and a component test mounts through `mountCompo
 ## Reproducible dev environment (.devcontainer)
 
 Open the repo in VS Code / GitHub Codespaces and "Reopen in Container" for a ready-to-go
-environment (uv + Node 24). `post-create` runs `uv sync`, installs card deps, and verifies
-the offline suite. To bring up a real Home Assistant with HACS against the working
-tree, run `bash .devcontainer/develop.sh` (needs network; provisions Python 3.14).
+environment (uv + Node 24). `post-create` runs `scripts/setup.sh` and verifies the
+offline suite. To bring up a real Home Assistant with HACS against the working tree,
+run `bash .devcontainer/develop.sh` (needs network; provisions Python 3.14): current
+stable Home Assistant in its own `.venv-ha/`, its config in `.ha-config/` — both
+git-ignored — with the integration symlinked in and HAventory logging at debug. Set it
+up in the browser at `http://localhost:8123`: onboarding, then *Settings → Devices &
+services → Add integration*. A restart from the UI starts Home Assistant again on the
+working tree's current code; the online smokes above run against it with
+`HA_BASE_URL=http://localhost:8123` and a long-lived token from its profile page.
+
+On a Windows or macOS host, clone into a container volume (*Dev Containers: Clone
+Repository in Container Volume*) rather than reopening a bind-mounted checkout: `.venv`,
+`node_modules` and the Home Assistant environment are tens of thousands of small files,
+and a bind mount makes every one of them slow.
 
 ---
 

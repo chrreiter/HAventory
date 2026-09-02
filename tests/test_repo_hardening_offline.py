@@ -13,7 +13,9 @@ without fighting the pins that file carries deliberately, without bumping them
 from the other block that reads the same file, and without proposing the dev
 toolchain a second time out of a generated export — and that the ruff pin and
 the pre-commit rev held equal to it move in one pull request, since apart each
-half arrives red for the copy it did not touch.
+half arrives red for the copy it did not touch. The dev container's images are
+held to the same bar: its Dockerfile names every one on a ``FROM`` line, the
+only line Dependabot's docker updater takes a tag from, and a block reads it.
 
 Last, the two scheduled runs — ``ha-latest`` and ``card-smoke`` — each of which
 can be worthless in ways a green run of its own would not reveal: reporting a
@@ -61,6 +63,23 @@ ROOT_PYTHON_ECOSYSTEMS = ("uv", "pip")
 # tests/test_toolchain_pins.py holds equal to it live in two ecosystems. One
 # pull request has to move both, or the sweep fails whichever arrives alone.
 RUFF_PIN_ECOSYSTEMS = ("uv", "pre-commit")
+
+DEVCONTAINER_DOCKERFILE = REPO_ROOT / ".devcontainer" / "Dockerfile"
+
+#: `FROM [--platform=…] image [AS name]` — the one line Dependabot's docker
+#: updater reads a tag or digest from.
+FROM_LINE = re.compile(
+    r"^FROM\s+(?:--platform=\S+\s+)?(?P<image>\S+)(?:\s+AS\s+(?P<stage>\S+))?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+#: `COPY --from=<source>`: a stage declared above, or an image the updater never sees.
+COPY_FROM = re.compile(r"^COPY\s+--from=(?P<source>\S+)", re.IGNORECASE | re.MULTILINE)
+
+#: The Dockerfile stages two binaries out of their images before its own base, so a
+#: match count below this says the ``FROM`` pattern stopped matching, not that the
+#: file got simpler.
+MIN_DEVCONTAINER_FROM_LINES = 3
 
 # The root manifests the `uv` block owns, and which the `pip` block therefore has
 # to be scoped off: `requirements-dev.txt` is a `uv export` that says so on line
@@ -364,6 +383,57 @@ def test_dependabot_moves_the_ruff_pin_and_its_hook_together() -> None:
         assert block is not None and "*" in block.get("patterns", []), (
             f"the {ecosystem} block keeps some dependencies out of {name!r}"
         )
+
+
+def images_copied_past_every_from_line(dockerfile: str) -> list[str]:
+    """Sources a ``COPY --from=`` names that are not a stage the file declares.
+
+    A stage name resolves to a ``FROM`` line above it, where the tag is. Anything
+    else is an image reference of its own, and no updater reads it.
+    """
+    stages = {match.group("stage") for match in FROM_LINE.finditer(dockerfile)}
+    return [
+        match.group("source")
+        for match in COPY_FROM.finditer(dockerfile)
+        if match.group("source") not in stages
+    ]
+
+
+def test_dependabot_reads_the_devcontainer() -> None:
+    """The Dockerfile's images and the devcontainer's features each have an updater.
+
+    Without the ``docker`` block, the uv and go2rtc tags in the Dockerfile are
+    pins that move only when someone remembers them; without the
+    ``devcontainers`` block, the Node feature is. Neither file is read by any
+    other block.
+    """
+    assert dependabot_block("docker", "/.devcontainer") is not None
+    assert dependabot_block("devcontainers", "/") is not None
+
+
+def test_devcontainer_dockerfile_names_every_image_on_a_from_line() -> None:
+    """A ``COPY --from=`` naming a registry image is a pin the docker updater skips."""
+    dockerfile = DEVCONTAINER_DOCKERFILE.read_text(encoding="utf-8")
+
+    assert len(FROM_LINE.findall(dockerfile)) >= MIN_DEVCONTAINER_FROM_LINES, (
+        "the FROM pattern matches too little"
+    )
+    assert images_copied_past_every_from_line(dockerfile) == []
+
+
+def test_a_copy_from_a_registry_image_is_reported() -> None:
+    """The error case, in the shape it had before the images were staged."""
+    dockerfile = "\n".join(
+        [
+            "FROM ghcr.io/astral-sh/uv:0.11.31 AS uv",
+            "FROM --platform=linux/amd64 debian:bookworm",
+            "COPY --from=uv /uv /uvx /usr/local/bin/",
+            "COPY --from=ghcr.io/alexxit/go2rtc:1.9.14 /usr/local/bin/go2rtc /usr/local/bin/",
+            "",
+        ]
+    )
+
+    assert images_copied_past_every_from_line(dockerfile) == ["ghcr.io/alexxit/go2rtc:1.9.14"]
 
 
 def test_dependabot_keeps_pip_off_the_manifests_uv_owns() -> None:
