@@ -248,10 +248,10 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   upstream bug is
   [home-assistant/android#6055](https://github.com/home-assistant/android/issues/6055).
 
-Every one of these is a decision rather than an oversight, and the reasoning is with the
-bullet. The scale ceiling is also open work and links the issue tracking it; the rest are
-settled, and the [issue tracker](https://github.com/chrreiter/HAventory/issues) is where
-that would change.
+Every one of these but the last is a decision rather than an oversight, and the reasoning
+is with the bullet. The scale ceiling is also open work and links the issue tracking it,
+the Android camera waits on the companion app's fix, and the rest are settled: the
+[issue tracker](https://github.com/chrreiter/HAventory/issues) is where that would change.
 
 ## Troubleshooting
 
