@@ -13,10 +13,12 @@ without fighting the pins that file carries deliberately, without bumping them
 from the other block that reads the same file, and without proposing the dev
 toolchain a second time out of a generated export — and that the ruff pin and
 the pre-commit rev held equal to it move in one pull request, since apart each
-half arrives red for the copy it did not touch. The dev container is held to
-the same bar: its Dockerfile names every image on a ``FROM`` line, the only line
-Dependabot's docker updater takes a tag from, and a block reads it, while
-``develop.sh`` clears no directory it has not first read a ``pyvenv.cfg`` in.
+half arrives red for the copy it did not touch — and without writing that export
+at all, since it is generated from the lock rather than resolved on its own. The
+dev container is held to the same bar: its Dockerfile names every image on a
+``FROM`` line, the only line Dependabot's docker updater takes a tag from, and a
+block reads it, while ``develop.sh`` clears no directory it has not first read a
+``pyvenv.cfg`` in.
 
 Last, the two scheduled runs — ``ha-latest`` and ``card-smoke`` — each of which
 can be worthless in ways a green run of its own would not reveal: reporting a
@@ -88,6 +90,10 @@ MIN_DEVCONTAINER_FROM_LINES = 3
 # 1, and `pyproject.toml` has a lockfile beside it that a pip edit would not
 # touch.
 UV_OWNED_MANIFESTS = ("pyproject.toml", "requirements-dev.txt")
+
+# The one root file no updater may write: it is derived from `uv.lock`, so an
+# edit to it is a pin nothing resolved.
+GENERATED_FROM_THE_LOCK = ("requirements-dev.txt",)
 VERSION_UPDATE_TYPES = frozenset(
     {
         "version-update:semver-major",
@@ -455,6 +461,23 @@ def test_develop_clears_no_directory_it_has_not_read_a_pyvenv_cfg_in() -> None:
         assert "--force" not in line, f"--force removes whatever HA_VENV names: {line.strip()}"
     assert script.index("pyvenv.cfg") < script.index("uv venv"), (
         "the guard has to be read before the directory is cleared"
+    )
+
+
+def test_dependabot_leaves_the_generated_export_alone() -> None:
+    """The ``uv`` updater reads ``requirements-dev.txt`` as a manifest; it is an export.
+
+    Read that way, every pin in it is a direct requirement to bump to the newest
+    release — a resolution of its own beside ``uv.lock``, and not the one
+    ``uv sync`` installs. Ten pins had drifted that way. The lock is the only
+    source: ``scripts/export_dev_requirements.sh`` rewrites the file from it and
+    ``tests/test_toolchain_pins.py`` fails while the two disagree.
+    """
+    block = dependabot_block("uv", "/")
+    assert block is not None
+
+    assert still_scanned(block, GENERATED_FROM_THE_LOCK) == [], (
+        "the uv block still scans requirements-dev.txt — add it to exclude-paths"
     )
 
 

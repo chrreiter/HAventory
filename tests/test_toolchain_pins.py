@@ -1,10 +1,14 @@
-"""The Python floor, the Node floor and the ruff pin must agree everywhere.
+"""The Python floor, the Node floor, the ruff pin and the dev export agree everywhere.
 
-Each of the three is declared in exactly one place — ``requires-python`` in
-``pyproject.toml``, ``engines.node`` in the card's ``package.json``, and the
+Each of the first three is declared in exactly one place — ``requires-python``
+in ``pyproject.toml``, ``engines.node`` in the card's ``package.json``, and the
 ``ruff==`` entry in the ``dev`` dependency group — and each is then copied into
 files that read nothing back. A copy that goes stale stays stale: the CodeQL
 workflow analysed Python on 3.12 for as long as nothing looked at it.
+
+The fourth is a whole file of copies: ``requirements-dev.txt`` states the
+version of every package in the locked ``dev`` group, and ``uv.lock`` is where
+each of those is resolved. The last section holds the two together.
 
 The Python side works in two passes. Registered files are checked by count and
 by value, so changing a copy without changing the declaration fails; every
@@ -440,3 +444,94 @@ def test_ci_runs_actionlint_through_the_pre_commit_hook() -> None:
         assert "rhysd/actionlint" not in path.read_text(encoding="utf-8"), (
             f"{path.name} names actionlint itself — a copy of the version the hook rev already is"
         )
+
+
+# --------------------------------------------------------------------------
+# The dev group's pip export
+# --------------------------------------------------------------------------
+# `requirements-dev.txt` is `uv export --only-group dev` written down: the
+# recipes in `.claude/skills/` install it with `uv run --with-requirements` and
+# `.claude/hooks/session-start.sh` falls back to it where uv is absent, so what
+# it pins has to be the set `uv sync` installs. Nothing reads it back, and an
+# updater pointed at the repository root reads it as a manifest and bumps its
+# pins to the newest release instead: ten of them named a version `uv.lock`
+# does not resolve before the two were tied together here.
+# `.github/dependabot.yml` keeps the updater off the file for that reason, and
+# `scripts/export_dev_requirements.sh` rebuilds it from the lock.
+
+DEV_REQUIREMENTS = REPO_ROOT / "requirements-dev.txt"
+UV_LOCK = REPO_ROOT / "uv.lock"
+EXPORT_SCRIPT = "scripts/export_dev_requirements.sh"
+
+# `name==version` opening a line. An environment marker follows on the same line
+# and a `# via` annotation is indented under it, so neither is read as a pin.
+PINNED_REQUIREMENT = re.compile(r"(?m)^(?P<name>[A-Za-z0-9._-]+)==(?P<version>[^\s;]+)")
+
+
+def normalized(name: str) -> str:
+    """The PEP 503 name, so ``ast-serialize`` and ``ast_serialize`` are one package."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def pins_in(text: str) -> dict[str, str]:
+    """Every requirement a pip requirements file pins, by normalized name."""
+    return {
+        normalized(match["name"]): match["version"] for match in PINNED_REQUIREMENT.finditer(text)
+    }
+
+
+def exported_pins() -> dict[str, str]:
+    return pins_in(DEV_REQUIREMENTS.read_text(encoding="utf-8"))
+
+
+def locked_versions() -> dict[str, str]:
+    """The version ``uv.lock`` resolves for each package it carries."""
+    return {
+        normalized(package["name"]): package["version"] for package in read_toml(UV_LOCK)["package"]
+    }
+
+
+def dev_group_names() -> set[str]:
+    """The packages the ``dev`` dependency group names itself."""
+    group = read_toml(PYPROJECT)["dependency-groups"]["dev"]
+    return {normalized(re.split(r"[=<>!~;\[ ]", entry, maxsplit=1)[0]) for entry in group}
+
+
+def test_every_exported_pin_is_the_version_the_lock_resolves() -> None:
+    """A pin the lock does not resolve is an environment nothing else builds."""
+    locked = locked_versions()
+    disagreeing = {
+        name: {"exported": version, "uv.lock": locked.get(name)}
+        for name, version in exported_pins().items()
+        if locked.get(name) != version
+    }
+
+    assert disagreeing == {}, f"{disagreeing} — regenerate with `bash {EXPORT_SCRIPT}`"
+
+
+def test_every_dev_dependency_reaches_the_export() -> None:
+    """A tool missing from the export is missing from every environment built off it."""
+    absent = dev_group_names() - set(exported_pins())
+
+    assert absent == set(), f"absent: {sorted(absent)} — regenerate with `bash {EXPORT_SCRIPT}`"
+
+
+def test_the_export_says_it_is_generated_and_names_what_generates_it() -> None:
+    """The header is where a reader finds out not to edit the file, and what to run."""
+    header = "\n".join(DEV_REQUIREMENTS.read_text(encoding="utf-8").splitlines()[:4])
+
+    assert "do not edit by hand" in header
+    assert EXPORT_SCRIPT in header
+    assert (REPO_ROOT / EXPORT_SCRIPT).is_file()
+
+
+def test_a_marker_or_an_annotation_is_not_read_as_a_pin() -> None:
+    """The other shapes `uv export` writes: a header, a marker, a `via` annotation."""
+    text = (
+        "# GENERATED by `uv export --only-group dev` — do not edit by hand.\n"
+        "colorama==0.4.6 ; sys_platform == 'win32'\n"
+        "    # via pytest\n"
+        "ast_serialize==0.8.0\n"
+    )
+
+    assert pins_in(text) == {"colorama": "0.4.6", "ast-serialize": "0.8.0"}
