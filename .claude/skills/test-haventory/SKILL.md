@@ -38,15 +38,18 @@ Both halves must be green. This is the `--no-project` spelling; the plain one, a
 command is in the gate, are in `CONTRIBUTING.md`. Backend, from the repo root:
 
 ```bash
+# `--with-requirements` installs the `uv export` of the dev group, pins and all.
+# Naming packages one `--with` at a time here is how a test-only import went
+# missing and how a version literal for ruff drifted from the pin CI runs.
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --no-project --python 3.14 \
-  --with pytest --with pytest-asyncio --with voluptuous --with aiohttp --with pyyaml \
-  python -m pytest -q
-# → 1322 passed, 27 skipped
+  --with-requirements requirements-dev.txt python -m pytest -q
+# → 1361 passed, 25 skipped
 
-uv run --no-project --python 3.14 --with ruff==0.16.5 ruff check custom_components tests
+uv run --no-project --python 3.14 --with-requirements requirements-dev.txt \
+  ruff check custom_components tests
 # → All checks passed!
 
-uv run --no-project --python 3.14 --with mypy --with voluptuous mypy
+uv run --no-project --python 3.14 --with-requirements requirements-dev.txt mypy
 # → Success: no issues found in 25 source files
 ```
 
@@ -56,7 +59,7 @@ Frontend, from `cards/haventory-card`:
 npm ci            # first run, or if node_modules is partial (missing rolldown binding)
 npm run lint      # eslint  → clean
 npm run typecheck # tsc --noEmit → clean
-npm test          # vitest  → 2023 passed across 79 files
+npm test          # vitest  → 2044 passed across 79 files
 npm run build     # vite → ../../custom_components/haventory/www/ (git-ignored)
 ```
 
@@ -182,8 +185,7 @@ Non-destructive WS client tests against the running instance, from the repo root
 
 ```bash
 set -a; source .env; set +a
-RUN_ONLINE=1 uv run --no-project --python 3.14 \
-  --with pytest --with pytest-asyncio --with aiohttp --with voluptuous --with pyyaml \
+RUN_ONLINE=1 uv run --no-project --python 3.14 --with-requirements requirements-dev.txt \
   python -m pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
 # → 8 passed, 13 skipped (the skips need the destructive/area gates)
 ```

@@ -385,6 +385,12 @@ def test_prose_node_versions_agree_with_engines() -> None:
 # --------------------------------------------------------------------------
 # Tool pins written twice
 # --------------------------------------------------------------------------
+# The ``dev`` group pins ruff exactly because the formatter's output moves
+# between releases: a hook on one ruff reformats what CI's ``ruff format
+# --check`` on another rejects. The pre-commit rev is therefore a second copy
+# of the same number, and ``.github/dependabot.yml`` moves the two in one pull
+# request (``tests/test_repo_hardening_offline.py`` holds that pairing) so the
+# check below is what a bump passes, not what it trips over.
 
 
 def dev_dependency_pin(name: str) -> str:
@@ -406,12 +412,16 @@ def test_pre_commit_runs_the_pinned_ruff() -> None:
     assert hook == dev_dependency_pin("ruff")
 
 
-def test_the_documented_ruff_command_runs_the_pinned_ruff() -> None:
-    """The skill's lint command names its own ruff, so it can disagree with CI."""
-    text = (REPO_ROOT / ".claude/skills/test-haventory/SKILL.md").read_text(encoding="utf-8")
-    documented = set(re.findall(r"ruff==(\S+)", text))
+def test_the_documented_commands_name_no_ruff_version() -> None:
+    """The skill installs the ``uv export``; a ``ruff==`` in it is a copy nothing moves.
 
-    assert documented == {dev_dependency_pin("ruff")}
+    Dependabot rewrites the pin in ``pyproject.toml``, the lock and the export,
+    and the pre-commit rev beside them. A version spelled into a shell command in
+    prose is the one copy it cannot see, and was why every ruff bump arrived red.
+    """
+    text = (REPO_ROOT / ".claude/skills/test-haventory/SKILL.md").read_text(encoding="utf-8")
+
+    assert re.findall(r"ruff==\S+", text) == []
 
 
 def test_pre_commit_runs_the_actionlint_ci_runs() -> None:

@@ -321,11 +321,15 @@ user-facing string is a literal, and a component test mounts through `mountCompo
   requests, and issue/PR templates.
 - Dependabot: grouped updates for `github-actions`, `npm` (card) and `uv` (Python), plus a
   `pip` block for `requirements-integration.txt` so an advisory in that file arrives as a
-  pull request and not only as an alert. Both root Python blocks ignore *version* updates
-  to `homeassistant` and `home-assistant-frontend` — they are the declared floor and the
-  wheel that release asks for, not dependencies to keep current — and the `pip` block is
-  scoped off `pyproject.toml` and the generated `requirements-dev.txt`, which belong to the
-  `uv` block.
+  pull request and not only as an alert. The `uv` block and a `pre-commit` block share one
+  multi-ecosystem group, so a ruff bump moves the `dev` pin and the hook rev that
+  `tests/test_toolchain_pins.py` holds equal to it in the same pull request; the
+  `actionlint` hook is left out of it because CI pins that tool as a `docker://` image,
+  which Dependabot does not update, so the two copies move by hand together. Both root
+  Python blocks ignore *version* updates to `homeassistant` and `home-assistant-frontend` —
+  they are the declared floor and the wheel that release asks for, not dependencies to keep
+  current — and the `pip` block is scoped off `pyproject.toml` and the generated
+  `requirements-dev.txt`, which belong to the `uv` block.
 - `main` is protected by a checked-in ruleset (`.github/rulesets/main.json`): pull request
   required, the CI/CodeQL/dependency-review/PR-title checks required, no force-push or
   deletion. Edit it under *Settings → Rules → Rulesets*, or `PUT` the file to

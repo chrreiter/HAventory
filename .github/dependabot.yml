@@ -1,4 +1,21 @@
 version: 2
+
+# A group that spans ecosystems: each member block names it with
+# `multi-ecosystem-group` and says which of its dependencies join with
+# `patterns`; the schedule and the update types it takes live here.
+multi-ecosystem-groups:
+  # The Python dev toolchain and the pre-commit hooks that run parts of it. The
+  # `dev` group pins ruff exactly — the formatter's output moves between
+  # releases, so the hook and CI must run the same one — and the hook rev is a
+  # second copy of that number, which tests/test_toolchain_pins.py holds equal.
+  # The `uv` updater moves one copy and the `pre-commit` updater the other; in
+  # separate pull requests each arrived red for the copy it did not touch.
+  # Minor/patch bumps arrive here together; majors arrive individually.
+  python-dev:
+    schedule:
+      interval: "weekly"
+    update-types: ["minor", "patch"]
+
 updates:
   # GitHub Actions — group all bumps into one PR (keeps SHA-pinned + tagged
   # actions moving together).
@@ -44,12 +61,12 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
-  # Python dev toolchain via uv (pyproject.toml + uv.lock). Group minor/patch;
-  # majors arrive individually.
+  # Python dev toolchain via uv (pyproject.toml + uv.lock), one half of the
+  # `python-dev` group above.
   - package-ecosystem: "uv"
     directory: "/"
-    schedule:
-      interval: "weekly"
+    multi-ecosystem-group: "python-dev"
+    patterns: ["*"]
     cooldown:
       default-days: 3
     ignore:
@@ -79,10 +96,22 @@ updates:
           - "version-update:semver-major"
           - "version-update:semver-minor"
           - "version-update:semver-patch"
-    groups:
-      python-dev:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
+
+  # pre-commit hook revs (.pre-commit-config.yaml), the other half of the
+  # `python-dev` group above — the ruff hook is why the two share one.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    multi-ecosystem-group: "python-dev"
+    patterns: ["*"]
+    cooldown:
+      default-days: 3
+    ignore:
+      # CI runs actionlint as a `docker://` image pinned by digest, which the
+      # github-actions updater skips, so a bump of this hook alone would fail
+      # tests/test_toolchain_pins.py every week until a hand moved CI. The two
+      # copies move by hand together; a hook rev has no advisory channel that an
+      # outright ignore would mute.
+      - dependency-name: "https://github.com/rhysd/actionlint"
 
   # Integration test harness (pip): `requirements-integration.txt` at the root.
   # The dependency graph already scans that file, so an advisory in it alerts;
