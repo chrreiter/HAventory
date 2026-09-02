@@ -647,12 +647,17 @@ async def test_the_item_delete_service_deletes_the_item_files(
 async def test_setup_sweeps_a_file_no_metadata_references(
     hass: HomeAssistant, hass_storage: dict, setup_entry
 ) -> None:
-    """A store restored without its media, or a save that never landed."""
+    """A save that never landed, on a store that still holds the inventory."""
 
+    item_id = "5c4b3a29-1d0e-4f8a-9b7c-6d5e4f3a2b1c"
     hass_storage[STORAGE_KEY] = {
         "version": 1,
         "key": STORAGE_KEY,
-        "data": {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}},
+        "data": {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "items": {item_id: {"id": item_id, "name": "Drill", "attachments": []}},
+            "locations": {},
+        },
     }
     root = Path(hass.config.path(MEDIA_SUBDIR))
     orphan = root / "some-item" / "some-attachment.png"
@@ -662,6 +667,33 @@ async def test_setup_sweeps_a_file_no_metadata_references(
     await setup_entry()
 
     assert not orphan.exists()
+
+
+async def test_setup_keeps_every_file_when_the_store_holds_no_items(
+    hass: HomeAssistant, hass_storage: dict, setup_entry, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A store that was lost, or restored without the inventory, references nothing.
+
+    Every explicit delete removes its own files, so a repository holding no items
+    has nothing a sweep could be protecting and the files are the only copy left.
+    """
+
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}},
+    }
+    root = Path(hass.config.path(MEDIA_SUBDIR))
+    stranded = root / "some-item" / "some-attachment.png"
+    stranded.parent.mkdir(parents=True, exist_ok=True)
+    stranded.write_bytes(PNG_BYTES)
+
+    await setup_entry()
+
+    assert stranded.read_bytes() == PNG_BYTES
+    kept = [r for r in caplog.records if "op=attachment_sweep" in r.getMessage()]
+    assert [r.levelname for r in kept] == ["WARNING"]
+    assert "files=1" in kept[0].getMessage()
 
 
 async def test_setup_sweeps_a_tile_an_earlier_encoder_generation_wrote(

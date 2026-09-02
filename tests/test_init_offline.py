@@ -7,6 +7,7 @@ from copy import deepcopy
 
 import custom_components.haventory as haven_init
 import pytest
+from custom_components.haventory import media
 from custom_components.haventory.const import (
     CONF_ALLOW_LOSSY_LOAD,
     CONF_CARD_TITLE,
@@ -23,7 +24,12 @@ from custom_components.haventory.exceptions import (
     SchemaDowngradeError,
 )
 from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
-from custom_components.haventory.models import ItemCreate
+from custom_components.haventory.models import (
+    AttachmentMeta,
+    ItemCreate,
+    iso_utc_now,
+    new_uuid4,
+)
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
 from custom_components.haventory.ws import setup as ws_setup
@@ -616,3 +622,101 @@ async def test_a_lossy_load_rewrites_the_store_it_could_not_fully_read(monkeypat
     # actually run: `tests/integration/test_repairs.py`.
     written = await raw_store.async_load()
     assert set(written["items"]) == {"11111111-1111-4111-8111-111111111111"}
+
+
+PNG_HEAD = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
+
+
+def _sweep_records(caplog) -> list[logging.LogRecord]:
+    """The attachment-sweep lines one setup wrote."""
+
+    return [record for record in caplog.records if "op=attachment_sweep" in record.getMessage()]
+
+
+def _attachment() -> AttachmentMeta:
+    """One picture's metadata, for a store seeded with an item that has a file."""
+
+    return AttachmentMeta(
+        id=new_uuid4(),
+        kind="picture",
+        filename="drill.png",
+        mime="image/png",
+        size=len(PNG_HEAD),
+        uploaded_at=iso_utc_now(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_boot_with_no_items_keeps_every_attachment_file(monkeypatch, caplog) -> None:
+    """A store that was deleted leaves the files as the only copy of the photos.
+
+    Sweeping against an empty repository is not a backstop but a wipe: every
+    explicit delete removes its own files, so a repository holding nothing has
+    nothing an orphan sweep could be protecting.
+    """
+
+    hass = HomeAssistant()
+    stranded = media.media_root(hass) / "11111111-1111-4111-8111-111111111111" / "drill.png"
+    stranded.parent.mkdir(parents=True, exist_ok=True)
+    stranded.write_bytes(PNG_HEAD)
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        # What a store whose file is missing hands back, `_empty_payload()`.
+        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+    caplog.set_level(logging.DEBUG)
+
+    await setup_entry(hass, ConfigEntry())
+
+    assert stranded.is_file()
+    kept = _sweep_records(caplog)
+    assert [record.levelno for record in kept] == [logging.WARNING]
+    assert "files=1" in kept[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_a_boot_with_no_items_and_no_files_says_nothing(monkeypatch, caplog) -> None:
+    """Every fresh install boots empty, so the warning must not greet a new household."""
+
+    hass = HomeAssistant()
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+    caplog.set_level(logging.DEBUG)
+
+    await setup_entry(hass, ConfigEntry())
+
+    assert not media.media_root(hass).exists()
+    assert _sweep_records(caplog) == []
+
+
+@pytest.mark.asyncio
+async def test_a_boot_with_items_still_sweeps_the_orphans(monkeypatch) -> None:
+    """The backstop is unchanged wherever metadata exists to compare files against."""
+
+    hass = HomeAssistant()
+    source = Repository()
+    item = source.create_item(ItemCreate(name="Drill"))
+    meta = _attachment()
+    source.add_attachment(item.id, meta)
+    payload = {"schema_version": CURRENT_SCHEMA_VERSION, **source.export_state()}
+
+    root = media.media_root(hass)
+    referenced = media.attachment_path(root, str(item.id), str(meta.id), meta.mime)
+    referenced.parent.mkdir(parents=True, exist_ok=True)
+    referenced.write_bytes(PNG_HEAD)
+    orphan = root / str(item.id) / "00000000-0000-4000-8000-000000000000.png"
+    orphan.write_bytes(PNG_HEAD)
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return deepcopy(payload)
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    await setup_entry(hass, ConfigEntry())
+
+    assert referenced.is_file()
+    assert not orphan.exists()

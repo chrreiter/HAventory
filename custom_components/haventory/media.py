@@ -420,6 +420,40 @@ def _sweep_blocking(root: Path, referenced: frozenset[str]) -> list[str]:
     return removed
 
 
+def _count_files_blocking(root: Path) -> int:
+    """How many files sit under ``root``. Blocks — executor only.
+
+    Counts what is there without resolving anything: nothing is opened, removed
+    or named from this, so a file a sweep would refuse to touch still counts as
+    a file the household has on disk.
+    """
+
+    if not root.is_dir():
+        return 0
+    return sum(1 for candidate in root.rglob("*") if candidate.is_file())
+
+
+async def async_report_unswept(hass: HomeAssistant) -> int:
+    """Warn about the attachment files a skipped sweep left in place.
+
+    For the one caller that skips: setup, when the repository holds no items at
+    all and every file under the media root would therefore read as an orphan.
+    Returns how many files are there, and says nothing when there are none — a
+    fresh install has no media root, and a household that never attached
+    anything has nothing to be told about.
+    """
+
+    root = media_root(hass)
+    count = await hass.async_add_executor_job(_count_files_blocking, root)
+    if count:
+        LOGGER.warning(
+            "Kept every attachment file: the inventory holds no items, so nothing here "
+            "can be told apart from a file whose metadata was lost",
+            extra={"domain": DOMAIN, "op": "attachment_sweep", "files": count},
+        )
+    return count
+
+
 def referenced_paths(root: Path, pairs: Iterable[tuple[str, AttachmentMeta]]) -> frozenset[str]:
     """Resolve every (item, attachment) pair to the files it names.
 
