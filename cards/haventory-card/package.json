@@ -1,6 +1,6 @@
 {
   "name": "haventory-card",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "private": true,
   "description": "Lovelace card for the HAventory Home Assistant integration.",
   "license": "Apache-2.0",

@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.9.0](https://github.com/chrreiter/HAventory/compare/v0.8.1...v0.9.0) (2026-09-02)
+
+
+### Features
+
+* **card:** a Take photo tile beside the photo picker on phones ([#705](https://github.com/chrreiter/HAventory/issues/705)) ([46209a3](https://github.com/chrreiter/HAventory/commit/46209a3924a3c9d51e9c34c38bfd5fc6ad800c95))
+* **storage:** delete the schema-collapse adopter and the import-side exception ([#690](https://github.com/chrreiter/HAventory/issues/690)) ([54fe49d](https://github.com/chrreiter/HAventory/commit/54fe49d8fe4e6368ad70a2b3eed09d2af802fde2)), closes [#668](https://github.com/chrreiter/HAventory/issues/668)
+
+
+### Bug Fixes
+
+* **card:** every detail-sheet fact renders, location first ([#698](https://github.com/chrreiter/HAventory/issues/698)) ([a0313b7](https://github.com/chrreiter/HAventory/commit/a0313b79118b5ceb2866d0147c7cba8d56a90dc3)), closes [#697](https://github.com/chrreiter/HAventory/issues/697)
+* **devcontainer:** a Home Assistant that survives a first run, a restart and default_config ([#707](https://github.com/chrreiter/HAventory/issues/707)) ([ef5b554](https://github.com/chrreiter/HAventory/commit/ef5b554bf46a8744f48a33be45f5db9b1b5ab402))
+* tie requirements-dev.txt to uv.lock, not to independent pins ([#711](https://github.com/chrreiter/HAventory/issues/711)) ([491d8e5](https://github.com/chrreiter/HAventory/commit/491d8e5b99728a6f062031ee1ace5f7666196bc3))
+
+
+### Documentation
+
+* **card:** comments state the rule; specs state the behaviour ([#696](https://github.com/chrreiter/HAventory/issues/696)) ([115c851](https://github.com/chrreiter/HAventory/commit/115c8511c461e1b687d015bd5e12047e22755a81)), closes [#686](https://github.com/chrreiter/HAventory/issues/686)
+* plain-language pass over every markdown file ([#710](https://github.com/chrreiter/HAventory/issues/710)) ([1b69f1f](https://github.com/chrreiter/HAventory/commit/1b69f1f3498c006c607fe35c798ff25fd71d30f4))
+* the plan tests what ships ([#701](https://github.com/chrreiter/HAventory/issues/701)) ([a02a46a](https://github.com/chrreiter/HAventory/commit/a02a46a5eb56323323a60c7b2ce83021d332fa35))
+* the V0.9.0 session plan and its implementer agent ([#688](https://github.com/chrreiter/HAventory/issues/688)) ([37d2120](https://github.com/chrreiter/HAventory/commit/37d212093824b05b299aae91664299a2419fe20d))
+* what the tree says, said once ([#702](https://github.com/chrreiter/HAventory/issues/702)) ([1a474eb](https://github.com/chrreiter/HAventory/commit/1a474ebf44ee4179b8ded7264ad1d16465091ade)), closes [#687](https://github.com/chrreiter/HAventory/issues/687)
+
 ## [0.8.1](https://github.com/chrreiter/HAventory/compare/v0.8.0...v0.8.1) (2026-08-31)
 
 
