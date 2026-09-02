@@ -325,7 +325,10 @@ user-facing string is a literal, and a component test mounts through `mountCompo
   multi-ecosystem group, so a ruff bump moves the `dev` pin and the hook rev that
   `tests/test_toolchain_pins.py` holds equal to it in the same pull request, and CI's
   `actionlint` job runs that pre-commit hook rather than its own copy of the tool, so the
-  hook rev is the only place either version is written. Both root Python blocks ignore
+  hook rev is the only place either version is written. A `docker` block reads
+  `.devcontainer/Dockerfile`, where every image sits on a `FROM` line because that is the
+  only line the updater takes a tag from, and a `devcontainers` block moves the features in
+  `devcontainer.json`. Both root Python blocks ignore
   *version* updates to `homeassistant` and `home-assistant-frontend` — they are the declared
   floor and the wheel that release asks for, not dependencies to keep current — and the
   `pip` block is scoped off `pyproject.toml` and the generated `requirements-dev.txt`,
