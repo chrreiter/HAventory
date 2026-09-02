@@ -210,7 +210,9 @@ rewritten in full on every mutation, so base64 content would multiply every save
   HACS replaces on upgrade) and `<config>/www` (which is `/local`, unauthenticated). They are
   served only through the authenticated view; see `backend_api_contract.md`. An item's
   directory is removed once its last file is deleted; one that still holds anything else is
-  kept.
+  kept. A file no stored metadata references is removed at setup — except when the store
+  holds no items at all, when every file is left where it is and a warning names how many,
+  because a store that was lost or has not been read yet looks the same from here.
 - Caps: 10 pictures and 10 manuals per item, 8 MB per file. `haventory/config` reports all
   of them so a picker can refuse early.
 - A picture also has a **row tile**: `?size=thumb` on the media route serves a 256px WebP

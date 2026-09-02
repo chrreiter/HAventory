@@ -365,10 +365,21 @@ async def _async_sweep_orphaned_media(hass: HomeAssistant, repository: Repositor
     """Delete attachment files no stored metadata references.
 
     Runs at setup because that is the one moment the metadata is known to be
-    complete and nothing is mid-write. A failure here costs disk, not data, so
+    complete and nothing is mid-write — except against a repository that holds
+    no items, which is swept not at all. A failure here costs disk, not data, so
     it never stops the entry from loading.
     """
     try:
+        if repository.get_counts()["items_total"] == 0:
+            # Nothing to protect and everything to lose. The sweep is a backstop
+            # for a crash between a store save and the file delete that follows
+            # it — every explicit delete already removes its own files — and a
+            # repository holding no items references nothing, so it would take
+            # the whole media root. A store that is missing, empty or not yet
+            # written looks exactly like that, and there the files are the only
+            # copy left.
+            await media_mod.async_report_unswept(hass)
+            return
         await media_mod.async_sweep_orphans(hass, repository.iter_attachments())
     except Exception:
         LOGGER.warning(

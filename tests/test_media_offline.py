@@ -9,6 +9,7 @@ decides *what* the view would be allowed to serve and *where* it would find it.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from pathlib import Path
 
@@ -336,6 +337,43 @@ async def test_the_sweep_is_a_no_op_when_nothing_was_ever_stored() -> None:
     hass = HomeAssistant()
 
     assert await media.async_sweep_orphans(hass, []) == ()
+
+
+@pytest.mark.asyncio
+async def test_the_unswept_report_counts_the_files_it_left_alone(caplog) -> None:
+    """What setup writes instead of sweeping an inventory that holds no items."""
+
+    hass = HomeAssistant()
+    item_dir = media.media_root(hass) / "11111111-1111-4111-8111-111111111111"
+    item_dir.mkdir(parents=True)
+    stored = [item_dir / "one.png", item_dir / "two.pdf"]
+    for path, content in zip(stored, (PNG_BYTES, PDF_BYTES), strict=True):
+        path.write_bytes(content)
+    caplog.set_level(logging.DEBUG)
+
+    assert await media.async_report_unswept(hass) == len(stored)
+
+    warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert f"files={len(stored)}" in warnings[0].getMessage()
+    assert "op=attachment_sweep" in warnings[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_the_unswept_report_says_nothing_when_there_are_no_files(caplog) -> None:
+    """A new household attaches nothing on its first boot and hears nothing about it."""
+
+    hass = HomeAssistant()
+    caplog.set_level(logging.DEBUG)
+
+    assert await media.async_report_unswept(hass) == 0
+
+    # And the same once the directory exists but holds nothing, which is what an
+    # install left after every attachment was deleted looks like.
+    media.media_root(hass).mkdir(parents=True)
+
+    assert await media.async_report_unswept(hass) == 0
+    assert caplog.records == []
 
 
 @pytest.mark.asyncio
