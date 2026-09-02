@@ -24,7 +24,9 @@ Run any Python tool through uv (`uv run <tool>`), so it uses the locked dev envi
 
 - **uv**: Python env, dependency resolution, and lockfile (`uv.lock`). Dev deps live in
   `pyproject.toml` under `[dependency-groups]`; `requirements-dev.txt` is a generated,
-  pip-installable export for environments without uv.
+  pip-installable export for environments without uv. Regenerate it rather than edit it —
+  `bash scripts/export_dev_requirements.sh` rewrites it from the lock, and
+  `tests/test_toolchain_pins.py` fails while the two disagree.
 - **Ruff**: lint and format, configured and pinned in `pyproject.toml`. The hook in
   `.pre-commit-config.yaml` pins the same version and `tests/test_toolchain_pins.py` holds
   the two together.
@@ -318,7 +320,9 @@ user-facing string is a literal, and a component test mounts through `mountCompo
   `devcontainer.json`. Both root Python blocks ignore *version* updates to `homeassistant`
   and `home-assistant-frontend`, which are the declared floor and the wheel that release
   asks for, not dependencies to keep current. The `pip` block is scoped off `pyproject.toml`
-  and the generated `requirements-dev.txt`, which belong to the `uv` block.
+  and the generated `requirements-dev.txt`, which belong to the `uv` block; the `uv` block is
+  scoped off that export as well, since it is written from `uv.lock` rather than resolved on
+  its own, so a lock bump carries a regenerated export in the same pull request.
 - `main` is protected by a checked-in ruleset (`.github/rulesets/main.json`): pull request
   required, the CI/CodeQL/dependency-review/PR-title checks required, no force-push or
   deletion. Edit it under *Settings → Rules → Rulesets*, or `PUT` the file to

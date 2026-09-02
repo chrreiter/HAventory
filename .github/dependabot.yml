@@ -69,6 +69,19 @@ updates:
     patterns: ["*"]
     cooldown:
       default-days: 3
+    exclude-paths:
+      # `requirements-dev.txt` is `uv export` written down, not a manifest. This
+      # updater reads it as one anyway and bumps every pin in it to the newest
+      # release, which resolves nothing against `uv.lock` — ten pins naming a
+      # version the lock does not carry had accumulated that way, so the pip
+      # fallback installed a set `uv sync` never produces. The lock is the only
+      # source: scripts/export_dev_requirements.sh rewrites the file from it,
+      # in the same pull request that moves the lock, and
+      # tests/test_toolchain_pins.py fails while the two disagree.
+      #
+      # `exclude-paths` covers version updates only, so a security advisory in
+      # the file can still open a pull request here.
+      - "requirements-dev.txt"
     ignore:
       # Not dependencies to keep current. `requirements-integration.txt` pins the
       # Home Assistant core to the floor `hacs.json` declares, so the in-process

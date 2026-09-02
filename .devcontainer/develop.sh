@@ -29,6 +29,17 @@ PY_VER="${HA_PYTHON:-3.14}"
 HASS="$HA_VENV/bin/hass"
 
 if [ ! -x "$HASS" ]; then
+  # uv refuses to `--clear` a directory that is not a virtual environment and
+  # points at `--force`, which removes whatever HA_VENV names — a path this
+  # script does not own, since HA_VENV is overridable. A directory here without
+  # a pyvenv.cfg is therefore the operator's to remove, and saying which one it
+  # is beats a hint that deletes it. A half-built environment still has that
+  # file, so the interrupted install this branch exists for is still cleared.
+  if [ -e "$HA_VENV" ] && [ ! -f "$HA_VENV/pyvenv.cfg" ]; then
+    echo "[develop] $HA_VENV exists and is not a virtual environment." >&2
+    echo "[develop] Remove it, or point HA_VENV somewhere else, and run this again." >&2
+    exit 1
+  fi
   echo "[develop] Installing current stable Home Assistant into $HA_VENV ..."
   uv venv --clear --python "$PY_VER" "$HA_VENV"
   uv pip install --python "$HA_VENV/bin/python" homeassistant
