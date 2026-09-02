@@ -28,7 +28,11 @@ cloud, no external service. Minimum Home Assistant **2026.6.0**.
   marks it overdue once the date passes.
 - **Photos and PDF manuals** on the item itself, stored inside your config directory and
   served through Home Assistant's authenticated view — never from `/local`. On a phone the
-  picker opens the companion app's camera.
+  editor puts a *Take photo* tile beside the picker, and it opens the camera in Safari, in
+  the iOS companion app and in Chrome on Android. The Android companion app's file picker
+  cannot open the camera — an open upstream bug,
+  [home-assistant/android#6055](https://github.com/home-assistant/android/issues/6055) — so
+  there you take the photo with the camera app and add it from the library.
 - **Quantities, low-stock thresholds and a shopping list.** Pick one of your to-do lists and
   everything at or below its threshold writes itself onto the list the household already
   shares.

@@ -2305,17 +2305,33 @@ export class HVItemEditor extends LitElement {
                 : null}`,
           );
         })}
+        <!-- Two inputs, because capture="environment" is all or nothing: a
+             browser that honours it (WebKit on iPhone, Chrome on Android) opens
+             the camera and offers no way to the library, and one that ignores
+             it (every desktop browser) opens a file dialog under whatever the
+             tile is named. Only the phone's tile carries it, so the desktop
+             editor keeps the one tile and the file dialog behind it. -->
+        ${this.mobile
+          ? html`<label class="picker" data-testid="editor-photo-camera">
+              ${icon('camera', 20)}
+              <span>${t('hv.editor.takePhoto')}</span>
+              <input
+                class="reveal"
+                type="file"
+                accept=${accepted}
+                capture="environment"
+                data-testid="editor-photo-camera-input"
+                @change=${(e: Event) => this._onPicked(e, 'picture')}
+              />
+            </label>`
+          : null}
         <label class="picker" data-testid="editor-photo-picker">
-          ${icon('camera', 20)}
+          ${icon('image', 20)}
           <span>${t('hv.editor.addPhoto')}</span>
-          <!-- capture="environment" is what opens the companion app's camera
-               straight from this control; a browser without one ignores it and
-               shows the ordinary file picker. -->
           <input
             class="reveal"
             type="file"
             accept=${accepted}
-            capture="environment"
             multiple
             data-testid="editor-photo-input"
             @change=${(e: Event) => this._onPicked(e, 'picture')}
