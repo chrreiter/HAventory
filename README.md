@@ -27,12 +27,8 @@ cloud, no external service. Minimum Home Assistant **2026.6.0**.
 - **Check out what leaves the house**, with a due date, so the card shows what is out and
   marks it overdue once the date passes.
 - **Photos and PDF manuals** on the item itself, stored inside your config directory and
-  served through Home Assistant's authenticated view — never from `/local`. On a phone the
-  editor puts a *Take photo* tile beside the picker, and it opens the camera in Safari, in
-  the iOS companion app and in Chrome on Android. The Android companion app's file picker
-  cannot open the camera — an open upstream bug,
-  [home-assistant/android#6055](https://github.com/home-assistant/android/issues/6055) — so
-  there you take the photo with the camera app and add it from the library.
+  served through Home Assistant's authenticated view — never from `/local`. On a
+  phone-width screen the editor puts a *Take photo* tile beside the picker.
 - **Quantities, low-stock thresholds and a shopping list.** Pick one of your to-do lists and
   everything at or below its threshold writes itself onto the list the household already
   shares.
@@ -245,6 +241,12 @@ What HAventory does *not* do today, stated up front so none of it is a surprise:
   library happens to be installed: HAventory deliberately does not require it (install
   size, wheel availability on every HA architecture, CPU on a Pi), so on an install
   without it the rows load the full-size file and the page is slower rather than broken.
+- **The Android companion app cannot open the camera from the card.** Its file picker
+  ignores the capture request the *Take photo* tile makes, so there the tile opens the file
+  picker instead: take the photo with the camera app and add it from the library. The tile
+  does open the camera in Safari, in the iOS companion app and in Chrome on Android. The
+  upstream bug is
+  [home-assistant/android#6055](https://github.com/home-assistant/android/issues/6055).
 
 Every one of these is a decision rather than an oversight, and the reasoning is with the
 bullet. The scale ceiling is also open work and links the issue tracking it; the rest are

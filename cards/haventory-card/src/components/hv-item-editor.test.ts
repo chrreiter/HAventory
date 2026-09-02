@@ -1729,6 +1729,13 @@ describe('hv-item-editor: pictures', () => {
     expect(library.getAttribute('capture')).toBeNull();
     expect(library.multiple).toBe(true);
     expect(library.getAttribute('accept')).toBe(CONFIG.picture_mime_types.join(','));
+
+    // The camera comes first, and each tile says which of the two it is.
+    expect(
+      all(el, '[data-testid="editor-photos"] .picker').map((tile) => tile.dataset.testid),
+    ).toEqual(['editor-photo-camera', 'editor-photo-picker']);
+    expect(q(el, '[data-testid="editor-photo-camera"]')?.textContent).toContain('Take photo');
+    expect(q(el, '[data-testid="editor-photo-picker"]')?.textContent).toContain('Add photo');
   });
 
   it('leaves a desktop editor one tile, and no capture on it', async () => {

@@ -2309,8 +2309,10 @@ export class HVItemEditor extends LitElement {
              browser that honours it (WebKit on iPhone, Chrome on Android) opens
              the camera and offers no way to the library, and one that ignores
              it (every desktop browser) opens a file dialog under whatever the
-             tile is named. Only the phone's tile carries it, so the desktop
-             editor keeps the one tile and the file dialog behind it. -->
+             tile is named. Only the narrow branch carries it: a wide editor
+             keeps the one tile and the file dialog behind it, and a narrow card
+             on a desktop gets the camera tile as well, where the same dialog
+             opens under the Take photo name. -->
         ${this.mobile
           ? html`<label class="picker" data-testid="editor-photo-camera">
               ${icon('camera', 20)}
