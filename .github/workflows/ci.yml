@@ -162,16 +162,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: actionlint
-        # Digest-pinned: a tag can be repointed by whoever owns it, so only a
-        # digest names one immutable image, and
-        # `tests/test_repo_hardening_offline.py` requires that of every
-        # third-party action. The trailing comment is where the version lives,
-        # and `tests/test_toolchain_pins.py` ties it to the
-        # `.pre-commit-config.yaml` rev so the hook and the job stay one release.
-        uses: docker://rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667  # v1.7.12
+      - name: Set up uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
         with:
-          args: -color
+          enable-cache: true
+      - name: Sync dev environment
+        run: uv sync
+      - name: actionlint
+        # The `.pre-commit-config.yaml` rev is the one copy of the actionlint
+        # version, and Dependabot moves it. This job used to run the tool as a
+        # digest-pinned `docker://` image with the version in a trailing comment
+        # — a second copy the github-actions updater cannot move, so every bump
+        # of the hook arrived red until a hand moved the digest. Running the
+        # hook itself leaves nothing to tie; `tests/test_toolchain_pins.py`
+        # holds the job to it.
+        run: uv run pre-commit run actionlint --all-files --color always
 
   validation:
     runs-on: ubuntu-latest
