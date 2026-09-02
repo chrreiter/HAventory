@@ -49,6 +49,10 @@ uv run --no-project --python 3.14 --with-requirements requirements-dev.txt \
   ruff check custom_components tests
 # → All checks passed!
 
+# CI fails on formatting alone; `ruff check` does not cover it.
+uv run --no-project --python 3.14 --with-requirements requirements-dev.txt ruff format --check .
+# → 184 files already formatted
+
 uv run --no-project --python 3.14 --with-requirements requirements-dev.txt mypy
 # → Success: no issues found in 25 source files
 ```

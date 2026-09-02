@@ -62,11 +62,6 @@ ROOT_PYTHON_ECOSYSTEMS = ("uv", "pip")
 # pull request has to move both, or the sweep fails whichever arrives alone.
 RUFF_PIN_ECOSYSTEMS = ("uv", "pre-commit")
 
-# CI runs actionlint as a `docker://` image pinned by digest, which Dependabot's
-# github-actions updater skips. A bump of the hook alone would fail the same
-# sweep every week until a hand moved CI, so both copies move by hand together.
-ACTIONLINT_HOOK = "https://github.com/rhysd/actionlint"
-
 # The root manifests the `uv` block owns, and which the `pip` block therefore has
 # to be scoped off: `requirements-dev.txt` is a `uv export` that says so on line
 # 1, and `pyproject.toml` has a lockfile beside it that a pip edit would not
@@ -369,22 +364,6 @@ def test_dependabot_moves_the_ruff_pin_and_its_hook_together() -> None:
         assert block is not None and "*" in block.get("patterns", []), (
             f"the {ecosystem} block keeps some dependencies out of {name!r}"
         )
-
-
-def test_dependabot_leaves_the_actionlint_hook_alone() -> None:
-    """The hook's other copy is a digest Dependabot cannot move.
-
-    Unlike the Home Assistant pins there is no security channel to keep open
-    for a hook revision, so this ignore names every update type.
-    """
-    block = dependabot_block("pre-commit", "/")
-    assert block is not None
-    ignored = ignored_update_types(block)
-
-    assert ACTIONLINT_HOOK in ignored, f"pre-commit block ignores {sorted(ignored)}"
-    assert ignored[ACTIONLINT_HOOK] == set(), (
-        f"the actionlint hook is ignored only for {sorted(ignored[ACTIONLINT_HOOK])}"
-    )
 
 
 def test_dependabot_keeps_pip_off_the_manifests_uv_owns() -> None:

@@ -98,20 +98,15 @@ updates:
           - "version-update:semver-patch"
 
   # pre-commit hook revs (.pre-commit-config.yaml), the other half of the
-  # `python-dev` group above — the ruff hook is why the two share one.
+  # `python-dev` group above — the ruff hook is why the two share one. The
+  # actionlint rev is that tool's only copy too: CI's `actionlint` job runs the
+  # hook rather than a digest-pinned image, which this updater could not move.
   - package-ecosystem: "pre-commit"
     directory: "/"
     multi-ecosystem-group: "python-dev"
     patterns: ["*"]
     cooldown:
       default-days: 3
-    ignore:
-      # CI runs actionlint as a `docker://` image pinned by digest, which the
-      # github-actions updater skips, so a bump of this hook alone would fail
-      # tests/test_toolchain_pins.py every week until a hand moved CI. The two
-      # copies move by hand together; a hook rev has no advisory channel that an
-      # outright ignore would mute.
-      - dependency-name: "https://github.com/rhysd/actionlint"
 
   # Integration test harness (pip): `requirements-integration.txt` at the root.
   # The dependency graph already scans that file, so an advisory in it alerts;

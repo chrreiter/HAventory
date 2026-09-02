@@ -109,7 +109,7 @@ PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
     (".devcontainer/post-create.sh", 1, 0),
     (".claude/hooks/session-start.sh", 8, 0),
     (".claude/skills/run-haventory/SKILL.md", 1, 0),
-    (".claude/skills/test-haventory/SKILL.md", 7, 0),
+    (".claude/skills/test-haventory/SKILL.md", 8, 0),
 )
 
 # `dev/` holds the process documents: the release testing plan and the current
@@ -424,16 +424,20 @@ def test_the_documented_commands_name_no_ruff_version() -> None:
     assert re.findall(r"ruff==\S+", text) == []
 
 
-def test_pre_commit_runs_the_actionlint_ci_runs() -> None:
-    """Same split as ruff: the hook and the CI job are pinned independently.
+def test_ci_runs_actionlint_through_the_pre_commit_hook() -> None:
+    """The hook rev is the one copy of the actionlint version, so CI runs the hook.
 
-    The job pins the image by digest, which names no version — so the trailing
-    comment is where the version lives, and the tie to the hook's ``rev`` is
-    only readable if the two are written together.
+    The job used to run the tool as a digest-pinned ``docker://`` image with the
+    version in a trailing comment, which this test tied to the hook's ``rev``.
+    That was a second copy Dependabot's github-actions updater does not read, so
+    every bump of the hook arrived red until a hand moved the digest. With the
+    job running the hook there is nothing to tie — only a second copy to refuse.
     """
-    ci_image = re.search(
-        r"docker://rhysd/actionlint@sha256:[0-9a-f]{64} +# v(\S+)",
-        CI_WORKFLOW.read_text(encoding="utf-8"),
-    )
-    assert ci_image is not None, "the actionlint job names no digest-pinned image with a version"
-    assert pre_commit_rev("https://github.com/rhysd/actionlint") == ci_image.group(1)
+    job = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["actionlint"]
+    commands = [step.get("run", "") for step in job["steps"]]
+
+    assert any("pre-commit run actionlint" in command for command in commands), commands
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        assert "rhysd/actionlint" not in path.read_text(encoding="utf-8"), (
+            f"{path.name} names actionlint itself — a copy of the version the hook rev already is"
+        )
