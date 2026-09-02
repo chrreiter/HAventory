@@ -39,7 +39,7 @@ command is in the gate, are in `CONTRIBUTING.md`. Backend, from the repo root:
 
 ```bash
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --no-project --python 3.14 \
-  --with pytest --with pytest-asyncio --with voluptuous --with aiohttp \
+  --with pytest --with pytest-asyncio --with voluptuous --with aiohttp --with pyyaml \
   python -m pytest -q
 # → 1322 passed, 27 skipped
 
@@ -183,7 +183,7 @@ Non-destructive WS client tests against the running instance, from the repo root
 ```bash
 set -a; source .env; set +a
 RUN_ONLINE=1 uv run --no-project --python 3.14 \
-  --with pytest --with pytest-asyncio --with aiohttp --with voluptuous \
+  --with pytest --with pytest-asyncio --with aiohttp --with voluptuous --with pyyaml \
   python -m pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
 # → 8 passed, 13 skipped (the skips need the destructive/area gates)
 ```
