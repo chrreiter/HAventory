@@ -64,6 +64,13 @@ export interface MockHass extends HassLike {
   __emitHaEvent(eventType: string, data?: Record<string, unknown>): void;
   /** Open core-event subscriptions for `eventType` — 0 once a store disposes. */
   __haEventSubscriberCount(eventType: string): number;
+  /**
+   * Open `haventory/subscribe` subscriptions: for one topic, or across all of
+   * them when none is named. Every live store holds one per topic, so this is
+   * what a host that leaks its store shows — the count climbs with each
+   * navigation instead of staying at one round.
+   */
+  __topicSubscriberCount(topic?: AnyEventPayload['topic']): number;
   /** Replace what `haventory/areas/list` reports, as an HA area edit would. */
   __setAreas(areas: AreaRef[]): void;
   /**
@@ -666,6 +673,10 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     },
     __haEventSubscriberCount(eventType: string) {
       return (haEventSubs[eventType] || []).length;
+    },
+    __topicSubscriberCount(topic?: AnyEventPayload['topic']) {
+      if (topic) return (subs[topic] || []).length;
+      return Object.values(subs).reduce((open, cbs) => open + cbs.length, 0);
     },
     __setAreas(next: AreaRef[]) { areas = [...next]; },
     __reconnect() {

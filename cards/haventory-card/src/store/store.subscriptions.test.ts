@@ -91,8 +91,8 @@ describe('Store: subscription lifecycle', () => {
   });
 
   it('stops applying live events once disposed', async () => {
-    // `dispose()` has no caller in the card today; this pins what it does so the
-    // decision to wire it up (or drop it) is made deliberately.
+    // The element holding the store disposes it on unmount, so this is what
+    // every navigation away from the card or the panel runs.
     const hass = makeMockHass({ items: [makeItem({ id: '1', quantity: 5 })] });
     const store = new Store(hass, fast);
     await store.init();
@@ -103,6 +103,21 @@ describe('Store: subscription lifecycle', () => {
 
     hass.__emit('items', 'updated', { item: makeItem({ id: '1', quantity: 42, version: 2 }) });
     expect(store.state.value.items[0].quantity).toBe(5);
+  });
+
+  // Navigating away while the card is still loading is the tightest version of
+  // the same unmount: the watches are wired after the first load, so a dispose
+  // in between must stop them being opened at all.
+  it('opens nothing when a dispose lands while the first load is in flight', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const store = new Store(hass, fast);
+
+    const loading = store.init();
+    store.dispose();
+    await loading;
+
+    expect(hass.__topicSubscriberCount()).toBe(0);
+    expect(hass.__haEventSubscriberCount('area_registry_updated')).toBe(0);
   });
 });
 
