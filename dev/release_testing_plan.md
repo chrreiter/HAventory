@@ -160,6 +160,7 @@ into a temporary directory each run — its header says how much disk that takes
 | B8 | Live update: mutate on desktop, watch the phone | Change appears within ~1 s without touching the phone | ✅ |
 | B9 | Long-list scrolling: pull-to-refresh gesture, momentum scroll, sticky headers | No gesture trap; the app's pull-to-refresh does not fight the list | |
 | B10 | Export download **and** import file-picker from inside the companion app webview | Export file actually lands somewhere retrievable; import picker opens and accepts a file — webviews commonly break both | ✅ |
+| B11 | *Take photo* tile in the item editor on both phones | iOS companion app opens the camera and the shot lands upright and under the 8 MB cap; Chrome on Android opens the camera; the Android companion app opens its file picker instead (upstream home-assistant/android#6055) and the library tile still adds a photo taken with the camera app | |
 
 ### C — Connectivity
 

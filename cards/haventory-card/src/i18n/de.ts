@@ -274,6 +274,7 @@ export const de: CompleteDictionary = {
   'hv.editor.type.date': 'Datum',
   'hv.editor.photos': 'Fotos',
   'hv.editor.addPhoto': 'Foto hinzufügen',
+  'hv.editor.takePhoto': 'Foto aufnehmen',
   'hv.editor.viewPhoto': '{photo} ansehen',
   'hv.editor.removePhoto': '{photo} entfernen',
   'hv.editor.movePhotoEarlier': 'Foto {position} nach vorne',

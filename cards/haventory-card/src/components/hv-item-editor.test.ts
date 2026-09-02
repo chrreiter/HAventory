@@ -1490,6 +1490,13 @@ describe('hv-item-editor: pictures', () => {
     input.dispatchEvent(new Event('change'));
   }
 
+  /** The same, through the camera tile a phone gets. */
+  function pickCamera(el: HVItemEditor, files: File[]) {
+    const input = q(el, '[data-testid="editor-photo-camera-input"]') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: files, configurable: true });
+    input.dispatchEvent(new Event('change'));
+  }
+
   const png = (name = 'photo.png') => new File(['x'], name, { type: 'image/png' });
 
   const CONFIG = {
@@ -1705,16 +1712,58 @@ describe('hv-item-editor: pictures', () => {
     expect(cancels).toBe(0);
   });
 
-  it('offers the camera from the same control that picks a file', async () => {
+  it('gives a phone a camera tile beside the library tile', async () => {
     const el = await mount(makeItem({ id: 'i-1' }), {
       media: makeMediaBindings(),
       mediaConfig: CONFIG,
+      mobile: true,
     });
 
-    const input = q(el, '[data-testid="editor-photo-input"]') as HTMLInputElement;
-    expect(input.getAttribute('capture')).toBe('environment');
-    expect(input.multiple).toBe(true);
-    expect(input.getAttribute('accept')).toBe(CONFIG.picture_mime_types.join(','));
+    // Only the camera tile carries `capture`, and a camera returns one shot.
+    const camera = q(el, '[data-testid="editor-photo-camera-input"]') as HTMLInputElement;
+    expect(camera.getAttribute('capture')).toBe('environment');
+    expect(camera.multiple).toBe(false);
+    expect(camera.getAttribute('accept')).toBe(CONFIG.picture_mime_types.join(','));
+
+    const library = q(el, '[data-testid="editor-photo-input"]') as HTMLInputElement;
+    expect(library.getAttribute('capture')).toBeNull();
+    expect(library.multiple).toBe(true);
+    expect(library.getAttribute('accept')).toBe(CONFIG.picture_mime_types.join(','));
+
+    // The camera comes first, and each tile says which of the two it is.
+    expect(
+      all(el, '[data-testid="editor-photos"] .picker').map((tile) => tile.dataset.testid),
+    ).toEqual(['editor-photo-camera', 'editor-photo-picker']);
+    expect(q(el, '[data-testid="editor-photo-camera"]')?.textContent).toContain('Take photo');
+    expect(q(el, '[data-testid="editor-photo-picker"]')?.textContent).toContain('Add photo');
+  });
+
+  it('leaves a desktop editor one tile, and no capture on it', async () => {
+    const el = await mount(makeItem({ id: 'i-1' }), {
+      media: makeMediaBindings(),
+      mediaConfig: CONFIG,
+      mobile: false,
+    });
+
+    expect(q(el, '[data-testid="editor-photo-camera"]')).toBeNull();
+    const library = q(el, '[data-testid="editor-photo-input"]') as HTMLInputElement;
+    expect(library.getAttribute('capture')).toBeNull();
+  });
+
+  it('sends a shot from the camera tile down the same upload path', async () => {
+    const media = makeMediaBindings();
+    const el = await mount(makeItem({ id: 'i-1' }), {
+      media,
+      mediaConfig: CONFIG,
+      mobile: true,
+    });
+
+    pickCamera(el, [png('shot.png')]);
+    // A macrotask, so the whole prepare-then-send chain drains first.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await el.updateComplete;
+
+    expect(media.uploads.map((u) => [u.file.name, u.kind])).toEqual([['shot.png', 'picture']]);
   });
 
   it('shows a placeholder rather than a broken image when signing fails', async () => {

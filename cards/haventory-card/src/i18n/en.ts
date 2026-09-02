@@ -305,6 +305,7 @@ export const en = {
   'hv.editor.type.date': 'Date',
   'hv.editor.photos': 'Photos',
   'hv.editor.addPhoto': 'Add photo',
+  'hv.editor.takePhoto': 'Take photo',
   'hv.editor.viewPhoto': 'View {photo}',
   'hv.editor.removePhoto': 'Remove {photo}',
   'hv.editor.movePhotoEarlier': 'Move photo {position} earlier',
