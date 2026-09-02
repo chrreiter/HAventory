@@ -1,164 +1,165 @@
 # CLAUDE.md
 
 Guidance for Claude Code when working in the HAventory repository. It carries no version
-numbers — the project's, the platform floors' and the toolchain pins' are each declared in one
+numbers: the project's, the platform floors' and the toolchain pins' are each declared in one
 file that CI or a test defends, and are named here instead of copied.
 
 ## What this is
 
 A Home Assistant **custom integration** (domain `haventory`) for household inventory tracking,
-plus a Lovelace **card**. Local-push, single-instance, HA `Store`-backed — no external services.
+plus a Lovelace **card**. Local-push, single-instance, HA `Store`-backed, no external services.
 The released version lives in `custom_components/haventory/manifest.json` and
-`cards/haventory-card/package.json`; release-please cuts it and
-`scripts/check_version_consistency.py` plus `tests/test_release_version_consistency.py` hold the
-two together. Never hand-edit either.
+`cards/haventory-card/package.json`. release-please cuts it, and
+`scripts/check_version_consistency.py` plus `tests/test_release_version_consistency.py` hold
+the two together. Never hand-edit either.
 
 **Platform floors** are declared once each: Home Assistant in `hacs.json` (what HACS enforces,
 and what `requirements-integration.txt` pins the in-process suite to), Python as
 `requires-python` in `pyproject.toml`, Node as `engines` in the card's `package.json`.
-`tests/test_min_ha_version.py` and `tests/test_toolchain_pins.py` enumerate every copy, fail when
-one drifts, and sweep the tree so a copy in a file they do not list fails too — **add a new copy
-to the test or don't write it**. The source uses PEP 758 unparenthesized `except A, B:`, so an
-older interpreter cannot import the integration at all. Raising the HA floor is a judgment call
-with a security half: `CONTRIBUTING.md` → "Development setup".
+`tests/test_min_ha_version.py` and `tests/test_toolchain_pins.py` enumerate every copy, fail
+when one drifts, and sweep the tree so a copy in a file they do not list fails too. **Add a
+new copy to the test or don't write it.** The source uses PEP 758 unparenthesized
+`except A, B:`, so an older interpreter cannot import the integration at all. Raising the HA
+floor is a judgment call with a security half: `CONTRIBUTING.md` → "Development setup".
 
 ## Architecture & key files
 
-### Backend — `custom_components/haventory/`
-Each module documents its own traps; this is the map to which file to open.
+### Backend: `custom_components/haventory/`
+Each module documents its own traps. This is the map to which file to open.
 
-- `__init__.py` — setup/teardown, runtime wiring, the three persist helpers, Lovelace resource
-  registration, and the sidebar panel (`panel_custom` at `/haventory`).
-- `runtime.py` — `HAventoryRuntime`, plus the two lookups whose difference decides whether
-  teardown works at all: `loaded_runtime` against `find_runtime`.
-- `models.py` — `Item` / `Location`, the create/update/filter/sort schemas beside them, and
-  the validation every surface refuses through, so one value is refused for one reason
-  everywhere; `SORT_FIELDS` is read off `Sort`. Free of I/O.
-- `serialization.py` — one serializer per entity, shared by the WebSocket API and the
+- `__init__.py`: setup and teardown, runtime wiring, the three persist helpers, Lovelace
+  resource registration, and the sidebar panel (`panel_custom` at `/haventory`).
+- `runtime.py`: `HAventoryRuntime`, plus the two lookups whose difference decides whether
+  teardown works at all, `loaded_runtime` against `find_runtime`.
+- `models.py`: `Item` / `Location`, the create/update/filter/sort schemas, and the validation
+  every surface refuses through, so one value is refused for one reason everywhere.
+  `SORT_FIELDS` is read off `Sort`. Free of I/O.
+- `serialization.py`: one serializer per entity, shared by the WebSocket API and the
   services so the two surfaces cannot answer with different shapes.
-- `repository.py` — the in-memory indexed source of truth, and the search normalization.
-- `storage.py` — HA `Store`, schema versioning, serialized writes, and the refusal to read a
+- `repository.py`: the in-memory indexed source of truth, and the search normalization.
+- `storage.py`: HA `Store`, schema versioning, serialized writes, and the refusal to read a
   store a newer schema wrote. `migrations.py` is forward-only and **idempotent**.
-- `ws.py` — the primary API surface: CRUD, the four subscription topics, and `ws_guard`.
-- `subscriptions.py` — the subscription registry and the fan-out that writes events on the
-  wire; `events.py` holds the doors every write path announces through, one per topic, and
-  is the only module that calls the broadcaster.
-- `ops.py` — one function per write, shared by `ws.py` and `services.py`: the repository call,
-  the event the write earns, and the order persist / announce / answer happen in.
-- `services.py` / `services.yaml` — `haventory.*`; read the registration comment before changing
-  how a handler is bound.
-- `sensor.py` — the promoted counts as entities on one HAventory device. Push only: a
+- `ws.py`: the primary API surface: CRUD, the four subscription topics, and `ws_guard`.
+- `subscriptions.py`: the subscription registry and the fan-out that writes events on the
+  wire. `events.py` holds one announce function per topic and is the only module that calls
+  the broadcaster.
+- `ops.py`: one function per write, shared by `ws.py` and `services.py`: the repository call,
+  the event the write earns, and the order in which persist, announce and answer happen.
+- `services.py` / `services.yaml`: `haventory.*`. Read the registration comment before
+  changing how a handler is bound.
+- `sensor.py`: the promoted counts as entities on one HAventory device. Push only: a
   mutation's dispatcher signal and the instance's local midnight are what move a state.
-- `media.py` — attachment bytes under `<config>/haventory/attachments/`, and the
-  authenticated view that serves them. A file's kind is decided by its own leading bytes
-  rather than by the type the browser declares, and every path is built from stored metadata
-  and re-checked for containment before a read or an unlink. Pillow is optional — without it
-  a thumbnail request serves the original.
-- `todo_bridge.py` — the low-stock set mirrored onto an HA to-do list. Every trigger runs
-  one converging pass against the persisted map of lines this integration wrote, so a
-  restart, a dropped event and an import land on the same list; a list that refuses is a
-  warning, never a rollback of the write that ran first.
-- `repairs.py` — the fix flow behind the corrupt-store refusal. Home Assistant imports it
-  when the user presses **Fix**, which is why nothing in the package imports it.
-- `diagnostics.py` — the entry's downloadable dump: aggregates only — no item or location
+- `media.py`: attachment bytes under `<config>/haventory/attachments/`, and the authenticated
+  view that serves them. A file's kind is decided by its own leading bytes rather than by the
+  type the browser declares, and every path is built from stored metadata and re-checked for
+  containment before a read or an unlink. Pillow is optional; without it a thumbnail request
+  serves the original.
+- `todo_bridge.py`: the low-stock set mirrored onto an HA to-do list. Every trigger runs one
+  converging pass against the persisted map of lines this integration wrote, so a restart, a
+  dropped event and an import land on the same list. A list that refuses is a warning, never
+  a rollback of the write that ran first.
+- `repairs.py`: the fix flow behind the corrupt-store refusal. Home Assistant imports it when
+  the user presses **Fix**, which is why nothing in the package imports it.
+- `diagnostics.py`: the entry's downloadable dump. Aggregates only: no item or location
   bodies, and none of the household's own words.
-- `stale_files.py` — `RETIRED_PATHS`, swept on setup because a HACS upgrade never deletes.
-- `logs.py` — `context_logger`, where every module's logger comes from.
-- `import_export.py` (**identity is the id, never the
-  name**), `calendar.py` / `calendar_projection.py`, `config_flow.py`, `const.py`,
-  `exceptions.py`, and `brand/` (generated by `scripts/render_brand_assets.py`; never
-  hand-edited). Areas come from HA's own registry, which `ws.py` reads directly.
+- `stale_files.py`: `RETIRED_PATHS`, swept on setup because a HACS upgrade never deletes.
+- `logs.py`: `context_logger`, where every module's logger comes from.
+- `import_export.py` (**identity is the id, never the name**), `calendar.py` /
+  `calendar_projection.py`, `config_flow.py`, `const.py`, `exceptions.py`, and `brand/`
+  (generated by `scripts/render_brand_assets.py`; never hand-edited). Areas come from HA's
+  own registry, which `ws.py` reads directly.
 
-### Frontend — `cards/haventory-card/`
-Lit + TypeScript + Vite; `src/` holds the `haventory-card` container, the `hv-*` components and
-`store/`. Builds to `custom_components/haventory/www/haventory-card.js` — git-ignored, and
-inside the integration package, which is the only tree HACS copies. That directory is served at
-`/haventory_static/` and reached by two loaders on one identical URL; the same bundle registers
-the icon set the backend's `PANEL_ICON` names, which `tests/test_frontend_registration.py` pins
-across a language boundary neither side can check alone. Details in
-`docs/frontend_architecture.md`.
+### Frontend: `cards/haventory-card/`
+Lit + TypeScript + Vite. `src/` holds the `haventory-card` container, the `hv-*` components
+and `store/`. Builds to `custom_components/haventory/www/haventory-card.js`, which is
+git-ignored and inside the integration package, the only tree HACS copies. That directory is
+served at `/haventory_static/` and reached by two loaders on one identical URL. The same
+bundle registers the icon set the backend's `PANEL_ICON` names, which
+`tests/test_frontend_registration.py` pins across a language boundary neither side can check
+alone. Details in `docs/frontend_architecture.md`.
 
-### Docs — link here, don't duplicate
-`docs/` is what a user or contributor of the shipped integration needs:
-`installing.md`, `automations.md`, `developing.md`, `backend_api_contract.md`,
-`data_shapes.md`, `frontend_architecture.md`, `assets/` (the social
-preview and the README's screenshots). `dev/` is the process, not the product: `release_testing_plan.md`,
-`ha_config_for_dev.yaml`, and the current milestone's implementation plan, which that
-milestone's last PR deletes. Nothing in `dev/` decides what to build — the issue tracker does,
-and a `dev/` document that disagrees with an issue is stale.
+### Docs: link here, don't duplicate
+`docs/` is what a user or contributor of the shipped integration needs: `installing.md`,
+`automations.md`, `developing.md`, `backend_api_contract.md`, `data_shapes.md`,
+`frontend_architecture.md`, `assets/` (the social preview and the README's screenshots).
+`dev/` is the process, not the product: `release_testing_plan.md`, `ha_config_for_dev.yaml`,
+and the current milestone's implementation plan, which that milestone's last PR deletes.
+Nothing in `dev/` decides what to build. The issue tracker does, and a `dev/` document that
+disagrees with an issue is stale.
 
 ## Running tests / lint / build
 
-Backend at the repo root, frontend in `cards/haventory-card`. The gate — both halves,
-green before every commit — is written out once in
-[`CONTRIBUTING.md`](CONTRIBUTING.md) → "The gate", audit level included;
-[`docs/developing.md`](docs/developing.md) carries the bootstrap, the helper scripts and
-the online smokes.
+Backend at the repo root, frontend in `cards/haventory-card`. The gate, both halves, green
+before every commit, is written out once in [`CONTRIBUTING.md`](CONTRIBUTING.md) → "The
+gate", audit level included. [`docs/developing.md`](docs/developing.md) carries the
+bootstrap, the helper scripts and the online smokes.
 
-In-process HA tests are a **second, separate mode** — the integration inside a real HA core
+In-process HA tests are a **second, separate mode**: the integration inside a real HA core
 via `pytest-homeassistant-custom-component`, run with `scripts/test_integration.sh`. What it
 installs, what it covers, the container recipe a Windows host needs and the traps that are
 not discoverable from the code are in `docs/developing.md` → "In-process HA integration
 tests". The one that bites hardest: **do not set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` for that
-mode** — phacc must load, and the flag makes it silently collect nothing.
+mode**. phacc must load, and the flag makes it silently collect nothing.
 
 ## Conventions
 
-- **TDD**: every feature/fix ships with tests — happy path plus at least one edge/error case,
-  offline by default (`@pytest.mark.asyncio` for async ones). Both gate halves green before each
-  commit.
-- **The WebSocket contract lives in `docs/`** — an API change moves `ws.py`,
+- **TDD**: every feature or fix ships with tests, happy path plus at least one edge or error
+  case, offline by default (`@pytest.mark.asyncio` for async ones). Both gate halves green
+  before each commit.
+- **The WebSocket contract lives in `docs/`**: an API change moves `ws.py`,
   `backend_api_contract.md` and `data_shapes.md` together.
-- **The core invariants** — case-insensitive search, the denormalized `location_path`,
-  optimistic concurrency via the item `version`: [`CONTRIBUTING.md`](CONTRIBUTING.md) →
+- **The core invariants**: case-insensitive search, the denormalized `location_path`,
+  optimistic concurrency via the item `version`. [`CONTRIBUTING.md`](CONTRIBUTING.md) →
   "Conventions" states them, the derived path included.
-- **Persistence**: every write is awaited where it is made — WS and service handlers save
+- **Persistence**: every write is awaited where it is made. WS and service handlers save
   immediately, errors propagating as `storage_error`; shutdown and unload flush immediately.
   There is one persist path and no scheduled one.
-- **Deleting or renaming a file inside `custom_components/haventory/`** means appending its old
-  path to `RETIRED_PATHS` in the same PR: [`CONTRIBUTING.md`](CONTRIBUTING.md) →
+- **Deleting or renaming a file inside `custom_components/haventory/`** means appending its
+  old path to `RETIRED_PATHS` in the same PR: [`CONTRIBUTING.md`](CONTRIBUTING.md) →
   "Conventions" says what an upgrade does otherwise.
 - **Logging**: take the module logger from `logs.context_logger(__name__)`, never
-  `logging.getLogger` (`tests/test_logs_offline.py` sweeps for it), and keep attaching context
-  through `extra=` — it is folded into the message text because HA's formatter drops everything
-  else. Avoid reserved `LogRecord` keys there: `item_name`, not `name`.
+  `logging.getLogger` (`tests/test_logs_offline.py` sweeps for it), and keep attaching
+  context through `extra=`. It is folded into the message text because HA's formatter drops
+  everything else. Avoid reserved `LogRecord` keys there: `item_name`, not `name`.
 - **User-facing text is never a literal**: [`CONTRIBUTING.md`](CONTRIBUTING.md) →
   "Conventions" and "Adding a language" carry the rule and the shape.
-- **Comments encode constraints, not history**, and everything written for this repository uses
-  plain words rather than stock AI-review vocabulary — issues and PR bodies included.
+- **Comments encode constraints, not history**, and everything written for this repository
+  uses plain words rather than stock AI-review vocabulary, issues and PR bodies included.
   `CONTRIBUTING.md` → "Comments explain constraints, not history" is the rule in full.
 - **Conventional Commits**; small, focused commits. Update `README.md` when behavior changes,
   and report out-of-scope findings under a "Follow-ups" note rather than fixing them.
 - Naming: package and domain `haventory`, services `haventory.*`, built assets served at
-  `/haventory_static/`, calendar entity `calendar.haventory` — pinned by `CALENDAR_UNIQUE_ID`,
+  `/haventory_static/`, calendar entity `calendar.haventory`, pinned by `CALENDAR_UNIQUE_ID`,
   which is what a household's automations name, so it does not move.
 
 ## Scope decisions that stay true
 
-- **HAventory keeps all of its pillars.** Core HA has shipped no first-party inventory feature
-  and has no nested location tree — it is capped at floor → area, which is the differentiator.
-  Do not migrate a pillar onto a core primitive on the theory that it duplicates one.
-- **Areas are HA's, not ours.** The integration reads the area registry and never creates one;
-  an item's is inherited from its location tree's root as `effective_area_id`.
-- **One declared HA floor** — no second, lower "runs on" number beside a higher "recommended"
+- **HAventory keeps all of its pillars.** Core HA has shipped no first-party inventory
+  feature and has no nested location tree. It is capped at floor and area, which is the
+  differentiator. Do not migrate a pillar onto a core primitive on the theory that it
+  duplicates one.
+- **Areas are HA's, not ours.** The integration reads the area registry and never creates
+  one. An item's is inherited from its location tree's root as `effective_area_id`.
+- **One declared HA floor.** No second, lower "runs on" number beside a higher "recommended"
   one. The older releases the integration also works on live in git history and in
   [#235](https://github.com/chrreiter/HAventory/issues/235).
-- **Reminders and the calendar ride HA-native primitives.** Occurrences are **derived on read**,
-  never scheduled and never stored; notifications are the household's own automations. Do not add
-  a timer, a queue or a stored occurrence table — the only time-driven piece is a midnight state
-  rewrite so "next event" rolls over.
+- **Reminders and the calendar ride HA-native primitives.** Occurrences are **derived on
+  read**, never scheduled and never stored; notifications are the household's own
+  automations. Do not add a timer, a queue or a stored occurrence table. The only
+  time-driven piece is a midnight state rewrite so "next event" rolls over.
 
 ## Where work is tracked
 
-**GitHub issues**, filed with the templates in `.github/ISSUE_TEMPLATE/`. Milestones say which
-release an issue is staged for, and there is no second tracker. The release that matters is the
-first public one — public repository, HACS custom repository, default-store submission — cut
-from whatever `0.x` carries the work it needs. `1.0.0` is deferred indefinitely and gates
-nothing ([#278](https://github.com/chrreiter/HAventory/issues/278)); the release boundary is
-the HACS listing, and [#236](https://github.com/chrreiter/HAventory/issues/236) is its tracker
-and says what is mandatory before it and what is staged after. There is **no feature freeze**.
+**GitHub issues**, filed with the templates in `.github/ISSUE_TEMPLATE/`. Milestones say
+which release an issue is staged for, and there is no second tracker. The release that
+matters is the first public one (public repository, HACS custom repository, default-store
+submission), cut from whatever `0.x` carries the work it needs. `1.0.0` is deferred
+indefinitely and gates nothing ([#278](https://github.com/chrreiter/HAventory/issues/278)).
+The release boundary is the HACS listing, and
+[#236](https://github.com/chrreiter/HAventory/issues/236) is its tracker and says what is
+mandatory before it and what is staged after. There is **no feature freeze**.
 
-**A finding earns an issue only when it can matter in the real world.** Purely academic findings,
-and edge cases a typical install would not hit once in a hundred years, do not get filed — a
-sentence in a PR's "Follow-ups" note is their ceiling. Closing an existing issue as not-planned
-because it clears no real-world bar is a good outcome, not a failure.
+**A finding earns an issue only when it can matter in the real world.** Purely academic
+findings, and edge cases a typical install would not hit once in a hundred years, do not get
+filed. A sentence in a PR's "Follow-ups" note is their ceiling. Closing an existing issue as
+not-planned because it clears no real-world bar is a good outcome, not a failure.

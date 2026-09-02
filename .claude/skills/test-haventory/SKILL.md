@@ -1,6 +1,6 @@
 ---
 name: test-haventory
-description: Run every HAventory test surface — offline unit gate (pytest/ruff/mypy), frontend gate (eslint/vitest/tsc/build), the adversarial online stress regimen (fuzz/bulk/races/restart), the live-update browser smoke, and the online WS pytest smokes. Use when asked to test HAventory, run the gate, lint/typecheck, or smoke / stress / load / fuzz / break-it test the running app.
+description: Run every HAventory test surface: offline unit gate (pytest/ruff/mypy), frontend gate (eslint/vitest/tsc/build), the adversarial online stress regimen (fuzz/bulk/races/restart), the live-update browser smoke, and the online WS pytest smokes. Use when asked to test HAventory, run the gate, lint/typecheck, or smoke / stress / load / fuzz / break-it test the running app.
 ---
 
 HAventory has five test surfaces. Two are **offline** (no HA): the backend gate
@@ -11,28 +11,28 @@ break-it driver), the **live-update browser smoke** `cards/haventory-card/e2e/li
 and the **online WS pytest smokes** (`-m online`).
 
 All paths are relative to the repo root and every command below is **Linux/bash**, which is
-the only development host the repo supports — CI runs `ubuntu-latest`, and on Windows the
+the only development host the repo supports; CI runs `ubuntu-latest`, and on Windows the
 supported path is WSL2 (`CONTRIBUTING.md`). A handful of notes are tagged
 **[Windows/Git Bash]**: they are workarounds for driving a Windows host's Docker and
 filesystem through Git Bash instead, and nothing else here depends on them. Plain `uv run`
-works against the project `.venv` — the `--no-project` form below is still correct and is
+works against the project `.venv`; the `--no-project` form below is still correct and is
 what to fall back to if the venv is ever unusable, but it is no longer required. The
 canonical clean-Linux/CI spelling of the gate is in `CONTRIBUTING.md` → "The gate".
 
 ## Prerequisites
 
-- **uv** (provisions CPython 3.14 automatically — the source uses PEP 758 syntax that does
+- **uv** (provisions CPython 3.14 automatically, the source uses PEP 758 syntax that does
   not parse on ≤3.13), **Node 22.13+**, **Docker** (for the online surfaces). [Windows/Git
   Bash] **Git Bash** for the `.sh`/`.py` helpers.
 - `pre-commit` on PATH (the git hook needs it): `uv tool install pre-commit`.
 - A `.env` at the root of **the checkout you are standing in** with `HA_BASE_URL` +
   `HA_TOKEN` (a long-lived token; per session, never committed). Which instance that
-  resolves to, and how to override it for one run, is `scripts/dev_env.py`'s rule —
+  resolves to, and how to override it for one run, is `scripts/dev_env.py`'s rule,
   written out in `docs/developing.md` → "Which instance a helper talks to".
-- For the browser smoke: Chromium for Playwright — `npx playwright install chromium`. It
+- For the browser smoke: Chromium for Playwright, `npx playwright install chromium`. It
   caches under `~/.cache/ms-playwright`; [Windows/Git Bash] `~/AppData/Local/ms-playwright`.
 
-## The commit gate (offline — run before every commit)
+## The commit gate (offline: run before every commit)
 
 Both halves must be green. This is the `--no-project` spelling; the plain one, and why each
 command is in the gate, are in `CONTRIBUTING.md`. Backend, from the repo root:
@@ -68,8 +68,8 @@ npm run build     # vite → ../../custom_components/haventory/www/ (git-ignored
 ```
 
 Those counts are a collection oracle, not a target: TDD means every release adds tests, so a
-number *larger* than the one printed here is the normal result. A number **smaller** — fewer
-tests, fewer vitest files, fewer mypy source files — means collection broke and half the
+number *larger* than the one printed here is the normal result. A number **smaller** (fewer
+tests, fewer vitest files, fewer mypy source files) means collection broke and half the
 suite silently did not run. Re-pin them whenever a release moves them; a stale figure read
 as an exact expectation misdiagnoses a healthy run.
 
@@ -106,10 +106,10 @@ for i in $(seq 1 45); do \
 
 `stress.py` is the adversarial online driver. Each subcommand runs one layer, prefixes its
 data with `stress_test_` (so `cleanup` sweeps it), and cross-checks `haventory/health`'s
-`counts` against `haventory/stats` as the pass gate — two reads of one repository that must
+`counts` against `haventory/stats` as the pass gate, two reads of one repository that must
 agree. Run **one at a time, non-destructive first, `restart` last**.
 
-Every command prints its target before it acts, and stops if it cannot read the store —
+Every command prints its target before it acts, and stops if it cannot read the store,
 so "wrong instance" is the first line of output rather than a count that looks off later:
 
 ```
@@ -120,7 +120,7 @@ so "wrong instance" is the first line of output rather than a count that looks o
 
 The second line is the tell: an empty store where 1 000 items were expected (or the
 reverse) means the `.env`, the export or the container is not the one you meant. A
-destructive command names its target and proceeds — nothing prompts. When the `.env`
+destructive command names its target and proceeds; nothing prompts. When the `.env`
 displaced an exported `HA_BASE_URL`, a middle line says which instance the run would
 otherwise have gone to.
 
@@ -129,7 +129,7 @@ export PYTHONIOENCODING=utf-8   # [Windows/Git Bash] only; a Linux terminal is U
 S=".claude/skills/test-haventory/stress.py"
 RUN="uv run --no-project --with aiohttp python $S"
 
-$RUN baseline      # counts + version — proves the deployed code imported (needs Python 3.14)
+$RUN baseline      # counts + version, proves the deployed code imported (needs Python 3.14)
 $RUN fuzz          # malformed single-mutation inputs; asserts dataset untouched
 $RUN bulkfuzz      # adversarial haventory/items/bulk
 $RUN subteardown   # HA-core unsubscribe_events teardown (the card's path)
@@ -153,7 +153,7 @@ $RUN cleanup       # sweep any leftover stress_test_ data
 | `restart` | mid-load `docker restart` + on-disk store vs API cross-check |
 | `cleanup` | delete everything prefixed `stress_test_` |
 
-**A run is not clean until you scan the server logs** — offline stubs can stay green while
+**A run is not clean until you scan the server logs**: offline stubs can stay green while
 real HA throws (that is how the `__slots__` bug #97 was found). The sibling skill's sweep
 sorts the log by the taxonomy's severity policy instead of by keyword, so the fuzz layers'
 hundreds of contract-defined WARNINGs do not bury the one line that matters:
@@ -197,11 +197,11 @@ RUN_ONLINE=1 uv run --no-project --python 3.14 --with-requirements requirements-
 The full online gate (adds destructive + area-registry tests, double-gated by
 `HAV_ONLINE_DESTRUCTIVE=1` / `HA_ALLOW_AREA_MUTATIONS=1`) and the in-process HA integration
 suite (`scripts/test_integration.sh`, phacc, real HA core) are documented in
-`docs/developing.md` — not re-verified here.
+`docs/developing.md`, not re-verified here.
 
 ## Gotchas
 
-- **`--no-project` is the fallback, not the rule** — plain `uv run` works. Add `--no-project`
+- **`--no-project` is the fallback, not the rule**: plain `uv run` works. Add `--no-project`
   and the `--with` list to run from an ephemeral env whenever the project venv is unusable.
   [Windows/Git Bash] the way that shows up here is `failed to remove file .venv/lib64`
   with a permission error, a file-sync client holding the symlink.
@@ -218,25 +218,25 @@ suite (`scripts/test_integration.sh`, phacc, real HA core) are documented in
   climbs with the size of the store, because every write re-serializes the whole
   inventory; a batch is one write, so the curve tracks the store and not the batch.
   README → "Known limitations" carries the measured numbers to compare a run against.
-- **E2E: assert on the item NAME, not the quantity cell** — the card renders quantity only
+- **E2E: assert on the item NAME, not the quantity cell**: the card renders quantity only
   when that column is active, but the name always renders.
-- **Log scan is part of the pass gate** — subscription/connection bugs can pass offline unit
+- **Log scan is part of the pass gate**: subscription/connection bugs can pass offline unit
   tests while real HA throws (`__slots__`, `subscribeMessage` frame shape). Grep the container
   logs after any online run.
 
 ## Troubleshooting
 
-- **`Cannot find module '@rolldown/binding-…'`** — `npm ci` in `cards/haventory-card`.
-- **`No module named 'aiohttp'`** during pytest collection — add `--with aiohttp` to the uv run.
+- **`Cannot find module '@rolldown/binding-…'`**: `npm ci` in `cards/haventory-card`.
+- **`No module named 'aiohttp'`** during pytest collection, add `--with aiohttp` to the uv run.
 - [Windows/Git Bash] **`failed to remove file .venv/lib64`**, with a permission error in the
-  host's language — the project venv is unusable; re-run with `--no-project` plus the
+  host's language: the project venv is unusable; re-run with `--no-project` plus the
   `--with` list.
-- [Windows/Git Bash] **`GetFileAttributesEx C:\c:` on `docker cp`** — host-path mangling; use
+- [Windows/Git Bash] **`GetFileAttributesEx C:\c:` on `docker cp`**, host-path mangling; use
   the tar-pipe deploy above instead.
-- **`stress.py` baseline errors / `unknown command`** — check `.env` has `HA_BASE_URL`/`HA_TOKEN`
+- **`stress.py` baseline errors / `unknown command`**: check `.env` has `HA_BASE_URL`/`HA_TOKEN`
   and the container is up; run `baseline` first to confirm the integration imported.
-- **`cannot read the store at …`** — the `[target]` line above it names the instance that
+- **`cannot read the store at …`**: the `[target]` line above it names the instance that
   was resolved. Either it is the wrong one (fix the `.env`, or re-run with
   `HAVENTORY_IGNORE_ENV_FILE=1` to use the export) or the integration is not loaded there.
-- **E2E redirected to `/auth/authorize`** — `HA_TOKEN` is missing/expired.
-- **`pre-commit` not found on commit** — `uv tool install pre-commit`.
+- **E2E redirected to `/auth/authorize`**: `HA_TOKEN` is missing/expired.
+- **`pre-commit` not found on commit**: `uv tool install pre-commit`.
