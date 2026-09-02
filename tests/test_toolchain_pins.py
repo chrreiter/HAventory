@@ -109,7 +109,7 @@ PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
     (".devcontainer/post-create.sh", 1, 0),
     (".claude/hooks/session-start.sh", 8, 0),
     (".claude/skills/run-haventory/SKILL.md", 1, 0),
-    (".claude/skills/test-haventory/SKILL.md", 7, 0),
+    (".claude/skills/test-haventory/SKILL.md", 8, 0),
 )
 
 # `dev/` holds the process documents: the release testing plan and the current
@@ -385,6 +385,12 @@ def test_prose_node_versions_agree_with_engines() -> None:
 # --------------------------------------------------------------------------
 # Tool pins written twice
 # --------------------------------------------------------------------------
+# The ``dev`` group pins ruff exactly because the formatter's output moves
+# between releases: a hook on one ruff reformats what CI's ``ruff format
+# --check`` on another rejects. The pre-commit rev is therefore a second copy
+# of the same number, and ``.github/dependabot.yml`` moves the two in one pull
+# request (``tests/test_repo_hardening_offline.py`` holds that pairing) so the
+# check below is what a bump passes, not what it trips over.
 
 
 def dev_dependency_pin(name: str) -> str:
@@ -406,24 +412,32 @@ def test_pre_commit_runs_the_pinned_ruff() -> None:
     assert hook == dev_dependency_pin("ruff")
 
 
-def test_the_documented_ruff_command_runs_the_pinned_ruff() -> None:
-    """The skill's lint command names its own ruff, so it can disagree with CI."""
-    text = (REPO_ROOT / ".claude/skills/test-haventory/SKILL.md").read_text(encoding="utf-8")
-    documented = set(re.findall(r"ruff==(\S+)", text))
+def test_the_documented_commands_name_no_ruff_version() -> None:
+    """The skill installs the ``uv export``; a ``ruff==`` in it is a copy nothing moves.
 
-    assert documented == {dev_dependency_pin("ruff")}
-
-
-def test_pre_commit_runs_the_actionlint_ci_runs() -> None:
-    """Same split as ruff: the hook and the CI job are pinned independently.
-
-    The job pins the image by digest, which names no version — so the trailing
-    comment is where the version lives, and the tie to the hook's ``rev`` is
-    only readable if the two are written together.
+    Dependabot rewrites the pin in ``pyproject.toml``, the lock and the export,
+    and the pre-commit rev beside them. A version spelled into a shell command in
+    prose is the one copy it cannot see, and was why every ruff bump arrived red.
     """
-    ci_image = re.search(
-        r"docker://rhysd/actionlint@sha256:[0-9a-f]{64} +# v(\S+)",
-        CI_WORKFLOW.read_text(encoding="utf-8"),
-    )
-    assert ci_image is not None, "the actionlint job names no digest-pinned image with a version"
-    assert pre_commit_rev("https://github.com/rhysd/actionlint") == ci_image.group(1)
+    text = (REPO_ROOT / ".claude/skills/test-haventory/SKILL.md").read_text(encoding="utf-8")
+
+    assert re.findall(r"ruff==\S+", text) == []
+
+
+def test_ci_runs_actionlint_through_the_pre_commit_hook() -> None:
+    """The hook rev is the one copy of the actionlint version, so CI runs the hook.
+
+    The job used to run the tool as a digest-pinned ``docker://`` image with the
+    version in a trailing comment, which this test tied to the hook's ``rev``.
+    That was a second copy Dependabot's github-actions updater does not read, so
+    every bump of the hook arrived red until a hand moved the digest. With the
+    job running the hook there is nothing to tie — only a second copy to refuse.
+    """
+    job = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["actionlint"]
+    commands = [step.get("run", "") for step in job["steps"]]
+
+    assert any("pre-commit run actionlint" in command for command in commands), commands
+    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
+        assert "rhysd/actionlint" not in path.read_text(encoding="utf-8"), (
+            f"{path.name} names actionlint itself — a copy of the version the hook rev already is"
+        )

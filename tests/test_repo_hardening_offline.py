@@ -11,7 +11,9 @@ third-party action it calls is pinned to an immutable revision, and that
 Dependabot is configured to keep ``requirements-integration.txt`` patched
 without fighting the pins that file carries deliberately, without bumping them
 from the other block that reads the same file, and without proposing the dev
-toolchain a second time out of a generated export.
+toolchain a second time out of a generated export — and that the ruff pin and
+the pre-commit rev held equal to it move in one pull request, since apart each
+half arrives red for the copy it did not touch.
 
 Last, the two scheduled runs — ``ha-latest`` and ``card-smoke`` — each of which
 can be worthless in ways a green run of its own would not reveal: reporting a
@@ -54,6 +56,11 @@ IMMUTABLE_REVISION = re.compile(r"@(?:[0-9a-f]{40}|sha256:[0-9a-f]{64})$")
 # root read that file, so both have to be told.
 HA_PINS = ("homeassistant", "home-assistant-frontend")
 ROOT_PYTHON_ECOSYSTEMS = ("uv", "pip")
+
+# The ruff pin in the `dev` group and the pre-commit hook rev that
+# tests/test_toolchain_pins.py holds equal to it live in two ecosystems. One
+# pull request has to move both, or the sweep fails whichever arrives alone.
+RUFF_PIN_ECOSYSTEMS = ("uv", "pre-commit")
 
 # The root manifests the `uv` block owns, and which the `pip` block therefore has
 # to be scoped off: `requirements-dev.txt` is a `uv export` that says so on line
@@ -320,6 +327,42 @@ def test_dependabot_leaves_the_ha_pins_alone(ecosystem: str) -> None:
         assert ignored[name] == VERSION_UPDATE_TYPES, (
             f"{name} is ignored for {sorted(ignored[name]) or 'every update'} in the "
             f"{ecosystem} block — a blanket ignore also mutes the security channel"
+        )
+
+
+def multi_ecosystem_groups() -> dict[str, Any]:
+    """The groups that span ecosystems, by name; a block joins one by naming it."""
+    config = yaml.safe_load(DEPENDABOT_PATH.read_text(encoding="utf-8"))
+    return dict(config.get("multi-ecosystem-groups") or {})
+
+
+def test_dependabot_moves_the_ruff_pin_and_its_hook_together() -> None:
+    """Two copies of one number, in two ecosystems, in one pull request.
+
+    The ``dev`` group pins ruff exactly because the formatter's output moves
+    between releases; the hook rev is the same number written where pre-commit
+    reads it. The ``uv`` updater moves the pin and the ``pre-commit`` updater the
+    rev, and each on its own arrived as a red pull request every time — the
+    group is what puts both edits under one head for the sweep to pass.
+    """
+    blocks = {ecosystem: dependabot_block(ecosystem, "/") for ecosystem in RUFF_PIN_ECOSYSTEMS}
+    for ecosystem, block in blocks.items():
+        assert block is not None, f"no {ecosystem} block for the repository root"
+    groups = {
+        ecosystem: block.get("multi-ecosystem-group")
+        for ecosystem, block in blocks.items()
+        if block is not None
+    }
+
+    assert None not in groups.values(), f"a block is outside every group: {groups}"
+    assert len(set(groups.values())) == 1, f"the two blocks join different groups: {groups}"
+    (name,) = set(groups.values())
+    assert name in multi_ecosystem_groups(), (
+        f"{name!r} is not declared under multi-ecosystem-groups"
+    )
+    for ecosystem, block in blocks.items():
+        assert block is not None and "*" in block.get("patterns", []), (
+            f"the {ecosystem} block keeps some dependencies out of {name!r}"
         )
 
 
