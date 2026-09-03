@@ -702,6 +702,7 @@ export const en = {
   'hv.organize.mergeInto': 'Merge into',
   'hv.organize.newName': 'New name',
   'hv.organize.pickNameToContinue': 'Pick a name to continue.',
+  'hv.organize.mergeNoOther': 'There are no other {values} to merge into.',
   'hv.organize.renameValue': 'Rename {value}',
   'hv.organize.mergeValue': 'Merge {value}',
   'hv.organize.mergeIntoAnother': 'Merge into another',

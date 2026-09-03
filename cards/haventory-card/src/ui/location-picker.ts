@@ -1,35 +1,20 @@
 import { html } from 'lit';
-import { ifDefined } from 'lit/directives/if-defined.js';
 import type { ReactiveControllerHost, TemplateResult } from 'lit';
+import { Picker } from './picker';
+import type { PickerHolder, PickerOptions } from './picker';
 import '../components/hv-location-tree';
 
 /**
- * The disclosure around `hv-location-tree`: a trigger that says what is picked,
- * a holder the tree is drawn into while it is open, and the rule that picking
- * one closes it.
+ * The disclosure around `hv-location-tree`: the shared trigger and holder from
+ * `Picker`, plus the rule that picking a location closes it.
  *
  * Four surfaces reach for a location this way — the item editor's field, the
- * filter panel's Where chip, the organize dialog's parent picker and its merge
- * target — and each wrote the same button, the same `aria-expanded` /
- * `aria-controls` pair, the same holder and the same close-on-pick. What
- * differs stays with the host: the trigger's classes and its contents, and the
- * tree's own properties, because `.field-button`, `.control` and
- * `hv-chip toggle` are the host forms' own vocabularies and the tree each
- * surface wants is a different tree.
- *
- * A controller drawing into the host's own template rather than an element of
- * its own, for those same class rules: they live in the host's stylesheet and
- * do not reach across a shadow boundary. It also keeps the tree inside the
- * host's single update, which is what every one of these surfaces' tests waits
- * on.
- *
- * The holder outlives the tree: `aria-controls` pointing at an element that is
- * not there announces the trigger as controlling nothing, so the box stays and
- * only its contents come and go.
+ * filter panel's Where chip, the organize dialog's parent picker and its
+ * location merge target — and each wrote the same close-on-pick.
  */
 
 /** What a surface settles once, for the life of the picker. */
-export interface LocationPickerOptions {
+export interface LocationPickerOptions extends PickerOptions {
   /**
    * Picking adds to a set rather than finishing the job, so the tree stays open
    * — the filter panel narrows by several locations at once. Clearing the
@@ -38,54 +23,12 @@ export interface LocationPickerOptions {
   keepOpenOnSelect?: boolean;
 }
 
-/** What the trigger is called and dressed in, per render. */
-export interface LocationPickerTrigger {
-  /** The classes the host's stylesheet dresses the trigger in. */
-  triggerClass: string;
-  /** What a harness and the host's own queries locate the trigger by. */
-  testid: string;
-  /** The trigger's tooltip, where the host has more to say than fits on it. */
-  title?: string;
-  /** The trigger's contents: the host's own icons, chips and label. */
-  trigger: unknown;
-  /**
-   * The id `aria-controls` names, and the holder's own. Scoped to the host's
-   * shadow root, so two forms mounted at once do not collide.
-   */
-  holderId: string;
-}
-
-/** What the holder is called and dressed in, per render. */
-export interface LocationPickerHolder {
-  /** The same id the trigger points at. */
-  holderId: string;
-  /** The holder's classes; every host calls it `tree-holder` and sizes its own. */
-  holderClass?: string;
-}
-
-export class LocationPicker {
-  private readonly _host: ReactiveControllerHost;
+export class LocationPicker extends Picker {
   private readonly _opts: LocationPickerOptions;
-  private _open = false;
 
   constructor(host: ReactiveControllerHost, opts: LocationPickerOptions = {}) {
-    this._host = host;
+    super(host, opts);
     this._opts = opts;
-  }
-
-  /** Whether the tree is showing, for a host deciding what Escape takes back. */
-  get open(): boolean {
-    return this._open;
-  }
-
-  close(): void {
-    this._set(false);
-  }
-
-  private _set(open: boolean) {
-    if (this._open === open) return;
-    this._open = open;
-    this._host.requestUpdate();
   }
 
   /**
@@ -99,45 +42,20 @@ export class LocationPicker {
     this.close();
   };
 
-  /** The trigger on its own, for a host that puts the holder somewhere else. */
-  renderTrigger(chrome: LocationPickerTrigger): TemplateResult {
-    return html`<button
-      class=${chrome.triggerClass}
-      data-testid=${chrome.testid}
-      title=${ifDefined(chrome.title)}
-      aria-expanded=${String(this._open)}
-      aria-controls=${chrome.holderId}
-      @click=${() => this._set(!this._open)}
-    >
-      ${chrome.trigger}
-    </button>`;
-  }
-
   /**
-   * The holder on its own, for the same host. `tree` is a function, not a
-   * template: a closed picker draws nothing, and building the nodes for a tree
-   * nobody has opened is work every keystroke in the form around it would pay
-   * for.
+   * The base's box, listening for the two events a pick arrives as: a row sends
+   * `select` and an area heading sends `select-area`, and both bubble out of the
+   * tree to here.
    */
-  renderHolder(holder: LocationPickerHolder, tree: () => unknown): TemplateResult {
+  override renderHolder(holder: PickerHolder, tree: () => unknown): TemplateResult {
     return html`<div
       class=${holder.holderClass ?? 'tree-holder'}
       id=${holder.holderId}
-      ?hidden=${!this._open}
+      ?hidden=${!this.open}
       @select=${this._onSelect}
       @select-area=${this._onSelect}
     >
-      ${this._open ? tree() : null}
+      ${this.open ? tree() : null}
     </div>`;
-  }
-
-  /**
-   * Both, one after the other — the usual case, where the trigger and the box
-   * it opens are siblings in the host's own form. A host whose layout puts them
-   * in different parents — a chip row with the tree under it — draws the two
-   * halves itself.
-   */
-  render(chrome: LocationPickerTrigger & LocationPickerHolder, tree: () => unknown): TemplateResult {
-    return html`${this.renderTrigger(chrome)}${this.renderHolder(chrome, tree)}`;
   }
 }

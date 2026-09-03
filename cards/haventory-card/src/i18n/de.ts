@@ -642,6 +642,7 @@ export const de: CompleteDictionary = {
   'hv.organize.mergeInto': 'Zusammenführen mit',
   'hv.organize.newName': 'Neuer Name',
   'hv.organize.pickNameToContinue': 'Wähle einen Namen, um fortzufahren.',
+  'hv.organize.mergeNoOther': 'Es gibt keine weiteren {values} zum Zusammenführen.',
   'hv.organize.renameValue': '{value} umbenennen',
   'hv.organize.mergeValue': '{value} zusammenführen',
   'hv.organize.mergeIntoAnother': 'Mit einem anderen zusammenführen',

@@ -317,10 +317,11 @@ that resolves to nothing announces the control as controlling nothing. Only the 
 come and go, so collapsing still discards the state inside. Every disclosure in the card is
 wired this way: `hv-filter-panel`'s location chip, `hv-full-view`'s sidebar headings and
 Filters button, `hv-card-shell`'s expand and filter buttons, `hv-item-editor`'s location and
-category fields, `hv-organize-dialog`'s two location pickers, and `hv-location-tree`'s rows
-and area bands. Ids are shadow-scoped, so the desktop panel and the phone sheet can both be
-mounted without colliding. `hv-overflow-menu` is the one disclosure outside this rule: a
-menu button announces its popup with `aria-haspopup`, so its menu is free to leave the DOM.
+category fields, `hv-organize-dialog`'s two location pickers and its merge-target value list,
+and `hv-location-tree`'s rows and area bands. Ids are shadow-scoped, so the desktop panel
+and the phone sheet can both be mounted without colliding. `hv-overflow-menu` is the one
+disclosure outside this rule: a menu button announces its popup with `aria-haspopup`, so its
+menu is free to leave the DOM.
 
 Where the target keeps a rendered box of its own it is held in the tree with `hidden`, so an
 empty one neither paints nor takes a grid gap. A holder that sets a `display` of its own
@@ -462,7 +463,8 @@ it, so each container subscribes to `store.state.onChange` itself, through the
 | `keyboard.ts` | `onEscape()` for the surfaces where Escape means exactly "close", and the platform-correct save-shortcut label. |
 | `roving-list.ts` | A long list of rows as one tab stop: which row holds `tabindex="0"` after a redraw (`syncRovingTabindex`), and which row an Arrow, Home or End press moves to (`rovingTarget`). Used by the sidebar's three facet lists and by `hv-location-tree`, which also passes a `Disclosure` so Right and Left work the twisties and step out to a parent. |
 | `day-offsets.ts` | The quick jumps a forward date is set by: three presets, the "+X days" box, and the rule that an empty box means no date rather than the last one. Drawn by the check-out popover and the editor's inspection field. |
-| `location-picker.ts` | The disclosure around `hv-location-tree`: the trigger, its `aria-expanded` / `aria-controls` pair, the holder, and closing on a pick, with `keepOpenOnSelect` for a surface that picks a set. |
+| `picker.ts` | A trigger and the box it opens, drawn into the host's own template: the `aria-expanded` / `aria-controls` pair, the holder that stays in the tree while its contents come and go, a `disabled` trigger for a box with nothing in it, and an `onClose` hook for a host keeping a filter inside. |
+| `location-picker.ts` | `Picker` around `hv-location-tree`: the same trigger and holder, plus closing on a pick, with `keepOpenOnSelect` for a surface that picks a set. |
 | `attachments.ts` | The photo figure, the document row and the lightbox host the item editor and the detail sheet share, in particular the one answer both give to a reference whose file the backend does not have. |
 | `plural.ts` | Count agreement for every count string in the card. |
 | `theme.ts` | Whether the card is painted on a light or dark surface, read from HA's own theme variables rather than `prefers-color-scheme`. |
