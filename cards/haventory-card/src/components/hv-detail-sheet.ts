@@ -53,7 +53,10 @@ import type { HVItemEditor } from './hv-item-editor';
  *   `areas`, `statuses`, `categorySuggestions`, `tagSuggestions`,
  *   `customFieldKeys`, `media` and `mediaConfig` are the store slices the read
  *   view and the form it hosts read; `busy` and `errorMessage` are the host's
- *   account of the save in flight, forwarded to the form.
+ *   account of the save in flight, forwarded to the form. A save the host
+ *   reports over without an error lands the sheet back on its read view, which
+ *   is where the saved values are; a refused save leaves the form up with the
+ *   message inside it.
  * - **Out**: `save` (the editor's own detail, so a host's editor-save handler
  *   takes it unchanged), `increment` / `decrement`, `check-in`,
  *   `check-out-confirmed` and `set-due-date` with the picked date,
@@ -510,7 +513,8 @@ export class HVDetailSheet extends LitElement {
   private _shownItemId: string | null | undefined;
 
   /**
-   * Another item, or a re-open, always lands on the read view.
+   * Another item, a re-open, or a save the host has finished with: each of
+   * them lands the sheet on its read view.
    *
    * Keyed on the item *id*, not on the `item` object: the host re-binds it from
    * a fresh lookup on every store broadcast, so each attachment mutation hands
@@ -527,6 +531,14 @@ export class HVDetailSheet extends LitElement {
       this._checkoutOpen = false;
       this._lightbox = null;
       this._copyFlash.reset();
+    }
+    // The read view is what shows the values a save wrote, and on a phone there
+    // is no second surface to say it landed. A host settles `busy` and
+    // `errorMessage` together before it asks for one render, so the fall of
+    // `busy` arrives with the final message: a refusal never reads as a save
+    // that landed, and the retry after one starts on a rise, not a fall.
+    if (this._mode === 'edit' && changed.has('busy') && !this.busy && this.errorMessage === null) {
+      this._mode = 'read';
     }
   }
 

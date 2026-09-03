@@ -2672,6 +2672,11 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
       await settle(el);
 
       expect(store.state.value.items.find((i) => i.id === '1')?.name).toBe('New');
+      // The sheet is the only surface at this width, so it answers for the save
+      // itself: still up, back on the read view, showing what was written.
+      expect(sheet(sr)?.open).toBe(true);
+      expect(inner.shadowRoot?.querySelector('[data-testid="sheet-editor"]')).toBe(null);
+      expect(inner.shadowRoot?.querySelector('[data-testid="sheet-name"]')?.textContent).toContain('New');
     } finally {
       restore();
     }

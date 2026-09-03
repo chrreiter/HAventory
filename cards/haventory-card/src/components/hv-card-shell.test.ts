@@ -1633,6 +1633,25 @@ describe('hv-card-shell: mobile detail sheet', () => {
   const firstRow = (sr: ShadowRoot) =>
     (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector('hv-list-row') as HTMLElement;
 
+  /** Open the sheet on the first row, rename the item in the form and save. */
+  const editInSheet = async (el: HVCardShell, sr: ShadowRoot) => {
+    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+    await settle(el);
+
+    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-editor"]') as HTMLElement;
+    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    name.value = 'New';
+    name.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+  };
+
   it('opens the sheet on tap instead of expanding the row', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'AA Batteries' })], mobile: true });
     expect(sheet(sr).open).toBe(false);
@@ -1701,22 +1720,31 @@ describe('hv-card-shell: mobile detail sheet', () => {
 
   it('saves an edit made in the sheet', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })], mobile: true });
-    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
-    await settle(el);
+    await editInSheet(el, sr);
 
-    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    expect(store.state.value.items[0].name).toBe('New');
+    // A phone has no second surface to report the save on, so the sheet itself
+    // is the answer: it stays up and shows what was written.
+    expect(sheet(sr).open).toBe(true);
+    expect(sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-editor"]')).toBe(null);
+    expect(sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-name"]')?.textContent).toContain('New');
+  });
+
+  it('keeps the sheet on the form when the save is refused', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })], mobile: true });
+    store['ws'].updateItem = async () => {
+      throw { code: 'conflict', message: 'version conflict: expected 4, actual 5' };
+    };
+
+    await editInSheet(el, sr);
 
     const editor = sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-editor"]') as HTMLElement;
+    expect(editor).toBeTruthy();
+    expect(editor.shadowRoot?.querySelector('[data-testid="editor-error"]')?.textContent).toContain(
+      'Someone else changed this item',
+    );
     const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
-    name.value = 'New';
-    name.dispatchEvent(new Event('input'));
-    await settle(el);
-
-    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-save"]') as HTMLButtonElement).click();
-    await settle(el);
-    await settle(el);
-    expect(store.state.value.items[0].name).toBe('New');
+    expect(name.value).toBe('New');
   });
 
   it('deletes through the same confirmation and closes the sheet', async () => {
