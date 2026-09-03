@@ -472,6 +472,96 @@ describe('hv-detail-sheet: edit view', () => {
     expect((saves[0] as { changes: { name: string } }).changes.name).toBe('New');
   });
 
+  /**
+   * Rename the item in the form, press the sheet's Save, and take the save in
+   * hand the way a host does: `busy` rises the moment it has the event.
+   */
+  async function saveFromSheet(el: HVDetailSheet, name = 'New') {
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = q<HTMLElement & { updateComplete: Promise<unknown> }>(
+      el,
+      '[data-testid="sheet-editor"]',
+    )!;
+    const field = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    field.value = name;
+    field.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    (q(el, '[data-testid="sheet-save"]') as HTMLButtonElement).click();
+    el.busy = true;
+    await settle(el);
+    return editor;
+  }
+
+  // The sheet reads no store: `busy` and `errorMessage` are the host's whole
+  // account of the save, and a phone has no second surface to say it landed on.
+  it('returns to the read view once the host reports the save over', async () => {
+    const el = await mount({ id: 'item-1', name: 'Old', quantity: 2, version: 3 });
+    await saveFromSheet(el);
+    expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
+
+    // What a host does with a save that landed: busy falls with no message, and
+    // the item comes back as the store now holds it.
+    el.busy = false;
+    el.errorMessage = null;
+    el.item = makeItem({ id: 'item-1', name: 'New', quantity: 2, version: 4 });
+    await settle(el);
+
+    expect(q(el, '[data-testid="sheet-editor"]')).toBe(null);
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+    expect(q(el, '[data-testid="sheet-name"]')?.textContent).toContain('New');
+  });
+
+  it('leaves the form up, typing and all, when the save is refused', async () => {
+    const el = await mount({ id: 'item-1', name: 'Old' });
+    const editor = await saveFromSheet(el);
+
+    el.busy = false;
+    el.errorMessage = 'the store is read-only';
+    await settle(el);
+    await editor.updateComplete;
+
+    expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
+    const field = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    expect(field.value).toBe('New');
+    expect(editor.shadowRoot?.querySelector('[data-testid="editor-error"]')?.textContent).toContain(
+      'the store is read-only',
+    );
+  });
+
+  it('returns to the read view when a retry lands after a refusal', async () => {
+    const el = await mount({ id: 'item-1', name: 'Old' });
+    await saveFromSheet(el);
+    el.busy = false;
+    el.errorMessage = 'the store is read-only';
+    await settle(el);
+    expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
+
+    // A retry opens with the message dropped and busy back up — a rise, not the
+    // fall a save that landed ends on.
+    el.busy = true;
+    el.errorMessage = null;
+    await settle(el);
+    expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
+
+    el.busy = false;
+    await settle(el);
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+  });
+
+  it('reads the account of a save only while the form is up', async () => {
+    const el = await mount({ id: 'item-1', name: 'Old' });
+    el.busy = true;
+    await settle(el);
+    el.busy = false;
+    await settle(el);
+
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+    expect(q(el, '[data-testid="sheet-editor"]')).toBe(null);
+  });
+
   // The form carries a Delete of its own. Every other host of the editor
   // forwarded it; this sheet did not, so the button was inert.
   it('forwards the form’s own Delete as one request-delete', async () => {

@@ -301,6 +301,10 @@ export class ItemWorkspace implements ReactiveController {
     // The store reports failures through its error queue rather than throwing,
     // so a new entry is how we know the save did not land. Keep the form open
     // in that case so the user's edits are still there to retry.
+    // The read sheet reads `busy` falling with `errorMessage` still null as the
+    // save having landed, so the two are settled together in this synchronous
+    // run, ahead of the one redraw below. An await between them would hand the
+    // sheet the fall before the message, and it would drop the form on a refusal.
     const queue = this.st?.errorQueue ?? [];
     const failed = queue.length > before;
     this.editorError = failed ? editorErrorText(queue[queue.length - 1]) : null;

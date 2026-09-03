@@ -139,8 +139,9 @@ haventory-card                     Lovelace element; store owner
     │       ├── hv-lightbox        the photo strip opens full-size here too
     │       └── hv-location-tree
     ├── hv-detail-sheet            the narrow read view, on the card and the full
-    │   │                          view alike: read + edit in one sheet, photo
-    │   │                          gallery strip and the Documents list
+    │   │                          view alike: read + edit in one sheet (a save that
+    │   │                          lands returns it to read), photo gallery strip and
+    │   │                          the Documents list
     │   ├── hv-item-editor
     │   ├── hv-lightbox            photos full-size, with arrows and a counter
     │   └── hv-checkout-popover    inline due-date step
