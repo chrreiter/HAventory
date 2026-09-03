@@ -9,6 +9,7 @@ import { tokens, base } from '../ui/tokens';
 import { chip, tagLabel } from '../ui/chip';
 import { Modal, modalChrome } from '../ui/modal';
 import { LocationPicker } from '../ui/location-picker';
+import { Picker } from '../ui/picker';
 import { icon } from '../ui/icons';
 import type { IconName } from '../ui/icons';
 import { counted } from '../ui/plural';
@@ -69,6 +70,19 @@ const CUSTOM_COLOR_SEED = '#7b5ea7';
  */
 const LOC_PARENT_TREE_ID = 'location-parent-tree-holder';
 const MERGE_TARGET_TREE_ID = 'merge-target-tree-holder';
+
+/** The same, for the list of values a category or tag merge can land on. */
+const MERGE_VALUE_LIST_ID = 'merge-value-list-holder';
+
+/**
+ * How many values the merge list shows before it earns a filter of its own.
+ *
+ * The box is 200px tall and a row is about 32px of it, so six are on screen at
+ * once: over a shorter list a search field would narrow nothing that is not
+ * already visible. A household's tags run to hundreds, which is what it is
+ * there for.
+ */
+const VALUE_FILTER_FROM = 6;
 
 /**
  * The three batch rewrites.
@@ -551,6 +565,50 @@ export class HVOrganizeDialog extends LitElement {
         padding: 4px 0;
         margin-top: 6px;
       }
+      /* The merge target list shares that box, so its own parts carry the
+         padding the box leaves off the sides. */
+      .list-filter {
+        display: block;
+        padding: 4px 8px 6px;
+      }
+      .option {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        box-sizing: border-box;
+        border: none;
+        background: none;
+        text-align: left;
+        font: 400 13.5px var(--hv-font);
+        color: var(--hv-text);
+        padding: 7px 12px;
+        border-radius: var(--hv-radius-input);
+      }
+      :host([mobile]) .option {
+        min-height: var(--hv-tap-min, 44px);
+        font-size: 15px;
+      }
+      .option .label {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .option:hover {
+        background: var(--hv-hover-overlay);
+      }
+      .option[aria-pressed='true'] {
+        background: var(--hv-primary-tint);
+        color: var(--hv-on-primary-tint);
+        font-weight: 500;
+      }
+      .option-empty {
+        padding: 8px 12px;
+        font-size: 12.5px;
+        color: var(--hv-text-tertiary);
+      }
       .actions {
         display: flex;
         align-items: center;
@@ -692,6 +750,12 @@ export class HVOrganizeDialog extends LitElement {
   /** The parent picker and the merge target: one location each, so a pick ends it. */
   private readonly _parentPicker = new LocationPicker(this);
   private readonly _mergePicker = new LocationPicker(this);
+  /** The list of values a category or tag merges into; its filter goes with it. */
+  private readonly _valuePicker = new Picker(this, {
+    onClose: () => {
+      this._valueFilter = '';
+    },
+  });
   /** The "Copied" label on the open location editor's id row. */
   private readonly _copyFlash = new CopyFlash(this);
 
@@ -711,6 +775,8 @@ export class HVOrganizeDialog extends LitElement {
   /** The value row expanded for rename or merge, if any; the kind comes from the active tab. */
   @state() private _editingValue: { value: string; mode: 'rename' | 'merge' } | null = null;
   @state() private _valueDraft = '';
+  /** What narrows the merge target list, for a vocabulary too long to scan. */
+  @state() private _valueFilter = '';
   @state() private _rewrite: RewriteState | null = null;
   @state() private _confirmRemove: string | null = null;
   /**
@@ -816,6 +882,7 @@ export class HVOrganizeDialog extends LitElement {
     this._filter = '';
     this._editingLocation = null;
     this._editingValue = null;
+    this._valuePicker.close();
     this._guard = null;
     this._locError = null;
     this._rewrite = null;
@@ -1105,6 +1172,11 @@ export class HVOrganizeDialog extends LitElement {
     return this.tab === 'tags' ? t('hv.organize.noun.tag') : t('hv.organize.noun.category');
   }
 
+  /** Plural noun for the tab, for the two sentences that count its values. */
+  private get _plural(): string {
+    return this.tab === 'tags' ? t('hv.organize.plural.tags') : t('hv.organize.plural.categories');
+  }
+
   /**
    * One value of whichever facet the open tab manages, chipped the way the rest
    * of the card chips it: a tag blue and marked, a category neutral.
@@ -1141,13 +1213,12 @@ export class HVOrganizeDialog extends LitElement {
     this._editingValue = { value, mode };
     this._sheetValue = null;
     this._rewrite = null;
+    // The list belongs to the row being opened, so it starts shut and unfiltered
+    // however the last one was left.
+    this._valuePicker.close();
     if (mode === 'merge') {
       // Pre-fill the closest existing value, which is usually the typo fix.
-      const others = (this.tab === 'tags'
-        ? (this.st?.distinctValuesCache?.tags ?? [])
-        : (this.st?.distinctValuesCache?.categories ?? [])
-      ).map((v) => v.value);
-      this._valueDraft = closestMatch(value, others) ?? '';
+      this._valueDraft = closestMatch(value, this._otherValues(value)) ?? '';
     } else {
       this._valueDraft = value;
     }
@@ -1655,15 +1726,105 @@ export class HVOrganizeDialog extends LitElement {
     </div>`;
   }
 
-  private _renderValueEditor(value: string, count: number) {
-    const editing = this._editingValue!;
-    const merging = editing.mode === 'merge';
-    const others = (this.tab === 'tags'
-      ? (this.st?.distinctValuesCache?.tags ?? [])
-      : (this.st?.distinctValuesCache?.categories ?? [])
+  /**
+   * The other values of the open tab, which is what a merge can land on.
+   *
+   * A value merged into itself is a no-op the Merge button would still offer,
+   * so the source is not among them.
+   */
+  private _otherValues(value: string): string[] {
+    return (
+      this.tab === 'tags'
+        ? (this.st?.distinctValuesCache?.tags ?? [])
+        : (this.st?.distinctValuesCache?.categories ?? [])
     )
       .map((v) => v.value)
       .filter((v) => v !== value);
+  }
+
+  /** The tab's value as the merge target field prints it: a tag wears its mark. */
+  private _valueText(value: string) {
+    return this.tab === 'tags' ? tagLabel(value) : value;
+  }
+
+  /**
+   * What the merge target is set to, on the button that opens the list.
+   *
+   * The trigger and its list are the two halves of one control, drawn apart
+   * because the row above holds the struck source and the arrow and the list
+   * takes the full width under them.
+   */
+  private _renderValueTargetTrigger(others: string[]) {
+    const picked = this._valueDraft.trim();
+    return this._valuePicker.renderTrigger({
+      triggerClass: 'control grow',
+      testid: 'value-target',
+      title: t('hv.organize.mergeInto'),
+      disabled: !others.length,
+      holderId: MERGE_VALUE_LIST_ID,
+      trigger: html`<span class="value"
+          >${picked ? this._valueText(picked) : t('hv.organize.mergeIntoPlaceholder')}</span
+        >${icon('chevronDown', 15)}`,
+    });
+  }
+
+  /**
+   * The values a merge can land on, as the card's own elements.
+   *
+   * A native `<datalist>` draws its suggestions as browser chrome, and the Home
+   * Assistant companion app's Android WebView draws none at all: the field
+   * there opens nothing, and a household on a phone has no way to name a
+   * target. It is a pick rather than free text — a merge lands on a value that
+   * already exists, and typing one that does not is what rename is for.
+   */
+  private _renderValueTargetList(others: string[]) {
+    const picked = this._valueDraft.trim();
+    const needle = this._valueFilter.trim().toLowerCase();
+    const shown = needle ? others.filter((v) => v.toLowerCase().includes(needle)) : others;
+    return this._valuePicker.renderHolder(
+      { holderId: MERGE_VALUE_LIST_ID },
+      () => html`
+        ${others.length > VALUE_FILTER_FROM
+          ? html`<label class="list-filter">
+              <span class="hv-sr-only">${t('hv.organize.filterValues', { values: this._plural })}</span>
+              <input
+                class="control"
+                data-testid="value-target-filter"
+                placeholder=${t('hv.organize.filterValuesPlaceholder', { values: this._plural })}
+                .value=${this._valueFilter}
+                @input=${(e: Event) => {
+                  this._valueFilter = (e.target as HTMLInputElement).value;
+                }}
+              />
+            </label>`
+          : null}
+        ${shown.length
+          ? shown.map(
+              (v) => html`<button
+                class="option"
+                data-testid="value-target-option"
+                data-value=${v}
+                aria-pressed=${String(v === picked)}
+                @click=${() => {
+                  this._valueDraft = v;
+                  this._valuePicker.close();
+                }}
+              >
+                <span class="label">${this._valueText(v)}</span>
+                ${v === picked ? icon('check', 15) : null}
+              </button>`,
+            )
+          : html`<div class="option-empty" data-testid="value-target-none">
+              ${t('hv.organize.noValuesMatch', { values: this._plural })}
+            </div>`}
+      `,
+    );
+  }
+
+  private _renderValueEditor(value: string, count: number) {
+    const editing = this._editingValue!;
+    const merging = editing.mode === 'merge';
+    const others = merging ? this._otherValues(value) : [];
     const target = this._valueDraft.trim();
 
     return keyed(
@@ -1678,32 +1839,28 @@ export class HVOrganizeDialog extends LitElement {
         <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
           ${this._valueChip(value, { style: merging ? 'text-decoration: line-through' : undefined })}
           <span style="font-size:12.5px;color:var(--hv-text-secondary)">${counted(count, 'item')}</span>
-          ${merging ? icon('arrowRight', 18) : null}
-          <label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
-            <span class="hv-sr-only"
-              >${merging ? t('hv.organize.mergeInto') : t('hv.organize.newName')}</span
-            >
-            <input
-              class="control"
-              data-testid="value-target"
-              list="hv-organize-values"
-              placeholder=${merging
-                ? t('hv.organize.mergeIntoPlaceholder')
-                : t('hv.organize.newNamePlaceholder')}
-              .value=${this._valueDraft}
-              @input=${(e: Event) => {
-                this._valueDraft = (e.target as HTMLInputElement).value;
-              }}
-            />
-          </label>
-          <datalist id="hv-organize-values">
-            ${others.map((v) => html`<option value=${v}></option>`)}
-          </datalist>
+          ${merging
+            ? html`${icon('arrowRight', 18)}${this._renderValueTargetTrigger(others)}`
+            : html`<label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
+                <span class="hv-sr-only">${t('hv.organize.newName')}</span>
+                <input
+                  class="control"
+                  data-testid="value-target"
+                  placeholder=${t('hv.organize.newNamePlaceholder')}
+                  .value=${this._valueDraft}
+                  @input=${(e: Event) => {
+                    this._valueDraft = (e.target as HTMLInputElement).value;
+                  }}
+                />
+              </label>`}
         </div>
+        ${merging ? this._renderValueTargetList(others) : null}
         <span class="note" data-testid="value-effect">
-          ${target
-            ? describeRewrite(this._kind, count, value, target)
-            : t('hv.organize.pickNameToContinue')}
+          ${merging && !others.length
+            ? t('hv.organize.mergeNoOther', { values: this._plural })
+            : target
+              ? describeRewrite(this._kind, count, value, target)
+              : t('hv.organize.pickNameToContinue')}
         </span>
         ${this._renderFooter({
           cancelTestid: 'value-cancel',
@@ -2155,8 +2312,7 @@ export class HVOrganizeDialog extends LitElement {
 
   private _renderValuesTab() {
     const values = this._values;
-    const noun =
-      this.tab === 'tags' ? t('hv.organize.plural.tags') : t('hv.organize.plural.categories');
+    const noun = this._plural;
     return html`
       ${this._renderToolbar({
         search: {
@@ -2259,13 +2415,7 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   private _renderValueSheet(value: string, count: number) {
-    const others = (this.tab === 'tags'
-      ? (this.st?.distinctValuesCache?.tags ?? [])
-      : (this.st?.distinctValuesCache?.categories ?? [])
-    )
-      .map((v) => v.value)
-      .filter((v) => v !== value);
-    const suggestion = closestMatch(value, others);
+    const suggestion = closestMatch(value, this._otherValues(value));
     return this._renderActionSheet('value-sheet', value, [
       {
         testid: 'sheet-show',

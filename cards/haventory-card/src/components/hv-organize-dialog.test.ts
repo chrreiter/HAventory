@@ -841,16 +841,129 @@ describe('hv-organize-dialog: tags and categories', () => {
     expect(all(sr, '[data-testid="value-row"]').map((r) => r.dataset.value)).toEqual(['batery', 'battery']);
   });
 
-  it('pre-fills the merge target with the closest existing value', async () => {
-    const { el, sr } = await mount({ items, tab: 'tags' });
-    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'batery')!;
+  /** Open one row's merge editor, which is where the target is picked. */
+  async function openMerge(el: HVOrganizeDialog, sr: ShadowRoot, value: string) {
+    const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === value)!;
     (row.querySelector('[data-testid="value-merge"]') as HTMLButtonElement).click();
     await settle(el);
+  }
 
-    expect((q(sr, '[data-testid="value-target"]') as HTMLInputElement).value).toBe('battery');
+  const targets = (sr: ShadowRoot) =>
+    all(sr, '[data-testid="value-target-option"]').map((o) => o.dataset.value);
+
+  it('pre-fills the merge target with the closest existing value', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+    await openMerge(el, sr, 'batery');
+
+    expect(q(sr, '[data-testid="value-target"]')?.textContent?.trim()).toBe('#battery');
     expect(q(sr, '[data-testid="value-effect"]')?.textContent).toContain(
       'Retags 2 items, then removes "batery"',
     );
+  });
+
+  // A browser draws a `<datalist>` as chrome of its own, and the Home Assistant
+  // companion app's Android WebView draws none at all: a list the browser owns
+  // never opens there, so the targets have to be the card's own elements.
+  it('draws the merge targets itself rather than as browser suggestions', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+
+    for (const mode of ['rename', 'merge'] as const) {
+      const row = all(sr, '[data-testid="value-row"]').find((r) => r.dataset.value === 'batery')!;
+      (row.querySelector(`[data-testid="value-${mode}"]`) as HTMLButtonElement).click();
+      await settle(el);
+      const editor = q(sr, '[data-testid="value-editor"]') as HTMLElement;
+      expect(editor.dataset.mode, mode).toBe(mode);
+      expect(editor.querySelector('datalist'), mode).toBe(null);
+      expect(editor.querySelector('[list]'), mode).toBe(null);
+    }
+  });
+
+  it('offers every other value of the tab, and never the one being merged', async () => {
+    const { el, sr } = await mount({ items, tab: 'tags' });
+    await openMerge(el, sr, 'batery');
+
+    const trigger = q(sr, '[data-testid="value-target"]') as HTMLButtonElement;
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(targets(sr)).toEqual([]);
+
+    trigger.click();
+    await settle(el);
+
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(targets(sr)).toEqual(['aa', 'battery']);
+    // Two rows fit in the box without scrolling, so there is nothing to narrow.
+    expect(q(sr, '[data-testid="value-target-filter"]')).toBe(null);
+  });
+
+  it('merges into the value picked from the list', async () => {
+    const { el, store, sr } = await mount({ items, tab: 'tags' });
+    // "aa" is nothing like the other two, so nothing is pre-filled and the
+    // pick is the whole of what makes the merge possible.
+    await openMerge(el, sr, 'aa');
+    expect((q(sr, '[data-testid="value-apply"]') as HTMLButtonElement).disabled).toBe(true);
+
+    (q(sr, '[data-testid="value-target"]') as HTMLButtonElement).click();
+    await settle(el);
+    const option = all(sr, '[data-testid="value-target-option"]').find(
+      (o) => o.dataset.value === 'battery',
+    )!;
+    option.click();
+    await settle(el);
+
+    // The pick is what the trigger says, and it shuts the list behind it.
+    expect(q(sr, '[data-testid="value-target"]')?.textContent?.trim()).toBe('#battery');
+    expect(q(sr, '[data-testid="value-target"]')?.getAttribute('aria-expanded')).toBe('false');
+    expect(q(sr, '[data-testid="value-effect"]')?.textContent).toContain('removes "aa"');
+
+    (q(sr, '[data-testid="value-apply"]') as HTMLButtonElement).click();
+    for (let i = 0; i < 3; i += 1) await settle(el);
+
+    const tags = store.state.value.items.flatMap((i) => i.tags);
+    expect(tags).not.toContain('aa');
+    expect(tags.filter((t) => t === 'battery')).toHaveLength(1);
+  });
+
+  it('narrows a long list of targets, and says when nothing is left', async () => {
+    const many = [
+      makeItem({ id: 'm1', tags: ['alpha', 'beta', 'gamma', 'delta', 'epsilon'] }),
+      makeItem({ id: 'm2', tags: ['zeta', 'eta', 'theta', 'iota', 'kappa'] }),
+    ];
+    const { el, sr } = await mount({ items: many, tab: 'tags' });
+    await openMerge(el, sr, 'alpha');
+    (q(sr, '[data-testid="value-target"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(targets(sr)).toHaveLength(9);
+    const filter = q(sr, '[data-testid="value-target-filter"]') as HTMLInputElement;
+    filter.value = 'the';
+    filter.dispatchEvent(new Event('input'));
+    await settle(el);
+    expect(targets(sr)).toEqual(['theta']);
+
+    filter.value = 'nothing like it';
+    filter.dispatchEvent(new Event('input'));
+    await settle(el);
+    expect(targets(sr)).toEqual([]);
+    expect(q(sr, '[data-testid="value-target-none"]')?.textContent).toContain('No tags match');
+
+    // The filter belongs to the list, not to the row: shutting it discards it.
+    (q(sr, '[data-testid="value-target"]') as HTMLButtonElement).click();
+    await settle(el);
+    (q(sr, '[data-testid="value-target"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect((q(sr, '[data-testid="value-target-filter"]') as HTMLInputElement).value).toBe('');
+    expect(targets(sr)).toHaveLength(9);
+  });
+
+  it('says so when the value is the only one there is', async () => {
+    const { el, sr } = await mount({ items: [makeItem({ id: '1', tags: ['battery'] })], tab: 'tags' });
+    await openMerge(el, sr, 'battery');
+
+    expect((q(sr, '[data-testid="value-target"]') as HTMLButtonElement).disabled).toBe(true);
+    expect(q(sr, '[data-testid="value-effect"]')?.textContent).toContain(
+      'There are no other tags to merge into',
+    );
+    expect((q(sr, '[data-testid="value-apply"]') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('merges a tag across every affected item', async () => {
