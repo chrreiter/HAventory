@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.1](https://github.com/chrreiter/HAventory/compare/v0.9.0...v0.9.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **card:** dispose the store when the card or panel leaves the page ([#716](https://github.com/chrreiter/HAventory/issues/716)) ([4864629](https://github.com/chrreiter/HAventory/commit/48646295130589b72b4788ec759fc16c08587ddf)), closes [#715](https://github.com/chrreiter/HAventory/issues/715)
+* **media:** keep every attachment file when the store holds no items ([#713](https://github.com/chrreiter/HAventory/issues/713)) ([066c7be](https://github.com/chrreiter/HAventory/commit/066c7bed13c8ef1fb5a5d2ea16305392cfaf44a3))
+
+
+### Documentation
+
+* the V0.9.0 plan shipped; the validation run's results log ([#717](https://github.com/chrreiter/HAventory/issues/717)) ([79b8d1d](https://github.com/chrreiter/HAventory/commit/79b8d1d083cf69e2c7af567817997047fb7b4e0b))
+
 ## [0.9.0](https://github.com/chrreiter/HAventory/compare/v0.8.1...v0.9.0) (2026-09-02)
 
 
