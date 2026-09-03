@@ -396,6 +396,8 @@ export class Store {
   private connectionLostUnsub: Unsubscribe | null = null;
   /** Detaches the day clock the counts are re-read on; null while none is attached. */
   private dayChangeUnsub: Unsubscribe | null = null;
+  /** True once `dispose` ran, so a load still in flight wires nothing. */
+  private disposed = false;
   /** Last untouched `distinct_values` result, so drafts can be re-merged. */
   private serverDistinct: DistinctValues | null = null;
   /** Whether the last `distinct_values` answer was priced against a filter. */
@@ -465,10 +467,16 @@ export class Store {
       ]);
       await this.listItems(true);
     } finally {
-      this.subscribeTopics();
-      this.watchAreaRegistry();
-      this.watchConnectionGaps();
-      this.watchDayChange();
+      // The element holding this store is unmounted on navigation, which can
+      // land while the first load is still in flight. Wiring the watches then
+      // would open subscriptions on Home Assistant's connection that nobody is
+      // left to close.
+      if (!this.disposed) {
+        this.subscribeTopics();
+        this.watchAreaRegistry();
+        this.watchConnectionGaps();
+        this.watchDayChange();
+      }
     }
   }
 
@@ -731,6 +739,7 @@ export class Store {
 
   /** Release everything this store holds outside itself. */
   dispose() {
+    this.disposed = true;
     this.itemsUnsub?.();
     this.statsUnsub?.();
     this.locationsUnsub?.();
