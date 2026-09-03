@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.2](https://github.com/chrreiter/HAventory/compare/v0.9.1...v0.9.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* **card:** draw the category and tag merge targets in the card's own DOM ([#722](https://github.com/chrreiter/HAventory/issues/722)) ([196bcab](https://github.com/chrreiter/HAventory/commit/196bcab9422b570b6d6d8285a033c463e2c6becd))
+* **card:** return the phone sheet to its read view when a save lands ([#721](https://github.com/chrreiter/HAventory/issues/721)) ([1a6ede2](https://github.com/chrreiter/HAventory/commit/1a6ede2d5175ef279b9a4703c84308171f70dd1a)), closes [#718](https://github.com/chrreiter/HAventory/issues/718)
+
 ## [0.9.1](https://github.com/chrreiter/HAventory/compare/v0.9.0...v0.9.1) (2026-09-03)
 
 
