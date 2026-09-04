@@ -19,8 +19,8 @@ import pytest
 from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import Repository
 
-#: Items seeded before the query is timed. Five times the largest inventory the
-#: release testing plan drives, so the measurement carries headroom over any
+#: Items seeded before the query is timed. Well past the few thousand items the
+#: README calls comfortable, so the measurement carries headroom over any
 #: household this ships to.
 BENCHMARK_ITEM_COUNT = 10_000
 

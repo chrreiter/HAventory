@@ -6,6 +6,8 @@ body:
     attributes:
       value: |
         Thanks for the idea! Please search existing issues and discussions first.
+
+        HAventory is preparing its first public release, and features are frozen until it is out. Ideas filed here are welcome and are staged after that release. A usability problem with something that already exists is a bug and goes through the bug report form.
   - type: textarea
     id: problem
     attributes:

@@ -10,9 +10,9 @@ One policy governs every error the API boundary logs:
   failure.
 - ``exc_info`` only where a traceback says something the message does not.
 
-The conflict and not-found cases are what the release run checks:
-``release_testing_plan.md`` exit criterion 4 forbids any traceback from
-``custom_components.haventory`` in the HA log, and the run provokes both.
+The conflict and not-found cases are what the release check provokes:
+``dev/release_testing_plan.md`` forbids any traceback from
+``custom_components.haventory`` in the HA log, and ordinary use raises both.
 """
 
 from __future__ import annotations
@@ -189,8 +189,8 @@ async def test_not_loaded_refusal_keeps_the_storage_error_envelope() -> None:
 async def test_a_retrying_client_leaves_no_tracebacks(caplog) -> None:
     """The flood case: a dashboard that keeps knocking must not fill the log.
 
-    ``release_testing_plan.md`` exit criterion 4 audits the Home Assistant log
-    for tracebacks from this integration, and a card left open across a removal
+    ``dev/release_testing_plan.md`` audits the Home Assistant log for
+    tracebacks from this integration, and a card left open across a removal
     retries for as long as the tab does.
     """
 
