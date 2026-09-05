@@ -8,7 +8,7 @@
 # their stages below; the `docker` block in .github/dependabot.yml moves the
 # tags, and tests/test_repo_hardening_offline.py refuses a `COPY --from=` that
 # names an image instead of a stage.
-FROM ghcr.io/astral-sh/uv:0.12.9 AS uv
+FROM ghcr.io/astral-sh/uv:0.12.10 AS uv
 FROM ghcr.io/alexxit/go2rtc:1.9.14 AS go2rtc
 
 FROM mcr.microsoft.com/devcontainers/base:bookworm
