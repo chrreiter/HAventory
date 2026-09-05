@@ -190,8 +190,7 @@ What HAventory does *not* do today:
   about 2.5 ms on an empty store, 9.5 ms at 1 000 items, 17 ms at 2 000 and 43 ms at 5 000.
   Above about 3 000 items the occasional save spikes to 230–280 ms. Bulk operations and
   import write once per batch, reads are unaffected, and no limit is enforced. Several
-  thousand items is comfortable. Measuring the exact ceiling on real hardware is open work in
-  [#277](https://github.com/chrreiter/HAventory/issues/277).
+  thousand items is comfortable.
 - **No admin gating.** Any logged-in Home Assistant user can read and change the whole
   inventory. It is a household-wide tool, the same choice Home Assistant's own to-do and
   shopping lists make. The reasoning is in
@@ -222,8 +221,8 @@ What HAventory does *not* do today:
   Safari, in the iOS companion app and in Chrome on Android. The upstream bug is
   [home-assistant/android#6055](https://github.com/home-assistant/android/issues/6055).
 
-All of these but the last are decisions rather than oversights. The scale ceiling is open
-work, the Android camera waits on the companion app, and the rest are settled. The
+All of these but the last are decisions rather than oversights. The Android camera waits on
+the companion app, and the rest are settled. The
 [issue tracker](https://github.com/chrreiter/HAventory/issues) is where that would change.
 
 ## Troubleshooting

@@ -9,7 +9,8 @@ docs and code are all welcome. Taking part means following the
 
 - **Report a bug** or **request a feature** through the
   [issue tracker](https://github.com/chrreiter/HAventory/issues). The forms ask for the
-  details we need.
+  details we need. Features are frozen until the first public release, so an idea is staged
+  after it, and a usability problem with something that already exists is a bug.
 - **Ask a question or discuss an idea** in
   [Discussions](https://github.com/chrreiter/HAventory/discussions) or the
   [Home Assistant community](https://community.home-assistant.io/).
@@ -251,6 +252,11 @@ Pre-1.0, `bump-minor-pre-major` keeps breaking changes from reaching 1.0.0 by ac
 
 `bump-patch-for-minor-pre-major` is deliberately **not** set: with it, a `feat` would only
 bump the patch pre-1.0, and the first cut off `0.0.1` would be `0.0.2` rather than `0.1.0`.
+
+Until the first public release, `1.0.0`, nothing lands as `feat:`. Features are frozen while
+the owner runs `0.9.x` at home, and a user-facing change in that time is a fix to something
+the household ran into: it is filed with the bug template and committed as `fix:`, so it
+cuts the next `0.9.x` patch.
 
 To release a specific version instead of the computed one, put a `Release-As: 1.2.3`
 footer in a commit on `main`. Do **not** use the config's `release-as` key: release-please

@@ -153,11 +153,16 @@ mode**. phacc must load, and the flag makes it silently collect nothing.
 **GitHub issues**, filed with the templates in `.github/ISSUE_TEMPLATE/`. Milestones say
 which release an issue is staged for, and there is no second tracker. The release that
 matters is the first public one (public repository, HACS custom repository, default-store
-submission), cut from whatever `0.x` carries the work it needs. `1.0.0` is deferred
-indefinitely and gates nothing ([#278](https://github.com/chrreiter/HAventory/issues/278)).
-The release boundary is the HACS listing, and
-[#236](https://github.com/chrreiter/HAventory/issues/236) is its tracker and says what is
-mandatory before it and what is staged after. There is **no feature freeze**.
+submission), and it is **`1.0.0`** ([#278](https://github.com/chrreiter/HAventory/issues/278)),
+cut once the owner has run `0.9.x` on the household's own inventory and is satisfied with
+it. Until then the `0.9.x` patches carry what that use turns up, and
+[#236](https://github.com/chrreiter/HAventory/issues/236) is the tracker.
+
+**Features are frozen until that release.** A user-facing change is a fix to something the
+household ran into: it is filed with the bug template and lands as `fix:`, never `feat:`.
+Feature requests are staged after `1.0.0`. There is no formal validation program either:
+`dev/release_testing_plan.md` is the short list of what must hold, and the planned
+benchmarks are deferred with their issues closed.
 
 **A finding earns an issue only when it can matter in the real world.** Purely academic
 findings, and edge cases a typical install would not hit once in a hundred years, do not get
