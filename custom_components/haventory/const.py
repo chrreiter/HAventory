@@ -15,7 +15,7 @@ DOMAIN: str = "haventory"
 # export documents. release-please rewrites the literal below on the annotation;
 # tests/test_release_version_consistency.py fails if it ever disagrees with
 # manifest.json.
-INTEGRATION_VERSION: str = "0.9.2"  # x-release-please-version
+INTEGRATION_VERSION: str = "0.9.3"  # x-release-please-version
 
 # -----------------------------
 # Card title (config-entry option)
