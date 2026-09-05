@@ -453,6 +453,83 @@ describe('hv-detail-sheet: edit view', () => {
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
   });
 
+  // Every cancel in the card is composed, and the form sits inside the sheet
+  // that would read one as its own dismissal. The form's own way out is the
+  // read view, the same place the Back arrow lands.
+  it('lands the form’s own Cancel on the read view', async () => {
+    const el = await mount({ id: '1', name: 'Multimeter' });
+    const seen = captured(el, ['cancel']);
+
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
+    (editor.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+    expect(q(el, '[data-testid="sheet-editor"]')).toBe(null);
+    expect(el.open).toBe(true);
+    // The host hears nothing: it would close the sheet on a cancel.
+    expect(seen).toEqual([]);
+  });
+
+  // The footer button and Escape are one path inside the form, so the sheet
+  // sees the same event from both.
+  it('lands Escape inside the form on the read view', async () => {
+    const el = await mount({ id: '1', name: 'Multimeter' });
+    const seen = captured(el, ['cancel']);
+
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
+    (editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLElement).dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
+    await settle(el);
+
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+    expect(el.open).toBe(true);
+    expect(seen).toEqual([]);
+  });
+
+  // The form raises the discard question itself, so the sheet has none of its
+  // own to add on top of it.
+  it('asks once before the form’s own Cancel throws typing away', async () => {
+    const host = discardAsker();
+    const el = await mount({ id: '1', name: 'A' }, { confirmDiscard: host.ask });
+    const seen = captured(el, ['cancel']);
+
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
+    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    name.value = 'A longer name';
+    name.dispatchEvent(new Event('input'));
+    await settle(el);
+
+    const cancel = editor.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement;
+    cancel.click();
+    await settle(el);
+    expect(host.asked).toBe(1);
+
+    // Declining leaves the form exactly where the question found it.
+    host.answer('keep');
+    await settle(el);
+    expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
+    expect(name.value).toBe('A longer name');
+
+    cancel.click();
+    await settle(el);
+    host.answer('discard');
+    await settle(el);
+
+    expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
+    expect(el.open).toBe(true);
+    expect(seen).toEqual([]);
+  });
+
   it('drives the embedded editor from the sheet header Save', async () => {
     const el = await mount({ id: 'item-1', name: 'Old' });
     const saves: unknown[] = [];

@@ -1730,6 +1730,25 @@ describe('hv-card-shell: mobile detail sheet', () => {
     expect(sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-name"]')?.textContent).toContain('New');
   });
 
+  // The workspace closes the sheet on a cancel, and the form inside it sends
+  // one of its own. Backing out of the form is not a dismissal of the sheet.
+  it('keeps the sheet up on its read view when the form is cancelled', async () => {
+    const { el, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })], mobile: true });
+    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+    await settle(el);
+
+    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-editor"]') as HTMLElement;
+    (editor.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    expect(sheet(sr).open).toBe(true);
+    expect(sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-editor"]')).toBe(null);
+    expect(sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-name"]')?.textContent).toContain('Old');
+  });
+
   it('keeps the sheet on the form when the save is refused', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })], mobile: true });
     store['ws'].updateItem = async () => {

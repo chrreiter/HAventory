@@ -64,8 +64,10 @@ import type { HVItemEditor } from './hv-item-editor';
  *   `cancel` when the sheet has finished closing.
  * - The sheet answers for the form inside it: a dismissal with unsaved typing
  *   raises the discard question here, and `cancel` follows only if it is
- *   answered yes. A host must not try to guard the form from outside; it cannot
- *   see into this shadow root.
+ *   answered yes. The form's own Cancel and Escape land on the read view like
+ *   Back does; only a dismissal — the scrim, a swipe, the read view's ✕,
+ *   Escape over the read view — takes the sheet down. A host must not try to
+ *   guard the form from outside; it cannot see into this shadow root.
  */
 @customElement('hv-detail-sheet')
 export class HVDetailSheet extends LitElement {
@@ -996,7 +998,12 @@ export class HVDetailSheet extends LitElement {
         .confirmDiscard=${this.confirmDiscard}
         .busy=${this.busy}
         .errorMessage=${this.errorMessage}
-        @cancel=${() => {
+        @cancel=${(e: Event) => {
+          // Composed, like every cancel in the card: unstopped it reaches the
+          // sheet around the form, which reads a cancel as a dismissal and
+          // takes the whole sheet down with it. The form's own way out is the
+          // read view, and it has already asked about unsaved typing itself.
+          e.stopPropagation();
           this._mode = 'read';
         }}
         @delete-item=${(e: Event) => {
