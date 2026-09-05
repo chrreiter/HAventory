@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.3](https://github.com/chrreiter/HAventory/compare/v0.9.2...v0.9.3) (2026-09-05)
+
+
+### Bug Fixes
+
+* **card:** keep the phone sheet up when its form's Cancel is pressed ([#724](https://github.com/chrreiter/HAventory/issues/724)) ([9bd5c73](https://github.com/chrreiter/HAventory/commit/9bd5c73b74a2cfe706c9c0453c33607f72f65ff1)), closes [#719](https://github.com/chrreiter/HAventory/issues/719)
+* **card:** keep the status tone off the location path ([#729](https://github.com/chrreiter/HAventory/issues/729)) ([1d29cee](https://github.com/chrreiter/HAventory/commit/1d29cee235640a41bd558695c7e40b3008185262))
+
+
+### Documentation
+
+* 0.9.x at home, then 1.0.0 as the HACS release ([#727](https://github.com/chrreiter/HAventory/issues/727)) ([7c67094](https://github.com/chrreiter/HAventory/commit/7c67094a07e6a70689b577aa59d57498645e4b79))
+
 ## [0.9.2](https://github.com/chrreiter/HAventory/compare/v0.9.1...v0.9.2) (2026-09-03)
 
 
