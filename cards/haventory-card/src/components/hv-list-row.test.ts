@@ -597,6 +597,20 @@ describe('hv-list-row: the phone line’s pieces', () => {
     // it.
     expect(css).not.toMatch(/:host\(\[mobile\]\) \.secondary \.hv-area-chip \{[^}]*margin-right/);
   });
+
+  // The state coloured the whole line, so the location behind the lead was
+  // painted with it: a flagged row printed its shelf in amber, at a weight no
+  // other row's path had, and the path read as part of the warning.
+  it('gives the state tone to the lead only, leaving the path in the line’s own ink', () => {
+    const css = componentCss('hv-list-row');
+
+    expect(css).toMatch(/\.secondary\.out > \.lead \{[^}]*color: var\(--hv-primary-dark\)/);
+    expect(css).toMatch(/\.secondary\.overdue > \.lead \{[^}]*color: var\(--hv-error\)/);
+    expect(css).toMatch(/\.secondary\.flagged > \.lead \{[^}]*color: var\(--hv-warn\)/);
+    // Nothing paints the line itself, so the pill and the tail keep the
+    // secondary ink and the ordinary weight every unflagged row's path has.
+    expect(css).not.toMatch(/\.secondary\.(out|overdue|flagged) \{/);
+  });
 });
 
 /*

@@ -37,7 +37,9 @@ describe('a date that has passed reads the same on every surface', () => {
     ['hv-data-table', '.cell.due.overdue', 'the table’s Due cell'],
     ['hv-data-table', '.cell.inspection.due', 'the table’s Next inspection cell'],
     ['hv-data-table', '.cell.reminder.due', 'the table’s Reminder cell'],
-    ['hv-list-row', '.secondary.overdue', 'the compact row’s line'],
+    // The lead rather than the line: what the row is flagged with is coloured,
+    // and the location path beside it keeps the line's own ink.
+    ['hv-list-row', '.secondary.overdue > .lead', 'the compact row’s lead'],
     ['hv-detail-sheet', '.fact .value.late', 'the detail sheet’s fact'],
   ];
 
@@ -64,6 +66,6 @@ describe('a date that has passed reads the same on every surface', () => {
   // A flagged status is the one thing on the phone row that is not a date, so
   // it keeps amber — the plain-surface one, not the on-tint ink.
   it('keeps a flagged status out of the vocabulary', () => {
-    expect(colorFor('hv-list-row', '.secondary.flagged')).toBe('var(--hv-warn)');
+    expect(colorFor('hv-list-row', '.secondary.flagged > .lead')).toBe('var(--hv-warn)');
   });
 });

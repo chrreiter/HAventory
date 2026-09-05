@@ -217,15 +217,26 @@ export class HVListRow extends LitElement {
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .secondary.out {
+      /*
+       * The tone belongs to the lead, not to the line.
+       *
+       * The state class stays on the line because that is what the line as a
+       * whole ends up saying, but only the piece that says it is coloured: the
+       * area pill and the location tail behind it are where the item lives,
+       * which is the same fact whether or not the item is out, late or flagged.
+       * Painted with the lead they read as part of the warning — an amber
+       * shelf, a red one — and every phone row with a status printed its path
+       * in a colour and a weight no other row's path had.
+       */
+      .secondary.out > .lead {
         color: var(--hv-primary-dark);
       }
       /* A date that has passed is the one thing on this line worth interrupting
          for — in the blue an upcoming date takes it reads as neither — and it
          is the same red the table's date cells and the sheet's facts use. The
-         line names the date it is talking about, so the colour is left saying
+         lead names the date it is talking about, so the colour is left saying
          only that it has gone by. */
-      .secondary.overdue {
+      .secondary.overdue > .lead {
         color: var(--hv-error);
         font-weight: 500;
       }
@@ -233,7 +244,7 @@ export class HVListRow extends LitElement {
          --hv-warn rather than --hv-warn-deep, which is the ink for text laid on
          --hv-warn-bg and is a shade meant for a tint, not for the row's own
          surface. */
-      .secondary.flagged {
+      .secondary.flagged > .lead {
         color: var(--hv-warn);
         font-weight: 500;
       }
