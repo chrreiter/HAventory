@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { t, tn } from '../i18n';
+import type { TranslationKey } from '../i18n';
 import { counted } from '../ui/plural';
 import type { IconName } from '../ui/icons';
 import type { AreaRef, BulkFailure, DistinctValues, Item, LocationTreeNode } from '../store/types';
@@ -43,10 +44,9 @@ export interface BulkResultView {
 }
 
 /**
- * `picker` opens the bar's own inline step and the batch starts when it is
- * applied. Without it the action leaves the bar the moment it is pressed — for
- * check-in straight into the batch, for check-out into the host's date popover,
- * which is why its label carries the same ellipsis the inline steps do.
+ * `picker` opens the bar's own inline step. Without it the action leaves the
+ * bar when pressed: check-in into the batch, check-out into the host's date
+ * popover.
  */
 const actions = (): { id: BulkAction; label: string; glyph?: IconName; picker?: boolean }[] => [
   { id: 'move', label: t('hv.bulk.action.move'), glyph: 'mapMarker', picker: true },
@@ -60,18 +60,10 @@ const actions = (): { id: BulkAction; label: string; glyph?: IconName; picker?: 
 
 /**
  * The bulk action bar, its inline pickers, and the per-operation result state.
- *
- * The result panel is the point: `haventory/items/bulk` returns a result per
- * operation and does not roll back, so partial failure is the normal case. A
- * spinner cannot say "39 of 42 moved, these 3 didn't and here's why" — this can,
- * and it can retry just the failures.
- *
- * Pickers open inline above the bar rather than as dialogs, so the bulk flow
- * never stacks a second dialog over the one the user is already in. The two
- * questions the bar does not ask itself belong to the host: the delete
- * confirmation, and check-out's due date — both are one answer applied to the
- * whole selection, and the host already owns the surfaces that ask them for a
- * single row.
+ * `haventory/items/bulk` does not roll back, so the result panel names each
+ * failure and can retry just those. Pickers open inline rather than as a
+ * second dialog; the delete confirmation and check-out's due date are asked by
+ * the host.
  */
 @customElement('hv-bulk-bar')
 export class HVBulkBar extends LitElement {
@@ -128,9 +120,7 @@ export class HVBulkBar extends LitElement {
         font: 500 13px var(--hv-font);
         margin-right: 4px;
       }
-      /* Every control drawn on the band, wherever the band appears — the actions
-         and the running batch's Cancel alike. Mixed from the band's own ink so
-         one colour decision carries the whole strip. */
+      /* Mixed from the band's own ink so one colour decision carries the strip. */
       .band-button {
         display: inline-flex;
         align-items: center;
@@ -259,20 +249,41 @@ export class HVBulkBar extends LitElement {
   @state() private _tags: string[] = [];
   @state() private _draft = '';
 
-  private _run(detail: BulkRunDetail) {
-    this._active = null;
+  private _open(active: BulkAction | null) {
+    this._active = active;
     this._tags = [];
     this._draft = '';
-    this.dispatchEvent(new CustomEvent('run', { detail, bubbles: true, composed: true }));
   }
 
+  private _emit(type: string, detail?: BulkRunDetail) {
+    this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
+  }
+
+  private _run(detail: BulkRunDetail) {
+    this._open(null);
+    this._emit('run', detail);
+  }
+
+  private _label(key: TranslationKey) {
+    return html`<span class="hv-label">${t(key, { items: counted(this.selectedCount, 'item') })}</span>`;
+  }
+
+  private _cancelPicker() {
+    return html`<button class="hv-text-button" data-testid="bulk-picker-cancel" @click=${() => (this._active = null)}>
+      ${t('hv.action.cancel')}
+    </button>`;
+  }
+
+  private _onDraft = (e: Event) => {
+    this._draft = (e.target as HTMLInputElement).value;
+  };
+
   private _renderPicker() {
-    switch (this._active) {
+    const active = this._active;
+    switch (active) {
       case 'move':
         return html`<div class="picker" data-testid="bulk-picker" data-picker="move">
-          <span class="hv-label"
-            >${t('hv.bulk.moveTo', { items: counted(this.selectedCount, 'item') })}</span
-          >
+          ${this._label('hv.bulk.moveTo')}
           <div class="tree-holder">
             <hv-location-tree
               data-testid="bulk-location-tree"
@@ -286,13 +297,9 @@ export class HVBulkBar extends LitElement {
         </div>`;
       case 'add-tags':
       case 'remove-tags': {
-        const adding = this._active === 'add-tags';
-        return html`<div class="picker" data-testid="bulk-picker" data-picker=${this._active}>
-          <span class="hv-label"
-            >${t(adding ? 'hv.bulk.addTagsTo' : 'hv.bulk.removeTagsFrom', {
-              items: counted(this.selectedCount, 'item'),
-            })}</span
-          >
+        const adding = active === 'add-tags';
+        return html`<div class="picker" data-testid="bulk-picker" data-picker=${active}>
+          ${this._label(adding ? 'hv.bulk.addTagsTo' : 'hv.bulk.removeTagsFrom')}
           <hv-chip-input
             data-testid="bulk-tags"
             .values=${this._tags}
@@ -302,14 +309,12 @@ export class HVBulkBar extends LitElement {
             }}
           ></hv-chip-input>
           <div class="row">
-            <button class="hv-text-button" data-testid="bulk-picker-cancel" @click=${() => (this._active = null)}>
-              ${t('hv.action.cancel')}
-            </button>
+            ${this._cancelPicker()}
             <button
               class="hv-pill"
               data-testid="bulk-picker-apply"
               ?disabled=${this._tags.length === 0}
-              @click=${() => this._run({ action: adding ? 'add-tags' : 'remove-tags', tags: this._tags })}
+              @click=${() => this._run({ action: active, tags: this._tags })}
             >
               ${adding ? t('hv.card.addShort') : t('hv.action.remove')}
             </button>
@@ -318,25 +323,19 @@ export class HVBulkBar extends LitElement {
       }
       case 'set-category':
         return html`<div class="picker" data-testid="bulk-picker" data-picker="set-category">
-          <span class="hv-label"
-            >${t('hv.bulk.setCategoryOn', { items: counted(this.selectedCount, 'item') })}</span
-          >
+          ${this._label('hv.bulk.setCategoryOn')}
           <div class="row">
             <input
               data-testid="bulk-category"
               list="hv-bulk-categories"
               placeholder=${t('hv.bulk.categoryPlaceholder')}
               .value=${this._draft}
-              @input=${(e: Event) => {
-                this._draft = (e.target as HTMLInputElement).value;
-              }}
+              @input=${this._onDraft}
             />
             <datalist id="hv-bulk-categories">
               ${(this.distinct?.categories ?? []).map((c) => html`<option value=${c.value}></option>`)}
             </datalist>
-            <button class="hv-text-button" data-testid="bulk-picker-cancel" @click=${() => (this._active = null)}>
-              ${t('hv.action.cancel')}
-            </button>
+            ${this._cancelPicker()}
             <button
               class="hv-pill"
               data-testid="bulk-picker-apply"
@@ -346,34 +345,30 @@ export class HVBulkBar extends LitElement {
             </button>
           </div>
         </div>`;
-      case 'adjust-qty':
+      case 'adjust-qty': {
+        const delta = Number(this._draft);
         return html`<div class="picker" data-testid="bulk-picker" data-picker="adjust-qty">
-          <span class="hv-label"
-            >${t('hv.bulk.adjustQtyOf', { items: counted(this.selectedCount, 'item') })}</span
-          >
+          ${this._label('hv.bulk.adjustQtyOf')}
           <div class="row">
             <input
               type="number"
               data-testid="bulk-delta"
               placeholder=${t('hv.bulk.deltaPlaceholder')}
               .value=${this._draft}
-              @input=${(e: Event) => {
-                this._draft = (e.target as HTMLInputElement).value;
-              }}
+              @input=${this._onDraft}
             />
-            <button class="hv-text-button" data-testid="bulk-picker-cancel" @click=${() => (this._active = null)}>
-              ${t('hv.action.cancel')}
-            </button>
+            ${this._cancelPicker()}
             <button
               class="hv-pill"
               data-testid="bulk-picker-apply"
-              ?disabled=${!Number.isFinite(Number(this._draft)) || this._draft.trim() === '' || Number(this._draft) === 0}
-              @click=${() => this._run({ action: 'adjust-qty', delta: Number(this._draft) })}
+              ?disabled=${!Number.isFinite(delta) || this._draft.trim() === '' || delta === 0}
+              @click=${() => this._run({ action: 'adjust-qty', delta })}
             >
               ${t('hv.action.apply')}
             </button>
           </div>
         </div>`;
+      }
       default:
         return null;
     }
@@ -399,7 +394,7 @@ export class HVBulkBar extends LitElement {
         <button
           class="band-button"
           data-testid="bulk-cancel"
-          @click=${() => this.dispatchEvent(new CustomEvent('cancel-run', { bubbles: true, composed: true }))}
+          @click=${() => this._emit('cancel-run')}
         >
           ${t('hv.action.cancel')}
         </button>
@@ -453,7 +448,7 @@ export class HVBulkBar extends LitElement {
         <button
           class="hv-text-button"
           data-testid="bulk-result-dismiss"
-          @click=${() => this.dispatchEvent(new CustomEvent('dismiss-result', { bubbles: true, composed: true }))}
+          @click=${() => this._emit('dismiss-result')}
         >
           ${t('hv.action.close')}
         </button>
@@ -461,7 +456,7 @@ export class HVBulkBar extends LitElement {
           ? html`<button
               class="hv-pill"
               data-testid="bulk-retry"
-              @click=${() => this.dispatchEvent(new CustomEvent('retry-failed', { bubbles: true, composed: true }))}
+              @click=${() => this._emit('retry-failed')}
             >
               ${t('hv.bulk.retryFailed', { count: failedCount })}
             </button>`
@@ -491,18 +486,11 @@ export class HVBulkBar extends LitElement {
             class="band-button ${this._active === action.id ? 'active' : ''}"
             data-testid="bulk-action"
             data-action=${action.id}
-            @click=${() => {
-              if (action.picker) {
-                this._active = this._active === action.id ? null : action.id;
-                this._tags = [];
-                this._draft = '';
-              } else {
-                // No due date on the detail: check-out carries one only once the
-                // host's popover has asked for it, and the host tells the two
-                // apart by its absence.
-                this._run({ action: action.id });
-              }
-            }}
+            @click=${() =>
+              action.picker
+                ? this._open(this._active === action.id ? null : action.id)
+                : // No due date: the host's popover asks for check-out's.
+                  this._run({ action: action.id })}
           >
             ${action.glyph ? icon(action.glyph, 15) : null}${action.label}
           </button>`,
