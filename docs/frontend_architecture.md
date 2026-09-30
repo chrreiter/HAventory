@@ -560,15 +560,13 @@ tablet sat on yesterday's chips until somebody edited something, while the senso
 had rolled over at midnight. `ui/day-clock.ts` is one module-level timer to the next local
 midnight (plus a second, so a timer firing a hair early still reads the new day).
 `hv-list-row`, `hv-data-table`, `hv-detail-sheet` and `hv-item-editor` subscribe on connect
-and re-render, and the store re-reads `haventory/stats`. It also compares the day on
-`visibilitychange`, because a device that slept through midnight wakes with a timer that
-fired late or not at all.
+and re-render. It also compares the day on `visibilitychange`, because a device that slept
+through midnight wakes with a timer that fired late or not at all.
 
-The counts have two paths and want both: the backend broadcasts `stats/counts` at the
-*instance's* midnight, which is the one that keeps the pills agreeing with the sensors, and
-the store's own read covers that event being served by a backend too old to send it. The
-rows follow the *browser's* midnight. The two are one instant in the ordinary case, and the
-zone split is the follow-up #579 named.
+The counts roll over when the backend broadcasts `stats/counts` at the *instance's*
+midnight, which keeps the pills agreeing with the sensors. The rows follow the *browser's*
+midnight. The two are one instant in the ordinary case, and the zone split is the follow-up
+#579 named.
 
 **Why the card offers a manual Refresh.** Subscription events carry no sequence number, so
 a client that missed one cannot detect the gap. Re-listing on demand is the documented
@@ -599,8 +597,7 @@ view requires one.
 column takes in the full-view table, and the backend sort field it maps to where there is
 one. Status, category and tags have none, so their headers are not clickable.
 
-`DEFAULT_COLUMNS` is derived, not written out: every key except those in `OFF_BY_DEFAULT`,
-which is `reminder_date` alone. The stored array *is* the order. `normalizeColumns`
+`DEFAULT_COLUMNS` is derived, not written out: every key except `reminder_date`. The stored array *is* the order. `normalizeColumns`
 validates and dedupes without re-sorting, and `canonicalOrder` is what "Reset order"
 restores. The full set is wider than a phone and wider than many desktops, which
 `hv-data-table` answers by scrolling sideways rather than dropping columns. The name track
