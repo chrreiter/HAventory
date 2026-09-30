@@ -1,24 +1,11 @@
 import { css } from 'lit';
 
 /**
- * Design tokens for the card.
+ * Design tokens. Each binds the HA theme variable first, with a fallback; those
+ * with no HA equivalent carry a `light-dark()` pair, resolved by the
+ * `color-scheme` the host publishes (`ui/theme.ts`), not by the OS preference.
  *
- * Every token binds to the Home Assistant theme variable first and falls back to
- * the hex used in the design mocks, so user themes keep working. Tokens that have
- * no HA equivalent (tints, hover washes, warning surfaces) carry both values in a
- * `light-dark()` pair.
- *
- * Which half wins is decided by `color-scheme`, which `haventory-card` sets on its
- * host from the surface HA actually paints (see `ui/theme.ts`) — *not* by
- * `prefers-color-scheme`. HA's dark mode is a frontend setting independent of the
- * OS, so keying off the media query mixed the two palettes whenever they disagreed:
- * near-black dividers and unreadable amber badges on a white card. `color-scheme`
- * is inherited, so one declaration on the outermost host reaches every component,
- * and it makes native controls (select arrows, date pickers) paint correctly too.
- * With no host declaration the property stays `normal` and the light half applies.
- *
- * Usage: `static styles = [tokens, css\`...\`]` in every `hv-*` component. The
- * fragment only declares custom properties on `:host`, so it is safe to compose.
+ * Usage: `static styles = [tokens, css\`...\`]`; it only declares `:host` properties.
  */
 export const tokens = css`
   :host {
@@ -43,12 +30,7 @@ export const tokens = css`
     --hv-primary-dark: light-dark(#0288d1, #4fc3f7);
     --hv-primary-darker: light-dark(#0277bd, #4fc3f7);
     --hv-primary-tint: light-dark(#e3f4fd, rgba(3, 169, 244, 0.16));
-    /* Ink for text laid on --hv-primary-tint — a state chip, a selected row, an
-       applied toggle. Not --hv-primary-darker, which is one step too light for
-       that tint at 4.26:1, under the 4.5:1 that 12px text asks: this pairs the
-       tint with the 900 shade of its own hue, the way every light status tone
-       below pairs with its own. The dark half is the light blue that already
-       reads on the translucent tint there. */
+    /* Ink on --hv-primary-tint: --hv-primary-darker reaches only 4.26:1 there. */
     --hv-on-primary-tint: light-dark(#01579b, #4fc3f7);
     --hv-primary-tint-border: light-dark(#a8d8f0, rgba(3, 169, 244, 0.5));
     --hv-row-hover: light-dark(#f5f9fd, rgba(255, 255, 255, 0.04));
@@ -58,9 +40,7 @@ export const tokens = css`
     --hv-warn-bg: light-dark(#fff4e0, rgba(255, 167, 38, 0.14));
     --hv-warn-deep: light-dark(#7a4d00, #ffb74d);
     --hv-amber: #ffa726;
-    /* Ink for text laid directly on --hv-amber. That fill is one fixed hue in
-       both themes, so what reads on it is fixed too — a light-dark() pair here
-       would put white on amber in dark mode, at 1.9:1. */
+    /* Ink on --hv-amber, one hue in both themes, so the ink is fixed too. */
     --hv-on-amber: #3b2600;
 
     /* Error */
@@ -73,26 +53,10 @@ export const tokens = css`
     --hv-success: light-dark(#2e7d32, #81c784);
 
     /*
-     * Status tones. Five hues, each in a light form (a tint carrying deep ink,
-     * how every chip on the card is drawn) and a strong form (a saturated
-     * fill). Only a status uses these: a household picks them per status, so
-     * unlike the hue vocabulary in chip.ts they carry no fixed meaning.
-     *
-     * A strong fill is one hue in both themes, so the ink that reads on it is
-     * fixed too — the same constraint --hv-on-amber above is written for. All
-     * five clear 4.5:1 against their ink.
-     *
-     * The blue pair is held deliberately off the card's own blues: the fixed
-     * vocabulary in chip.ts paints a state chip in --hv-primary-tint and every
-     * action in --hv-primary, so a status sharing either fill would render a
-     * household's free choice as one of the card's fixed meanings. Indigo is
-     * far enough from both to read as a different thing at a glance while
-     * still answering to the name "blue". The light tint carries more of that
-     * distance than a 50-level indigo would: beside the state chip's tint the
-     * two inks separate plainly but the fills sit close, so the tint is a step
-     * deeper and more chromatic than its siblings on purpose.
-     * tone-contrast.test.ts pins the separation as a perceptual distance, not
-     * as mere inequality, alongside the ratios.
+     * Status tones: five hues, light (tint with deep ink) and strong (a fixed
+     * fill with fixed ink), all clearing 4.5:1. The blue is an indigo held off
+     * --hv-primary and --hv-primary-tint, so a household's choice never reads
+     * as one of chip.ts's fixed meanings; tone-contrast.test.ts pins the gap.
      */
     --hv-tone-neutral-bg: var(--hv-chip-bg);
     --hv-tone-neutral-fg: var(--hv-chip-text);
@@ -117,23 +81,12 @@ export const tokens = css`
     --hv-tone-red-strong-fg: #fff;
 
     /*
-     * The band the bulk bar draws while a selection is being acted on. It is a
-     * mode the card is in rather than another panel, so it stays a dark strip
-     * in both themes instead of following --hv-surface — and because the fill
-     * is one hue per theme rather than a surface a user theme repaints, the ink
-     * on it is fixed, the same constraint --hv-on-amber is written for. The
-     * dark half sits under the surfaces around it; the light half is the
-     * blue-grey the bar has always drawn.
-     *
-     * Everything else the band needs — the wash under its buttons, the progress
-     * track — is mixed from --hv-on-selection-bar where it is used, so one ink
-     * decision covers the whole strip.
+     * The bulk bar's band: a dark strip in both themes, a mode rather than a
+     * surface, so its ink is fixed. Its washes are mixed from the ink.
      */
     --hv-selection-bar: light-dark(#263238, #1b2429);
     --hv-on-selection-bar: #fff;
-    /* Delete, on the band. The deep half of --hv-error is ink for a light
-       surface and disappears here, so this is the light red that reads on both
-       halves of the fill above. */
+    /* Delete on the band, where --hv-error's deep half disappears. */
     --hv-on-selection-bar-danger: #ef9a9a;
 
     /* Inputs */
@@ -151,14 +104,10 @@ export const tokens = css`
     --hv-radius-dialog: 14px;
     --hv-radius-input: 8px;
     --hv-radius-chip: 999px;
-    /* One size for every chip that reports a fact, so a row carrying several of
-       them reads as a set. A surface whose chips must match something beside
-       them — a field row, an app bar — overrides these on its own rule. */
     --hv-chip-font-size: 11.5px;
     --hv-chip-padding: 2px 8px;
     --hv-radius-sheet: 20px;
-    /* How wide a bottom sheet is allowed to get before it stops growing with
-       the viewport. Roughly HA's own more-info dialog. */
+    /* Roughly HA's own more-info dialog. */
     --hv-sheet-max-width: 640px;
 
     /* Elevation */
@@ -187,18 +136,10 @@ export const tokens = css`
 `;
 
 /**
- * Shared primitives every `hv-*` surface reuses: pill buttons, icon buttons,
- * inputs, section labels and the focus ring. Kept separate from `tokens` so a
- * component can take the variables without the opinionated element styles. The
- * chip vocabulary lives in `ui/chip.ts`, which not every surface needs.
- *
- * Controls here size themselves from `--hv-tap-min` and `--hv-input-font`, both
- * of which are deliberately *not* declared in `tokens` above: `tokens`
- * redeclares its properties on every component's own `:host`, which would stop
- * the value inheriting past the first shadow boundary. Left undeclared, one
- * declaration on the card host reaches every nested component, so a control
- * several levels down grows for touch — or stops iOS zooming when it is
- * focused — without needing to be told the card is in its mobile layout.
+ * Shared primitives: pill, text and icon buttons, inputs, labels, focus ring.
+ * `--hv-tap-min` and `--hv-input-font` are deliberately not in `tokens`, whose
+ * per-`:host` redeclaration would stop one value on the card host inheriting
+ * into every nested component.
  */
 export const base = css`
   :host {
@@ -253,15 +194,11 @@ export const base = css`
     opacity: 1;
   }
 
-  /* The one thing that removes data wears the error fill, filled like any other
-     committing action so it still reads as the button that ends the dialog. */
   .hv-pill.danger {
     background: var(--hv-error);
   }
 
-  /* The size a phone's committing action takes: the sheet footers and the
-     detail sheet's action pair are thumb targets, not pointer targets, and one
-     modifier keeps them from each inventing their own height. */
+  /* A phone's committing action: a thumb target. */
   .hv-pill.large {
     min-height: 48px;
     padding: 0 20px;
@@ -331,15 +268,7 @@ export const base = css`
     outline: none;
   }
 
-  /*
-   * The count that follows a facet's name — on a chip, on a sidebar row, on a
-   * checkbox row. One rule so the same number reads the same size wherever the
-   * card prices a facet.
-   *
-   * It dims by opacity rather than by a fixed grey because it has to keep its
-   * relation to whatever ink surrounds it: inside a filled status chip that ink
-   * is the household's chosen tone, and a tertiary grey would drop out of it.
-   */
+  /* A facet's count, dimmed by opacity so it keeps the ink around it, a status tone included. */
   .hv-tally {
     flex: none;
     font-size: 11.5px;

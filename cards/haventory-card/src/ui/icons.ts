@@ -3,16 +3,9 @@ import { ifDefined } from 'lit/directives/if-defined.js';
 import type { TemplateResult } from 'lit';
 
 /**
- * Material Design Icons path data, inlined.
- *
- * `ha-icon` resolves only inside the Home Assistant frontend: in Vitest/jsdom
- * it is an unresolved custom element that renders nothing, and it leaves the
- * card icon-less anywhere HA has not loaded its icon set. Inlined path data
- * renders everywhere and is assertable in a test. The rule this follows is
- * CONTRIBUTING.md's "The card renders no `ha-*` element".
- *
- * Path data is Material Design Icons (Pictogrammers), Apache License 2.0 —
- * the same licence as this repository.
+ * Material Design Icons path data, inlined: the card renders no `ha-*` element
+ * (see `ha-contract`), and inline paths render and assert in jsdom too.
+ * Path data is Material Design Icons (Pictogrammers), Apache License 2.0.
  */
 export const ICONS = {
   plus: 'M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z',

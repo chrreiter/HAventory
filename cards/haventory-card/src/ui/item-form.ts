@@ -10,14 +10,7 @@ import type {
 } from '../store/types';
 import { itemStatus } from './status';
 
-/**
- * Form model and payload building for the item edit surfaces.
- *
- * Kept as pure functions so the desktop inline expander and the mobile detail
- * sheet share one definition of what a field means, and so the fiddly parts —
- * typed custom fields and the set/unset diff on save — are testable without a
- * DOM.
- */
+/** Form model and payload building for the item edit surfaces, as pure functions. */
 
 export type CustomFieldType = 'string' | 'number' | 'boolean' | 'date';
 
@@ -63,15 +56,9 @@ export interface FieldError {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * The backend's input caps, copied here so the editor refuses before the round
- * trip rather than showing a server error on save. These are the values in
- * `models.py`, and `tests/test_item_form_caps.py` reads both files and fails
- * when they disagree — including `REMINDER_UNITS` and `REMINDER_COUNT_MAX`
- * above, and a cap added to either side alone. So they can only move together.
- *
- * The rule they are applied under moves with them: a cap refuses growth past
- * the stored item, never the stored item itself, which is how the backend
- * treats data that predates a cap.
+ * The backend's input caps from `models.py`, so the editor refuses before the
+ * round trip; `tests/test_item_form_caps.py` holds both sides (and the reminder
+ * constants above) equal. A cap refuses growth past the stored item only.
  */
 const NAME_MAX_LENGTH = 120;
 const DESCRIPTION_MAX_LENGTH = 4000;
@@ -118,8 +105,7 @@ export function formFromItem(item: Item | null): ItemFormModel {
     inspectionDate: item?.inspection_date ?? '',
     reminderDate: item?.reminder_date ?? '',
     reminderCount: item?.reminder_interval?.count ?? null,
-    // A stored one-off has no unit to show, so the picker opens on the one a
-    // household reaches for most rather than on a blank.
+    // A one-off has no unit; the picker opens on the most common one.
     reminderUnit: item?.reminder_interval?.unit ?? 'months',
     customFields: Object.entries(item?.custom_fields ?? {}).map(([key, value]) =>
       newCustomFieldRow({ key, type: inferType(value), value: valueToString(value) }),
@@ -128,13 +114,8 @@ export function formFromItem(item: Item | null): ItemFormModel {
 }
 
 /**
- * Every problem with the model, in field order. Empty means it is saveable.
- *
- * `original` is the stored item the form was built from, and the caps refuse
- * *growth* past it, the way the backend's write path does: an item that
- * predates a cap can be saved as it is — including by the edit that trims some
- * of the excess — while anything the edit adds is held to the cap. Without
- * `original` (the "add item" form) every cap is absolute.
+ * Every problem with the model, in field order; empty means saveable. Caps
+ * refuse growth past `original`, as the backend does; without it they are absolute.
  */
 export function validateForm(model: ItemFormModel, original: Item | null = null): FieldError[] {
   const errors: FieldError[] = [];
@@ -172,8 +153,7 @@ export function validateForm(model: ItemFormModel, original: Item | null = null)
   if (model.lowStock !== null && (!Number.isFinite(model.lowStock) || model.lowStock < 0)) {
     errors.push({ field: 'lowStock', message: t('hv.form.error.lowStockRange') });
   }
-  // Counted after normalization, the way the backend counts it: two casings of
-  // one tag are one tag on both sides.
+  // Counted after normalization, as the backend counts them.
   const tags = normalizeTags(model.tags);
   const storedTags = normalizeTags(original?.tags ?? []);
   if (tags.length > TAGS_MAX_COUNT && tags.length > storedTags.length) {
@@ -185,10 +165,7 @@ export function validateForm(model: ItemFormModel, original: Item | null = null)
       message: t('hv.form.error.tagTooLong', { max: TAG_MAX_LENGTH }),
     });
   }
-  // Only while a date is set. The repeat is disabled without one and dropped
-  // from the payload, so a count left behind by clearing the date is stale
-  // rather than wrong — refusing the save over it would trap the one edit that
-  // gets you out of it.
+  // Only while a date is set: without one the count is dropped from the payload.
   if (model.reminderDate && model.reminderCount !== null) {
     if (
       !Number.isInteger(model.reminderCount) ||
@@ -249,9 +226,8 @@ export function validateForm(model: ItemFormModel, original: Item | null = null)
 }
 
 /**
- * The custom-field map the form describes. Rows with a blank key are treated as
- * unfinished and dropped; a row with a key and a blank value is kept, because
- * clearing a value is how the design says you unset a field.
+ * The custom-field map the form describes. A blank key is an unfinished row; a
+ * blank text or number value unsets the field.
  */
 export function customFieldsFrom(model: ItemFormModel): Record<string, ScalarValue> {
   const out: Record<string, ScalarValue> = {};
@@ -274,12 +250,7 @@ export function customFieldsFrom(model: ItemFormModel): Record<string, ScalarVal
 
 /** Tags as the backend stores them: trimmed, lowercased, deduplicated, in order. */
 export function normalizeTags(tags: readonly string[]): string[] {
-  const out: string[] = [];
-  for (const raw of tags) {
-    const tag = raw.trim().toLowerCase();
-    if (tag && !out.includes(tag)) out.push(tag);
-  }
-  return out;
+  return [...new Set(tags.map((raw) => raw.trim().toLowerCase()).filter(Boolean))];
 }
 
 /** Every field a create names and an update may name, as the wire spells them. */
@@ -300,8 +271,7 @@ function commonFields(model: ItemFormModel) {
     due_date: model.checkedOut ? model.dueDate || null : null,
     inspection_date: model.inspectionDate || null,
     reminder_date: model.reminderDate || null,
-    // An interval with no anchor is refused by the backend, so clearing the
-    // date clears the recurrence with it rather than sending a pair it rejects.
+    // The backend refuses an interval without a date, so clearing one clears both.
     reminder_interval: reminderIntervalFrom(model),
   };
 }
@@ -324,29 +294,15 @@ function sameValue(a: unknown, b: unknown): boolean {
 }
 
 /**
- * The update payload: what this edit changed, and nothing else.
- *
- * `baseline` is the item the form was *built* from, which is not the item the
- * save is sent against — the two part company the moment another member's edit
- * reaches the card while the form is open. The version travels with that newer
- * copy, so the write is accepted; a field nobody here touched would then be
- * written back to what the form was opened on, undoing them with nothing on
- * either screen to say so. So a field rides along only where the form differs
- * from the baseline, and the two behaviours the whole-form payload carried on
- * purpose are kept: a field cleared to empty is a change to `null`, and
- * checking an item in clears the due date it had.
- *
- * The custom-field map keeps its explicit halves, on the same terms:
- * `custom_fields_set` names the keys this edit wrote, `custom_fields_unset` the
- * keys it took away. The backend patches the stored map by key, so a key
- * neither half names is left alone.
+ * The update payload: only what differs from `baseline`, the item the form was
+ * built from. The save goes against a possibly newer version, so an untouched
+ * field must not be written back over another member's edit. Custom fields go
+ * as `custom_fields_set` / `custom_fields_unset`, patched by key.
  */
 export function toUpdatePayload(model: ItemFormModel, baseline: Item): ItemUpdate {
   const before = commonFields(formFromItem(baseline));
   const after = commonFields(model);
   const payload: ItemUpdate = {};
-  // One write per key rather than thirteen named assignments: `commonFields`
-  // is the list of what an update may carry, and it stays the only one.
   const changed = payload as Record<string, unknown>;
   for (const key of Object.keys(after) as (keyof CommonFields)[]) {
     if (!sameValue(after[key], before[key])) changed[key] = after[key];
@@ -379,8 +335,7 @@ export function isDirty(model: ItemFormModel, original: Item | null): boolean {
     model.dueDate !== baseline.dueDate ||
     model.inspectionDate !== baseline.inspectionDate ||
     model.reminderDate !== baseline.reminderDate ||
-    // Compared through the built interval, not the raw fields: a unit changed
-    // while no count is set describes the same one-off it started as.
+    // Through the built interval: a unit changed without a count is still a one-off.
     JSON.stringify(reminderIntervalFrom(model)) !==
       JSON.stringify(reminderIntervalFrom(baseline))
   ) {
