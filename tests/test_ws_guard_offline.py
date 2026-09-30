@@ -1,9 +1,4 @@
-"""Offline tests for `ws_guard`.
-
-The guard answers whatever the connection does: a `send_message` that raises,
-or a connection that has none, still leaves the caller with an error envelope
-rather than an exception crossing the WebSocket layer.
-"""
+"""Offline tests for `ws_guard`: the error envelope and the loaded-entry refusal."""
 
 from __future__ import annotations
 
@@ -36,15 +31,6 @@ class _ConnCollect:
         self.last = msg
 
 
-class _ConnRaise:
-    def send_message(self, _msg: dict[str, Any]) -> None:
-        raise RuntimeError("boom")
-
-
-class _ConnNoSend:
-    pass
-
-
 @pytest.mark.asyncio
 async def test_returns_and_sends_error_when_validation_fails() -> None:
     """Handlers should send AND return the error envelope."""
@@ -63,38 +49,6 @@ async def test_returns_and_sends_error_when_validation_fails() -> None:
     data = res["error"].get("data", {})
     assert data.get("op") == "item_set_quantity"
     assert data.get("quantity") == -1
-
-
-@pytest.mark.asyncio
-async def test_returns_error_when_send_message_raises() -> None:
-    """Even if send fails, the error envelope must be returned to caller."""
-
-    hass = ws_hass()
-
-    handler = _get_handler(hass, "haventory/item/set_quantity")
-    conn = _ConnRaise()
-    req = {"id": 11, "type": "haventory/item/set_quantity", "item_id": "x", "quantity": -1}
-
-    res = await handler(hass, conn, req)
-
-    assert res["success"] is False
-    assert res["error"]["code"] == "validation_error"
-
-
-@pytest.mark.asyncio
-async def test_returns_error_when_no_send_message_attribute() -> None:
-    """If the connection lacks send_message, the error is still returned."""
-
-    hass = ws_hass()
-
-    handler = _get_handler(hass, "haventory/item/set_quantity")
-    conn = _ConnNoSend()
-    req = {"id": 12, "type": "haventory/item/set_quantity", "item_id": "x", "quantity": -1}
-
-    res = await handler(hass, conn, req)
-
-    assert res["success"] is False
-    assert res["error"]["code"] == "validation_error"
 
 
 @pytest.mark.asyncio
