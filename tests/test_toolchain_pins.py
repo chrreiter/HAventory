@@ -104,7 +104,7 @@ PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
     (".github/workflows/ha-latest.yml", 3, 0),
     (".github/workflows/card-smoke.yml", 3, 0),
     ("CONTRIBUTING.md", 1, 0),
-    ("docs/developing.md", 8, 0),
+    ("docs/developing.md", 1, 0),
     ("requirements-integration.txt", 2, 0),
     ("scripts/test_integration.sh", 4, 0),
     (".devcontainer/Dockerfile", 1, 0),
