@@ -3,19 +3,15 @@
 HAventory goes public as **1.0.0**, cut once the owner has run `0.9.x` on the household's
 own inventory and is satisfied with it. There is no formal validation program before that
 tag. The automated suites, everyday use and the short list of key features below are the
-gate, and a scenario is checked by using the feature, not by walking a script.
-
-The full scenario plan and the logged run against 0.9.0 (install, mobile, connectivity,
-lifecycle, backup, integrity, multi-client, import and export, services) are in git history
-before this file was shortened. Its outcome and the two fixes it produced are recorded on
-[#276](https://github.com/chrreiter/HAventory/issues/276). The scale measurement it planned
-is deferred: the README's Known limitations carries the rough curve, and that is enough.
+gate, and a scenario is checked by using the feature, not by walking a script. There is no
+scale benchmark either: the README's "Known limitations" carries the rough curve.
 
 ## Before the tag
 
-1. The automated suites are green on the candidate: both halves of the gate, the in-process
-   HA suite, the online smokes and the stress regimen, run as `docs/developing.md` and
-   `.claude/skills/test-haventory/SKILL.md` describe.
+1. The automated suites are green on the candidate: both halves of the gate
+   (`CONTRIBUTING.md` → "The gate"), the in-process HA suite and the online smokes
+   (`docs/developing.md` → "Testing"), and the stress regimen
+   (`.claude/skills/test-haventory/SKILL.md`).
 2. The owner has used the candidate at home for ordinary inventory work long enough to trust
    it. Every usability bug that turned up is filed with the bug template, fixed as a `fix:`
    and shipped as a `0.9.x` patch.
