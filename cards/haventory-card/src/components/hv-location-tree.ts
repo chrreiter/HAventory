@@ -581,7 +581,7 @@ export class HVLocationTree extends LitElement {
             data-testid="tree-area-twisty"
             tabindex="-1"
             data-area=${group?.id ?? NO_AREA_KEY}
-            aria-label=${open ? `Collapse ${name}` : `Expand ${name}`}
+            aria-label=${t(open ? 'hv.tree.collapse' : 'hv.tree.expand', { name })}
             @click=${(e: Event) => {
               e.stopPropagation();
               this._toggleArea(key);
