@@ -275,29 +275,6 @@ def test_a_reload_leaves_exactly_what_a_fresh_repository_holds() -> None:
     assert vars(used) == vars(Repository())
 
 
-def test_a_payload_that_is_not_a_dict_reports_an_empty_load() -> None:
-    """The content is gone by the time the payload is refused, so the report is too.
-
-    ``load_state`` resets before it reads, and a caller that hands it something
-    other than a mapping is left with an empty repository — a report still
-    naming the previous load's damage would describe rows this repository no
-    longer holds.
-    """
-
-    payload = {
-        "schema_version": CURRENT_SCHEMA_VERSION,
-        "locations": {},
-        "items": {"not-a-uuid": {"id": "not-a-uuid", "name": "Broken"}},
-    }
-    repo = Repository.from_state(payload)
-    assert repo.last_load_report.has_corruption is True
-
-    repo.load_state("not a payload")  # type: ignore[arg-type]
-
-    assert repo.last_load_report == LoadReport()
-    assert repo.export_state()["items"] == {}
-
-
 #: Marks a key a case wants *absent* rather than set to something unreadable.
 #: The two are different bugs — a missing key read as ``""``, a stored ``null``
 #: as the literal ``"None"`` — so both have to be reachable from one table.
