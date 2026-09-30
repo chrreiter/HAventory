@@ -37,7 +37,6 @@ VERSION = r"\d+\.\d+\.\d+"
 DECLARATION_SITES: tuple[tuple[str, str, int], ...] = (
     ("requirements-integration.txt", rf"^homeassistant==({VERSION})$", 1),
     ("README.md", rf"Minimum Home Assistant (?:version: )?\*\*({VERSION})\*\*", 2),
-    ("CONTRIBUTING.md", rf"\*\*Home Assistant ({VERSION})\+\*\*", 1),
     (".github/ISSUE_TEMPLATE/bug_report.yml", rf"Minimum supported is ({VERSION})\.", 1),
     (
         ".github/ISSUE_TEMPLATE/bug_report.yml",
