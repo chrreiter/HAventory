@@ -4,26 +4,11 @@ import { t } from '../i18n';
 import { addDays, quickDayOffsets } from './relative-time';
 
 /**
- * The quick jumps a forward date is set by: three presets and a "+X days"
- * escape hatch.
- *
- * The check-out popover dates a borrowing and the editor dates an inspection,
- * and both are spans a household names in weeks rather than calendar squares.
- * The two controls looked identical because they are the same gesture, so the
- * presets, the states, the input's bounds and the rule that an empty box means
- * no date rather than a stale one are written here once. What each surface
- * calls its buttons is a parameter — the browser harnesses locate
- * `checkout-offset` — and one renderer is what keeps them byte-identical.
- *
- * The custom row appears only once "+X days" is pressed: it is the way out for
- * an interval the three presets do not cover, not a fourth preset.
+ * The quick jumps a forward date is set by, shared by the check-out popover and
+ * the editor's inspection field: three presets and a "+X days" custom row.
  */
 
-/**
- * The row and the custom box. A host adds this to its styles and keeps its own
- * touch rules on the same class names — the two surfaces grow the chips for a
- * finger by different amounts, because one is a form and the other a popover.
- */
+/** The row and the custom box; each host keeps its own touch sizing on these classes. */
 export const dayOffsets = css`
   .offsets {
     display: flex;
@@ -79,19 +64,13 @@ export interface DayOffsetsState {
 
 /** How a surface names its buttons, and what it does with a date. */
 export interface DayOffsetsOptions {
-  /**
-   * Test-id stem: `checkout` gives `checkout-offset`, `checkout-offset-custom`
-   * and `checkout-custom`.
-   */
+  /** Test-id stem: `checkout` gives `checkout-offset`, `checkout-offset-custom`, `checkout-custom`. */
   prefix: string;
   /** A preset was pressed. The host also closes its custom row. */
   onPick: (date: string) => void;
   /** "+X days" was pressed. The host also opens its custom row. */
   onCustom: (date: string) => void;
-  /**
-   * The custom box was typed in. `date` is null for an empty or nonsense count:
-   * that means no date yet rather than the last good one, so the field clears.
-   */
+  /** The custom box was typed in; `date` is null for an empty or nonsense count, clearing the field. */
   onDays: (days: number, date: string | null) => void;
 }
 
