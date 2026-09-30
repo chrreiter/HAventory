@@ -33,17 +33,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from aiohttp import web
+from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
-
-try:
-    from aiohttp import web
-except ImportError:  # pragma: no cover - aiohttp ships with Home Assistant
-    web = None  # type: ignore[assignment]
-
-try:
-    from homeassistant.components.http import HomeAssistantView
-except ImportError:  # pragma: no cover - offline harness without the http component
-    HomeAssistantView = object  # type: ignore[assignment, misc]
 
 from .const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
@@ -178,13 +170,8 @@ def attachment_path(root: Path, item_id: str, attachment_id: str, mime: str) -> 
 def thumbnail_path(root: Path, item_id: str, attachment_id: str) -> Path:
     """Where one picture's row tile lives, beside the original it comes from.
 
-    Named from the attachment id and not from the stored mime, because the
-    derived file is always WebP whatever the original is — and because the
-    sweep has to be able to name it from metadata alone.
-
-    The suffix carries the encoder generation (``THUMBNAIL_SUFFIX``), so this
-    names only tiles the current encoder would write: one an earlier generation
-    left behind is named by nothing and is swept at the next setup.
+    The suffix carries the encoder generation, so a tile an earlier generation
+    wrote is named by nothing and is swept at the next setup.
     """
 
     resolved_root = root.resolve()
@@ -197,21 +184,14 @@ def thumbnail_path(root: Path, item_id: str, attachment_id: str) -> Path:
 def _encode_thumbnail_blocking(source: Path, target: Path) -> bool:
     """Write ``source`` down to a row tile at ``target``. Blocks — executor only.
 
-    False, never an exception, for every reason this cannot be done: Pillow is
-    not a dependency of this integration, an animated GIF has no single frame
-    worth standing in for the picture, a file may be corrupt, and the config
-    tree is the user's and may refuse a write. Each of those means "serve the
-    original", which is a slower page and not a broken one.
-
-    Written to a neighbouring temporary file and moved into place, so a reader
-    arriving mid-encode finds either no thumbnail or a whole one, never a
-    half-written image.
+    False, never an exception, for every reason this cannot be done (no Pillow,
+    an animated GIF, a corrupt file, an unwritable directory): the caller then
+    serves the original. Staged and moved into place, so a reader never finds a
+    half-written tile.
     """
 
     try:
-        # Deliberately here and not at module scope: this is the whole reason
-        # `manifest.json` can keep declaring no requirements, and an install
-        # without Pillow has to import this module and serve its pictures.
+        # Here, not at module scope: Pillow is not a requirement in the manifest.
         from PIL import Image, ImageOps  # noqa: PLC0415
     except ImportError:
         return False
@@ -224,12 +204,9 @@ def _encode_thumbnail_blocking(source: Path, target: Path) -> bool:
             # `thumbnail` drops the tag — so a phone photo would come out on
             # its side against an original the browser turns upright.
             oriented = ImageOps.exif_transpose(image) or image
-            # WebP carries alpha, so a picture that has one keeps it: a logo or
-            # a screenshot saved as a transparent PNG would otherwise come out
-            # as a shape on black, and the row and the opened item would show
-            # two different pictures. A palette image carries its transparency
-            # as an index in `info` rather than as a band, and the premultiplied
-            # modes spell the band lowercase.
+            # Keep alpha, or a transparent PNG comes out as a shape on black. A
+            # palette image carries its transparency in `info` rather than as a
+            # band, and the premultiplied modes spell the band lowercase.
             bands = set(oriented.getbands())
             has_alpha = not bands.isdisjoint({"A", "a"}) or "transparency" in oriented.info
             oriented = oriented.convert("RGBA" if has_alpha else "RGB")
@@ -251,14 +228,9 @@ def _encode_thumbnail_blocking(source: Path, target: Path) -> bool:
 def _thumbnail_state(hass: HomeAssistant) -> tuple[dict[str, asyncio.Lock], set[str]]:
     """Per-attachment encode locks, and the ones that cannot be encoded at all.
 
-    Kept on ``hass.data`` rather than on the runtime: neither survives a
-    restart, and neither should — an install that gains Pillow gets its
-    thumbnails on the next boot with nothing to clear.
-
-    The refusal set is what stops an 8 MB file that will never decode from
-    being decoded again on every render of every row that shows it. Both are
-    bounded by the number of picture attachments, and a replacement picture is
-    a new id rather than the same one with new bytes.
+    Neither survives a restart, so an install that gains Pillow gets its
+    thumbnails on the next boot. The refusal set stops a file that will never
+    decode from being decoded again on every render.
     """
 
     state: dict[str, Any] = hass.data.setdefault(_THUMBNAIL_STATE_KEY, {})
@@ -270,24 +242,15 @@ def _thumbnail_state(hass: HomeAssistant) -> tuple[dict[str, asyncio.Lock], set[
 async def async_thumbnail(
     hass: HomeAssistant, *, root: Path, item_id: str, meta: AttachmentMeta
 ) -> Path | None:
-    """The row tile for one picture, encoding it once if it is not there yet.
-
-    ``None`` means "serve the original" — the caller never has to know which of
-    the reasons applied.
-    """
+    """The row tile for one picture, encoded once; ``None`` means serve the original."""
 
     if meta.kind != "picture":
         return None
-    try:
-        target = thumbnail_path(root, item_id, str(meta.id))
-    except ValidationError:  # pragma: no cover - ids come from validated metadata
-        return None
+    target = thumbnail_path(root, item_id, str(meta.id))
 
     locks, refused = _thumbnail_state(hass)
     key = str(target)
-    # Under the lock even on the hot path, where the file is already there:
-    # acquiring an uncontended `asyncio.Lock` does not suspend, and the check
-    # has to be inside it anyway for the tab that waited on the encode.
+    # The check sits inside the lock for the tab that waited on the encode.
     async with locks.setdefault(key, asyncio.Lock()):
         if key in refused:
             return None
@@ -331,15 +294,8 @@ def _read_head_blocking(source: Path) -> tuple[bytes, int]:
 def _prune_emptied_blocking(root: Path, directories: Iterable[Path]) -> None:
     """Remove each directory the caller has just emptied. Blocks — executor only.
 
-    ``rmdir`` is the whole check: a directory still holding something — an
-    operator's own file, or a tile from an encoder generation this build cannot
-    name — refuses to go, so nothing has to recognise that file first. Any other
-    refusal (a file being served at that instant, a mount point) leaves the
-    directory where it is, which costs an inert directory and nothing else.
-
-    ``root`` is where the next upload is written and is never a candidate; only
-    a directory under it is, and one resolving elsewhere is skipped for the same
-    reason the sweep re-checks every file.
+    ``rmdir`` refuses a directory still holding anything, and any refusal leaves
+    the directory in place. Only directories resolving under ``root`` qualify.
     """
 
     resolved_root = root.resolve()
@@ -365,8 +321,6 @@ def _delete_blocking(root: Path, targets: Iterable[Path]) -> None:
         try:
             target.unlink()
         except FileNotFoundError:
-            # Already gone: a half-applied earlier delete, or a restored backup
-            # holding metadata whose files did not come with it.
             continue
         except OSError:
             LOGGER.warning(
@@ -380,11 +334,9 @@ def _delete_blocking(root: Path, targets: Iterable[Path]) -> None:
 def _sweep_blocking(root: Path, referenced: frozenset[str]) -> list[str]:
     """Delete every file under ``root`` no metadata claims. Blocks — executor only.
 
-    Files first, and only ones resolving inside ``root``: ``rglob`` follows a
-    symlinked directory, so an unchecked candidate could name a file anywhere in
-    the config tree. A directory this sweep has itself emptied then goes with
-    them; one that was already empty is left alone, so an operator who made a
-    directory here keeps it.
+    Only files resolving inside ``root``: ``rglob`` follows a symlinked
+    directory. A directory the sweep itself emptied goes too; one that was
+    already empty is left alone.
     """
 
     if not root.is_dir():
@@ -421,12 +373,7 @@ def _sweep_blocking(root: Path, referenced: frozenset[str]) -> list[str]:
 
 
 def _count_files_blocking(root: Path) -> int:
-    """How many files sit under ``root``. Blocks — executor only.
-
-    Counts what is there without resolving anything: nothing is opened, removed
-    or named from this, so a file a sweep would refuse to touch still counts as
-    a file the household has on disk.
-    """
+    """How many files sit under ``root``. Blocks — executor only."""
 
     if not root.is_dir():
         return 0
@@ -434,14 +381,7 @@ def _count_files_blocking(root: Path) -> int:
 
 
 async def async_report_unswept(hass: HomeAssistant) -> int:
-    """Warn about the attachment files a skipped sweep left in place.
-
-    For the one caller that skips: setup, when the repository holds no items at
-    all and every file under the media root would therefore read as an orphan.
-    Returns how many files are there, and says nothing when there are none — a
-    fresh install has no media root, and a household that never attached
-    anything has nothing to be told about.
-    """
+    """Warn about the attachment files a skipped sweep left in place, if any."""
 
     root = media_root(hass)
     count = await hass.async_add_executor_job(_count_files_blocking, root)
@@ -455,17 +395,10 @@ async def async_report_unswept(hass: HomeAssistant) -> int:
 
 
 def referenced_paths(root: Path, pairs: Iterable[tuple[str, AttachmentMeta]]) -> frozenset[str]:
-    """Resolve every (item, attachment) pair to the files it names.
-
-    Both files, for a picture: the sweep deletes everything it is not handed, so
-    a thumbnail left out of this list is removed on the next sweep and encoded
-    again on the next page that shows the row. A thumbnail is named whether or
-    not it exists — the sweep only ever removes, so naming one that was never
-    made costs nothing.
+    """Resolve every (item, attachment) pair to the files it names, thumbnails included.
 
     An entry whose path would escape the media root is dropped rather than
-    raised on: it names no file the sweep could keep, and refusing the whole
-    sweep over one bad row would leave every real orphan on disk.
+    raised on, so one bad row cannot stop the whole sweep.
     """
 
     paths: set[str] = set()
@@ -490,11 +423,7 @@ async def async_consume_upload(
     item_id: str,
     attachment_id: str,
 ) -> tuple[str, int]:
-    """Validate an uploaded file and move it into place.
-
-    Returns ``(mime, size)``. The mime is the sniffed one, so it is what the
-    metadata records and what the view later serves the bytes as.
-    """
+    """Validate an uploaded file and move it into place; returns the sniffed mime and size."""
 
     head, size = await hass.async_add_executor_job(_read_head_blocking, source)
     mime = validate_upload(kind=kind, head=head, size=size)
@@ -506,12 +435,7 @@ async def async_consume_upload(
 async def async_delete_attachments(
     hass: HomeAssistant, pairs: Iterable[tuple[str, AttachmentMeta]]
 ) -> None:
-    """Delete the files named by each (item id, attachment) pair.
-
-    A removed picture takes its row tile with it; `_delete_blocking` passes over
-    one that was never made, and removes the item's directory when the pair was
-    the last thing in it.
-    """
+    """Delete the files named by each (item id, attachment) pair, thumbnails included."""
 
     root = media_root(hass)
     _, refused = _thumbnail_state(hass)
@@ -530,16 +454,11 @@ async def async_delete_attachments(
 
 
 async def async_delete_item_files(hass: HomeAssistant, items: Iterable[Mapping[str, Any]]) -> None:
-    """Delete the attachment files of every deleted item passed in.
+    """Delete the attachment files of every deleted item body passed in.
 
-    Takes serialized item bodies — the shape ``serialization.serialize_item``
-    produces — because the surfaces that delete an item hold the body they
-    removed and not the ``Item`` itself.
-
-    Every caller runs this **after** its save has succeeded, for the same reason
-    ``attachment/remove`` deletes last: an orphaned file is swept at the next
-    setup, while a file deleted ahead of a failed save would leave stored
-    metadata naming nothing.
+    Callers run this **after** their save succeeded: an orphaned file is swept
+    at the next setup, while a file deleted ahead of a failed save would leave
+    stored metadata naming nothing.
     """
 
     pairs: list[tuple[str, AttachmentMeta]] = []
@@ -555,12 +474,7 @@ async def async_delete_item_files(hass: HomeAssistant, items: Iterable[Mapping[s
 async def async_sweep_orphans(
     hass: HomeAssistant, pairs: Iterable[tuple[str, AttachmentMeta]]
 ) -> tuple[str, ...]:
-    """Remove media files no metadata references, and what that empties.
-
-    Its own module rather than ``stale_files``: that one is deliberately
-    confined to the integration package directory and refuses anything resolving
-    outside it, which is every path here.
-    """
+    """Remove media files no metadata references, and what that empties."""
 
     root = media_root(hass)
     keep = referenced_paths(root, pairs)
@@ -576,25 +490,15 @@ async def async_sweep_orphans(
 def _content_disposition(meta: AttachmentMeta) -> str:
     """The ``Content-Disposition`` value one attachment is served under.
 
-    ``inline``, never ``attachment``: a document opens in a tab, and the header
-    exists to name the file the browser saves from there — not to turn the
-    click into a download. The name is the title the user gave the file, or the
-    name it arrived under, which is the precedence the card labels the row with,
-    so a saved file matches the row that was clicked.
-
-    Both halves are user-supplied text under no charset restriction, and this
-    value becomes a response header. The real name travels percent-encoded in
-    the RFC 5987 ``filename*`` form; the quoted ``filename`` a client without
-    that support reads is reduced to printable US-ASCII minus the two
-    characters the quoting itself uses, which is also what stops a CR or LF in
-    a title from splitting the header.
+    ``inline``, so a document opens in a tab, named by the title or else the
+    filename, as the card labels the row. The real name travels as RFC 5987
+    ``filename*``; the quoted ``filename`` is cut to printable US-ASCII without
+    quotes or backslashes, which also stops a CR or LF splitting the header.
     """
 
     name = (meta.title.strip() or meta.filename)[:DISPOSITION_NAME_MAX_CHARS]
     ascii_name = "".join(c for c in name if " " <= c <= "~" and c not in '"\\').strip()
-    # Nothing printable survived — a title written entirely in a non-Latin
-    # script. The attachment id is what such a client would have taken from the
-    # URL anyway, and `filename*` still carries the real name.
+    # A title entirely in a non-Latin script leaves nothing printable.
     fallback = ascii_name or str(meta.id)
     return f"inline; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
 
@@ -602,14 +506,8 @@ def _content_disposition(meta: AttachmentMeta) -> str:
 def _cache_control(request: Any) -> str:
     """How long a client may hold this response without asking again.
 
-    The bytes an attachment id names never change — a replacement is a new id —
-    but the name they are served under does: a retitle rewrites
-    ``Content-Disposition`` for that same id. Storing the response forever is
-    therefore only safe for a client whose URL changes when the name does, and
-    the card's carries the name token this looks for. Without it the response
-    must not be reused, or a retitle would keep saving the file under its old
-    name for as long as the entry lived — and a signed URL lives half an hour,
-    so that is not a window a user would wait out.
+    The bytes an id names never change, but a retitle changes the
+    ``Content-Disposition``, so only a URL carrying the name token is immutable.
     """
 
     if request.query.get(MEDIA_NAME_TOKEN_PARAM):
@@ -631,9 +529,7 @@ class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
     async def get(self, request: Any, item_id: str, attachment_id: str) -> Any:
         """Return the file the two ids name, or 404 if no metadata claims it.
 
-        ``?size=thumb`` asks for the row tile instead of the original. One
-        accepted value, and anything else is a 400 rather than an invitation to
-        have the server generate arbitrary sizes on demand.
+        ``?size=thumb`` asks for the row tile; any other size is a 400.
         """
 
         hass: HomeAssistant = request.app["hass"]
@@ -643,8 +539,6 @@ class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
 
         runtime = find_runtime(hass)
         if runtime is None:
-            # No config entry owns the data — an unload, a disable, or the first
-            # half of a reload. Same refusal the WebSocket commands make.
             return web.Response(status=HTTPStatus.SERVICE_UNAVAILABLE)
 
         meta = runtime.repository.find_attachment(item_id, attachment_id)
@@ -654,8 +548,7 @@ class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
         root = media_root(hass)
         path = attachment_path(root, item_id, str(meta.id), meta.mime)
         if not await hass.async_add_executor_job(path.is_file):
-            # Metadata without its file: a JSON export imported onto a fresh
-            # install carries the references and not the bytes.
+            # An imported export carries the references but not the bytes.
             return web.Response(status=HTTPStatus.NOT_FOUND)
 
         mime = meta.mime
@@ -667,9 +560,8 @@ class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
         return web.FileResponse(
             path,
             headers={
-                # The stored type is the sniffed one; `nosniff` stops the
+                # The stored type is the sniffed one; `nosniff` keeps the
                 # browser from deciding differently about user-supplied bytes.
-                # A tile is always WebP, whatever the picture behind it is.
                 "Content-Type": mime,
                 "X-Content-Type-Options": "nosniff",
                 "Cache-Control": _cache_control(request),
