@@ -4,7 +4,7 @@ HAventory goes public as **1.0.0**, cut once the owner has run `0.9.x` on the ho
 own inventory and is satisfied with it. There is no formal validation program before that
 tag. The automated suites, everyday use and the short list of key features below are the
 gate, and a scenario is checked by using the feature, not by walking a script. There is no
-scale benchmark either: the README's "Known limitations" carries the rough curve.
+scale benchmark either: the README's "Good to know" states the size the store handles.
 
 ## Before the tag
 
@@ -38,7 +38,7 @@ scale benchmark either: the README's "Known limitations" carries the rough curve
 | Export and import | Export, import into an empty throwaway instance, compare counts; the import preview names a clash before it writes | desktop, once from the phone |
 | Restart and reconnect | Restart HA with the card open on desktop and in the companion app; both reconnect with the data current | production and phone |
 | Backup | A Home Assistant backup carries the store and the integration folder; restoring it into a throwaway instance loads the inventory | a throwaway HA |
-| Non-admin user | A non-admin user sees the sidebar entry and can read and edit the inventory, as the README's Known limitations says | production |
+| Non-admin user | A non-admin user sees the sidebar entry and can read and edit the inventory, as the README's "Good to know" says | production |
 
 Reading the counts is one command from the `run-haventory` skill:
 
