@@ -39,35 +39,19 @@ import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { HVItemEditor } from './hv-item-editor';
 
 /**
- * The narrow item surface: tap a row, get one sheet.
+ * The narrow item surface: one sheet with a read view that swaps in place to
+ * the edit form. The card and the full view both host it.
  *
- * It lands on a read view — chips summarise state, the quantity hero is the
- * primary action — and swaps in place to the edit form. Nothing here opens a
- * second dialog; that is the whole point of the sheet.
- *
- * Both narrow surfaces host it — the card and the full view (and through it the
- * sidebar panel) — so the contract is worth stating rather than reading off one
- * host's bindings:
- *
- * - **In**: `item` and `open` say what to show; `locations`, `locationTree`,
- *   `areas`, `statuses`, `categorySuggestions`, `tagSuggestions`,
- *   `customFieldKeys`, `media` and `mediaConfig` are the store slices the read
- *   view and the form it hosts read; `busy` and `errorMessage` are the host's
- *   account of the save in flight, forwarded to the form. A save the host
- *   reports over without an error lands the sheet back on its read view, which
- *   is where the saved values are; a refused save leaves the form up with the
- *   message inside it.
- * - **Out**: `save` (the editor's own detail, so a host's editor-save handler
- *   takes it unchanged), `increment` / `decrement`, `check-in`,
- *   `check-out-confirmed` and `set-due-date` with the picked date,
- *   `reminder-bump`, `request-delete` — every one carrying `itemId` — and
- *   `cancel` when the sheet has finished closing.
- * - The sheet answers for the form inside it: a dismissal with unsaved typing
- *   raises the discard question here, and `cancel` follows only if it is
- *   answered yes. The form's own Cancel and Escape land on the read view like
- *   Back does; only a dismissal — the scrim, a swipe, the read view's ✕,
- *   Escape over the read view — takes the sheet down. A host must not try to
- *   guard the form from outside; it cannot see into this shadow root.
+ * - **In**: `item` and `open`; the store slices the read view and the form
+ *   read; `busy` and `errorMessage` for the save in flight. A save that settles
+ *   without an error lands on the read view; a refused one leaves the form up.
+ * - **Out**: `save` (the editor's own detail), `increment` / `decrement`,
+ *   `check-in`, `check-out-confirmed` and `set-due-date` with the date,
+ *   `reminder-bump` and `request-delete`, each carrying `itemId`, and `cancel`
+ *   once the sheet has closed.
+ * - The sheet guards the form, which a host cannot see into: a dismissal (the
+ *   scrim, a swipe, ✕, Escape over the read view) with unsaved typing asks
+ *   first. The form's Cancel and Escape land on the read view, as Back does.
  */
 @customElement('hv-detail-sheet')
 export class HVDetailSheet extends LitElement {
@@ -92,11 +76,6 @@ export class HVDetailSheet extends LitElement {
       .bar .crumb {
         flex: 1;
         min-width: 0;
-        /* This and the quantity below are the two things the read view is for,
-           and they were 12.5px and 34px — a factor of 2.7 apart, with the path
-           the smallest text on the sheet and the number half again bigger than
-           anything else on it. Both now sit on the sheet's own scale: the path
-           reads at body size, like the description under it. */
         font-size: 13.5px;
         color: var(--hv-text-secondary);
         overflow: hidden;
@@ -192,10 +171,7 @@ export class HVDetailSheet extends LitElement {
         min-width: 90px;
       }
       .hero .qty {
-        /* The top of the sheet's scale, which is the item's own name — the
-           readout is still the biggest number on the surface and still the
-           thing the two 52px buttons point at, without out-shouting the item
-           it belongs to. See the note on .bar .crumb. */
+        /* The item name's size: the biggest number without out-shouting it. */
         font-size: 22px;
         font-weight: 500;
         line-height: 1;
@@ -235,19 +211,13 @@ export class HVDetailSheet extends LitElement {
       .fact .value.yes {
         color: var(--hv-success);
       }
-      /* A date that has passed is not a neutral fact, and every fact that
-         prints one is marked the same way — the same red the table's date cells
-         and the compact row's line use. The chips at the top of the sheet are
-         where the kind of lateness is named, so down here the colour says only
-         that the day has gone by. */
+      /* A date that has passed, in the table's red; the chips name the kind. */
       .fact .value.late {
         color: var(--hv-error);
         font-weight: 500;
       }
-      /* The path is what the crumb at the top of the sheet cuts off, so this
-         row wraps it instead: the row grows and every segment survives. Each
-         segment is a flex item, which is what puts a break on a "›" rather
-         than inside a name. */
+      /* The full path the crumb cuts off. Each segment is a flex item, so a
+         line breaks on a "›" rather than inside a name. */
       .fact.location .value,
       .fact.location .hv-chip-line-text {
         flex-wrap: wrap;
@@ -258,23 +228,16 @@ export class HVDetailSheet extends LitElement {
         display: flex;
         align-items: center;
       }
-      /* The separator's spaces sit at the end of a flex item's line, where
-         normal white-space processing drops them and the two names either side
-         would run together. */
+      /* Otherwise a flex item's edge drops the separator's spaces. */
       .fact.location .hv-path-sep {
         white-space: pre;
       }
-      /* A household writes these names, and a flex item's automatic minimum is
-         its own content — so a long one would push the row wider than the sheet
-         instead of taking a second line. */
+      /* A flex item's automatic minimum would push a long name past the sheet. */
       .fact.location .hv-path-seg {
         min-width: 0;
         overflow-wrap: anywhere;
       }
-      /* The one fact row that acts. The value keeps its margin-left:auto, so the
-         button sits after it at the right edge; the negative right margin pulls
-         the tap target's padding back to the row's own gutter while the 44px
-         touch height stays. */
+      /* The negative margin puts the tap target's padding in the row's gutter. */
       .fact .text-action {
         border: none;
         background: none;
@@ -288,12 +251,8 @@ export class HVDetailSheet extends LitElement {
       .fact .text-action[disabled] {
         color: var(--hv-text-tertiary);
       }
-      /* The id is not read, it is pasted — so it is printed in full and offered
-         to one tap: user-select: all takes the whole uuid from a single click or
-         long-press, which is the copy route left when the browser has no
-         clipboard API (Home Assistant over plain http:// is not a secure
-         context). A uuid carries no space to break at, so it is allowed to break
-         anywhere rather than push the button off a phone's row. */
+      /* user-select: all takes the whole id in one tap, the copy route left
+         when HA over plain http:// has no clipboard API. */
       .fact .value.id {
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         font-size: 11.5px;
@@ -306,10 +265,8 @@ export class HVDetailSheet extends LitElement {
         gap: 9px;
         padding: 12px 14px 16px;
       }
-      /* Two labels, half a phone row each — about 176px at 390px. Equal halves
-         while both labels fit in one, which is the look; a label a few pixels
-         longer than its half takes what it needs and the other yields, rather
-         than stacking onto a second line inside a 48px pill. */
+      /* Equal halves while both labels fit; a longer label takes what it needs
+         rather than wrapping inside a 48px pill. */
       .actions .pair {
         display: grid;
         grid-template-columns: minmax(max-content, 1fr) minmax(max-content, 1fr);
@@ -318,10 +275,7 @@ export class HVDetailSheet extends LitElement {
       .actions .pair > button {
         white-space: nowrap;
       }
-      /* The pair's other half. It shares the row with an .hv-pill.large, and a
-         stretch grid gives both the taller one's height — so a private height
-         here would silently override the modifier that exists to keep every
-         thumb-sized action the same size. */
+      /* Beside an .hv-pill.large, whose height the stretch grid shares. */
       .actions .outline {
         display: inline-flex;
         align-items: center;
@@ -341,9 +295,7 @@ export class HVDetailSheet extends LitElement {
         color: var(--hv-error-soft);
         font: 400 14px var(--hv-font);
       }
-      /* One row that scrolls sideways rather than a grid that grows the sheet:
-         the sheet's own vertical scroll is how you reach the facts below, and a
-         wrapping gallery would push them off a phone screen entirely. */
+      /* One sideways-scrolling row, so the facts below stay within reach. */
       .gallery {
         display: flex;
         gap: 8px;
@@ -372,9 +324,7 @@ export class HVDetailSheet extends LitElement {
         object-fit: cover;
         background: var(--hv-surface-raised);
       }
-      /* A picture whose file the backend no longer has: the same box, so the
-         strip keeps its rhythm, carrying the amber mark the document rows below
-         already use for the same fact. */
+      /* A picture whose file is missing keeps the box, with the documents' mark. */
       .gallery .missing {
         display: grid;
         place-items: center;
@@ -403,11 +353,8 @@ export class HVDetailSheet extends LitElement {
         margin: 0;
         padding: 0;
         display: grid;
-        /* One track the width of the list, not the width of its widest row. An
-           implicit track sizes itself from the rows, and a row's tail — the
-           Open link and the "File missing" chip — cannot shrink, so the track
-           runs past the list and the hidden overflow below cuts off exactly the
-           two elements the row exists to offer. */
+        /* One track the list's width, or a row's unshrinkable tail widens it
+           and the overflow cuts off the Open link. */
         grid-template-columns: minmax(0, 1fr);
         gap: 1px;
         background: var(--hv-row-divider);
@@ -418,8 +365,6 @@ export class HVDetailSheet extends LitElement {
         display: flex;
         align-items: center;
         gap: 10px;
-        /* A grid item's automatic minimum is its own content, which would put
-           the row straight back outside the track above. */
         min-width: 0;
         min-height: 52px;
         padding: 8px 12px;
@@ -457,9 +402,6 @@ export class HVDetailSheet extends LitElement {
         text-decoration: none;
         font: 500 13px var(--hv-font);
       }
-      /* The row still names the document; only what it promised to open is
-         struck through, so the reference reads as a record rather than as
-         something broken beyond recognition. */
       .documents li.missing .doc-title {
         color: var(--hv-text-secondary);
         text-decoration: line-through;
@@ -480,21 +422,16 @@ export class HVDetailSheet extends LitElement {
   @property({ attribute: false }) createLocation: ((name: string) => Promise<Location>) | null =
     null;
   /**
-   * The host's discard question, for this sheet and for the form inside it.
-   *
-   * Both ask it: the form for its own Cancel, this sheet for the Back arrow,
-   * the scrim, a swipe and Escape. The dialog has to outlive the sheet — a
-   * confirmed dismissal takes the sheet down with it — so it belongs to the
-   * host, and null leaves the sheet dismissible without a question.
+   * The host's discard question for this sheet and its form. It outlives a
+   * confirmed dismissal, so it is the host's; null asks nothing.
    */
   @property({ attribute: false }) confirmDiscard: ConfirmDiscard | null = null;
   @property({ type: Boolean }) busy = false;
   @property({ type: String }) errorMessage: string | null = null;
 
-  /** Picture access for the gallery, the lightbox and the editor it hosts. */
-  /** The status vocabulary from `haventory/config`; the built-ins stand in
-   * until it answers. */
+  /** The status vocabulary from `haventory/config`; the built-ins stand in until it answers. */
   @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
+  /** Picture access for the gallery, the lightbox and the editor it hosts. */
   @property({ attribute: false }) media: MediaBindings | null = null;
   /** Attachment caps and accepted types, forwarded to the editor's picker. */
   @property({ attribute: false }) mediaConfig: MediaConfig | null = null;
@@ -508,20 +445,12 @@ export class HVDetailSheet extends LitElement {
   private readonly _urls = new MediaUrls(this);
   /** The "Copied" label on the id fact's button. */
   private readonly _copyFlash = new CopyFlash(this);
-  /**
-   * The item id the sheet is showing. `undefined` until the first update, so
-   * that pass settles the view the same way a move to another item does.
-   */
+  /** The item id shown; `undefined` so the first update settles as a move does. */
   private _shownItemId: string | null | undefined;
 
   /**
-   * Another item, a re-open, or a save the host has finished with: each of
-   * them lands the sheet on its read view.
-   *
-   * Keyed on the item *id*, not on the `item` object: the host re-binds it from
-   * a fresh lookup on every store broadcast, so each attachment mutation hands
-   * the sheet a new object for the item it is already showing. Resetting on
-   * that would close the edit form — and the lightbox — under the user mid-tap.
+   * Another item, a re-open, or a finished save lands on the read view. Keyed
+   * on the id: the host hands a new `item` object on every store broadcast.
    */
   protected willUpdate(changed: Map<string, unknown>) {
     this._urls.configure(this.media?.sign ?? null);
@@ -534,20 +463,14 @@ export class HVDetailSheet extends LitElement {
       this._lightbox = null;
       this._copyFlash.reset();
     }
-    // The read view is what shows the values a save wrote, and on a phone there
-    // is no second surface to say it landed. A host settles `busy` and
-    // `errorMessage` together before it asks for one render, so the fall of
-    // `busy` arrives with the final message: a refusal never reads as a save
-    // that landed, and the retry after one starts on a rise, not a fall.
+    // A host settles `busy` and `errorMessage` in one render, so a fall of
+    // `busy` with no message is a save that landed.
     if (this._mode === 'edit' && changed.has('busy') && !this.busy && this.errorMessage === null) {
       this._mode = 'read';
     }
   }
 
-  /**
-   * The overdue, inspection and reminder lines are read off the clock at
-   * render, and a sheet can be left open — on a phone, all evening.
-   */
+  /** The overdue, inspection and reminder lines read the clock, and a sheet can stay open overnight. */
   connectedCallback(): void {
     super.connectedCallback();
     this._dayUnsub = onDayChange(() => this.requestUpdate());
@@ -576,77 +499,56 @@ export class HVDetailSheet extends LitElement {
   }
 
   private _emit(name: string, detail: Record<string, unknown> = {}) {
-    this.dispatchEvent(
-      new CustomEvent(name, {
-        detail: { itemId: this.item?.id, ...detail },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    const init = { detail: { itemId: this.item?.id, ...detail }, bubbles: true, composed: true };
+    this.dispatchEvent(new CustomEvent(name, init));
   }
+
+  private _edit = () => {
+    this._mode = 'edit';
+  };
 
   private _close = () => {
     this.open = false;
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
 
-  /**
-   * Every way out of this sheet, with the form's typing accounted for.
-   *
-   * The sheet answers for the editor it hosts: a host outside cannot see into
-   * this shadow root, and the scrim, the swipe and Escape all arrive here
-   * first. `read` is the Back arrow — the sheet stays up on its read view;
-   * `close` is a dismissal and takes the sheet with it. The dialog is the
-   * host's, so a confirmed dismissal is still answerable once this element has
-   * gone.
-   */
+  /** Leave the form for the read view (Back) or dismiss the sheet, asking first about unsaved typing. */
   private _leaveEdit(to: 'read' | 'close') {
-    const ask = this.confirmDiscard;
-    if (this.dirty && ask) {
-      ask(() => this._applyLeave(to));
-      return;
-    }
-    this._applyLeave(to);
+    const leave = () => {
+      this._mode = 'read';
+      if (to === 'close') this._close();
+    };
+    if (this.dirty && this.confirmDiscard) this.confirmDiscard(leave);
+    else leave();
   }
 
-  private _applyLeave(to: 'read' | 'close') {
-    this._mode = 'read';
-    if (to === 'close') this._close();
-  }
-
-  /**
-   * One custom field, as a fact rather than as a stored pair.
-   *
-   * The label is written for reading; `data-key` still carries the key itself,
-   * which is what the editor shows and what an export document and an
-   * automation name.
-   */
+  /** One custom field; `data-key` carries the stored key the label is written from. */
   private _renderCustomFact(key: string, value: ScalarValue) {
     const type = inferType(value);
-    const label = customFieldLabel(key);
-    if (type === 'boolean') {
-      const on = value === true;
-      return html`<div class="fact" data-testid="sheet-fact" data-key=${key}>
-        <span>${label}</span>
-        <span class="value ${on ? 'yes' : 'unset'}">
-          ${on ? html`${icon('check', 15)} ${t('hv.term.yes')}` : t('hv.term.no')}
-        </span>
-      </div>`;
-    }
+    const on = value === true;
+    return html`<div class="fact" data-testid="sheet-fact" data-key=${key}>
+      <span>${customFieldLabel(key)}</span>
+      ${type === 'boolean'
+        ? html`<span class="value ${on ? 'yes' : 'unset'}">
+            ${on ? html`${icon('check', 15)} ${t('hv.term.yes')}` : t('hv.term.no')}
+          </span>`
+        : html`<span class="value">${type === 'date' ? formatDate(String(value)) : String(value)}</span>`}
+    </div>`;
+  }
+
+  /** A date fact, marked late once the day has passed. */
+  private _renderDateFact(key: string, label: string, date: string | null, late: boolean) {
     return html`<div class="fact" data-testid="sheet-fact" data-key=${key}>
       <span>${label}</span>
-      <span class="value">${type === 'date' ? formatDate(String(value)) : String(value)}</span>
+      <span class="value ${date ? '' : 'unset'} ${late ? 'late' : ''}"
+        >${date ? formatDate(date) : t('hv.term.notSet')}</span
+      >
     </div>`;
   }
 
   /**
-   * The picture strip, or nothing at all when the item has none.
-   *
-   * Each figure is a button: tapping one opens the lightbox, the only way to
-   * see a photo at a useful size on a phone. A picture whose file the backend
-   * cannot find is drawn as missing rather than handed to an `<img>` that can
-   * only show the browser's broken-image glyph — the state a restore without
-   * the media directory puts every photo in, and why the document rows probe.
+   * The picture strip, or nothing when the item has none. A missing file is
+   * drawn as missing rather than as the browser's broken-image glyph.
    */
   private _renderGallery(item: Item) {
     const shots = pictures(item.attachments);
@@ -672,14 +574,8 @@ export class HVDetailSheet extends LitElement {
   }
 
   /**
-   * The documents attached to the item, or nothing when there are none.
-   *
-   * Each row is an anchor to the signed media URL rather than a button that
-   * opens one: the URL has to be on the element before the tap, or the popup
-   * blocker eats the new tab a handler would open after awaiting a signature.
-   * A reference whose file the backend cannot find is shown as missing instead
-   * of as a link to a 404 — a JSON export carries the metadata and not the
-   * bytes, so a fresh install genuinely can hold one.
+   * The item's documents, or nothing. Each row is an anchor to the signed URL,
+   * since a handler that awaits a signature has its new tab popup-blocked.
    */
   private _renderDocuments(item: Item) {
     const docs = manuals(item.attachments);
@@ -691,9 +587,7 @@ export class HVDetailSheet extends LitElement {
           const src = this._urls.get(item.id, doc.id, attachmentNameToken(doc));
           const missing = this._urls.presence(item.id, doc.id) === 'missing';
           const title = attachmentTitle(doc);
-          // The title falls back to the filename, which is the state every
-          // document is in until someone renames it — naming the file again
-          // underneath prints the same string twice and costs a line.
+          // The title falls back to the filename; do not print it twice.
           const meta = [
             ...(title === doc.filename ? [] : [doc.filename]),
             formatBytes(doc.size),
@@ -712,14 +606,6 @@ export class HVDetailSheet extends LitElement {
     </div>`;
   }
 
-  /**
-   * One picture at full size, with a way through the rest of the strip.
-   *
-   * Stepping wraps rather than stopping at the ends: these are one item's
-   * photos and comparing them is what the surface is for, so no press is ever a
-   * no-op — and a control that disabled itself under the finger that pressed it
-   * would drop focus to the document, taking Escape and the arrow keys with it.
-   */
   private _renderRead(item: Item) {
     const low = isLowStock(item);
     const overdue = isOverdue(item.due_date);
@@ -744,13 +630,7 @@ export class HVDetailSheet extends LitElement {
             >${parts.path || t('hv.term.noLocation')}</span
           ></span
         >
-        <button
-          class="text-action"
-          data-testid="sheet-edit"
-          @click=${() => {
-            this._mode = 'edit';
-          }}
-        >
+        <button class="text-action" data-testid="sheet-edit" @click=${this._edit}>
           ${t('hv.action.edit')}
         </button>
       </div>
@@ -831,18 +711,8 @@ export class HVDetailSheet extends LitElement {
             ></span
           >
         </div>
-        <div class="fact" data-testid="sheet-fact" data-key="due">
-          <span>${t('hv.field.dueShort')}</span>
-          <span class="value ${item.due_date ? '' : 'unset'} ${overdue ? 'late' : ''}"
-            >${item.due_date ? formatDate(item.due_date) : t('hv.term.notSet')}</span
-          >
-        </div>
-        <div class="fact" data-testid="sheet-fact" data-key="inspection">
-          <span>${t('hv.field.inspection_date')}</span>
-          <span class="value ${item.inspection_date ? '' : 'unset'} ${inspectionDue ? 'late' : ''}"
-            >${item.inspection_date ? formatDate(item.inspection_date) : t('hv.term.notSet')}</span
-          >
-        </div>
+        ${this._renderDateFact('due', t('hv.field.dueShort'), item.due_date, overdue)}
+        ${this._renderDateFact('inspection', t('hv.field.inspection_date'), item.inspection_date, inspectionDue)}
         <div class="fact" data-testid="sheet-fact" data-key="reminder">
           <span>${t('hv.field.reminder_date')}</span>
           <span
@@ -880,10 +750,7 @@ export class HVDetailSheet extends LitElement {
             })}</span
           >
         </div>
-        <!-- Every haventory action that touches one item takes this string as
-             item_id, and until it was printed here the only way to read one was
-             to export the whole inventory as JSON and search it. Last in the
-             list: it is the one fact that is not about the item itself. -->
+        <!-- The item_id every haventory action takes. -->
         <div class="fact" data-testid="sheet-fact" data-key="id">
           <span>${t('hv.term.id')}</span>
           <code class="value id" data-testid="sheet-id">${item.id}</code>
@@ -917,9 +784,7 @@ export class HVDetailSheet extends LitElement {
                 this._emit('set-due-date', { dueDate: (e.detail as { dueDate: string | null }).dueDate });
               }}
               @cancel=${(e: Event) => {
-                // Composed, like every cancel in the card: unstopped it reaches
-                // the host as "the sheet closed" and takes the item down with
-                // the date step the user was only backing out of.
+                // Composed: unstopped, the host would read it as the sheet closing.
                 e.stopPropagation();
                 this._checkoutOpen = false;
               }}
@@ -942,13 +807,7 @@ export class HVDetailSheet extends LitElement {
               >
                 ${icon('account', 18)}${t('hv.action.checkOut')}
               </button>`}
-          <button
-            class="hv-pill large"
-            data-testid="sheet-edit-details"
-            @click=${() => {
-              this._mode = 'edit';
-            }}
-          >
+          <button class="hv-pill large" data-testid="sheet-edit-details" @click=${this._edit}>
             ${icon('pencil', 18)}${t('hv.sheet.editDetails')}
           </button>
         </div>
@@ -999,18 +858,13 @@ export class HVDetailSheet extends LitElement {
         .busy=${this.busy}
         .errorMessage=${this.errorMessage}
         @cancel=${(e: Event) => {
-          // Composed, like every cancel in the card: unstopped it reaches the
-          // sheet around the form, which reads a cancel as a dismissal and
-          // takes the whole sheet down with it. The form's own way out is the
-          // read view, and it has already asked about unsaved typing itself.
+          // Composed: unstopped, the bottom sheet would read it as a dismissal.
+          // The form has already asked about unsaved typing.
           e.stopPropagation();
           this._mode = 'read';
         }}
         @delete-item=${(e: Event) => {
-          // The form has a Delete of its own, and this sheet has to forward it
-          // or the button does nothing. Re-emitted as `request-delete`, the
-          // same event the read view's Delete sends, so the host confirms it
-          // exactly once either way.
+          // Forwarded as the read view's `request-delete`, so the host confirms once.
           e.stopPropagation();
           this._emit('request-delete');
         }}
@@ -1026,9 +880,7 @@ export class HVDetailSheet extends LitElement {
         ?noHandle=${this._mode === 'edit'}
         label=${item?.name ?? t('hv.term.item')}
         @cancel=${(e: Event) => {
-          // The inner sheet's cancel is composed, so it would reach the host as
-          // "the detail sheet closed" — before this sheet has decided whether it
-          // is closing at all. The host hears only the one _close sends.
+          // The host hears only the cancel `_close` sends, once the discard question is settled.
           e.stopPropagation();
           this._leaveEdit('close');
         }}
