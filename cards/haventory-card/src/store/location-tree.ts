@@ -2,15 +2,9 @@ import { areaNameById } from '../ui/area';
 import type { AreaRef, LocationTreeNode } from './types';
 
 /**
- * `location/tree` returns nodes in the repository's own order, which is
- * effectively insertion order — a sidebar of 29 locations reads as
- * "Office, Basement, Garage, Workshop, Kitchen" and nothing can be found by
- * eye. The API makes no ordering promise, so presentation order is the card's
- * job.
- *
- * Sorted by name with `numeric` collation, so "Shelf 2" precedes "Shelf 10",
- * and tie-broken on id so equally-named siblings keep a stable order across
- * re-renders. Returns a new tree; the caller's nodes are untouched.
+ * `location/tree` promises no order, so the card sorts by name with numeric
+ * collation ("Shelf 2" before "Shelf 10"), tie-broken on id for a stable order.
+ * Returns a new tree.
  */
 const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
 
@@ -21,11 +15,8 @@ export function sortLocationTree(nodes: readonly LocationTreeNode[]): LocationTr
 }
 
 /**
- * Does this location match the substring filter the trees offer? Its name or
- * its display path, case-insensitively; an empty needle matches everything.
- *
- * Shared with `countLocations` so a "13 locations" tally can never disagree with
- * the rows the tree beneath it actually kept.
+ * Whether a location's name or display path contains the filter text,
+ * case-insensitively. Shared with `countLocations` so the tally matches the rows.
  */
 export function locationMatches(node: LocationTreeNode, filterText: string): boolean {
   const needle = filterText.trim().toLowerCase();
@@ -36,15 +27,7 @@ export function locationMatches(node: LocationTreeNode, filterText: string): boo
   );
 }
 
-/**
- * How many locations a tree holds, counting every depth, and only those matching
- * `filterText` when one is given.
- *
- * The sidebar and the organize dialog both put this number beside the word
- * "Locations", next to a count of categories and a count of tags — so it has to
- * mean the same thing they do: how many of that thing there is. Nested locations
- * are locations, so the roots alone would undercount.
- */
+/** How many locations a tree holds at every depth, matching `filterText` when given. */
 export function countLocations(nodes: readonly LocationTreeNode[], filterText = ''): number {
   return nodes.reduce(
     (sum, n) =>
@@ -68,15 +51,8 @@ export interface GroupedRoots {
 }
 
 /**
- * Partition top-level locations by the area they belong to.
- *
- * Only roots are read: the backend keeps a tree's area on its root node and
- * resolves it downwards for every descendant, so a root's `area_id` is the whole
- * tree's area — and a nested node never holds one to disagree with.
- *
- * Groups are ordered by area name on the collator the rows themselves use, tied
- * on id so equally-named areas cannot swap places between renders. Returns new
- * arrays over the caller's nodes; nothing is mutated.
+ * Partition top-level locations by area, which only a root carries. Groups are
+ * ordered by area name, tied on id.
  */
 export function groupRootsByArea(
   nodes: readonly LocationTreeNode[],
@@ -86,10 +62,7 @@ export function groupRootsByArea(
   const byArea = new Map<string, LocationTreeNode[]>();
   const ungrouped: LocationTreeNode[] = [];
 
-  // A picker that files locations under areas has to offer every area Home
-  // Assistant knows, including the ones holding nothing yet — otherwise an area
-  // can only be reached once something is already in it. Browsing bands only
-  // the areas in use.
+  // A picker must offer areas holding nothing yet; browsing bands only those in use.
   if (opts.includeEmptyAreas) for (const area of areas) byArea.set(area.id, []);
 
   for (const node of nodes) {
