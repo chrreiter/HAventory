@@ -8,10 +8,7 @@ import { normalizeTags } from '../ui/item-form';
 
 /**
  * Tag editor: removable chips plus a ghost "Add tag…" input with suggestions.
- *
- * Values are lowercased on commit because the backend normalizes tags anyway
- * (trimmed, lowercased, deduplicated) — doing it here means what the user sees
- * is what ends up stored.
+ * Values are normalized on commit as the backend stores them.
  */
 @customElement('hv-chip-input')
 export class HVChipInput extends LitElement {
@@ -42,18 +39,8 @@ export class HVChipInput extends LitElement {
       .chip svg {
         opacity: 0.75;
       }
-      /* The one control that does not reach 44px. It is a 14px glyph living
-         inside a chip that wraps with a 6px gap, so a 44px hit area would reach
-         well into the chip beside it and remove the wrong tag. 24px is the
-         widest it can grow while still belonging to its own chip, which meets
-         WCAG 2.5.8 even though it misses the 2.5.5 target the rest of the
-         mobile controls now hit.
-
-         The pill around it is not a target at all, which is why it takes the
-         shared chip metrics untouched: the hit area below is set by this
-         ::after and a taller pill would not grow it by a pixel — it would only
-         make a tag in this field bigger than the same tag in the table. The
-         field still reaches a full tap height, from the input beside them. */
+      /* A 24px hit area (WCAG 2.5.8), not 44px, which would reach into the
+         neighbouring chip and remove the wrong tag. */
       .chip-remove {
         position: relative;
         width: 14px;

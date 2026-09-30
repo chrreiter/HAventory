@@ -1,6 +1,7 @@
 import './hv-location-tree';
 import type { HVLocationTree } from './hv-location-tree';
 import type { LocationTreeNode } from '../store/types';
+import { setLanguage } from '../i18n';
 import { mountComponent, q } from '../test.utils';
 
 function node(
@@ -1015,6 +1016,13 @@ describe('hv-location-tree: one tab stop across area bands', () => {
     const el = await mountAreas();
     expect(walk(el).filter((n) => n.getAttribute('tabindex') === '0')).toHaveLength(1);
     expect(walk(el).filter((n) => n.getAttribute('tabindex') === '-1').length).toBeGreaterThan(3);
+  });
+
+  it('names the area twisty in the language in force', async () => {
+    setLanguage('de');
+    const el = await mountAreas();
+    const twisty = q(el, '[data-testid="tree-area-twisty"][data-area="area-kitchen"]');
+    expect(twisty?.getAttribute('aria-label')).toMatch(/^Kitchen (zuklappen|aufklappen)$/);
   });
 
   it('takes the area twisty and the area name out of the tab order', async () => {

@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 # Run the in-process Home Assistant integration test suite (tests/integration/).
 #
-# Unlike the offline suite (HA stubbed), this loads a REAL Home Assistant core via
-# pytest-homeassistant-custom-component (phacc), so it needs:
+# Loads a real Home Assistant core via pytest-homeassistant-custom-component
+# (phacc), so it needs:
 #   * Python 3.14 (the declared HA runtime; the integration source is 3.14-only), and
-#   * the phacc harness from requirements-integration.txt (pulls a full HA core).
+#   * the phacc harness from requirements-integration.txt.
 #
-# It uses a DEDICATED environment (.venv-integration) so the offline `.venv` stays
-# Home-Assistant-free (tests/conftest.py stubs HA there). Plugin autoload stays ON
-# (phacc must load) and pytest-asyncio runs in auto mode (phacc requires it). Extra
-# args are forwarded to pytest.
+# A dedicated .venv-integration keeps the offline `.venv` Home-Assistant-free.
+# Extra args are forwarded to pytest.
 source "$(dirname "$0")/common.sh"
 
 cd "$REPO_ROOT"
@@ -34,7 +32,7 @@ fi
 info 'Installing integration harness deps (phacc + HA core)...'
 "$UV" pip install --python "$INT_VENV/bin/python" -r requirements-integration.txt
 
-# Autoload MUST be enabled for phacc; make sure the offline flag isn't inherited.
+# phacc needs plugin autoload on; do not inherit the offline flag.
 unset PYTEST_DISABLE_PLUGIN_AUTOLOAD
 
 info 'Running in-process HA integration tests (phacc)...'

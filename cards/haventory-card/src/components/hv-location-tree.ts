@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import type { TranslationKey } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
@@ -19,20 +20,31 @@ import type { AreaRef, LocationTreeNode } from '../store/types';
 const NO_AREA_KEY = 'no-area';
 
 /**
- * The container a row discloses, named so `aria-controls` can point at it. A
- * collapsed row renders no descendants at all, so the container stays behind
- * empty rather than leaving with them — an `aria-controls` that resolves to
- * nothing announces the row as controlling nothing.
- *
- * The id has to survive being written into a selector and has to be the row's
- * alone. The prefix keeps a uuid that opens with a digit from opening the id,
- * and every character outside the id alphabet — the colon in an area key,
- * whatever a later id scheme brings — becomes `_<code point>_`. Escaping `_`
- * itself is what keeps that mapping one-to-one, so two keys cannot collapse
- * onto one container.
+ * The container a row discloses, which stays in the tree empty while collapsed
+ * so `aria-controls` resolves. Every character outside the id alphabet, `_`
+ * included, becomes `_<code point>_`, so the id is selector-safe and one-to-one.
  */
 const containerId = (prefix: string, key: string) =>
   `${prefix}-${key.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.charCodeAt(0).toString(16)}_`)}`;
+
+/** `set` with `key` added, or taken out if it was there. */
+function toggledSet(set: Set<string>, key: string): Set<string> {
+  const next = new Set(set);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  return next;
+}
+
+/** The leading slot of a row with nothing to disclose, holding the column. */
+const placeholderTwisty = () =>
+  html`<span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>`;
+
+/** The desktop manage actions: testid, event, accessible name, title, glyph. */
+const MANAGE_ACTIONS: [string, string, TranslationKey, TranslationKey, IconName][] = [
+  ['tree-merge', 'merge-location', 'hv.tree.merge', 'hv.tree.mergeTitle', 'callMerge'],
+  ['tree-edit', 'edit-location', 'hv.row.editNamed', 'hv.tree.editTitle', 'pencil'],
+  ['tree-delete', 'delete-location', 'hv.tree.delete', 'hv.tree.deleteTitle', 'del'],
+];
 
 /** Where a node's children go, derived from the node id so it never moves. */
 const nodeChildrenId = (nodeId: string) => containerId('tree-children', nodeId);
@@ -41,17 +53,11 @@ const nodeChildrenId = (nodeId: string) => containerId('tree-children', nodeId);
 const areaRootsId = (key: string) => containerId('tree-area-roots', key);
 
 /**
- * The backend's nested location tree, rendered as it is served. One component
- * serves four callers — the full-view sidebar, the filter panel's location
- * picker, the item editor's location field and the organize dialog — hence the
- * mode/decoration switches rather than four near-identical trees.
+ * The backend's nested location tree, rendered as served, for the full-view
+ * sidebar, the filter panel, the item editor and the organize dialog.
  *
- * Top-level locations are filed under the HA area they belong to, so a tree
- * answers "which room is this in" without leaving for the area registry. An
- * inventory that assigns no areas gets no headers and renders flat.
- *
- * Counts come from the tree nodes themselves (`direct_item_count` /
- * `subtree_item_count`), so nothing is computed client-side.
+ * Top-level locations are banded under their HA area; an inventory with no
+ * areas renders flat. Counts come from the nodes themselves.
  */
 @customElement('hv-location-tree')
 export class HVLocationTree extends LitElement {
@@ -64,21 +70,15 @@ export class HVLocationTree extends LitElement {
       :host {
         display: block;
       }
-      /* Shape, spacing and the picked state come from ui/browse-row, shared with
-         the sidebar's facet rows so the two lists sit in one column. */
+      /* Shape and picked state come from ui/browse-row. A node row cannot be a
+         button, since it holds buttons, so it asks for the pointer itself. */
       .row {
-        /* The whole row picks the location it names. The All-items and
-           No-location rows below are real buttons and get this for free; a node
-           row cannot be one, because it holds the twisty and the manage actions
-           and a button may not contain a button. */
         cursor: pointer;
       }
       .row[disabled] {
         opacity: 0.4;
         cursor: default;
       }
-      /* The row's leading slot, as a control: the box comes from the shared
-         hv-browse-row-lead, the round hover from here. */
       .twisty {
         border: none;
         background: none;
@@ -97,17 +97,14 @@ export class HVLocationTree extends LitElement {
       .row.selected .count {
         color: inherit;
       }
-      /* Managing is browsing too: the count is the way into the items, exactly
-         as it is on the organize dialog's category and tag rows. */
+      /* In manage mode the count opens the items. */
       .count.link {
         border: none;
         background: none;
         padding: 0 2px;
         font: 400 12px var(--hv-font);
         color: var(--hv-primary-dark);
-        /* 12px text is a 14px-tall target; the box has to be told to be bigger
-           than its own line. WCAG 2.2 asks 24px of any pointer, and the count
-           is a target wherever it is a link — the browsing sidebar included. */
+        /* WCAG 2.2's 24px pointer target. */
         display: inline-flex;
         align-items: center;
         min-height: 24px;
@@ -115,23 +112,17 @@ export class HVLocationTree extends LitElement {
       .count.link:hover {
         text-decoration: underline;
       }
-      /* A phone reaching for a managed row needs the full 44px, and the row it
-         sits in grows to hold it. Confined to the managing tree: the browsing
-         sidebar is a list to read down, and 44px counts would stretch it past
-         what a phone can show at once. */
+      /* 44px only in the managing tree; the browsing sidebar stays compact. */
       .row.manage.touch .count.link {
         min-height: var(--hv-tap-min, 44px);
       }
-      /* Left-packed like a value row (name, then count) instead of the name
-         pushing the count to the far edge. */
       .row.manage .name {
         flex: 0 1 auto;
       }
       .row.manage .actions {
         margin-left: auto;
       }
-      /* An area heads a group of locations rather than being one, so it reads
-         as a band across the tree and never as a row a location could sit at. */
+      /* An area heads a group of locations, so it reads as a band, not a row. */
       .row.area-head {
         font-weight: 500;
         color: var(--hv-text-secondary);
@@ -152,13 +143,8 @@ export class HVLocationTree extends LitElement {
         color: inherit;
         text-align: left;
       }
-      /* Everywhere else the chip annotates a path it sits beside, so it is set
-         smaller than the text it qualifies. Here it *is* the row's label, one
-         level of the tree above the locations under it, and reading smaller than
-         them inverts the hierarchy it heads.
-         The no-area band is that same heading for the locations no area claims,
-         so it takes the same size and shape and says the difference with its
-         fill: an outline where the others carry one. */
+      /* Here the chip is the band's label, so it is not set smaller than the
+         locations under it; the no-area band matches it in outline. */
       .area-name .hv-area-chip,
       .area-none {
         font-size: inherit;
@@ -168,9 +154,8 @@ export class HVLocationTree extends LitElement {
         display: flex;
         gap: 2px;
       }
-      /* Reveal-on-hover only where hovering exists, or a touch screen could
-         never reach these at all. Hidden rather than unrendered, so the rest of
-         the row does not jump sideways the moment the pointer arrives. */
+      /* Reveal-on-hover only where hovering exists; hidden, not unrendered, so
+         the row does not shift. */
       @media (hover: hover) {
         .actions {
           visibility: hidden;
@@ -193,9 +178,6 @@ export class HVLocationTree extends LitElement {
         color: var(--hv-primary-dark);
         padding: 0;
       }
-      /* The touch layout's single ⋮ is the whole of a row's reach on a phone,
-         so it carries the tap target the organize dialog's other tabs give
-         their row actions. */
       .row.manage.touch .action {
         width: var(--hv-tap-min, 44px);
         height: var(--hv-tap-min, 44px);
@@ -211,10 +193,7 @@ export class HVLocationTree extends LitElement {
         font-size: 12.5px;
         color: var(--hv-text-tertiary);
       }
-      /* An inventory with no locations at all: the picker is the first place a
-         user meets the concept, so it offers the way in rather than naming a
-         menu three steps away. Only the empty state carries it — the organize
-         dialog stays the surface that manages a tree that exists. */
+      /* The empty tree's offer to create a first location. */
       .create {
         display: grid;
         gap: 6px;
@@ -255,27 +234,13 @@ export class HVLocationTree extends LitElement {
   ];
 
   @property({ attribute: false }) nodes: LocationTreeNode[] = [];
-  /**
-   * The one selected location, for the pickers — the item editor's location
-   * field and the organize dialog's parent/merge targets, all of which assign
-   * exactly one.
-   */
+  /** The one selected location, for the pickers that assign exactly one. */
   @property({ type: String }) selectedId: string | null = null;
-  /**
-   * Every selected location, for the filter surfaces, which narrow by a set.
-   * Takes precedence over `selectedId` when non-empty; a host sets one or the
-   * other, never both.
-   */
+  /** Every selected location, for the filter surfaces; wins over `selectedId` when non-empty. */
   @property({ attribute: false }) selectedIds: string[] = [];
   /** Show an "All items" row that clears the location filter. */
   @property({ type: Boolean }) showAll = false;
-  /**
-   * What that row is called, and the glyph beside it. The row always clears the
-   * location, but what clearing *means* depends on who is asking: browsing with
-   * no location means every item, while assigning one means the item ends up
-   * filed nowhere. Calling it "All items" in a picker promised a set and
-   * delivered an empty field.
-   */
+  /** What that row is called and its glyph: in a picker, clearing files the item nowhere. */
   @property({ type: String }) allLabel = t('hv.tree.allItems');
   @property({ type: String }) allIcon: IconName = 'home';
   /** Show a "No location" row bound to the orphans filter. */
@@ -284,78 +249,38 @@ export class HVLocationTree extends LitElement {
   @property({ type: Boolean }) orphansSelected = false;
   @property({ type: Number }) totalCount: number | null = null;
   @property({ type: Number }) orphanCount: number | null = null;
-  /**
-   * Items matching the active filter across the whole inventory, ignoring its
-   * location dimension. Pairs the "All items" row with the node rows; the
-   * orphan row's match count is the part of it no root accounts for.
-   */
+  /** Items matching the active filter, ignoring its location dimension. */
   @property({ type: Number }) matchingTotalCount: number | null = null;
   @property({ type: Boolean }) showCounts = false;
-  /**
-   * Let an area header be picked, emitting `select-area` instead of `select`.
-   *
-   * What picking one means belongs to the caller: browsing filters the list to
-   * the area, while the parent picker files the location at the top level of it.
-   * Trees that hand back a `location_id` — the item editor's, the merge target —
-   * leave this off, because an area is not a location and holds no items itself.
-   */
+  /** Let an area header be picked, emitting `select-area`; trees that assign a location leave it off. */
   @property({ type: Boolean }) areaSelectable = false;
   /** The area currently chosen, for the header's selected state. */
   @property({ type: String }) selectedAreaId: string | null = null;
-  /**
-   * Band every area Home Assistant knows, not only the ones already holding a
-   * location tree. An area with nothing in it is still somewhere a tree can be
-   * filed, which is the whole point of picking one — so the parent picker sets
-   * this and browsing does not. A filter suspends it: an empty band matches
-   * nothing and would only stand between the user and the rows that do.
-   */
+  /** Band every HA area, empty ones included, as the parent picker needs; a filter suspends it. */
   @property({ type: Boolean }) showEmptyAreas = false;
   /** Reveal the rename/merge/delete affordances on hover. Only the organize dialog sets this. */
   @property({ type: Boolean }) manage = false;
-  /**
-   * Phone layout for `manage`: one always-visible ⋮ per row instead of a row of
-   * icons only a hover can reveal.
-   */
+  /** Phone layout for `manage`: one always-visible ⋮ per row instead of hover icons. */
   @property({ type: Boolean }) mobile = false;
-  /**
-   * Disable this node and everything under it. Parent pickers must exclude the
-   * location itself and its descendants — the backend rejects cycles.
-   */
+  /** Disable this node and its subtree; the backend rejects a parent cycle. */
   @property({ type: String }) excludeSubtreeOf: string | null = null;
   /** Substring filter over name and display path. */
   @property({ type: String }) filterText = '';
-  /**
-   * Offer to create a first location from the empty state, emitting
-   * `create-location`. Only a host that can actually run the command sets it —
-   * an affordance that leads nowhere is worse than the plain statement.
-   */
+  /** Offer to create a first location from the empty state, emitting `create-location`. */
   @property({ type: Boolean }) allowCreate = false;
   /** Resolves the area ids on the nodes to names for the group headers. */
   @property({ attribute: false }) areas: AreaRef[] = [];
 
   @state() private _expanded = new Set<string>();
-  /**
-   * Collapsed area groups, tracked by absence rather than presence like the
-   * locations above: a group is scaffolding over the tree, so hiding what the
-   * user came for until they open every band would be the wrong default.
-   */
+  /** Collapsed area groups; unlike locations, a band starts open. */
   @state() private _collapsedAreas = new Set<string>();
   /** The first-location field is showing, and what has been typed into it. */
   @state() private _creating = false;
   @state() private _newName = '';
-  /**
-   * Which node holds the tree's one tab stop, as `_nodeKey` writes it.
-   *
-   * A tree is a single stop with a roving tabindex, not one per row: this tree
-   * stands between a full view's search box and its table, and a household with
-   * five areas and a dozen expanded roots put more than forty stops in that gap.
-   * Null until the first walk resolves it, which `updated` does.
-   */
+  /** Which node holds the tree's one roving tab stop (`_nodeKey`); null until `updated` resolves it. */
   @state() private _activeKey: string | null = null;
 
   protected updated(changed: Map<string, unknown>) {
-    // Revealing the name field has to put the caret in it, or it asks for a
-    // second tap before it can be typed into.
     if (changed.has('_creating') && this._creating) {
       this.renderRoot.querySelector<HTMLInputElement>('[data-testid="tree-create-name"]')?.focus();
     }
@@ -363,14 +288,8 @@ export class HVLocationTree extends LitElement {
   }
 
   /**
-   * Every node the arrows walk, in the order they are drawn.
-   *
-   * Read from the DOM rather than derived from `nodes`: a collapsed row renders
-   * no descendants and a collapsed band renders no roots, so what is here is
-   * already exactly what is visible — and a second walk over the data would be
-   * a second copy of the filter, expand and area rules to keep in step.
-   * Excluded rows are left out; they are drawn to show where a subtree cannot
-   * go, and cannot be chosen.
+   * Every node the arrows walk, read from the DOM, which already holds exactly
+   * what is visible. Excluded rows cannot be chosen and are left out.
    */
   private _walk(): HTMLElement[] {
     const rows = this.renderRoot.querySelectorAll<HTMLElement>(
@@ -384,13 +303,7 @@ export class HVLocationTree extends LitElement {
     return el.dataset.id ? `loc:${el.dataset.id}` : `area:${el.dataset.area}`;
   }
 
-  /**
-   * Leave exactly one node in the tab order, its own actions riding with it.
-   *
-   * Written here rather than in `render` because the walk is the rendered DOM:
-   * a template cannot ask which row comes first without rebuilding the walk
-   * from the data it was drawn from.
-   */
+  /** Leave exactly one node in the tab order, its own actions riding with it. */
   private _syncRovingTabindex() {
     this._activeKey = syncRovingTabindex(
       this._walk(),
@@ -410,17 +323,13 @@ export class HVLocationTree extends LitElement {
 
   /** Open or close the node `el` stands for, whichever kind it is. */
   private _toggleNode(el: HTMLElement) {
-    if (el.dataset.id) this._toggle(el.dataset.id);
+    if (el.dataset.id) this._expanded = toggledSet(this._expanded, el.dataset.id);
     else if (el.dataset.area) {
       this._toggleArea(el.dataset.area === NO_AREA_KEY ? NO_AREA_KEY : `area:${el.dataset.area}`);
     }
   }
 
-  /**
-   * The arrow layer the ARIA tree pattern asks for, and the other half of the
-   * single tab stop: with one node reachable by Tab, the arrows are the only
-   * way to the rest.
-   */
+  /** The ARIA tree pattern's arrow keys, the way to every node past the single tab stop. */
   private _onTreeKeydown(e: KeyboardEvent) {
     const next = rovingTarget(e, this._walk(), {
       toggle: (el) => this._toggleNode(el),
@@ -451,10 +360,7 @@ export class HVLocationTree extends LitElement {
   }
 
   private _toggleArea(key: string) {
-    const next = new Set(this._collapsedAreas);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    this._collapsedAreas = next;
+    this._collapsedAreas = toggledSet(this._collapsedAreas, key);
   }
 
   private _findPath(nodes: LocationTreeNode[], id: string): LocationTreeNode[] | null {
@@ -466,58 +372,28 @@ export class HVLocationTree extends LitElement {
     return null;
   }
 
-  /** Pick a node — from anywhere on its row, which is one target. */
+  /** Pick a node, from anywhere on its row; the tab stop follows the pick. */
   private _select(node: LocationTreeNode, excluded: boolean) {
     if (excluded) return;
-    // The tab stop goes where the user just acted, so returning to the tree by
-    // Tab comes back to the row they chose rather than the one they left.
     this._activeKey = `loc:${node.id}`;
     this._emit('select', { locationId: node.id, node });
-  }
-
-  private _toggle(id: string) {
-    const next = new Set(this._expanded);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    this._expanded = next;
   }
 
   private _emit(name: string, detail: Record<string, unknown>) {
     this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
 
-  private _matches(node: LocationTreeNode): boolean {
-    // Shared with the tally the organize toolbar prints above this tree, so the
-    // number and the rows can never tell different stories.
-    return locationMatches(node, this.filterText);
-  }
-
-  /** A node stays visible when it matches or when any descendant does. */
+  /** A node stays visible when it matches (as the organize toolbar's tally counts) or a descendant does. */
   private _visible(node: LocationTreeNode): boolean {
-    if (this._matches(node)) return true;
+    if (locationMatches(node, this.filterText)) return true;
     return (node.children ?? []).some((c) => this._visible(c));
   }
 
-  /**
-   * The per-node tally. In a picker it is a plain number beside the name; in
-   * manage mode it names its unit and opens the items, so a location row offers
-   * the same "N items" way in that a category or tag row does.
-   */
+  /** The per-node tally; in manage mode it names its unit and opens the items. */
   private _renderCount(node: LocationTreeNode, excluded: boolean) {
     const count = node.subtree_item_count ?? node.direct_item_count ?? 0;
-    if (!this.manage) {
-      // A total that never moves while a filter is on says nothing about where
-      // the matches are — which is the one thing this sidebar is for.
-      const matching = node.matching_subtree_count;
-      return html`<span class="count" data-testid="tree-count"
-        >${matching === undefined ? count : `${matching} / ${count}`}</span
-      >`;
-    }
-    // Out of the tab order, like the twisty: the tree is one stop with the
-    // arrows moving inside it, and a count that took a stop of its own would
-    // put every location between the toolbar above the tree and whatever
-    // follows it. The row's own Enter emits this same select, so a keyboard
-    // reaches the items without it.
+    if (!this.manage) return this._pairedCount(count, node.matching_subtree_count ?? null, 'tree-count');
+    // Out of the tab order: the row's own Enter emits the same select.
     return html`<button
       class="count link"
       data-testid="tree-count"
@@ -565,8 +441,7 @@ export class HVLocationTree extends LitElement {
           style="padding-left: ${12 + depth * 18}px"
           @click=${() => this._select(node, isExcluded)}
           @keydown=${(e: KeyboardEvent) => {
-            // The row answers Enter and Space itself now that it is the target;
-            // as a div it inherits neither from the browser.
+            // A div inherits neither Enter nor Space from the browser.
             if (e.key !== 'Enter' && e.key !== ' ') return;
             e.preventDefault();
             this._select(node, isExcluded);
@@ -582,12 +457,12 @@ export class HVLocationTree extends LitElement {
                   : t('hv.tree.expand', { name: node.name })}
                 @click=${(e: Event) => {
                   e.stopPropagation();
-                  this._toggle(node.id);
+                  this._expanded = toggledSet(this._expanded, node.id);
                 }}
               >
                 ${icon(open ? 'chevronDown' : 'chevronRight', 17)}
               </button>`
-            : html`<span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>`}
+            : placeholderTwisty()}
           <span class="name hv-browse-row-label">${node.name}</span>
           ${this.showCounts ? this._renderCount(node, isExcluded) : null}
           ${this.manage && this.mobile
@@ -608,45 +483,21 @@ export class HVLocationTree extends LitElement {
             : null}
           ${this.manage && !this.mobile
             ? html`<span class="actions">
-                <button
-                  class="action"
-                  data-testid="tree-merge"
-                  data-id=${node.id}
-                  aria-label=${t('hv.tree.merge', { name: node.name })}
-                  title=${t('hv.tree.mergeTitle')}
-                  @click=${(e: Event) => {
-                    e.stopPropagation();
-                    this._emit('merge-location', { locationId: node.id, node });
-                  }}
-                >
-                  ${icon('callMerge', 16)}
-                </button>
-                <button
-                  class="action"
-                  data-testid="tree-edit"
-                  data-id=${node.id}
-                  aria-label=${t('hv.row.editNamed', { name: node.name })}
-                  title=${t('hv.tree.editTitle')}
-                  @click=${(e: Event) => {
-                    e.stopPropagation();
-                    this._emit('edit-location', { locationId: node.id, node });
-                  }}
-                >
-                  ${icon('pencil', 16)}
-                </button>
-                <button
-                  class="action danger"
-                  data-testid="tree-delete"
-                  data-id=${node.id}
-                  aria-label=${t('hv.tree.delete', { name: node.name })}
-                  title=${t('hv.tree.deleteTitle')}
-                  @click=${(e: Event) => {
-                    e.stopPropagation();
-                    this._emit('delete-location', { locationId: node.id, node });
-                  }}
-                >
-                  ${icon('del', 16)}
-                </button>
+                ${MANAGE_ACTIONS.map(
+                  ([testid, event, label, title, glyph]) => html`<button
+                    class="action ${event === 'delete-location' ? 'danger' : ''}"
+                    data-testid=${testid}
+                    data-id=${node.id}
+                    aria-label=${t(label, { name: node.name })}
+                    title=${t(title)}
+                    @click=${(e: Event) => {
+                      e.stopPropagation();
+                      this._emit(event, { locationId: node.id, node });
+                    }}
+                  >
+                    ${icon(glyph, 16)}
+                  </button>`,
+                )}
               </span>`
             : null}
         </div>
@@ -661,31 +512,22 @@ export class HVLocationTree extends LitElement {
   }
 
   /** "4 / 37" while a filter is on, plain "37" otherwise. */
-  private _pairedCount(total: number, matching: number | null) {
-    return html`<span class="count">${matching === null ? total : `${matching} / ${total}`}</span>`;
+  private _pairedCount(total: number, matching: number | null, testid?: string) {
+    return html`<span class="count" data-testid=${ifDefined(testid)}
+      >${matching === null ? total : `${matching} / ${total}`}</span
+    >`;
   }
 
-  /**
-   * An area group's row: what its whole set of trees holds, over every root it
-   * covers — including any the active filter hid, which is what the total half
-   * of the pair is for.
-   */
+  /** An area band's tally, over every root it covers, filtered out or not. */
   private _renderAreaCount(roots: LocationTreeNode[]) {
     const total = roots.reduce((sum, r) => sum + (r.subtree_item_count ?? r.direct_item_count ?? 0), 0);
     const counted = roots.filter((r) => r.matching_subtree_count !== undefined);
     const matching = counted.length
       ? counted.reduce((sum, r) => sum + (r.matching_subtree_count ?? 0), 0)
       : null;
-    return html`<span class="count" data-testid="tree-area-count"
-      >${matching === null ? total : `${matching} / ${total}`}</span
-    >`;
+    return this._pairedCount(total, matching, 'tree-area-count');
   }
 
-  /**
-   * The band a group of top-level locations sits under. Never a location: it
-   * carries no id a picker could assign, and only a browsing tree
-   * (`areaSelectable`) makes it pressable at all.
-   */
   /** True when this node is one of the host's selected locations. */
   private _isSelected(id: string): boolean {
     return this.selectedIds.length ? this.selectedIds.includes(id) : this.selectedId === id;
@@ -696,6 +538,7 @@ export class HVLocationTree extends LitElement {
     return this.selectedIds.length > 0 || this.selectedId !== null;
   }
 
+  /** The band over a group of top-level locations; pressable only where `areaSelectable`. */
   private _renderAreaHeader(
     group: AreaGroup | null,
     roots: LocationTreeNode[],
@@ -724,8 +567,7 @@ export class HVLocationTree extends LitElement {
       data-testid="tree-area-head"
       data-area=${group?.id ?? NO_AREA_KEY}
       @keydown=${(e: KeyboardEvent) => {
-        // The head is a treeitem and, where areas are pickable, the thing that
-        // gets picked — so it answers the keys a button would.
+        // A treeitem that answers the keys a button would.
         if (e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault();
         if (pickable) this._emit('select-area', { areaId: group.id });
@@ -733,13 +575,13 @@ export class HVLocationTree extends LitElement {
       }}
     >
       ${empty
-        ? html`<span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>`
+        ? placeholderTwisty()
         : html`<button
             class="twisty hv-browse-row-lead"
             data-testid="tree-area-twisty"
             tabindex="-1"
             data-area=${group?.id ?? NO_AREA_KEY}
-            aria-label=${open ? `Collapse ${name}` : `Expand ${name}`}
+            aria-label=${t(open ? 'hv.tree.collapse' : 'hv.tree.expand', { name })}
             @click=${(e: Event) => {
               e.stopPropagation();
               this._toggleArea(key);
@@ -766,8 +608,7 @@ export class HVLocationTree extends LitElement {
   /** One group's header and, while it is open, the roots filed under it. */
   private _renderAreaSection(group: AreaGroup | null, roots: LocationTreeNode[], filtering: boolean) {
     const visible = roots.filter((r) => this._visible(r));
-    // An area holding nothing is still a target where areas are pickable; with
-    // no roots under it there is nothing to disclose, so it heads no container.
+    // An empty area is still a pick target, but heads no container.
     const empty = visible.length === 0;
     if (empty && !(this.showEmptyAreas && group !== null && !filtering)) return null;
     const key = group ? `area:${group.id}` : NO_AREA_KEY;
@@ -782,24 +623,14 @@ export class HVLocationTree extends LitElement {
     </div>`;
   }
 
-  /**
-   * How many matches are on items with no location: the whole-inventory match
-   * count less everything the roots already account for. Every item is either
-   * filed somewhere or an orphan, so the remainder needs no extra query.
-   */
+  /** Matches on items with no location: the whole-inventory matches less the roots'. */
   private get _matchingOrphanCount(): number | null {
     if (this.matchingTotalCount === null) return null;
     const filed = this.nodes.reduce((sum, n) => sum + (n.matching_subtree_count ?? 0), 0);
     return Math.max(0, this.matchingTotalCount - filed);
   }
 
-  /**
-   * The way out of an empty tree: a name, and the location it becomes.
-   *
-   * The new location is filed at the root with no area — the only placement
-   * that needs no tree to point at, which is the situation this exists for.
-   * Creating it is the host's job; this emits the name and closes.
-   */
+  /** The way out of an empty tree: a name, emitted for the host to create at the root. */
   private _renderCreate() {
     if (!this._creating) {
       return html`<div class="create">
@@ -832,8 +663,7 @@ export class HVLocationTree extends LitElement {
               e.preventDefault();
               this._submitCreate();
             } else if (e.key === 'Escape') {
-              // The field is what Escape takes back here; the picker around it
-              // — and the form around that — are not what the user just opened.
+              // Escape closes the field only, not the picker or form around it.
               e.preventDefault();
               e.stopPropagation();
               this._creating = false;
@@ -865,8 +695,7 @@ export class HVLocationTree extends LitElement {
     const { areaGroups, ungrouped } = groupRootsByArea(this.nodes, this.areas, {
       includeEmptyAreas: this.showEmptyAreas && !filtering,
     });
-    // With no area anywhere there is nothing to group by, and a lone "No area"
-    // band over the whole tree would name a distinction that does not exist.
+    // With no area anywhere, a lone "No area" band would name no distinction.
     const rendered = areaGroups.length
       ? [
           ...areaGroups.map((g) => this._renderAreaSection(g, g.roots, filtering)),
@@ -881,8 +710,7 @@ export class HVLocationTree extends LitElement {
               data-testid="tree-all"
               @click=${() => this._emit('select', { locationId: null, node: null })}
             >
-              <span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>
-              ${icon(this.allIcon, 18)}
+              ${placeholderTwisty()} ${icon(this.allIcon, 18)}
               <span class="name hv-browse-row-label">${this.allLabel}</span>
               ${this.showCounts && this.totalCount !== null
                 ? this._pairedCount(this.totalCount, this.matchingTotalCount)
@@ -905,8 +733,7 @@ export class HVLocationTree extends LitElement {
                 data-testid="tree-orphans"
                 @click=${() => this._emit('select-orphans', {})}
               >
-                <span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>
-                ${icon('mapMarkerOff', 18)}
+                ${placeholderTwisty()} ${icon('mapMarkerOff', 18)}
                 <span class="name hv-browse-row-label">${t('hv.term.noLocation')}</span>
                 ${this.showCounts && this.orphanCount !== null
                   ? this._pairedCount(this.orphanCount, this._matchingOrphanCount)

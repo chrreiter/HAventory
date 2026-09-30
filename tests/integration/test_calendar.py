@@ -52,8 +52,8 @@ async def test_it_joins_the_same_device_as_the_sensors(hass: HomeAssistant, setu
     entry = await setup_entry()
 
     device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
-    assert device is not None
+    (device,) = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+    assert device.identifiers == {(DOMAIN, entry.entry_id)}
 
     registry = er.async_get(hass)
     entity = registry.async_get(ENTITY_ID)

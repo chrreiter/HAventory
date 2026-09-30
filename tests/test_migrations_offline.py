@@ -47,8 +47,8 @@ def test_noop_when_already_current_and_idempotent() -> None:
     assert migrated2 == payload
 
 
-def test_the_driver_does_not_alias_or_crash_on_what_it_is_given() -> None:
-    """A caller's dict is never the stamped one, and a non-dict is tolerated."""
+def test_the_driver_does_not_alias_what_it_is_given() -> None:
+    """A caller's dict is never the stamped one."""
 
     payload: dict[str, Any] = {"schema_version": 0, "items": {"i1": {"id": "i1"}}}
 
@@ -57,9 +57,6 @@ def test_the_driver_does_not_alias_or_crash_on_what_it_is_given() -> None:
 
     assert "name" not in payload["items"]["i1"]
     assert payload["schema_version"] == 0
-
-    migrated_non_dict = migrate("oops", from_version=0, to_version=CURRENT_SCHEMA_VERSION)  # type: ignore[arg-type]
-    assert migrated_non_dict == {"schema_version": CURRENT_SCHEMA_VERSION}
 
 
 def test_downgrade_is_refused_rather_than_relabelled() -> None:

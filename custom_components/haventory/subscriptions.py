@@ -1,19 +1,15 @@
 """The subscription registry and the fan-out that writes events onto the wire.
 
 `haventory/subscribe` records a topic and its filters against the connection
-that asked; every announcement is matched against those filters here and written
-to the connections that want it. The registry itself is a field of the runtime,
-so it goes when the config entry does.
+that asked; every announcement is matched against those filters here. The
+registry is a field of the runtime, so it goes when the config entry does.
 
-This module is the wire, not the announcement. `events.py` holds the doors a
-mutation calls — one per topic — and imports this at module scope; nothing here
-imports `events.py` or `ws.py` back. A handler that broadcast from here directly
-would reach subscribers without firing the bus event and repainting the entities
-beside them, which is the split `events.py` exists to prevent.
+A mutation announces through `events.py`, never through this module directly:
+that door also fires the bus event and repaints the entities.
 
-Delivery is best-effort by contract: a broadcast runs after the mutation is
-persisted, so a failure on one connection must not reach the client whose
-command succeeded, nor stop the fan-out reaching the others.
+Delivery is best-effort: a broadcast runs after the mutation is persisted, so a
+failure on one connection must not reach the client whose command succeeded,
+nor stop the fan-out reaching the others.
 """
 
 from __future__ import annotations
@@ -38,12 +34,9 @@ def open_subscriptions(
 ) -> dict[websocket_api.ActiveConnection, dict[int, Subscription]]:
     """The open subscriptions, or an empty map when no runtime holds any.
 
-    A regular dict rather than a WeakKeyDictionary, because HA's
-    `ActiveConnection` does not support weak references; cleanup is the close
-    callback registered in `_register_close_listener`. That callback fires when
-    the *connection* closes, which can be long after the entry went — so this
-    resolves without the loaded check and answers `{}` rather than raising out
-    of a close callback.
+    Not a WeakKeyDictionary: HA's `ActiveConnection` cannot be weakly
+    referenced. Resolved without the loaded check, because a connection's close
+    callback can fire long after the entry went and must not raise.
     """
 
     runtime = find_runtime(hass)
@@ -64,7 +57,10 @@ def register_subscription(
 
     open_subscriptions(hass).setdefault(conn, {})[sub_id] = sub
     _register_close_listener(hass, conn)
-    _register_framework_unsub(hass, conn, sub_id)
+    # HA core's `unsubscribe_events`, which the frontend's `subscribeMessage`
+    # tears down through, pops and calls this entry; without it every teardown
+    # answers `not_found`.
+    conn.subscriptions[sub_id] = functools.partial(_drop_subscription, hass, conn, sub_id)
 
 
 def unregister_subscription(
@@ -72,32 +68,19 @@ def unregister_subscription(
 ) -> bool:
     """Drop one subscription on the client's request; True when it was open."""
 
-    subs_all = open_subscriptions(hass)
-    removed = False
-    subs_for_conn = subs_all.get(conn)
-    if subs_for_conn:
-        removed = subs_for_conn.pop(sub_id, None) is not None
-        if not subs_for_conn:
-            subs_all.pop(conn, None)
-    # Keep HA's own subscription registry in sync with this explicit teardown.
-    _unregister_framework_unsub(conn, sub_id)
+    removed = sub_id in open_subscriptions(hass).get(conn, {})
+    _drop_subscription(hass, conn, sub_id)
+    # Keep HA's own registry in step with this teardown.
+    conn.subscriptions.pop(sub_id, None)
     return removed
 
 
 def _cleanup_subscriptions_for_conn(hass: HomeAssistant, conn: object) -> None:
-    """Remove all subscriptions for a given connection."""
-
-    subs_all = open_subscriptions(hass)
-    subs_all.pop(cast("websocket_api.ActiveConnection", conn), None)
+    open_subscriptions(hass).pop(cast("websocket_api.ActiveConnection", conn), None)
 
 
 def _drop_subscription(hass: HomeAssistant, conn: object, sub_id: int) -> None:
-    """Remove a single subscription from the per-connection bucket.
-
-    Registered as the zero-arg teardown callback in HA's ``connection.subscriptions``
-    registry (see ``_register_framework_unsub``). Safe to call repeatedly and after
-    the connection bucket has already been cleaned up.
-    """
+    """Remove one subscription; safe to call repeatedly and after cleanup."""
 
     subs_all = open_subscriptions(hass)
     subs_for_conn = subs_all.get(cast("websocket_api.ActiveConnection", conn))
@@ -108,46 +91,12 @@ def _drop_subscription(hass: HomeAssistant, conn: object, sub_id: int) -> None:
         subs_all.pop(cast("websocket_api.ActiveConnection", conn), None)
 
 
-def _register_framework_unsub(
-    hass: HomeAssistant, conn: websocket_api.ActiveConnection, sub_id: int
-) -> None:
-    """Register the subscription teardown in HA's own subscription registry.
-
-    ``ActiveConnection.subscriptions`` maps a message id to a zero-arg unsubscribe
-    callback, and HA core's generic ``unsubscribe_events`` command pops-and-calls
-    it. The frontend's ``subscribeMessage`` lifecycle tears down via exactly that
-    command, so without an entry here HA core replies ``not_found``
-    ("Subscription not found.") on every teardown — surfacing as an unhandled
-    rejection in the card. Registering the id makes the standard lifecycle work.
-    """
-
-    conn.subscriptions[sub_id] = functools.partial(_drop_subscription, hass, conn, sub_id)
-
-
-def _unregister_framework_unsub(conn: websocket_api.ActiveConnection, sub_id: int) -> None:
-    """Drop the HA-registry entry for a subscription torn down via our own command.
-
-    Keeps ``haventory/unsubscribe`` and HA core's ``unsubscribe_events`` symmetric so
-    a subscription removed through the dedicated command leaves no stale callback in
-    ``connection.subscriptions``.
-    """
-
-    conn.subscriptions.pop(sub_id, None)
-
-
 def _register_close_listener(hass: HomeAssistant, conn: websocket_api.ActiveConnection) -> None:
     """Have the connection drop its subscriptions when it closes.
 
-    ``ActiveConnection.subscriptions`` holds zero-arg callbacks Home Assistant
-    invokes on disconnect, so registering there is what keeps a client that
-    vanishes from leaking subscription state.
-
-    Idempotency is derived from the state itself, not stamped on the connection:
-    real HA's ``ActiveConnection`` is ``__slots__``-based (no ``__dict__``), so a
-    ``conn._haventory_close_registered = True`` marker would raise
-    ``AttributeError`` on every subscribe. The ``"haventory/cleanup"`` key — a
-    string, which cannot collide with HA's integer subscription ids — is the
-    marker instead, and ``_cleanup_subscriptions_for_conn`` is idempotent.
+    HA calls every ``conn.subscriptions`` value on disconnect. The string key is
+    the idempotency marker: it cannot collide with HA's integer ids, and the
+    slotted ``ActiveConnection`` refuses an attribute set on it.
     """
 
     if "haventory/cleanup" not in conn.subscriptions:
@@ -159,11 +108,8 @@ def _register_close_listener(hass: HomeAssistant, conn: websocket_api.ActiveConn
 def _subscription_location_ids(sub: Subscription) -> list[str]:
     """The locations a subscription is scoped to, scalar and list unioned.
 
-    The same union rule ``models.selected_location_ids`` applies to an
-    ``ItemFilter``, kept here because a subscription is not one: it carries a
-    payload matcher, not a query. The list arrives already trimmed and typed —
-    ``haventory/subscribe`` refuses an entry that is not a string — while the
-    scalar beside it is whatever the client sent.
+    The rule ``models.selected_location_ids`` applies to an ``ItemFilter``. The
+    list arrives validated; the scalar is whatever the client sent.
     """
 
     selection: list[str] = []
@@ -179,10 +125,8 @@ def _subscription_location_ids(sub: Subscription) -> list[str]:
 def _payload_inspection_is_overdue(item: dict[str, Any]) -> bool:
     """Whether a serialized item is past its next-inspection date.
 
-    The matcher is handed the event payload rather than the stored ``Item``, so
-    it cannot call ``item_inspection_is_overdue`` — but it must agree with it,
-    and with ``inspection_overdue_only`` on ``item/list``. Same comparison and
-    the same clock: YYYY-MM-DD text, strictly before the instance's local day.
+    Must agree with ``item_inspection_is_overdue``: YYYY-MM-DD text, strictly
+    before the instance's local day.
     """
 
     date = item.get("inspection_date")
@@ -194,22 +138,17 @@ def _payload_inspection_is_overdue(item: dict[str, Any]) -> bool:
 def _item_matches_filter(item: dict[str, Any], sub: Subscription) -> bool:
     if sub.get("inspection_overdue_only") and not _payload_inspection_is_overdue(item):
         return False
-    # Read the area off the payload rather than resolving it from the repository:
-    # the matcher runs once per subscription per event, and `serialize_item` has
-    # already walked the location ancestry to compute the same value. An item with
-    # no location carries `effective_area_id: None`, which matches no area filter.
+    # Read off the payload, which `serialize_item` has already resolved; an item
+    # with no location carries `None` and matches no area filter.
     area_filter = sub.get("area_id")
     if area_filter and item.get("effective_area_id") != area_filter:
         return False
     loc_filters = _subscription_location_ids(sub)
     if not loc_filters:
         return True
-    include_subtree = bool(sub.get("include_subtree", True))
-    if include_subtree:
-        # Match if any selected id is anywhere in the id_path
+    if sub.get("include_subtree", True):
         path = item.get("location_path", {}).get("id_path", [])
         return any(loc in path for loc in loc_filters)
-    # Direct-only
     return item.get("location_id") in loc_filters
 
 
@@ -217,24 +156,19 @@ def _location_matches_filter(location: dict[str, Any], sub: Subscription) -> boo
     loc_filters = _subscription_location_ids(sub)
     if not loc_filters:
         return True
-    include_subtree = bool(sub.get("include_subtree", True))
-    if include_subtree:
-        # If subtree, match if this location is a selected one or under one
+    if sub.get("include_subtree", True):
         path = location.get("path", {}).get("id_path", [])
         return any(loc in path or location.get("id") == loc for loc in loc_filters)
-    # Direct-only: only the exact locations
     return location.get("id") in loc_filters
 
 
 def _collect_event_deliveries(
     hass: HomeAssistant, topic: str, payload: dict[str, Any] | None
 ) -> list[tuple[websocket_api.ActiveConnection, list[int]]]:
-    """Return (connection, subscription ids) pairs the event would reach.
+    """The (connection, subscription ids) pairs an event reaches, from a snapshot."""
 
-    Snapshots the subscription registry to avoid mutation issues.
-    """
-    item_obj = (payload or {}).get("item") if payload else None
-    location_obj = (payload or {}).get("location") if payload else None
+    item_obj = (payload or {}).get("item")
+    location_obj = (payload or {}).get("location")
 
     deliveries: list[tuple[websocket_api.ActiveConnection, list[int]]] = []
     for conn, subs in list(open_subscriptions(hass).items()):
@@ -267,8 +201,7 @@ def _now_ts() -> str:
 def _send_event_message(
     conn: websocket_api.ActiveConnection, subscription_id: int, event_payload: dict[str, Any]
 ) -> None:
-    # One dead connection must not stop the fan-out reaching the others, so the
-    # failure is logged here rather than raised into the broadcast loop.
+    # One dead connection must not stop the fan-out reaching the others.
     try:
         conn.send_message({"id": subscription_id, "type": "event", "event": event_payload})
     except Exception:  # pragma: no cover - defensive logging only
@@ -286,16 +219,9 @@ def broadcast_event(
     action: str,
     payload: dict[str, Any] | None = None,
 ) -> None:
-    """Deliver one event to every subscription that asked for it.
+    """Deliver one event to every subscription that asked for it. Call via `events.py`."""
 
-    Called from `events.py`, which announces the same mutation on the bus and to
-    the entities in the same breath, so no write path can reach one surface and
-    miss the others.
-    """
-
-    # Broadcasts are best-effort: they run after a mutation has been applied and
-    # persisted, so a broadcast failure must never turn the originating command
-    # into an error.
+    # A broadcast failure must never turn the persisted command into an error.
     try:
         event: dict[str, Any] = {
             "domain": DOMAIN,
@@ -305,7 +231,6 @@ def broadcast_event(
         }
         if payload:
             event.update(payload)
-
         for conn, sub_ids in _collect_event_deliveries(hass, topic, payload):
             for sub_id in sub_ids:
                 _send_event_message(conn, sub_id, event)
@@ -326,29 +251,20 @@ def broadcast_counts(hass: HomeAssistant) -> None:
             "Failed to broadcast counts", extra={"domain": DOMAIN, "op": "broadcast_counts"}
         )
         return
-    broadcast_event(
-        hass,
-        topic="stats",
-        action="counts",
-        payload={"counts": counts_payload},
-    )
+    broadcast_event(hass, topic="stats", action="counts", payload={"counts": counts_payload})
 
 
-# Action every open subscription receives when the config entry serving it goes
-# away. A subscription is bound to a WebSocket connection, which outlives the
-# entry, so without it nothing on the wire marks the end: no further event ever
-# arrives and a client cannot tell that from an inventory nobody is editing.
+# Sent to every open subscription when the entry serving it goes away: the
+# connection outlives the entry, and a client cannot otherwise tell a dead
+# backend from an inventory nobody is editing.
 BACKEND_UNAVAILABLE_ACTION = "unavailable"
 
 
 def notify_backend_unavailable(hass: HomeAssistant) -> None:
     """Tell every open subscription that it has stopped delivering.
 
-    Teardown calls this while the registry is still populated; the subscriptions
-    themselves go with the rest of the runtime immediately after.
-
-    The one announcement that is not a mutation, so it is written here rather
-    than through a door in `events.py`: nothing changed and no entity repaints.
+    Called from teardown while the registry is still populated. Not a mutation,
+    so it bypasses `events.py`: nothing changed and nothing repaints.
     """
 
     for conn, subs in list(open_subscriptions(hass).items()):

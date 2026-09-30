@@ -6,13 +6,9 @@ import { onEscape } from '../ui/keyboard';
 import { nextZBase } from '../utils/zindex';
 
 /**
- * The mobile surface for everything that would be a popup on desktop: the item
- * detail sheet, the filter sheet and the add-item sheet. The design's
- * central rule is "one surface, no popup chain" — nested content expands inside
- * this sheet rather than opening a second dialog.
- *
- * Content goes in the default slot; an optional `slot="footer"` sticks to the
- * bottom and does not scroll.
+ * The mobile surface for everything that would be a popup on desktop. Nested
+ * content expands inside it rather than opening a second dialog. An optional
+ * `slot="footer"` sticks to the bottom and does not scroll.
  */
 @customElement('hv-bottom-sheet')
 export class HVBottomSheet extends LitElement {
@@ -33,18 +29,10 @@ export class HVBottomSheet extends LitElement {
         left: 0;
         right: 0;
         bottom: 0;
-        /* The sheet is fixed to the viewport, not to the card that opened it,
-           so on a desktop dashboard it would run the full screen width — 48px
-           fact rows with the value flung to the far edge, and action buttons a
-           metre wide. Cap it and let the auto margins centre it; on a phone
-           min() resolves to 100% and this is a no-op. */
+        /* Fixed to the viewport, so capped and centred on a desktop. */
         width: min(100%, var(--hv-sheet-max-width, 640px));
         margin-inline: auto;
-        /* dvh, not vh: on a phone vh resolves against the viewport with the
-           browser chrome retracted, so a sheet at its cap could stand taller
-           than the screen actually showing and push its sticky footer — the
-           Cancel and "Show N items" buttons — under the URL bar. dvh tracks
-           the viewport that is really visible. */
+        /* dvh, not vh, or the sticky footer can land under a phone's URL bar. */
         max-height: 92dvh;
         display: flex;
         flex-direction: column;
@@ -66,10 +54,8 @@ export class HVBottomSheet extends LitElement {
           opacity: 1;
         }
       }
-      /* The bar is 36x4; the area you can actually grab has to be a lot bigger
-         than that. touch-action: none matters as much as the size — without it
-         the browser claims the gesture as a scroll and no pointermove ever
-         arrives. */
+      /* A grab area bigger than the bar; without touch-action: none the browser
+         claims the gesture as a scroll and no pointermove arrives. */
       .grip {
         flex: none;
         display: grid;
@@ -125,14 +111,9 @@ export class HVBottomSheet extends LitElement {
   }
 
   /**
-   * Report the dismissal and leave the closing to whoever opened the sheet.
-   *
-   * The host binds `open` from its own state, so a sheet that closed itself
-   * here would be out of step with that binding — Lit compares against the
-   * value it last committed, sees no change, and never sets the property back.
-   * A host with a question to ask first — a form with unsaved typing in it —
-   * could then only put the sheet back up by writing the property behind the
-   * binding's back.
+   * Report the dismissal and leave the closing to the host. A sheet that closed
+   * itself would fall out of step with the host's `open` binding, which Lit
+   * then never sets back, so a host that asks first could not keep it up.
    */
   private _cancel = () => {
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
@@ -148,8 +129,7 @@ export class HVBottomSheet extends LitElement {
 
   private _onGripMove = (e: PointerEvent) => {
     if (this._dragFrom === null) return;
-    // Only downward travel moves the sheet — dragging up would just detach it
-    // from the bottom edge it is anchored to.
+    // Only downward travel moves the sheet.
     this._dragY = Math.max(0, e.clientY - this._dragFrom);
   };
 
@@ -161,21 +141,13 @@ export class HVBottomSheet extends LitElement {
     this._dragY = 0;
 
     const height = (this.renderRoot.querySelector('.sheet') as HTMLElement | null)?.offsetHeight ?? 0;
-    // Either drag it most of the way down, or flick it: a short, fast throw is
-    // how people actually dismiss these, and waiting for a quarter of a tall
-    // sheet to be dragged would make it feel stuck.
+    // Dragged far enough, or flicked: a short fast throw dismisses too.
     const farEnough = travelled > Math.max(80, height * 0.25);
     const flicked = travelled > 24 && travelled / elapsed > 0.5;
     if (farEnough || flicked) this._cancel();
   };
 
-  /**
-   * Put focus on the dialog panel.
-   *
-   * The panel — not the host — because Escape is bound there: an event fired on
-   * the host would never reach the handler, so focus that landed outside it
-   * would leave the sheet unclosable from the keyboard.
-   */
+  /** Put focus on the dialog panel, where Escape is bound, rather than the host. */
   focusPanel(): void {
     const panel = this.renderRoot.querySelector<HTMLElement>('.sheet');
     if (!panel) return;
@@ -186,8 +158,7 @@ export class HVBottomSheet extends LitElement {
   render() {
     if (!this.open) return null;
     const z = this._zBase ?? 9998;
-    // Only set while a drag is in flight, so the opening animation — which
-    // animates transform too — is left to run untouched.
+    // Only while dragging, so the opening animation's transform runs untouched.
     const drag = this._dragY > 0 ? ` transform: translateY(${this._dragY}px); transition: none;` : '';
     return html`
       <div class="scrim" role="presentation" style="z-index: ${z};" @click=${this._cancel}></div>

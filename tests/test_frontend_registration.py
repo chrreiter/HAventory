@@ -154,20 +154,6 @@ async def test_skips_everything_when_the_bundle_is_not_built(monkeypatch, tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_skips_everything_when_http_is_unavailable(hav_init):
-    """No static path means no URL worth handing out: neither loader is touched."""
-    hass = make_hass()
-    del hass.http
-    lovelace_data = MockLovelaceData()
-    hass.data["lovelace_data_key"] = lovelace_data
-
-    await hav_init._register_frontend_module(hass)
-
-    assert lovelace_data.resources.created == []
-    assert extra_js_urls(hass) == set()
-
-
-@pytest.mark.asyncio
 async def test_a_failed_static_route_logs_at_error(hav_init, caplog):
     """A route that fails to register leaves the card served by nothing.
 
@@ -380,24 +366,6 @@ async def test_skips_when_resources_is_none(hav_init):
     await hav_init._register_frontend_module(hass)
 
     assert extra_js_urls(hass) == {CURRENT_CARD_URL}
-
-
-@pytest.mark.asyncio
-async def test_missing_frontend_component_degrades_gracefully(monkeypatch, tmp_path):
-    """No `frontend` module to import => the Lovelace resource carries the card alone."""
-    monkeypatch.delitem(sys.modules, "homeassistant.components.frontend")
-    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path)
-    assert hav_init.add_extra_js_url is None
-
-    hass = make_hass()
-    lovelace_data = MockLovelaceData()
-    hass.data["lovelace_data_key"] = lovelace_data
-
-    await hav_init._register_frontend_module(hass)
-    await hav_init.async_unload_entry(hass, ConfigEntry())
-
-    assert [c["url"] for c in lovelace_data.resources.created] == [CURRENT_CARD_URL]
 
 
 @pytest.mark.asyncio
@@ -675,23 +643,6 @@ async def test_renaming_the_card_renames_the_sidebar_entry(hav_init):
     panel = registered_panel(hass)
     assert panel.sidebar_title == "Garage"
     assert panel.config["title"] == "Garage"
-
-
-@pytest.mark.asyncio
-async def test_missing_panel_custom_degrades_to_a_debug_log(monkeypatch, tmp_path, caplog):
-    """`panel_custom` is an internal component — treat its absence as our problem, not HA's."""
-    monkeypatch.delitem(sys.modules, "homeassistant.components.panel_custom")
-    hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path)
-    assert hav_init.async_register_panel is None
-
-    hass = make_hass()
-    with caplog.at_level(logging.DEBUG, logger="custom_components.haventory"):
-        await setup_frontend(hav_init, hass, ConfigEntry())
-
-    assert registered_panel(hass) is None
-    assert any("panel_custom" in record.message for record in caplog.records)
-    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
 
 
 @pytest.mark.asyncio

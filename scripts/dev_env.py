@@ -1,19 +1,14 @@
 """Which Home Assistant a dev helper is about to talk to, and saying so out loud.
 
-The helpers in ``scripts/`` and in ``.claude/skills/`` are run from whichever
-checkout the operator is standing in, while ``HA_BASE_URL`` / ``HA_TOKEN`` are
-commonly exported once by a shell profile. Two rules keep a run from answering
-for an instance nobody meant to touch:
+``HA_BASE_URL`` / ``HA_TOKEN`` are commonly exported once by a shell profile while
+the helpers run from whichever checkout the operator is in. Two rules keep a run
+from touching an instance nobody meant to:
 
-1. **The ``.env`` beside the checkout wins over an inherited export.** It is the
-   more specific statement of intent: a worktree carrying its own ``.env`` names
-   the instance that worktree is for. Set ``HAVENTORY_IGNORE_ENV_FILE=1`` to hand
-   the decision back to the environment for one run -- that is how a recipe
-   points a helper at a remote instance while a dev ``.env`` sits in the tree.
-2. **Every helper names its target before it acts** -- the base URL, where that
-   value came from, and the store's counts. A run against the wrong inventory is
-   then visible in the first line of output instead of being inferred later from
-   a number that looks off.
+1. **The ``.env`` beside the checkout wins over an inherited export**, because it
+   is the more specific statement of intent. ``HAVENTORY_IGNORE_ENV_FILE=1`` hands
+   the decision back to the environment for one run.
+2. **Every helper names its target before it acts**: the base URL, where it came
+   from, and the store's counts.
 
 Parsing matches what ``set -a; source .env; set +a`` does with the same file:
 ``KEY=VALUE`` per line, ``#`` comments and blanks skipped, no quote stripping.
@@ -36,9 +31,7 @@ import aiohttp
 DEFAULT_BASE_URL = "http://localhost:8123"
 IGNORE_FLAG = "HAVENTORY_IGNORE_ENV_FILE"
 BANNER_PREFIX = "[target]"
-# The banner answers "which inventory is this?", so it carries the two totals that
-# tell one instance from another and leaves the rest of `haventory/health` to the
-# commands that assert on it.
+# The two totals that tell one instance from another.
 HEADLINE_COUNTS = ("items_total", "locations_total")
 
 
@@ -120,9 +113,7 @@ def target_lines(
     lines = [f"{BANNER_PREFIX} HA_BASE_URL={target.base_url} (from {target.source})"]
 
     if target.overrode:
-        # The displaced URL is the whole point of the line -- it is the instance
-        # the run would have gone to. No other displaced value is printed: one of
-        # them is the token.
+        # Only the displaced URL is printed: another displaced value may be the token.
         displaced = ", ".join(
             f"{key}={target.displaced_base_url}" if key == "HA_BASE_URL" else key
             for key in sorted(target.overrode)
@@ -184,10 +175,9 @@ async def probe_counts(
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Ask ``haventory/health`` for the store's counts.
 
-    Returns ``(counts, None)`` or ``(None, reason)``. Every failure is a reason
-    rather than an exception: the banner is a courtesy, and a helper that can
-    still do its job -- ``ws_init_haventory.py`` runs before the integration is
-    loaded -- must not be stopped by it.
+    Returns ``(counts, None)`` or ``(None, reason)``: the banner must never stop a
+    helper that can still do its job (``ws_init_haventory.py`` runs before the
+    integration is loaded).
     """
     try:
         async with aiohttp.ClientSession() as session:
@@ -215,6 +205,4 @@ async def probe_counts(
                     result = frame.get("result") or {}
                     return dict(result.get("counts") or {}), None
     except Exception as err:
-        # A banner failure must not mask the helper's own error handling, so every
-        # exception becomes a printed reason.
         return None, f"{type(err).__name__}: {err}"

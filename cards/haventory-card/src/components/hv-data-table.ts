@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { LitElement, css, html, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, renderTagChip } from '../ui/chip';
@@ -40,13 +41,7 @@ import {
 } from '../ui/location-path';
 import type { Item, Sort, SortField } from '../store/types';
 
-/**
- * The full view's table.
- *
- * Only the columns the backend can actually sort by get a clickable header —
- * category, location and tags have no sort field, and a header that looks
- * interactive but does nothing is worse than a plain one.
- */
+/** The full view's table. Only columns the backend can sort by get a clickable header. */
 @customElement('hv-data-table')
 export class HVDataTable extends LitElement {
   static styles = [
@@ -60,47 +55,23 @@ export class HVDataTable extends LitElement {
         flex-direction: column;
         min-height: 0;
         min-width: 0;
-        /* The row's own metrics, named because the sticky offsets below are
-           built from them: a pinned cell carries the row's left padding, and
-           in selecting mode the name also carries the gap after the checkbox
-           track. */
+        /* The row's metrics, which the sticky offsets below are built from. */
         --hv-table-gap: 8px;
         --hv-table-pad-x: 20px;
-        /* The one scroll container on this surface, in both axes.
-
-           Sideways because the column template has a hard minimum — about
-           1366px for the default set, 1414px with the selection column — and a
-           grid whose tracks do not fit overflows its own box rather than
-           shrinking. With overflow visible the shell clips what spills, and on
-           a phone the rightmost columns cannot be reached by any gesture.
-           Scrolling keeps whichever columns the user chose rather than quietly
-           dropping them on small screens.
-
-           Vertically here rather than on the row group, because a sticky cell
-           resolves its offsets against the nearest scroll container: with the
-           rows inside a box of their own that scrolls, left: 0 on a name cell
-           resolves against a box that never moves sideways and pins the cell to
-           nothing. One container for both axes is what makes the name column
-           below hold. The header keeps its place with position: sticky instead
-           of by sitting outside the scrolled box. */
+        /* The one scroll container, in both axes. The column template has a hard
+           minimum wider than a phone, and a sticky cell resolves against the
+           nearest scroll container, so one box for both is what makes the
+           pinned name column hold. */
         overflow-x: auto;
         overflow-y: auto;
-        /* A flick that runs past the last row or the last column must not
-           scroll the dashboard behind this surface. */
         overscroll-behavior: contain;
       }
-      /* Sizing the two boxes to the grid's own minimum is what makes the
-         scroll work: left at the container's width they would stay 375px wide
-         while their tracks painted past the edge, so the row dividers and
-         hover backgrounds would stop short of the content. Both use the same
-         template, so both land on the same width and stay aligned. */
+      /* The grid's own width, so dividers and hover fills reach the last column. */
       .head,
       .body {
         min-width: min-content;
       }
-      /* Its own height, not the leftover space: the host is what scrolls, and a
-         row group stretched to the visible height would have nothing to give
-         the scroll. */
+      /* Its own height; the host is what scrolls. */
       .body {
         flex: none;
       }
@@ -120,19 +91,14 @@ export class HVDataTable extends LitElement {
         text-transform: uppercase;
         color: var(--hv-text-secondary);
         flex: none;
-        /* Held against the top of the scroll container the rows now share with
-           it. Opaque, or the rows would read through it as they pass under. */
+        /* Opaque, or the rows would read through it as they pass under. */
         position: sticky;
         top: 0;
         z-index: 3;
         background: var(--hv-surface);
       }
-      /* This reset must stay keyed to the sort buttons' own class. Written as
-         .head button it also reaches the select-all box, which is a button in
-         this header too, and at 0-1-1 it outranks .box's own 0-1-0 border and
-         background — leaving the checkbox with nothing drawn at all until a
-         selection exists. The border-color on .box.on cannot bring back a
-         border-style of none, so the outline would never return. */
+      /* Keyed to .sort: a plain .head button would outrank .box and erase the
+         select-all checkbox's border. */
       .head button.sort {
         display: inline-flex;
         align-items: center;
@@ -153,10 +119,7 @@ export class HVDataTable extends LitElement {
         border-bottom: 1px solid var(--hv-row-divider);
         font-size: 13.5px;
         color: var(--hv-text);
-        /* Same as the card's list rows: the row is the target, but a role=row
-           div gets none of the hand the shared button rule gives every other
-           one. Body rows only — the header carries .head, and there it is the
-           sort buttons that are pressable, not the row. */
+        /* A role=row div is the target, and gets no pointer from the button rule. */
         cursor: pointer;
       }
       .row:hover {
@@ -182,19 +145,9 @@ export class HVDataTable extends LitElement {
         white-space: nowrap;
       }
       /*
-       * A phone shows about a quarter of this table — the template's floor is
-       * around 1366px — so the identity column holds while the rest scrolls
-       * under it, and the right edge says there is more to reach.
-       *
-       * The offsets are the row's own metrics, so nothing shifts as the swipe
-       * starts: a cell pinned where it already sits simply stops moving. The
-       * pinned cells take the row's left padding with them (negative margin,
-       * matching padding) so the name never ends up flush against the edge,
-       * and they stretch to the row's full height with an opaque fill, or the
-       * columns passing beneath would show through them.
-       *
-       * These resolve against the host, which is the scroll container for both
-       * axes — see the overflow note there.
+       * On a phone the name column holds while the rest scrolls under it. The
+       * pinned cells carry the row's left padding and an opaque full-height
+       * fill, so nothing shifts and nothing shows through.
        */
       @media (max-width: 700px) {
         .name-head,
@@ -208,33 +161,23 @@ export class HVDataTable extends LitElement {
           padding-left: var(--hv-table-pad-x);
           background: var(--hv-surface);
         }
-        /* Behind the checkbox track, which is pinned first — and the gap
-           between the two travels with the name, or the columns underneath
-           would show through the 8px between the two pinned cells. */
+        /* Behind the pinned checkbox track, carrying the gap between them. */
         :host([selectable]) .name-head,
         :host([selectable]) .name-cell {
           left: calc(var(--hv-table-pad-x) + ${unsafeCSS(SELECT_COLUMN_WIDTH)});
           margin-left: calc(-1 * var(--hv-table-gap));
           padding-left: var(--hv-table-gap);
         }
-        /* The row's wash is painted on the row, which the pinned cells cover.
-           A second layer over their own fill restores it — and it has to be a
-           layer rather than a colour, because the dark half of the wash is
-           translucent and would take the opacity with it. */
+        /* The row's wash as a layer over the pinned fill; the dark wash is
+           translucent, so a plain colour would lose the opacity. */
         .row:hover .name-cell,
         .row:hover .select-cell,
         .row.selected .name-cell,
         .row.selected .select-cell {
           background-image: linear-gradient(var(--hv-row-hover), var(--hv-row-hover));
         }
-        /*
-         * The overflow affordance: a shade at the right edge, and a cover in
-         * the surface colour parked at the right end of the *content*. The
-         * cover scrolls with the rows (background-attachment: local) while the
-         * shade stays with the box (scroll), so the shade shows exactly while
-         * there is something further right, and the two coincide — hiding it —
-         * when there is not. A table that fits shows nothing at all.
-         */
+        /* A right-edge shade (scroll) that a cover at the content's end (local)
+           hides once there is nothing further right. */
         :host {
           background:
             linear-gradient(var(--hv-surface), var(--hv-surface)) right / 28px 100% no-repeat
@@ -254,19 +197,7 @@ export class HVDataTable extends LitElement {
         white-space: nowrap;
         color: var(--hv-text-secondary);
       }
-      /*
-       * The path wraps between its segments and the row grows to hold it.
-       *
-       * Elided as one run of text it broke wherever the pixels ran out, which
-       * left a stub of a location name — "Küc…" of a five-segment path, with
-       * the leaf the reader is actually after nowhere on the row. Every segment
-       * survives instead, on as many lines as the column needs, and the cell's
-       * title still carries the whole path for the one case below that cannot.
-       *
-       * The chip and the path are the two items of the outer row, so a path too
-       * long to sit beside the chip takes the lines under it rather than
-       * squeezing into what the chip leaves.
-       */
+      /* The path wraps between its segments, so the leaf is never elided. */
       .cell.path {
         flex-wrap: wrap;
         row-gap: 2px;
@@ -277,19 +208,9 @@ export class HVDataTable extends LitElement {
         align-items: center;
         row-gap: 2px;
       }
-      /*
-       * At phone width the table scrolls sideways and this column is off the
-       * right edge, where a wrapped path was still setting the row's height —
-       * five segments made a 129px row against 65px for one, for a column the
-       * reader cannot see into. So the cell takes one line here, on the elided
-       * form the card's phone rows already write, and the row's height stops
-       * depending on how deep the tree is. The title attribute still carries
-       * the whole path, and scrolling the column into view reaches this line.
-       *
-       * The text is a block rather than a flex row on this branch: the elision
-       * has already decided what to drop, and text-overflow has nothing to act
-       * on inside a flex container.
-       */
+      /* On a phone the column is off screen, so it takes one elided line rather
+         than setting the row's height; a block, since text-overflow cannot act
+         inside a flex container. */
       :host([narrow]) .cell.path,
       :host([narrow]) .cell.path > .hv-chip-line-text {
         flex-wrap: nowrap;
@@ -300,18 +221,14 @@ export class HVDataTable extends LitElement {
       :host([narrow]) .cell.path > .hv-chip-line-text {
         display: block;
       }
-      /* A segment holds its line, and elides only when one segment on its own
-         is wider than the whole column — the point past which there is no break
-         left to take. */
+      /* A segment elides only when it alone is wider than the column. */
       .hv-path-seg {
         white-space: nowrap;
         min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      /* The separator's spaces sit at the end of a flex item's only line, where
-         normal white-space processing drops them and the segments either side
-         would run together. */
+      /* Otherwise a flex item's edge drops the separator's spaces. */
       .hv-path-sep {
         white-space: pre;
       }
@@ -322,14 +239,7 @@ export class HVDataTable extends LitElement {
         color: var(--hv-warn);
         font-weight: 500;
       }
-      /* One tone for a date that has passed, whichever of the three columns
-         prints it. A bare date cell has no word beside it, so a second hue here
-         is the whole signal and reads as a severity ranking the card never
-         explains. Naming which kind of lateness it is belongs to the chips —
-         "Overdue" in the name cell, "Inspection due" on the row and the sheet —
-         and they keep their own two tones because the word carries what the
-         colour cannot. Inspection and reminder dates include today: the day a
-         date names is the day it is asking. */
+      /* One tone for any passed date; the chips name which kind of lateness. */
       .cell.due.overdue,
       .cell.inspection.due,
       .cell.reminder.due {
@@ -340,10 +250,7 @@ export class HVDataTable extends LitElement {
         font-size: 12.5px;
         color: var(--hv-text-tertiary);
       }
-      /* Chips wrap onto as many lines as the set needs and the row grows to
-         hold them. Cut at the cell's edge instead, the column showed one chip
-         of six and half of the next, with no count to say the rest existed —
-         and a half-drawn chip reports nothing at all. */
+      /* Chips wrap and the row grows, rather than cutting a chip in half. */
       .tags {
         display: flex;
         flex-wrap: wrap;
@@ -378,11 +285,7 @@ export class HVDataTable extends LitElement {
       .actions button[disabled] {
         opacity: 0.35;
       }
-      /* Edit and the ⋮ are the plain pair, the quantity buttons the outlined
-         one — the same grammar the card's rows use, where the stepper carries
-         the border and the hover actions do not. Edit was a 26px outlined
-         circle here and a 30px borderless one there, which is two answers to
-         one control. */
+      /* As on the card's rows: the stepper is outlined, Edit and ⋮ are not. */
       .actions button.plain {
         width: 30px;
         height: 30px;
@@ -400,10 +303,7 @@ export class HVDataTable extends LitElement {
         color: #fff;
         padding: 0;
       }
-      /* Grow the hit area for touch without growing the box, which has to stay
-         checkbox-sized in a dense table. Clicking the row toggles the same
-         selection, so on a row the two can only ever agree; the select-all in
-         the header has nothing behind it and needs the area outright. */
+      /* A touch-sized hit area around a checkbox-sized box. */
       .box::after {
         content: '';
         position: absolute;
@@ -423,23 +323,14 @@ export class HVDataTable extends LitElement {
     `,
   ];
 
-  /** The status vocabulary from `haventory/config`; the built-ins stand in
-   * until it answers. */
+  /** The status vocabulary from `haventory/config`; the built-ins stand in until it answers. */
   @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) items: Item[] = [];
   @property({ attribute: false }) columns: ColumnKey[] = [];
   @property({ attribute: false }) sort!: Sort;
-  /** Reflected: the sticky name column offsets itself past the checkbox track
-   * from CSS, which can only see an attribute. */
+  /** Reflected for the sticky name column's offset past the checkbox track. */
   @property({ type: Boolean, reflect: true }) selectable = false;
-  /**
-   * True on a phone-width viewport, set by the host that reads the query.
-   *
-   * The table keeps every column at every width and scrolls sideways, so at
-   * this width the location column sits off the right edge — and a path that
-   * wraps there buys height nothing on screen spends. Reflected: the rule that
-   * clamps the cell is CSS, and CSS can only see an attribute.
-   */
+  /** A phone-width viewport, as the host reads it; reflected for the location cell's clamp. */
   @property({ type: Boolean, reflect: true }) narrow = false;
   /** HA areas, to name the one each item's location resolves to. */
   @property({ attribute: false }) areas: AreaRef[] = [];
@@ -455,21 +346,14 @@ export class HVDataTable extends LitElement {
   }
 
   /**
-   * `row`, `columnheader` and `cell` are only meaningful under a table, grid or
-   * treegrid; with no such ancestor the whole structure is thrown away and a
-   * screen reader reads the rows as a run of text. The host is the only element
-   * that can carry it — the header and the row group are siblings at the top of
-   * this shadow root, with nothing above them.
-   *
-   * `table` rather than `grid`: a grid promises cell-by-cell arrow-key
-   * navigation, and this surface moves a row at a time.
+   * The host carries `role="table"`, the ancestor `row` and `cell` need;
+   * not `grid`, which promises cell-by-cell arrow keys.
    */
   connectedCallback(): void {
     super.connectedCallback();
     if (!this.hasAttribute('role')) this.setAttribute('role', 'table');
     this.addEventListener('scroll', this._onScroll);
-    // The due, inspection and reminder cells are read off the clock at render,
-    // so a table left open across midnight would keep yesterday's tones.
+    // The date cells read the clock, so midnight redraws their tones.
     this._dayUnsub = onDayChange(() => this.requestUpdate());
   }
 
@@ -482,11 +366,7 @@ export class HVDataTable extends LitElement {
 
   private _dayUnsub?: () => void;
 
-  /**
-   * Paging: the host is the scrolled box, so the host is where the position can
-   * be read. A scroll event fires on the box that scrolled and does not bubble,
-   * which is why this is bound on the element rather than in the template.
-   */
+  /** Paging, off the host's own scroll, which does not bubble. */
   private _onScroll = () => {
     this._emit('near-end', {
       ratio: (this.scrollTop + this.clientHeight) / Math.max(1, this.scrollHeight),
@@ -502,9 +382,7 @@ export class HVDataTable extends LitElement {
   }
 
   private _onSort(field: SortField) {
-    // Clicking the sorted column flips it; a fresh column opens on whichever
-    // direction reads as "most interesting first" for that field — the same
-    // table the filter panel and the store default from.
+    // The sorted column flips; a fresh one opens on its default direction.
     const order =
       this.sort?.field === field
         ? this.sort.order === 'asc'
@@ -527,11 +405,7 @@ export class HVDataTable extends LitElement {
     </button>`;
   }
 
-  /**
-   * Enter follows this table's own row click: in selection mode a click selects
-   * rather than opens, and the keyboard has to land on whatever the pointer
-   * lands on. The rest of the vocabulary is `rowKeyAction`'s.
-   */
+  /** `rowKeyAction`, except Enter selects in selection mode, as a click does. */
   private _onRowKeydown(e: KeyboardEvent, item: Item) {
     const action = rowKeyAction(e);
     if (!action) return;
@@ -540,91 +414,64 @@ export class HVDataTable extends LitElement {
   }
 
   private _cell(item: Item, key: ColumnKey) {
+    const cell = (cls: string, content: unknown, title?: string) =>
+      html`<span class="cell ${cls}" role="cell" data-testid=${`cell-${key}`} title=${ifDefined(title)}
+        >${content}</span
+      >`;
     switch (key) {
       case 'quantity':
-        return html`<span
-          class="cell qty ${isLowStock(item) ? 'low' : ''}"
-          role="cell"
-          data-testid="cell-quantity"
-          >${item.quantity}</span
-        >`;
-      case 'status': {
-        // The column names every row's status, "OK" included — that is what
-        // makes it a column rather than a second copy of the exception chip.
-        // "OK" is a chip too, quiet rather than amber: a column that draws half
-        // its values as chips and prints the rest as bare text reads as two
-        // columns interleaved.
-        return html`<span class="cell" role="cell" data-testid="cell-status"
-          >${renderStatusChip(itemStatus(item), this.statuses)}</span
-        >`;
-      }
+        return cell(`qty ${isLowStock(item) ? 'low' : ''}`, item.quantity);
+      case 'status':
+        // Every row's status, "OK" included, as a chip.
+        return cell('', renderStatusChip(itemStatus(item), this.statuses));
       case 'category':
-        return html`<span class="cell" role="cell" data-testid="cell-category" title=${item.category ?? ''}>${item.category || '—'}</span>`;
+        return cell('', item.category || '—', item.category ?? '');
       case 'location': {
         const parts = itemPathParts(item, this.areas);
         const mark = areaMarkName(parts.areaName, parts.path);
-        // On a phone the column is scrolled off screen, so the path gets one
-        // line and drops its middle rather than growing the row for segments
-        // nobody can see. The area comes back out of the elision as the same
-        // chip the wide cell hangs beside the path — the card's phone rows
-        // write this exact line.
-        if (this.narrow) {
-          const lead = elideMobilePath(mark, parts.path);
-          return html`<span
-            class="cell path hv-chip-line"
-            role="cell"
-            data-testid="cell-location"
-            title=${pathTitle(parts)}
-            >${renderAreaChip(lead.area)}<span class="hv-chip-line-text"
-              >${lead.rest || '—'}</span
-            ></span
-          >`;
-        }
-        return html`<span
-          class="cell path hv-chip-line"
-          role="cell"
-          data-testid="cell-location"
-          title=${pathTitle(parts)}
-          >${renderAreaChip(mark)}<span class="hv-chip-line-text"
-            >${parts.path ? renderPathSegments(parts.path) : '—'}</span
-          ></span
-        >`;
+        // On a phone the column is off screen: one elided line, as the card's phone rows write it.
+        const lead = this.narrow ? elideMobilePath(mark, parts.path) : null;
+        const path = lead ? lead.rest || '—' : parts.path ? renderPathSegments(parts.path) : '—';
+        return cell(
+          'path hv-chip-line',
+          html`${renderAreaChip(lead ? lead.area : mark)}<span class="hv-chip-line-text">${path}</span>`,
+          pathTitle(parts),
+        );
       }
       case 'tags':
         return html`<span class="tags" role="cell" data-testid="cell-tags">
           ${item.tags.length ? item.tags.map((t) => renderTagChip(t)) : html`<span class="cell">—</span>`}
         </span>`;
       case 'due_date':
-        return html`<span
-          class="cell due ${isOverdue(item.due_date) ? 'overdue' : ''}"
-          role="cell"
-          data-testid="cell-due_date"
-          >${formatDate(item.due_date)}</span
-        >`;
+        return cell(`due ${isOverdue(item.due_date) ? 'overdue' : ''}`, formatDate(item.due_date));
       case 'inspection_date':
-        return html`<span
-          class="cell inspection ${isDue(item.inspection_date) ? 'due' : ''}"
-          role="cell"
-          data-testid="cell-inspection_date"
-          >${formatDate(item.inspection_date)}</span
-        >`;
+        return cell(`inspection ${isDue(item.inspection_date) ? 'due' : ''}`, formatDate(item.inspection_date));
       case 'reminder_date':
-        return html`<span
-          class="cell reminder ${isReminderDue(item) ? 'due' : ''}"
-          role="cell"
-          data-testid="cell-reminder_date"
-          >${reminderSummary(item) ?? '—'}</span
-        >`;
+        return cell(`reminder ${isReminderDue(item) ? 'due' : ''}`, reminderSummary(item) ?? '—');
       case 'updated_at':
-        return html`<span class="cell updated" role="cell" data-testid="cell-updated_at">${relativeTime(item.updated_at)}</span>`;
+        return cell('updated', relativeTime(item.updated_at));
     }
+  }
+
+  /** A row action button: it acts on `item` without the click reaching the row. */
+  private _rowButton(item: Item, event: string, label: string, glyph: unknown, disabled = false, cls = '') {
+    return html`<button
+      class=${cls}
+      data-testid=${`table-${event}`}
+      aria-label=${label}
+      ?disabled=${disabled}
+      @click=${(e: Event) => {
+        e.stopPropagation();
+        this._emit(event, { itemId: item.id });
+      }}
+    >
+      ${glyph}
+    </button>`;
   }
 
   render() {
     const columns = this._columns;
-    // The name cell's chip is the flagged-status signal for a table that has no
-    // Status column. With the column shown it would put the same word twice on
-    // one row, so the column takes over and the chip stands down.
+    // With a Status column shown, the name cell's status chip stands down.
     const statusColumn = columns.includes('status');
     const template = tableTemplateFor(columns, { selectable: this.selectable });
     const loadedIds = this.items.map((i) => i.id);
@@ -700,57 +547,38 @@ export class HVDataTable extends LitElement {
                     <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>
                     ${renderNameChips(item, this.statuses, {
                       prefix: 'table',
-                      // Low stands down for Checked out in this one cell, the
-                      // way a phone row's single line already picks the most
-                      // interrupting thing it has to say: both chips are
-                      // unshrinkable, and together they take 138px of a 250px
-                      // track, which leaves the name too short to tell two items
-                      // apart. Who has the item outranks how many are left, and
-                      // the Qty column still draws a low count in amber.
+                      // Both chips together leave the name too short; the Qty
+                      // column still draws a low count in amber.
                       lowChip: !item.checked_out,
                       statusChip: !statusColumn,
-                      // The Due column carries the date, so the chip only has to
-                      // name the state — and it is the one thing still saying so
-                      // once the table is scrolled sideways or pinned to its
-                      // name column.
+                      // The Due column carries the date.
                       overdueText: 'overdue',
                     })}
                   </span>
                   ${columns.map((key) => this._cell(item, key))}
                   <span class="actions" role="cell">
-                    <button
-                      data-testid="table-decrement"
-                      aria-label=${t('hv.row.decreaseQuantity')}
-                      ?disabled=${item.checked_out || item.quantity <= 0}
-                      @click=${(e: Event) => {
-                        e.stopPropagation();
-                        this._emit('decrement', { itemId: item.id });
-                      }}
-                    >
-                      ${icon('minus', 15)}
-                    </button>
-                    <button
-                      data-testid="table-increment"
-                      aria-label=${t('hv.row.increaseQuantity')}
-                      ?disabled=${item.checked_out}
-                      @click=${(e: Event) => {
-                        e.stopPropagation();
-                        this._emit('increment', { itemId: item.id });
-                      }}
-                    >
-                      ${icon('plus', 15)}
-                    </button>
-                    <button
-                      class="plain"
-                      data-testid="table-edit"
-                      aria-label=${t('hv.row.editNamed', { name: item.name })}
-                      @click=${(e: Event) => {
-                        e.stopPropagation();
-                        this._emit('edit', { itemId: item.id });
-                      }}
-                    >
-                      ${icon('pencil', 18)}
-                    </button>
+                    ${this._rowButton(
+                      item,
+                      'decrement',
+                      t('hv.row.decreaseQuantity'),
+                      icon('minus', 15),
+                      item.checked_out || item.quantity <= 0,
+                    )}
+                    ${this._rowButton(
+                      item,
+                      'increment',
+                      t('hv.row.increaseQuantity'),
+                      icon('plus', 15),
+                      item.checked_out,
+                    )}
+                    ${this._rowButton(
+                      item,
+                      'edit',
+                      t('hv.row.editNamed', { name: item.name }),
+                      icon('pencil', 18),
+                      false,
+                      'plain',
+                    )}
                     <hv-overflow-menu
                       data-testid="table-row-menu"
                       label=${t('hv.row.actionsFor', { name: item.name })}
@@ -767,13 +595,8 @@ export class HVDataTable extends LitElement {
               `,
             )
           : html`<div role="row">
-              <!-- The message is a cell in a row, the way an empty HTML table
-                   spans one across its width: a row group whose only child is a
-                   loose message owns something a table cannot contain, and the
-                   structure is dropped rather than repaired. The announcement
-                   belongs to whatever fills the slot — the shared empty state
-                   is a live region already, and a second one wrapped around it
-                   says everything twice. -->
+              <!-- A cell in a row, as a table requires; the slotted empty state
+                   is its own live region. -->
               <div class="empty" role="cell" data-testid="table-empty">
                 <slot name="empty">${t('hv.empty.noItems.headline')}</slot>
               </div>

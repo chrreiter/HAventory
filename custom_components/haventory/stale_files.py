@@ -1,18 +1,9 @@
 """Remove files an earlier release shipped that this one no longer does.
 
-An upgrade never clears the integration directory. With ``zip_release``, HACS
-copies the previous install aside and then extracts the new asset straight over
-``<config>/custom_components/haventory/``, keeping whatever the archive does not
-overwrite; ``docker cp`` into a dev container merges the same way. So a module a
-release deletes, or a bundle it renames, stays on disk — importable, and served
-under ``/haventory_static/`` — for the whole life of that install.
-
-Nothing about the release asset is wrong when that happens, which is why
-``scripts/check_release_zip.py`` cannot see it: the archive is correct and it is
-the install directory that carries history. What can see it is an explicit list
-of the paths earlier releases shipped and this one does not, deleted at setup.
-Explicit and never a glob: the same directory holds whatever an operator put
-there, and a wildcard would take those too.
+HACS extracts a new release over ``<config>/custom_components/haventory/``
+without clearing it, so a module a release deletes stays importable, and a
+renamed bundle stays served, for the life of the install. The list is explicit,
+never a glob: an operator's own files can sit in the same directory.
 """
 
 from __future__ import annotations
@@ -29,22 +20,16 @@ LOGGER = context_logger(__name__)
 
 _PACKAGE_DIR = Path(__file__).parent
 
-# Files this release no longer ships: paths relative to the integration
-# directory, POSIX-separated. **A PR that deletes or renames a file shipped
-# inside `custom_components/haventory/` appends it here in the same PR** — this
-# entry is the only thing that ever reaches an install already holding the old
-# copy, and it has to stay listed for as long as anyone might upgrade across
-# that release. Directories are not swept: an operator's own files can sit
-# inside one, and a directory left empty is inert.
+# Paths relative to the integration directory, POSIX-separated. **A PR that
+# deletes or renames a file inside `custom_components/haventory/` appends it here
+# in the same PR**, and it stays listed. Directories are not swept.
 RETIRED_PATHS: tuple[str, ...] = ("areas.py", "health.py", "rate_limit.py")
 
 
 def _target_path(relative_path: str) -> Path | None:
-    """The file ``relative_path`` names inside the integration directory.
+    """The file ``relative_path`` names inside the integration directory, or ``None``.
 
-    ``None`` for anything landing outside it. The list above is a literal in
-    this module, so only a typo gets here — but it points into the operator's
-    config tree, where a stray ``../`` deletes a file nobody asked us to touch.
+    A typo such as a stray ``../`` would otherwise delete from the config tree.
     """
     package_dir = _PACKAGE_DIR.resolve()
     candidate = (package_dir / relative_path).resolve()
@@ -69,8 +54,6 @@ def _delete(paths: Sequence[str]) -> list[str]:
         try:
             target.unlink()
         except FileNotFoundError:
-            # The ordinary outcome: this install never had the file, or an
-            # earlier setup already swept it.
             continue
         except OSError:
             LOGGER.warning(
@@ -88,12 +71,7 @@ def _delete(paths: Sequence[str]) -> list[str]:
 async def async_sweep_retired_files(
     hass: HomeAssistant, paths: Sequence[str] | None = None
 ) -> tuple[str, ...]:
-    """Delete the files earlier releases left behind, returning what was removed.
-
-    Absence is the normal case — a fresh install carries none of them, and an
-    upgraded one carries each only until the first setup — so an empty result is
-    not an error.
-    """
+    """Delete the files earlier releases left behind, returning what was removed."""
     targets = RETIRED_PATHS if paths is None else tuple(paths)
     if not targets:
         return ()

@@ -147,7 +147,7 @@ async def test_setup_entry_sends_a_pre_collapse_store_to_0_8(
     assert "Upgrade HAventory" not in message
 
     assert await raw_store.async_load() == pre_payload
-    assert "repository" not in hass.data[haven_init.DOMAIN]
+    assert "repository" not in hass.data.get(haven_init.DOMAIN, {})
 
 
 @pytest.mark.asyncio
@@ -179,7 +179,7 @@ async def test_setup_entry_refuses_newer_schema_and_leaves_store_intact(monkeypa
     assert "Upgrade HAventory" in message
 
     assert await raw_store.async_load() == pre_payload
-    assert "repository" not in hass.data[haven_init.DOMAIN]
+    assert "repository" not in hass.data.get(haven_init.DOMAIN, {})
 
 
 @pytest.mark.asyncio
@@ -211,7 +211,7 @@ async def test_setup_entry_refuses_corrupt_schema_version_and_leaves_store_intac
     assert "None" in message
 
     assert await raw_store.async_load() == pre_payload
-    assert "repository" not in hass.data[haven_init.DOMAIN]
+    assert "repository" not in hass.data.get(haven_init.DOMAIN, {})
 
 
 @pytest.mark.asyncio
@@ -377,7 +377,7 @@ async def test_setup_entry_refuses_a_store_it_cannot_fully_read(monkeypatch) -> 
     assert "not-a-uuid" in message
     # The entry never got a repository, so nothing downstream can persist over
     # the file we just refused to read.
-    assert "repository" not in hass.data[haven_init.DOMAIN]
+    assert "repository" not in hass.data.get(haven_init.DOMAIN, {})
 
 
 @pytest.mark.asyncio

@@ -85,8 +85,8 @@ async def test_every_sensor_lands_on_one_device(hass: HomeAssistant, setup_entry
     }
 
     device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
-    assert device is not None
+    (device,) = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+    assert device.identifiers == {(DOMAIN, entry.entry_id)}
     assert {e.device_id for e in entries} == {device.id}
 
     # `_attr_has_entity_name` plus a translation key: HA builds the friendly name
@@ -335,7 +335,7 @@ async def test_the_location_sensor_moves_on_a_location_mutation(
 ) -> None:
     """A location create touches no item, and the count is still a sensor.
 
-    Only `events.notify_location_changed` moves it; without that call the entity
+    Only `events.notify_location_mutation` moves it; without that call the entity
     reports the old figure until something happens to edit an item.
     """
 

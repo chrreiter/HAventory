@@ -10,12 +10,8 @@ import { copyText } from '../ui/clipboard';
 import type { DegradedState, StatsCounts, VersionInfo } from '../store/types';
 
 /**
- * Diagnostics.
- *
- * This matters because a missed subscription event is undetectable — events
- * carry no sequence number — and the only honest recovery is a manual re-read.
- * The panel says whether live updates are arriving at all, and offers the
- * refresh.
+ * Diagnostics. Events carry no sequence number, so a missed one is
+ * undetectable; the panel says whether live updates arrive and offers a re-read.
  */
 @customElement('hv-diagnostics-panel')
 export class HVDiagnosticsPanel extends LitElement {
@@ -24,18 +20,8 @@ export class HVDiagnosticsPanel extends LitElement {
     base,
     modalChrome,
     css`
-      /*
-       * The single implicit track of a centring grid is auto-sized, and an
-       * auto track takes the width its item asks for — 470px — however narrow
-       * the container is. The panel's own max-width: 100% resolves against
-       * that track and never clamps, so on a phone the dialog stays 470 wide
-       * and its right edge hangs off the screen, out of reach.
-       *
-       * A minmax(0, 1fr) track is the container's width instead, which is what
-       * gives the percentage something to bite on. Rows get the same treatment
-       * so a panel taller than the viewport scrolls its body rather than
-       * growing past the top and bottom edges.
-       */
+      /* An auto track would take the panel's 470px however narrow the screen;
+         minmax(0, 1fr) lets max-width and max-height clamp it. */
       .wrap {
         grid-template-columns: minmax(0, 1fr);
         grid-template-rows: minmax(0, 1fr);
@@ -91,9 +77,6 @@ export class HVDiagnosticsPanel extends LitElement {
         border-radius: 50%;
         background: currentColor;
       }
-      /* Three fixed columns fit 470px. Once the panel is allowed to be as
-         narrow as the screen, three tiles of "Commands rejected" width no
-         longer do, so they wrap to two rows instead of overflowing. */
       .tiles {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
@@ -292,8 +275,7 @@ export class HVDiagnosticsPanel extends LitElement {
           >
             ${this._copied ? t('hv.action.copied') : t('hv.diagnostics.copyReport')}
           </button>
-          <!-- This panel reports; it commits nothing. Its way out is drawn as
-               an outline so the filled shape keeps meaning "this writes". -->
+          <!-- Outlined: this panel commits nothing, and a filled pill means "this writes". -->
           <button class="hv-pill outline" data-testid="diagnostics-close" @click=${this._close}>
             ${t('hv.action.close')}
           </button>

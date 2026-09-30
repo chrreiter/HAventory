@@ -8,7 +8,7 @@ it and a person measuring the search path asks for it by name.
         tests/test_repository_search_benchmark_offline.py
 
 The number this defends is the cost of answering ``q`` by scanning every item —
-five fields per item through ``normalize_search_text`` — which is what
+five fields per item through ``normalize_text_for_sort`` — which is what
 ``list_items`` does once no index pre-filters ``q``.
 """
 

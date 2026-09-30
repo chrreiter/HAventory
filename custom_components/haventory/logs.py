@@ -1,25 +1,13 @@
 """Making the context a log line carries reach the log.
 
-Every module attaches structured context to its records — `op`, `elapsed_ms`,
-the schema versions, `storage_key` — through `extra=`. Home Assistant's log
-formatter renders the message and its `%`-args and drops everything else, so all
-of it was invisible in the one place it is wanted: a log pasted into a bug
-report. `grep persist_complete home-assistant.log` found nothing, because the
-string only existed in a field nothing rendered.
-
-`context_logger` is what every module takes its logger from. It is a
-`LoggerAdapter` whose `process` folds the `extra=` mapping into the message text
-and hands the same mapping on untouched, so a structured handler still sees the
-fields and a plain reader finally does too. Nothing at the call sites changes:
-they keep writing `_LOGGER.warning("...", extra={...})`.
-
-The rendering is `key=value`, space separated, appended to the message — a shape
-`grep` and `awk` both take apart:
+Home Assistant's log formatter renders the message and its `%`-args and drops
+everything else, so the `extra=` context every module attaches would never reach
+a pasted log. `context_logger` is a `LoggerAdapter` that appends that mapping to
+the message as `key=value` pairs and passes `extra=` on unchanged:
 
     Repository persisted successfully op=persist_complete elapsed_ms=12
 
-`domain` is the one field left out of the text: every record already carries the
-logger name it would repeat.
+`domain` is left out of the text: the logger name already carries it.
 """
 
 from __future__ import annotations
@@ -50,11 +38,7 @@ def _render_value(value: Any) -> str:
 
 
 def render_context(context: MutableMapping[str, Any]) -> str:
-    """The `key=value` tail for one record's context, `op` first.
-
-    `op` leads because it is the field a maintainer greps for and the one that
-    says which operation the rest of the line is about.
-    """
+    """The `key=value` tail for one record's context, `op` first."""
 
     fields = [(key, value) for key, value in context.items() if key not in _SKIPPED_FIELDS]
     fields.sort(key=lambda pair: pair[0] != "op")
