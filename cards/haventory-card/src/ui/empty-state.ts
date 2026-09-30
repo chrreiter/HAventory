@@ -5,19 +5,9 @@ import { activeFilterCount, defaultFilters, soleLocationId } from '../store/stor
 import type { StoreFilters } from '../store/types';
 
 /**
- * The ways a list of items can have no rows, and what to say about each.
- *
- * Every empty list gets a headline, a line of explanation and something to
- * press, and the card's list and the expanded view's table render both from
- * here so the wording cannot drift apart. The expanded view needs it most: with
- * a sidebar, an app-bar search and a filter panel, that is where you are most
- * likely to filter yourself down to nothing and least able to see which control
- * did it.
- *
- * The card's punctuation convention, of which this is the busiest example:
- * headlines, hints and short empty lines are captions and take no terminal full
- * stop; a detail line or a prose note is written as sentences and punctuated as
- * such.
+ * The ways a list can have no rows, and what to say about each, shared by the
+ * card's list and the expanded view's table. Headlines take no full stop;
+ * detail lines are sentences.
  */
 export type EmptyKind = 'loading' | 'no-items' | 'no-matches' | 'empty-location' | 'connection-lost';
 
@@ -28,22 +18,9 @@ export interface EmptyOffer {
 }
 
 /**
- * Which situation a list with no rows is in.
- *
- * An outage outranks everything else: clearing a filter would not bring the
- * rows back, and a request that cannot be sent is not in flight.
- *
- * An in-flight fetch outranks both filter-derived reasons, because changing a
- * filter empties the list on purpose and refills it when the answer arrives —
- * naming the filters as the reason during that gap accuses a filter of
- * matching nothing before anything has been counted.
- *
- * A lone location filter is "nothing filed here" rather than "nothing
- * matched", because the location is the thing the user chose and the offer
- * differs.
- *
- * Lives here rather than on the components so the card's list and the expanded
- * view's table cannot answer the same situation two different ways.
+ * Which situation an empty list is in. An outage outranks everything, and an
+ * in-flight fetch outranks the filters, which have matched nothing yet. A lone
+ * location filter is "nothing filed here", with its own offers.
  */
 export function emptyKindFor(state: {
   degraded: { connectionLost: boolean };
@@ -66,9 +43,6 @@ export interface EmptyStateCopy {
 
 export function emptyStateCopy(kind: EmptyKind, locationName?: string | null): EmptyStateCopy {
   switch (kind) {
-    // The one kind with nothing to offer: the rows are on their way, and every
-    // action the other kinds offer would be an answer to a question that has
-    // not been asked yet.
     case 'loading':
       return { headline: t('hv.empty.loading.headline'), offers: [] };
     case 'connection-lost':
@@ -104,11 +78,7 @@ export function emptyStateCopy(kind: EmptyKind, locationName?: string | null): E
   }
 }
 
-/**
- * The block itself. `.empty`, `.headline` and `.offers` are styled by whichever
- * shadow root renders it — the rules cannot be shared across that boundary, but
- * the words and the offered actions can.
- */
+/** The block itself; `.empty`, `.headline` and `.offers` are styled by the host. */
 export function renderEmptyState(
   kind: EmptyKind,
   opts: { locationName?: string | null; onAction: (id: EmptyOffer['id']) => void },
