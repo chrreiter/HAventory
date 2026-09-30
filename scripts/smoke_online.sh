@@ -16,7 +16,7 @@ if [ -z "${HA_TOKEN:-}" ]; then
   exit 2
 fi
 
-# Optional: purge storage + reload the integration for a clean start.
+# Optional clean start.
 if [ -n "${HA_CONTAINER:-}" ]; then
   info "Purging HAventory storage in container '$HA_CONTAINER'..."
   docker exec "$HA_CONTAINER" sh -lc \

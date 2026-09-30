@@ -1,10 +1,7 @@
 """The word "HAventory" as outlines, so rendering the logo needs no font.
 
-``scripts/render_brand_assets.py`` draws paths and nothing else. A wordmark set as
-live text would need a font file at render time, a shaper, and the same version of
-both on every machine that regenerates the artwork — three ways for a regenerated file
-to come out different from the one that is committed. Outlines have none of that: they
-render like any other subpath.
+``scripts/render_brand_assets.py`` draws paths only; live text would need a font
+and a shaper at the same versions on every machine that regenerates the artwork.
 
 The type is Roboto, which is Home Assistant's own typeface, converted glyph by glyph
 with fontTools. What was set:
@@ -15,15 +12,13 @@ with fontTools. What was set:
 - tracking -3, applied after every glyph, with the pen starting at x=0 and the baseline
   at y=0, so the leading ``H`` shows its own left side bearing
 
-Rewording the mark or changing its type means redoing that conversion; there is no font
-here to re-set it from. Roboto is licensed Apache-2.0, as is this repository.
+Rewording the mark means redoing that conversion. Roboto is licensed Apache-2.0.
 """
 
 from __future__ import annotations
 
-# Roboto's cap height is 1456 units of a 2048-unit em. The lockup in
-# ``render_brand_assets.py`` measures the mark against the cap band rather than against
-# the font size, because the cap band is what the eye reads as the height of the word.
+# Roboto's cap height is 1456 units of a 2048-unit em; the lockup in
+# ``render_brand_assets.py`` measures the mark against the cap band.
 WORDMARK_FONT_SIZE = 168.0
 WORDMARK_CAP_HEIGHT = WORDMARK_FONT_SIZE * 1456.0 / 2048.0
 
