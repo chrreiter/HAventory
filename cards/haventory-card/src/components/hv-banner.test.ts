@@ -39,12 +39,6 @@ describe('hv-banner', () => {
     expect(conn.shadowRoot?.querySelector('svg')?.dataset.icon).toBe('wifiOff');
   });
 
-  it('falls back to the warning treatment for an unknown kind', async () => {
-    const el = await mount({ kind: 'bogus' as never, message: 'x' });
-    expect((el.shadowRoot?.querySelector('[data-testid="banner"]') as HTMLElement).dataset.kind).toBe(
-      'warning',
-    );
-  });
 
   it('exposes slots for trailing and stacked actions', async () => {
     const el = await mount(

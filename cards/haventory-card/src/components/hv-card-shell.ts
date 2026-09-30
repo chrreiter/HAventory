@@ -39,29 +39,18 @@ import type { HVItemEditor } from './hv-item-editor';
 
 const FILTER_PANEL_STORAGE_KEY = 'haventory:filter-panel-open:v1';
 
-/**
- * What the header's expand button discloses, named so `aria-controls` can point
- * at it. The surface is in the tree whether or not it is open — an
- * `aria-controls` that resolves to nothing announces the button as controlling
- * nothing — and `open` decides what it draws.
- */
+/** What the expand button discloses; the surface stays in the tree so `aria-controls` resolves. */
 const FULL_VIEW_ID = 'card-full-view-surface';
 
 /**
- * What the filter button discloses. Which element that is depends on the width:
- * the panel under the search row on a desktop, the bottom sheet on a phone. Only
- * one of the two is ever rendered, so both carry the same id and the button can
- * name it without knowing which it got.
+ * What the filter button discloses: the desktop panel or the phone sheet. Only
+ * one is ever rendered, so both carry this id.
  */
 const FILTER_SURFACE_ID = 'card-filter-surface';
 
 /**
- * The standard card.
- *
- * A container: it holds the `Store` and drives it directly. Interactions nest
- * several levels deep (row → editor → location tree), and threading each one
- * back up through re-dispatched events is more plumbing than it is worth.
- * Presentation stays in the leaf components.
+ * The standard card. A container that holds the `Store` and drives it
+ * directly; presentation stays in the leaf components.
  */
 @customElement('hv-card-shell')
 export class HVCardShell extends LitElement {
@@ -81,17 +70,10 @@ export class HVCardShell extends LitElement {
         border-radius: var(--hv-radius-card);
         overflow: hidden;
       }
-      /* Declared once here and inherited into every nested component's shadow
-         DOM — the shared .hv-icon-button, the sheets, the row steppers and the
-         editor all read it, so none of them needs its own copy of "is the card
-         narrow?". It is keyed off the card's measured width rather than a
-         pointer:coarse media query, to stay consistent with every other mobile
-         affordance in this component. */
+      /* Inherited into every nested shadow tree, keyed off the card's measured width. */
       :host([mobile]) {
         --hv-tap-min: 44px;
-        /* iOS Safari zooms the whole page when a field smaller than 16px takes
-           focus, and never zooms back out. Every field on the card was between
-           12.5px and 14.5px, so tapping any of them left the user zoomed in. */
+        /* iOS Safari zooms the page when a field under 16px takes focus. */
         --hv-input-font: 16px;
       }
       .header {
@@ -101,8 +83,7 @@ export class HVCardShell extends LitElement {
         padding: 14px 16px 10px;
       }
       .title {
-        /* Takes the slack so the actions stay right-aligned even before the
-           stats badges have loaded. */
+        /* Keeps the actions right-aligned before the badges load. */
         flex: 1;
         min-width: 0;
         font-size: 20px;
@@ -121,11 +102,8 @@ export class HVCardShell extends LitElement {
         gap: 6px;
         margin-left: auto;
       }
-      /* The title is the only thing in this row that can give, so every badge
-         and button that will not shrink comes straight out of its width —
-         below ~375px there is none of it left. The badges are filter toggles
-         rather than decoration, so on a phone they take a row of their own and
-         hand the width back. */
+      /* On a phone the badges take a row of their own, or they leave the title
+         no width at all. */
       :host([mobile]) .header {
         flex-wrap: wrap;
       }
@@ -133,17 +111,11 @@ export class HVCardShell extends LitElement {
         order: 1;
         flex-basis: 100%;
         margin-left: 0;
-        /* Five of these — low, overdue, to inspect, to do, checked out — with
-           five-digit counts will not make one line of a 320px phone. Wrapping
-           costs a second 44px band in the worst case; not wrapping pushes the
-           last one off the side of the card, where it cannot be pressed at
-           all. */
+        /* Five badges with large counts will not fit one line of a 320px phone. */
         flex-wrap: wrap;
         row-gap: 6px;
       }
-      /* These are filter toggles, not decoration, and on their own row there is
-         height to spare — so they take a full tap-height target, which is also
-         the one thing that makes them bigger than a chip anywhere else. */
+      /* Filter toggles on their own row, so a full tap-height target. */
       :host([mobile]) .badge {
         min-height: var(--hv-tap-min, auto);
         padding: 0 14px;
@@ -171,10 +143,7 @@ export class HVCardShell extends LitElement {
         border-radius: 50%;
         justify-content: center;
       }
-      /* Sits with the other header actions rather than in the search row, where
-         a third circle crowded the search box on a narrow card. Outlined like
-         the filter button below it: a borderless glyph beside a filled primary
-         button reads as decoration rather than something to press. */
+      /* Outlined like the filter button, or it reads as decoration beside Add. */
       .header .expand {
         width: var(--hv-tap-min, 36px);
         height: var(--hv-tap-min, 36px);
@@ -191,8 +160,7 @@ export class HVCardShell extends LitElement {
         gap: 8px;
         padding: 4px 16px 10px;
       }
-      /* The card's own fill and gutter for the box; ui/filter-chrome gives it
-         its shape, and the ink here is what a card surface asks for. */
+      /* ui/filter-chrome gives the box its shape; this is the card's fill and ink. */
       .search {
         background: var(--hv-input-bg);
         padding: 8px 14px;
@@ -201,8 +169,7 @@ export class HVCardShell extends LitElement {
       .search input {
         color: var(--hv-text);
       }
-      /* The input inside the pill is what actually takes the tap, so the field
-         owns the height rather than the pill around it. */
+      /* The input takes the tap, so it owns the height. */
       :host([mobile]) .search {
         padding: 0 14px;
       }
@@ -278,14 +245,10 @@ export class HVCardShell extends LitElement {
       .sheet-footer .apply {
         flex: 1;
       }
-      /* Inside the sheet's own 16px gutter; ui/filter-chrome gives the row its
-         shape and the two labels in it their sizes. */
       .sheet-head {
         padding: 6px 16px 10px;
       }
-      /* The footer's way into the expanded view. Sized to the footer it sits in
-         rather than to the card's other text buttons, which is why it is not
-         .hv-text-button: the line it shares with the item count is 12px. */
+      /* Not .hv-text-button: sized to the 12px footer line it shares. */
       .link {
         border: none;
         background: none;
@@ -302,10 +265,7 @@ export class HVCardShell extends LitElement {
   /** Required. The shell subscribes to it itself — see `connectedCallback`. */
   @property({ attribute: false }) store!: Store;
   @property({ type: String }) heading = DEFAULT_CARD_TITLE;
-  /**
-   * Which quick-filter pills this dashboard offers, or `null` for all of them.
-   * Passed on to the full view unchanged — one vocabulary on both surfaces.
-   */
+  /** Which quick-filter pills this dashboard offers, or `null` for all; the full view shares it. */
   @property({ attribute: false }) quickFilters: QuickFilterKey[] | null = null;
 
   @state() private _filterPanelOpen = false;
@@ -314,10 +274,7 @@ export class HVCardShell extends LitElement {
   /** The sheet's in-flight filter set, so its header counts what you staged. */
   @state() private _stagedFilters: StoreFilters | null = null;
   @state() private _searchDraft = '';
-  /**
-   * Changes whenever anything `_renderEditor` reads has changed identity — see
-   * `_syncEditorEpoch`, which is the list of what that is.
-   */
+  /** Moves whenever anything `_renderEditor` reads changes identity (`_syncEditorEpoch`). */
   @state() private _editorEpoch = 0;
   @state() private _fullViewOpen = false;
   @state() private _startSelecting = false;
@@ -326,10 +283,7 @@ export class HVCardShell extends LitElement {
   private readonly _workspace = new ItemWorkspace(this, () => this.store, {
     confirmDiscard: () => this.surfaces.confirmDiscard,
     editor: () => this._editor,
-    // Touch has no hover: tapping a row opens the detail sheet, which is the
-    // single mobile surface. Desktop expands the row in place instead — and so
-    // does the row menu's Edit, which is a request for the form rather than
-    // for whatever the width would have opened.
+    // A phone opens the detail sheet; desktop, and Edit anywhere, the inline form.
     openItem: (itemId) => {
       if (this.mobile) this._workspace.openDetail(itemId);
       else this._workspace.startEdit(itemId);
@@ -341,12 +295,8 @@ export class HVCardShell extends LitElement {
   /** The dialogs both hosts share — confirm, organize, import, diagnostics. */
   readonly surfaces = new HostSurfaces(this, () => this.store, {
     onItemDeleted: (itemId) => this._workspace.forgetItem(itemId),
-    onBrowse: () => {
-      // Organizing is a full-screen job, so the filter it hands back belongs
-      // on the full-screen surface too — dropping back to the small card
-      // means immediately expanding again to see what you just picked.
-      this._fullViewOpen = true;
-    },
+    // The filter Organize hands back belongs on the full-screen surface.
+    onBrowse: () => this._openFullView(),
   });
 
   private readonly responsive = new ResponsiveController(this);
@@ -370,7 +320,8 @@ export class HVCardShell extends LitElement {
     if (changed.has('store') && this.store) {
       this._searchDraft = this.store.state.value.filters.q;
     }
-    // Reflect the mode so child selectors and :host([mobile]) rules apply.
+    // Reflect the mode so child selectors and :host([mobile]) rules apply. The
+    // controller requests an update whenever the mode flips.
     this.toggleAttribute('mobile', this.mobile);
     this._workspace.syncPinnedItem();
     this._syncEditorEpoch();
@@ -379,20 +330,10 @@ export class HVCardShell extends LitElement {
   /**
    * Move `_editorEpoch` on when the inline editor's inputs have.
    *
-   * On the desktop card the editor is not rendered here: `hv-list` gets it as a
-   * template callback and re-runs it only when one of *its* properties changes.
-   * Everything below is state `_renderEditor` reads that the list does not
-   * bind, so without a signal of its own a store change reaches this element
-   * and stops — leaving an open form showing what was true when it opened.
-   *
-   * Identity comparison is enough — the store replaces each of these wholesale
-   * rather than mutating it. Comparing at all, rather than bumping on every
-   * update, is what keeps a re-render that changed none of them — a dialog
-   * opening, the filter panel expanding, a row being selected — from redrawing
-   * the list and every row in it.
-   *
-   * Changing a filter is not one of those: `setFilters` refetches the location
-   * tree, which the open form reads, so it moves the epoch and should.
+   * `hv-list` renders the editor from a template callback and re-runs it only
+   * when its own properties change, so this is the signal for store state the
+   * list does not bind. The store replaces each input wholesale, so identity is
+   * enough, and comparing keeps unrelated re-renders from redrawing every row.
    */
   private _syncEditorEpoch() {
     const st = this.st;
@@ -410,10 +351,6 @@ export class HVCardShell extends LitElement {
       this._editorInputs = next;
       this._editorEpoch += 1;
     }
-  }
-
-  protected updated() {
-    this.toggleAttribute('mobile', this.mobile);
   }
 
   // ---------- Filters ----------
@@ -438,12 +375,20 @@ export class HVCardShell extends LitElement {
     },
   );
 
+  private _closeFilterSheet = () => {
+    this._filterSheetOpen = false;
+    this._stagedFilters = null;
+    this._filterPanel?.resetDraft();
+  };
+
+  private _openFullView = () => {
+    this._fullViewOpen = true;
+  };
+
   // ---------- Inline editing ----------
   private get _editor(): HVItemEditor | null {
-    // Two homes: on a phone the add form is slotted into a sheet in this shadow
-    // root, and on desktop it is an expander rendered by hv-list inside the row
-    // order, so it lives in that component's shadow root instead. Both have to
-    // be findable or the unsaved-changes prompt silently stops firing.
+    // The phone's add sheet holds it here; on desktop hv-list renders it in its
+    // own shadow root. The unsaved-changes prompt needs both.
     const list = this.shadowRoot?.querySelector('hv-list');
     return (
       this.shadowRoot?.querySelector('hv-item-editor') ??
@@ -452,21 +397,12 @@ export class HVCardShell extends LitElement {
     );
   }
 
-  /**
-   * The expander, drawn by `hv-list` inside the row order rather than here — so
-   * it takes no arguments: which row it is on is the workspace's `editing`,
-   * which is also what tells the list to call this.
-   */
+  /** The expander `hv-list` draws in the row order, on the workspace's `editing` row. */
   private _renderEditor = () =>
     this._workspace.renderEditor({ testid: 'inline-editor', mobile: this.mobile });
 
   // ---------- Overflow menu ----------
-  /**
-   * The card's own ⋮, which is the full-view menu minus "Columns…".
-   *
-   * Column choices only drive the full view's table — the card list draws a
-   * fixed compact row — so the card's own menu omits them.
-   */
+  /** The card's own ⋮: the full-view menu minus "Columns…", which only the table uses. */
   private get cardMenuEntries(): OverflowMenuEntry[] {
     return this.surfaces.menuEntries().filter((entry) => !('id' in entry && entry.id === 'columns'));
   }
@@ -479,13 +415,7 @@ export class HVCardShell extends LitElement {
     this._runMenuAction(id, tab);
   };
 
-  /**
-   * What an action id means, for every surface that can name one.
-   *
-   * The ⋮ menus and the empty state's offers share an id vocabulary. Almost all
-   * of it is answered by the shared host surfaces; the one id that is about
-   * this element rather than a dialog is handled here.
-   */
+  /** What an action id from a ⋮ menu or an empty-state offer means. */
   private _runMenuAction(id: string, tab?: OrganizeTab) {
     if (id === 'select-items') {
       // Selection lives in the full view, where there is room for the bulk bar.
@@ -501,15 +431,12 @@ export class HVCardShell extends LitElement {
     const badges = renderStatBadges(this.st, this.quickFilters, {
       prefix: 'badge',
       chipClass: (tone) => `badge toggle ${tone}`,
-      // The total reports rather than filters, and on a phone the row it would
-      // take is the one the toggles need.
+      // On a phone the toggles need the row the total would take.
       total: this.mobile ? undefined : 'badge quiet',
       setFilters: (patch) => this.store?.setFilters(patch),
     });
-    if (!badges) return null;
-    // On mobile the wrapper takes a row of its own, so an empty one would leave
-    // a blank band under the title rather than nothing at all.
-    if (this.mobile && !badges.any) return null;
+    // On mobile an empty wrapper would still take a row of its own.
+    if (!badges || (this.mobile && !badges.any)) return null;
     return html`<div class="badges">${badges.total}${badges.pills}</div>`;
   }
 
@@ -522,8 +449,6 @@ export class HVCardShell extends LitElement {
   };
 
   private _renderFilterPanel(mobile: boolean) {
-    // Nothing to filter before a store is attached, and an empty panel under
-    // the search row would be a control that answers nothing.
     if (!this.st) return null;
     return renderFilterPanel(this.st, {
       mobile,
@@ -550,9 +475,7 @@ export class HVCardShell extends LitElement {
     const total = st?.total;
     const searchTotal = st?.statsCounts?.items_total ?? null;
     const mobile = this.mobile;
-    // The filter button reports the surface its own width uses. The desktop
-    // panel's open state is remembered across sessions, so reading it on a
-    // phone would announce a surface this width never shows.
+    // The remembered desktop panel state says nothing about the phone sheet.
     const filterSurfaceOpen = mobile ? this._filterSheetOpen : this._filterPanelOpen;
 
     return html`
@@ -566,9 +489,7 @@ export class HVCardShell extends LitElement {
           aria-expanded=${String(this._fullViewOpen)}
           aria-controls=${FULL_VIEW_ID}
           title=${t('hv.card.openFullView')}
-          @click=${() => {
-            this._fullViewOpen = true;
-          }}
+          @click=${this._openFullView}
         >
           ${icon('arrowExpand', 19)}
         </button>
@@ -660,13 +581,7 @@ export class HVCardShell extends LitElement {
             <span data-testid="showing-count">${showingCount(loaded, total, filterCount > 0)}</span>
             ${mobile
               ? null
-              : html`<button
-                  class="link"
-                  data-testid="open-full-view"
-                  @click=${() => {
-                    this._fullViewOpen = true;
-                  }}
-                >
+              : html`<button class="link" data-testid="open-full-view" @click=${this._openFullView}>
                   ${t('hv.card.openFullView')}${icon('openInNew', 15)}
                 </button>`}
           </div>`
@@ -696,11 +611,7 @@ export class HVCardShell extends LitElement {
             label=${t('hv.card.filters')}
             ?open=${this._filterSheetOpen}
             data-testid="filter-sheet"
-            @cancel=${() => {
-              this._filterSheetOpen = false;
-              this._stagedFilters = null;
-              this._filterPanel?.resetDraft();
-            }}
+            @cancel=${this._closeFilterSheet}
           >
             ${renderFilterHead({
               rowClass: 'sheet-head',
@@ -717,11 +628,7 @@ export class HVCardShell extends LitElement {
               applyClass: 'hv-pill large apply',
               stagedCount: this._stagedCount,
               panel: () => this._filterPanel,
-              onCancel: () => {
-                this._filterSheetOpen = false;
-                this._stagedFilters = null;
-                this._filterPanel?.resetDraft();
-              },
+              onCancel: this._closeFilterSheet,
             })}
           </hv-bottom-sheet>`
         : null}
