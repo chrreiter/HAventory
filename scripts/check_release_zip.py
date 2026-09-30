@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
 """Assert the HACS release zip extracts to a usable integration directory.
 
-With ``zip_release`` set, HACS downloads the release asset named in ``hacs.json``
-and extracts it *straight into* ``<config>/custom_components/haventory/``. It
-strips no prefix, so a zip built one directory too high lands as
-``custom_components/haventory/haventory/manifest.json`` — which Home Assistant
-reads as no integration at all. Nothing errors: the install reports success and
-the user has no HAventory. The same goes for a missing or empty card bundle,
-which yields an integration whose card silently never registers.
+With ``zip_release`` set, HACS extracts the asset *straight into*
+``<config>/custom_components/haventory/`` and strips no prefix, so a zip built one
+directory too high installs no integration and reports success. A missing or empty
+card bundle silently never registers the card. The zip is only built on a tag, so
+this runs on the real asset before the release is published.
 
-The zip is only built on a tag, so the layout has exactly one chance to be right.
-This check runs there, on the real asset, before the release is published.
-
-Run as ``check_release_zip.py <path-to-zip>``; exits non-zero with the offending
-paths listed on failure.
+Run as ``check_release_zip.py <path-to-zip>``; exits non-zero listing the offending
+paths.
 """
 
 from __future__ import annotations
@@ -23,30 +18,23 @@ import sys
 import zipfile
 from collections.abc import Iterable
 
-# Paths as they must appear once HACS has extracted the asset, relative to the
-# integration directory. `__init__.py` makes the directory importable,
-# `manifest.json` makes it an integration, and `www/haventory-card.js` is the
-# bundle the integration serves at `/haventory_static/` — a release missing any
-# of the three installs cleanly and does nothing.
+# Paths as they must appear once HACS has extracted the asset; a release missing
+# any of the three installs cleanly and does nothing.
 REQUIRED_MEMBERS: tuple[str, ...] = (
     "__init__.py",
     "manifest.json",
     "www/haventory-card.js",
 )
 
-# Members that must carry bytes. A zero-byte bundle is the failure mode a
-# presence check cannot see: the static route serves it, the browser parses
-# nothing, and no custom element is ever defined.
+# A zero-byte bundle passes a presence check but defines no custom element.
 NON_EMPTY_MEMBERS: tuple[str, ...] = ("www/haventory-card.js",)
 
 
 def extracted_path(name: str) -> str:
     """Where ``zipfile.extractall`` writes ``name``, relative to its target.
 
-    Mirrors ``ZipFile._extract_member``'s sanitizing: empty, ``.`` and ``..``
-    components are dropped, which is why a ``./`` prefix from ``zip -r <zip> .``
-    is harmless while a real ``haventory/`` prefix is not. Reimplemented here
-    because that method is private and takes a destination directory.
+    Mirrors its sanitizing (empty, ``.`` and ``..`` components dropped), so the
+    ``./`` prefix from ``zip -r <zip> .`` is harmless and ``haventory/`` is not.
     """
     return "/".join(part for part in name.split("/") if part not in ("", ".", ".."))
 
@@ -66,9 +54,7 @@ def layout_problems(names: Iterable[str], sizes: dict[str, int]) -> list[str]:
         if member in extracted and sizes.get(member, 0) == 0
     ]
 
-    # `zip -x '*__pycache__*'` is a glob against the shell's idea of the tree; a
-    # renamed cache directory or a stray `.pyc` slips past it, and HACS would
-    # install bytecode compiled against whatever Python built the release.
+    # `zip -x '*__pycache__*'` misses a stray `.pyc`, which HACS would install.
     problems += [
         f"build artifact: {name}"
         for name in sorted(names)
