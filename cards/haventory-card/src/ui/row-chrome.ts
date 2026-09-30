@@ -16,20 +16,9 @@ import type { Item, StatusDefinition } from '../store/types';
 import type { OverflowMenuEntry } from '../components/hv-overflow-menu';
 
 /**
- * What a row of items is made of, on the card's own `hv-list-row` and on the
- * full view's `hv-data-table`.
- *
- * Both answer the same questions about an item — what it is called, what it is
- * flagged with, what can be done to it — and have to answer them identically:
- * one tile for a picture and one mark for a picture whose file is gone, one
- * order for the low / status / loan chips, one set of keys, one ⋮ list.
- *
- * What each surface asks for stays a parameter: the test ids, because the
- * browser harnesses locate `row-*` and `table-*` separately and one renderer is
- * what keeps them byte-identical; which chips it has room for; and whether an
- * overdue loan spells its date. The quantity stepper, the inspection chip, the
- * tags cell and the card row's phone line stay with their surfaces — those are
- * the parts that genuinely differ.
+ * What a row of items is made of, shared by `hv-list-row` and `hv-data-table`:
+ * the picture tile, the name chips, the keys and the ⋮ list. Test ids and which
+ * chips fit stay parameters.
  */
 
 /** True when an item is at or under its low-stock threshold. */
@@ -37,13 +26,7 @@ export function isLowStock(item: Item): boolean {
   return typeof item.low_stock_threshold === 'number' && item.quantity <= item.low_stock_threshold;
 }
 
-/**
- * What a row's ⋮ offers, which depends on whether the item is out and whether
- * it has a due date.
- *
- * One list and one set of ids for both surfaces, so the hosts' existing
- * `row-action` handlers answer either of them.
- */
+/** What a row's ⋮ offers, with one set of ids on both surfaces. */
 export function rowMenuEntries(item: Item): OverflowMenuEntry[] {
   if (item.checked_out) {
     return [
@@ -66,18 +49,11 @@ export function rowMenuEntries(item: Item): OverflowMenuEntry[] {
 }
 
 /**
- * The tile a row leads with, at one size on every surface that draws one.
+ * The row's leading tile: a fixed box, so every row keeps one height, drawn only
+ * where there is a picture. Its cost to the table's name column is on
+ * `NAME_COLUMN_SIZE`.
  *
- * A fixed box, so a portrait photo and a landscape one leave the row the same
- * height and a list keeps a single rhythm; and drawn only where there is a
- * picture, so a mostly photo-less inventory does not grow a column of empty
- * squares. The table reserves exactly this much inside its name column — what
- * the tile costs the name there, and why the column's floor does not grow to
- * cover it, is on `NAME_COLUMN_SIZE`.
- *
- * Usage: `static styles = [tokens, base, chip, rowChrome, css\`...\`]`. A
- * surface that draws the tile at another size overrides the box on its own
- * rule.
+ * Usage: `static styles = [tokens, base, chip, rowChrome, css\`...\`]`.
  */
 export const rowChrome = css`
   .thumb {
@@ -88,11 +64,7 @@ export const rowChrome = css`
     object-fit: cover;
     background: var(--hv-surface-raised);
   }
-  /* The tile of a picture whose file the backend no longer has. It keeps the
-     box, because a restore without the media directory leaves every row in this
-     state and a list that dropped them all would reflow entirely. The glyph says
-     a picture belongs here; the title and the label say why it is not being
-     shown. */
+  /* A missing file keeps the box, so a restore without media does not reflow the list. */
   .thumb.missing {
     display: inline-grid;
     place-items: center;
@@ -100,26 +72,16 @@ export const rowChrome = css`
     border: 1px dashed var(--hv-divider);
     color: var(--hv-text-tertiary);
   }
-  /* Between the failure and the probe's answer. Hidden rather than removed:
-     what an errored <img> draws is the browser's broken-image glyph with the alt
-     text spilling out of a 34px square, which is the whole thing this state
-     exists to keep off the row. */
+  /* Until the probe answers, hide the browser's broken-image glyph and alt text. */
   .thumb.broken {
     visibility: hidden;
   }
 `;
 
 /**
- * A row's leading thumbnail: the item's first picture, or nothing.
- *
- * Asks for the `thumb` variant, so the tile costs a few KB rather than the
- * whole stored file; the backend serves the original whenever it cannot make
- * one, so this never decides whether the picture appears. `loading="lazy"` and
- * `decoding="async"` still matter — a long list would otherwise fetch and decode
- * everything at once.
- *
- * A file the backend no longer has is answered from the failure rather than
- * probed for up front — see `PictureFallback`.
+ * A row's leading thumbnail, the `thumb` variant of the first picture (the
+ * backend falls back to the original). A missing file is detected from the
+ * failure; see `PictureFallback`.
  */
 export function renderRowThumb(
   item: Item,
@@ -156,11 +118,7 @@ export function renderRowThumb(
 /** What a row does with a key, named as the event the surface emits for it. */
 export type RowKeyAction = 'open-item' | 'request-delete' | 'increment' | 'decrement';
 
-/**
- * The four actions a row answers to, and every spelling each arrives under —
- * `=` is what an unshifted `+` reports on a US layout, `Add` and `Subtract` are
- * the numpad's.
- */
+/** `=` is an unshifted `+` on a US layout; `Add` and `Subtract` are the numpad's. */
 const ROW_KEYS = new Map<string, RowKeyAction>([
   ['Enter', 'open-item'],
   ['Delete', 'request-delete'],
@@ -172,17 +130,8 @@ const ROW_KEYS = new Map<string, RowKeyAction>([
 ]);
 
 /**
- * What a keypress on a row means, or null when the row has nothing to do with
- * it.
- *
- * Rows carry `tabindex="0"` so the keyboard can reach them; without these there
- * is nothing to do once one is reached, and every item on the surface is behind
- * a mouse.
- *
- * A key pressed on a control inside the row belongs to that control: Enter on
- * Edit opens the editor, and an open ⋮ menu holds the keyboard. One that is
- * answered is claimed, so the surface underneath does not act on it too;
- * anything else is left to the browser, or Tab stops leaving the row.
+ * What a keypress on the row itself means, or null. A key on a control inside
+ * the row is that control's; an answered key is claimed, anything else left alone.
  */
 export function rowKeyAction(e: KeyboardEvent): RowKeyAction | null {
   if (e.target !== e.currentTarget) return null;
@@ -196,32 +145,14 @@ export function rowKeyAction(e: KeyboardEvent): RowKeyAction | null {
 export interface NameChipOptions {
   /** Test-id prefix: `row` on the card's list, `table` in the full view. */
   prefix: string;
-  /**
-   * Whether the low chip is on offer. A surface with one narrow cell for name
-   * and chips together drops it in favour of the loan, which is the more
-   * interrupting of the two.
-   */
   lowChip?: boolean;
-  /**
-   * Whether the flagged-status chip is on offer. A surface already showing the
-   * status in a column of its own says it once.
-   */
+  /** Off where the status has a column of its own. */
   statusChip?: boolean;
-  /**
-   * What an overdue loan is called: `overdueOn` spells the date into the chip,
-   * `overdue` leaves it to the column that carries it.
-   */
+  /** `overdueOn` spells the date into the chip; `overdue` leaves it to a column. */
   overdueText: 'overdue' | 'overdueOn';
 }
 
-/**
- * The chips that qualify an item's name: low stock, a flagged status, and who
- * has the item — in that order, on both surfaces.
- *
- * Each is drawn when the item earns it and the surface has room for it. The
- * order is the order the facts interrupt in, so a row carrying several of them
- * reads the same way wherever it is browsed.
- */
+/** The chips that qualify an item's name, in one order: low stock, status, loan. */
 export function renderNameChips(
   item: Item,
   statuses: readonly StatusDefinition[] | null | undefined,
