@@ -29,7 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set up uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           enable-cache: true
       - name: Install Python ${{ matrix.python-version }}
@@ -69,7 +69,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set up uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           enable-cache: true
       - name: Install Python 3.14
@@ -149,7 +149,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Set up uv
-        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4  # v10.1.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           enable-cache: true
       - name: Sync dev environment
@@ -164,7 +164,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Hassfest
-        uses: home-assistant/actions/hassfest@58bff37c8947f690ace498be413a9b78d6f30f93  # master (untagged upstream)
+        uses: home-assistant/actions/hassfest@06749dd8c0b54f350bc69c8752456cee498808a3  # master (untagged upstream)
       - name: HACS validation
         uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa  # main (untagged upstream)
         with:
