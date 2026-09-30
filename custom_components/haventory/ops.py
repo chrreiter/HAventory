@@ -1,19 +1,13 @@
-"""One operation per write, for the two surfaces that write.
+"""One operation per write, shared by the WebSocket commands, bulk rows and services.
 
-A `haventory/*` command, an `items/bulk` row and a `haventory.*` service that do
-the same thing run the same function here, so one payload gets one answer
-whichever door it arrived through. An op takes the payload as a plain dict —
-whatever the surface's schema let through, minus its envelope — makes the
-repository call and returns the `Written` its caller finishes with.
+An op takes the payload as a plain dict (whatever the surface's schema let
+through, minus its envelope), makes the repository call and returns the
+`Written` its caller finishes with. Each surface keeps its own schemas and its
+own answer.
 
-What a surface still owns is its ingress and its answer: the command schemas and
-the service schemas type their own fields, `ws.py` replies on the wire and
-`services.py` answers a `response_variable`. What they share is everything
-between: the write, the event the write earns, and the order the two happen in.
-
-That order is fixed and the same everywhere — persist, then `announce`, then
-reply. Announcing first would tell subscribers about a change the caller is
-about to be told failed, and which a restart then erases.
+The order is the same everywhere: persist, then `announce`, then reply.
+Announcing first would tell subscribers about a change the caller is about to
+be told failed, and which a restart then erases.
 """
 
 from __future__ import annotations
@@ -29,6 +23,7 @@ from . import media as media_mod
 from .events import notify_counts, notify_location_mutation, notify_mutation
 from .exceptions import ValidationError
 from .models import (
+    Item,
     ItemCreate,
     ItemUpdate,
     normalize_string_list,
@@ -39,18 +34,16 @@ from .repository import UNSET, Repository
 from .runtime import loaded_runtime
 from .serialization import serialize_item, serialize_location
 
-#: What a save that rewrote no field did. No `locations` event carries it —
-#: `announce` sends the counts alone — but every write has a name for what it did.
+#: The action of a save that rewrote no field; `announce` sends only the counts.
 UNCHANGED = "unchanged"
 
 
 @dataclass(frozen=True, slots=True)
 class Written:
-    """What one write leaves for the surface that ran it.
+    """What one write leaves for its surface.
 
-    ``action`` is the event the write earns, or ``UNCHANGED`` for the one write
-    that earns none. ``repaint`` is the locations half: False for the edit that
-    re-anchors a subtree without moving a path.
+    ``action`` is the event the write earns, or ``UNCHANGED``. ``repaint`` is
+    False for the edit that re-anchors a subtree without moving a path.
     """
 
     noun: Literal["item", "location"]
@@ -63,18 +56,12 @@ Op = Callable[[HomeAssistant, dict[str, Any]], Written]
 
 
 def _repo(hass: HomeAssistant) -> Repository:
-    """The repository of a loaded entry, or `NotLoadedError`.
-
-    Home Assistant can unregister neither a WebSocket command nor a service, so
-    both surfaces keep answering after the entry is unloaded, disabled or
-    removed, and this lookup is what makes them stop.
-    """
-
+    # Neither a command nor a service can be unregistered, so this lookup is
+    # what makes both refuse once the entry is not loaded.
     return loaded_runtime(hass).repository
 
 
 def _payload_item_id(payload: dict[str, Any]) -> str:
-    """Extract a validated item_id from an (unschema'd) op payload."""
     value = payload.get("item_id")
     if not isinstance(value, str) or not value:
         raise ValidationError("item_id must be a non-empty string")
@@ -82,114 +69,108 @@ def _payload_item_id(payload: dict[str, Any]) -> str:
 
 
 def _payload_tags(payload: dict[str, Any]) -> list[str]:
-    """Extract a normalized tag list from an (unschema'd) op payload.
-
-    The item-side caps are left to the write these ops build, which weighs them
-    against the tags the item already carries: a payload that removes an
-    over-cap legacy list must not be refused for naming that many tags.
-    """
+    # The item-side caps are weighed by the write against the item's own tags,
+    # so a payload removing an over-cap legacy list is not refused for its size.
     return normalize_string_list(payload.get("tags"), field_name="tags", casefold=True)
 
 
+def _item(hass: HomeAssistant, item: Item, action: str = "updated") -> Written:
+    return Written("item", serialize_item(hass, item), action)
+
+
+def _update(
+    hass: HomeAssistant,
+    payload: dict[str, Any],
+    item_id: str,
+    update: ItemUpdate,
+    action: str = "updated",
+) -> Written:
+    expected = payload.get("expected_version")
+    return _item(hass, _repo(hass).update_item(item_id, update, expected_version=expected), action)
+
+
 def _op_item_create(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
-    item = _repo(hass).create_item(cast("ItemCreate", payload))
-    return Written("item", serialize_item(hass, item), "created")
+    return _item(hass, _repo(hass).create_item(cast("ItemCreate", payload)), "created")
 
 
 def _op_item_update(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
-    repo = _repo(hass)
     item_id = _payload_item_id(payload)
-    expected = payload.get("expected_version")
     exclude_keys = {"item_id", "expected_version"}
     update = cast("ItemUpdate", {k: v for k, v in payload.items() if k not in exclude_keys})
-    updated = repo.update_item(item_id, update, expected_version=expected)
     # A call that carried a location moved the item, whatever else it carried:
     # a subscriber filtered by location acts on `moved` and not on `updated`.
-    action = "moved" if "location_id" in update else "updated"
-    return Written("item", serialize_item(hass, updated), action)
+    return _update(
+        hass, payload, item_id, update, "moved" if "location_id" in update else "updated"
+    )
 
 
 def _op_item_delete(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     repo = _repo(hass)
     item_id = _payload_item_id(payload)
-    expected = payload.get("expected_version")
-    before = repo.get_item(item_id)
-    serialized_before = serialize_item(hass, before)
-    repo.delete_item(item_id, expected_version=expected)
-    return Written("item", serialized_before, "deleted")
+    before = _item(hass, repo.get_item(item_id), "deleted")
+    repo.delete_item(item_id, expected_version=payload.get("expected_version"))
+    return before
 
 
 def _op_item_move(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
-    repo = _repo(hass)
-    item_id = _payload_item_id(payload)
-    expected = payload.get("expected_version")
-    updated = repo.update_item(
-        item_id, ItemUpdate(location_id=payload.get("location_id")), expected_version=expected
-    )
-    return Written("item", serialize_item(hass, updated), "moved")
+    update = ItemUpdate(location_id=payload.get("location_id"))
+    return _update(hass, payload, _payload_item_id(payload), update, "moved")
 
 
 def _op_item_adjust_quantity(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     repo = _repo(hass)
-    item_id = _payload_item_id(payload)
     updated = repo.adjust_quantity(
-        item_id, payload.get("delta"), expected_version=payload.get("expected_version")
+        _payload_item_id(payload),
+        payload.get("delta"),
+        expected_version=payload.get("expected_version"),
     )
-    return Written("item", serialize_item(hass, updated), "quantity_changed")
+    return _item(hass, updated, "quantity_changed")
 
 
 def _op_item_set_quantity(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     repo = _repo(hass)
-    # The quantity before the item id: a payload wrong about both is answered on
-    # the value, which is the answer all of this op's callers give.
+    # The quantity first: a payload wrong about both is answered on the value.
     quantity = validate_quantity(payload.get("quantity"))
     item_id = _payload_item_id(payload)
     updated = repo.set_quantity(item_id, quantity, expected_version=payload.get("expected_version"))
-    return Written("item", serialize_item(hass, updated), "quantity_changed")
+    return _item(hass, updated, "quantity_changed")
 
 
 def _op_item_check_out(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     repo = _repo(hass)
-    item_id = _payload_item_id(payload)
     updated = repo.check_out(
-        item_id, due_date=payload.get("due_date"), expected_version=payload.get("expected_version")
+        _payload_item_id(payload),
+        due_date=payload.get("due_date"),
+        expected_version=payload.get("expected_version"),
     )
-    return Written("item", serialize_item(hass, updated), "checked_out")
+    return _item(hass, updated, "checked_out")
 
 
 def _op_item_check_in(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     repo = _repo(hass)
     item_id = _payload_item_id(payload)
     updated = repo.check_in(item_id, expected_version=payload.get("expected_version"))
-    return Written("item", serialize_item(hass, updated), "checked_in")
+    return _item(hass, updated, "checked_in")
 
 
 def _op_item_add_tags(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     repo = _repo(hass)
     item_id = _payload_item_id(payload)
-    expected = payload.get("expected_version")
     tags = _payload_tags(payload)
-    current = repo.get_item(item_id)
-    new_tags = list(dict.fromkeys(list(current.tags) + list(tags)))
-    updated = repo.update_item(item_id, ItemUpdate(tags=new_tags), expected_version=expected)
-    return Written("item", serialize_item(hass, updated), "updated")
+    new_tags = list(dict.fromkeys([*repo.get_item(item_id).tags, *tags]))
+    return _update(hass, payload, item_id, ItemUpdate(tags=new_tags))
 
 
 def _op_item_remove_tags(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     repo = _repo(hass)
     item_id = _payload_item_id(payload)
-    expected = payload.get("expected_version")
     to_remove = set(_payload_tags(payload))
-    current = repo.get_item(item_id)
-    new_tags = [t for t in list(current.tags) if t not in to_remove]
-    updated = repo.update_item(item_id, ItemUpdate(tags=new_tags), expected_version=expected)
-    return Written("item", serialize_item(hass, updated), "updated")
+    new_tags = [t for t in repo.get_item(item_id).tags if t not in to_remove]
+    return _update(hass, payload, item_id, ItemUpdate(tags=new_tags))
 
 
 def _op_item_update_custom_fields(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
-    repo = _repo(hass)
     item_id = _payload_item_id(payload)
-    expected = payload.get("expected_version")
     update: ItemUpdate = {}
     set_value = payload.get("set")
     if set_value is not None:
@@ -199,37 +180,25 @@ def _op_item_update_custom_fields(hass: HomeAssistant, payload: dict[str, Any]) 
     unset_value = payload.get("unset")
     if unset_value is not None:
         update["custom_fields_unset"] = require_string_list(unset_value, field_name="unset")
-    updated = repo.update_item(item_id, update, expected_version=expected)
-    return Written("item", serialize_item(hass, updated), "updated")
+    return _update(hass, payload, item_id, update)
 
 
 def _op_item_set_low_stock_threshold(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
-    repo = _repo(hass)
-    item_id = _payload_item_id(payload)
-    expected = payload.get("expected_version")
-    updated = repo.update_item(
-        item_id,
-        ItemUpdate(low_stock_threshold=payload.get("low_stock_threshold")),
-        expected_version=expected,
-    )
-    return Written("item", serialize_item(hass, updated), "updated")
+    update = ItemUpdate(low_stock_threshold=payload.get("low_stock_threshold"))
+    return _update(hass, payload, _payload_item_id(payload), update)
 
 
 def _op_reminder_bump(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     repo = _repo(hass)
-    item_id = _payload_item_id(payload)
     updated = repo.bump_reminder(
-        item_id,
-        # The instance's local day, the one every other surface runs on — the
-        # calendar, the counts, the sensors and the card's chips. A reminder is
-        # a household-facing date rather than a timestamp, and bumping is what
-        # somebody does in the evening: west of Greenwich that is already
-        # tomorrow in UTC, so counting from a UTC day would skip the occurrence
-        # their own calendar is showing them for tomorrow.
+        _payload_item_id(payload),
+        # The instance's local day, as the calendar and the card use: counting
+        # from the UTC day would skip tomorrow's occurrence for an evening bump
+        # west of Greenwich.
         today=dt_util.now().date(),
         expected_version=payload.get("expected_version"),
     )
-    return Written("item", serialize_item(hass, updated), "updated")
+    return _item(hass, updated)
 
 
 def _op_location_create(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
@@ -246,24 +215,15 @@ def _op_location_update(hass: HomeAssistant, payload: dict[str, Any]) -> Written
     area_id = payload["area_id"] if "area_id" in payload else UNSET
     before = repo.get_location(location_id)
     location_key = str(before.id)
-    # The area a location sits in is resolved through its tree, not read off the
-    # row: a tree's area lives on its root, so an area set on a nested location
-    # moves the root's `area_id` and leaves the edited row's at None. Comparing
-    # the resolved value catches both, and it is the value the items under the
-    # location report as `effective_area_id`.
+    # Compare the resolved area, not the row's: an area set on a nested
+    # location lands on the tree's root.
     was_anchored_at = (before.parent_id, repo.effective_area_id(location_key))
     loc = repo.update_location(
         location_id, name=payload.get("name"), new_parent_id=new_parent, area_id=area_id
     )
-    # One event per call, decided by what changed rather than by which keys the
-    # call carried: an editor that sends every field on every save would
-    # otherwise announce a move on a plain rename, and one carrying both a new
-    # parent and a new area would announce two.
-    #
-    # An area reassignment is a move: it re-anchors the whole subtree, so every
-    # item under it gets a new effective_area_id, which is exactly what a client
-    # filtered by area re-lists on. No item events accompany it — the items
-    # themselves did not change.
+    # One event per call, decided by what changed rather than by which keys were
+    # sent. An area reassignment is a move: every item under it gets a new
+    # `effective_area_id`, which is what a client filtered by area re-lists on.
     is_anchored_at = (loc.parent_id, repo.effective_area_id(location_key))
     renamed = loc.name != before.name
     if is_anchored_at != was_anchored_at:
@@ -272,8 +232,7 @@ def _op_location_update(hass: HomeAssistant, payload: dict[str, Any]) -> Written
         action = "renamed"
     else:
         action = UNCHANGED
-    # Only the two edits that rewrite a path repaint: an area reassignment
-    # re-anchors the subtree without changing what any path reads.
+    # Only a rename or a re-parent rewrites a path, so only those repaint.
     repaint = renamed or loc.parent_id != before.parent_id
     return Written("location", serialize_location(loc), action, repaint=repaint)
 
@@ -281,15 +240,14 @@ def _op_location_update(hass: HomeAssistant, payload: dict[str, Any]) -> Written
 def _op_location_delete(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     repo = _repo(hass)
     location_id = payload["location_id"]
-    # Read the body before removing it: after the delete there is nothing left
-    # to answer with, and an unknown id raises here exactly as the delete would.
+    # Read the body first: after the delete there is nothing to answer with.
     removed = serialize_location(repo.get_location(location_id))
     repo.delete_location(location_id)
     return Written("location", removed, "deleted")
 
 
-#: Every write both surfaces can make, by the name they both call it.
-#: `haventory/<path>` and `haventory.<name>` reach the same entry.
+#: Every write, by the name both surfaces call it: `haventory/<path>` and
+#: `haventory.<name>` reach the same entry.
 OPS: dict[str, Op] = {
     "item_create": _op_item_create,
     "item_update": _op_item_update,
@@ -309,10 +267,7 @@ OPS: dict[str, Op] = {
     "location_delete": _op_location_delete,
 }
 
-#: The subset a `haventory/items/bulk` row may name, which the contract
-#: enumerates. The rest are writes a batch cannot make: one that creates has no
-#: item to report a version conflict on, and the two location verbs are not
-#: item operations at all.
+#: The subset a `haventory/items/bulk` row may name, as the contract enumerates.
 BULK_KINDS = frozenset(
     {
         "item_update",
@@ -333,27 +288,15 @@ BULK_KINDS = frozenset(
 def run(hass: HomeAssistant, name: str, payload: dict[str, Any]) -> Written:
     """Execute one operation by name; persist and `announce` are the caller's."""
 
-    op = OPS.get(name)
-    if op is None:
-        raise ValidationError("unknown operation kind")
-    return op(hass, payload)
+    return OPS[name](hass, payload)
 
 
 async def announce(hass: HomeAssistant, written: Written) -> None:
-    """Free what the write orphaned, then announce it — after the persist.
-
-    The files first, because they belong to a body that is already gone from a
-    store that has already been written; the event afterwards, because it is
-    what tells a subscriber the write is durable.
-    """
+    """After the persist: free the files a delete orphaned, then announce."""
 
     if written.action == UNCHANGED:
-        # A save that rewrote no field announces nothing and repaints nothing;
-        # the counts still go out, as they do after every other write.
         notify_counts(hass)
     elif written.noun == "item":
-        # `deleted` is the action the delete op alone returns, so it names
-        # exactly the body whose files nothing references any more.
         if written.action == "deleted":
             await media_mod.async_delete_item_files(hass, [written.entity])
         notify_mutation(hass, action=written.action, item=written.entity)
