@@ -39,8 +39,7 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check .
       - name: Format (ruff format --check)
-        # pre-commit enforces formatting only for local commits with hooks
-        # installed; this step is the backstop for remote/hookless authors.
+        # Backstop for authors without the pre-commit hooks installed.
         run: uv run ruff format --check .
       - name: Types (mypy)
         run: uv run mypy
@@ -64,11 +63,8 @@ jobs:
             junit.xml
 
   integration:
-    # Second, separate test mode: runs the integration inside a REAL in-process
-    # Home Assistant core (pytest-homeassistant-custom-component) to catch drift
-    # against real HA APIs the offline stubs can't see. Uses a dedicated
-    # environment so the offline `.venv` stays HA-free, and keeps plugin autoload
-    # ON (phacc must load) — note there is NO PYTEST_DISABLE_PLUGIN_AUTOLOAD here.
+    # Runs in a real HA core in a separate venv; plugin autoload stays ON because
+    # phacc must load, so there is no PYTEST_DISABLE_PLUGIN_AUTOLOAD here.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -84,10 +80,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: cards/haventory-card/package-lock.json
       - name: Build the card the integration serves
-        # The bundle is git-ignored, and the integration skips its frontend
-        # registration when it is absent — without this step the frontend tests
-        # would skip rather than run, silently dropping the coverage this job
-        # exists for.
+        # The bundle is git-ignored; without it the frontend tests skip instead of run.
         run: npm ci --no-audit --no-fund && npm run build
         working-directory: cards/haventory-card
       - name: Create integration environment (phacc + real HA core)
@@ -95,7 +88,6 @@ jobs:
           uv venv --python 3.14 .venv-integration
           uv pip install --python .venv-integration/bin/python -r requirements-integration.txt
       - name: Integration tests (in-process HA via phacc)
-        # Autoload ON so phacc + its pytest-asyncio/aiohttp/socket stack load;
         # phacc requires pytest-asyncio's auto mode.
         run: >
           .venv-integration/bin/python -m pytest -q
@@ -129,20 +121,14 @@ jobs:
       - name: Install
         run: npm ci --no-audit --no-fund
       - name: Audit (npm advisories, moderate+)
-        # The repository's Dependabot auto-triage rule dismisses development-scope
-        # alerts, so the alert dashboard cannot be trusted to surface a vulnerable
-        # dev dependency — this blocking step is where the lockfile is checked.
-        # Moderate rather than high: a moderate development-scope advisory is
-        # dismissed on the dashboard and would otherwise clear the gate here too,
-        # so it would surface nowhere. Kept explicit rather than folded into the
-        # install above, whose `--no-audit` keeps install output free of advisory
-        # noise.
+        # Dependabot's auto-triage dismisses development-scope alerts, so this
+        # step is the only place a vulnerable dev dependency surfaces; moderate
+        # because a moderate one would be dismissed there too.
         run: npm audit --audit-level=moderate
       - name: Lint
         run: npx eslint .
       - name: Types (tsc --noEmit)
-        # The build below cannot catch this: Vite transpiles through esbuild,
-        # which strips types without checking them.
+        # The build does not check types: Vite's esbuild only strips them.
         run: npm run typecheck
       - name: Test (vitest w/ coverage)
         run: npx vitest run --coverage
@@ -169,13 +155,8 @@ jobs:
       - name: Sync dev environment
         run: uv sync
       - name: actionlint
-        # The `.pre-commit-config.yaml` rev is the one copy of the actionlint
-        # version, and Dependabot moves it. This job used to run the tool as a
-        # digest-pinned `docker://` image with the version in a trailing comment
-        # — a second copy the github-actions updater cannot move, so every bump
-        # of the hook arrived red until a hand moved the digest. Running the
-        # hook itself leaves nothing to tie; `tests/test_toolchain_pins.py`
-        # holds the job to it.
+        # Runs the hook so the `.pre-commit-config.yaml` rev stays the one copy of
+        # the actionlint version; `tests/test_toolchain_pins.py` holds the job to it.
         run: uv run pre-commit run actionlint --all-files --color always
 
   validation:

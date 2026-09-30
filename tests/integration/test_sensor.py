@@ -85,8 +85,8 @@ async def test_every_sensor_lands_on_one_device(hass: HomeAssistant, setup_entry
     }
 
     device_registry = dr.async_get(hass)
-    device = device_registry.async_get_device(identifiers={(DOMAIN, entry.entry_id)})
-    assert device is not None
+    (device,) = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+    assert device.identifiers == {(DOMAIN, entry.entry_id)}
     assert {e.device_id for e in entries} == {device.id}
 
     # `_attr_has_entity_name` plus a translation key: HA builds the friendly name

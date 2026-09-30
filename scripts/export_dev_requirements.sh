@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
 # Regenerate requirements-dev.txt from pyproject.toml + uv.lock.
 #
-# The export is the pip-installable copy of the locked dev group: the recipes in
-# .claude/skills/ install it with `uv run --with-requirements`, and
-# .claude/hooks/session-start.sh falls back to it where uv is absent. Both want
-# the set `uv sync` installs, so every pin in it is derived and none is written
-# by hand — a pin edited in place, or bumped by an updater reading the file as a
-# manifest, is a second resolution beside uv.lock, and the one nothing installs.
+# The export is the pip-installable copy of the locked dev group, used by the
+# recipes in .claude/skills/ and as the fallback in .claude/hooks/session-start.sh.
+# Every pin is derived from uv.lock, never edited by hand;
 # tests/test_toolchain_pins.py fails while the two disagree.
 #
-# uv writes its own two-line header naming the command and the output path it
-# was run with. This script replaces that with the four lines that say what the
-# file is and how to rebuild it, so the header survives every regeneration
-# instead of changing with whoever ran the export and from where.
+# uv's own header names the command and output path it was run with, so it is
+# replaced with a fixed one that does not change per author.
 source "$(dirname "$0")/common.sh"
 
 if [ -z "${UV:-}" ]; then
@@ -32,14 +27,13 @@ info 'Exporting the dev group from uv.lock...'
 # Regenerate: bash scripts/export_dev_requirements.sh
 # Kept as a pip-compatible fallback for environments without uv.
 HEADER
-  # Everything past uv's own header. The leading comment block is the only one
-  # it writes: a `# via` annotation is indented under the requirement it belongs
-  # to, so the first line that starts in column 1 without a `#` opens the body.
+  # The body starts at the first column-1 line that is not a `#` comment
+  # (`# via` annotations are indented).
   "$UV" export --only-group dev --no-hashes --no-emit-project \
     | awk 'body || !/^#/ { body = 1; print }'
 } >"$TMP"
 
-# mktemp writes 0600; the file it replaces is one every checkout reads.
+# mktemp writes 0600.
 chmod 0644 "$TMP"
 mv "$TMP" "$OUT"
 ok "Wrote ${OUT#"$REPO_ROOT/"}"

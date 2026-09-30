@@ -1,24 +1,16 @@
 version: 2
 
-# A group that spans ecosystems: each member block names it with
-# `multi-ecosystem-group` and says which of its dependencies join with
-# `patterns`; the schedule and the update types it takes live here.
 multi-ecosystem-groups:
-  # The Python dev toolchain and the pre-commit hooks that run parts of it. The
-  # `dev` group pins ruff exactly — the formatter's output moves between
-  # releases, so the hook and CI must run the same one — and the hook rev is a
-  # second copy of that number, which tests/test_toolchain_pins.py holds equal.
-  # The `uv` updater moves one copy and the `pre-commit` updater the other; in
-  # separate pull requests each arrived red for the copy it did not touch.
-  # Minor/patch bumps arrive here together; majors arrive individually.
+  # The ruff pin in the `dev` group and the pre-commit hook rev are two copies
+  # that tests/test_toolchain_pins.py holds equal, so the `uv` and `pre-commit`
+  # updaters must move them in one pull request. Majors arrive individually.
   python-dev:
     schedule:
       interval: "weekly"
     update-types: ["minor", "patch"]
 
 updates:
-  # GitHub Actions — group all bumps into one PR (keeps SHA-pinned + tagged
-  # actions moving together).
+  # GitHub Actions: one PR for all bumps.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -35,21 +27,12 @@ updates:
     cooldown:
       default-days: 3
     ignore:
-      # Two majors the toolchain around them refuses, so each arrives as a red
-      # pull request that reopens every week until something else moves first.
-      #
-      # typescript 7: `@typescript-eslint` peer-requires `typescript >=4.8.4
-      # <6.1.0`, so `npm ci` fails to resolve before a single test runs. It
-      # returns when typescript-eslint declares support for 7.
-      #
-      # @types/node 26: the typings would describe a runtime newer than the card
-      # supports — `engines` floors at Node ^22.13.0 || >=24 and CI runs a 22/24
-      # matrix — and `tsc` rejects them against that lib set today. It returns
-      # with a deliberate Node-floor bump, which moves `engines`, the CI matrix
-      # and tests/test_toolchain_pins.py together.
-      #
-      # Scoped to major version updates: minor and patch releases of both, and a
-      # security update for either, must still be able to open a pull request.
+      # Two majors the surrounding toolchain refuses.
+      # typescript 7: `@typescript-eslint` peer-requires `typescript <6.1.0`, so
+      # `npm ci` fails to resolve; lift when typescript-eslint supports 7.
+      # @types/node 26: describes a runtime newer than `engines` and the 22/24 CI
+      # matrix; lift with a deliberate Node-floor bump.
+      # Majors only, so minor, patch and security updates still open pull requests.
       - dependency-name: "typescript"
         update-types:
           - "version-update:semver-major"
@@ -61,8 +44,7 @@ updates:
         patterns: ["*"]
         update-types: ["minor", "patch"]
 
-  # Python dev toolchain via uv (pyproject.toml + uv.lock), one half of the
-  # `python-dev` group above.
+  # Python dev toolchain via uv (pyproject.toml + uv.lock).
   - package-ecosystem: "uv"
     directory: "/"
     multi-ecosystem-group: "python-dev"
@@ -70,35 +52,18 @@ updates:
     cooldown:
       default-days: 3
     exclude-paths:
-      # `requirements-dev.txt` is `uv export` written down, not a manifest. This
-      # updater reads it as one anyway and bumps every pin in it to the newest
-      # release, which resolves nothing against `uv.lock` — ten pins naming a
-      # version the lock does not carry had accumulated that way, so the pip
-      # fallback installed a set `uv sync` never produces. The lock is the only
-      # source: scripts/export_dev_requirements.sh rewrites the file from it,
-      # in the same pull request that moves the lock, and
-      # tests/test_toolchain_pins.py fails while the two disagree.
-      #
-      # `exclude-paths` covers version updates only, so a security advisory in
-      # the file can still open a pull request here.
+      # `requirements-dev.txt` is `uv export` written down, not a manifest: bumping
+      # its pins directly resolves nothing against `uv.lock`.
+      # scripts/export_dev_requirements.sh rewrites it from the lock, and
+      # tests/test_toolchain_pins.py fails while the two disagree. Security
+      # advisories can still open a pull request.
       - "requirements-dev.txt"
     ignore:
-      # Not dependencies to keep current. `requirements-integration.txt` pins the
-      # Home Assistant core to the floor `hacs.json` declares, so the in-process
-      # suite runs the integration *at* the minimum it claims to support rather
-      # than at whatever is newest, and the frontend wheel is whatever that
-      # release's own `frontend` manifest asks for. Two tests hold them there —
-      # tests/test_min_ha_version.py and tests/integration/test_frontend.py — so
-      # a bump arrives as a red pull request that reopens every week. Both move
-      # together, by hand, when the declared floor moves.
-      #
-      # The ignore belongs on this block as well as on `pip` below: the `uv`
-      # updater reads the root's requirements files too, not only the two
-      # manifests it is named for, and proposes both pins straight into
-      # `requirements-integration.txt` when it is left out here.
-      #
-      # Scoped to version updates rather than ignored outright: a security update
-      # for either must still be able to open a pull request.
+      # `requirements-integration.txt` pins HA to the floor `hacs.json` declares and
+      # the frontend wheel to that release's own manifest
+      # (tests/test_min_ha_version.py, tests/integration/test_frontend.py); both
+      # move by hand with the floor. Also set on `pip` below because this updater
+      # reads that file too. Version updates only, so security updates still open.
       - dependency-name: "homeassistant"
         update-types:
           - "version-update:semver-major"
@@ -110,10 +75,8 @@ updates:
           - "version-update:semver-minor"
           - "version-update:semver-patch"
 
-  # pre-commit hook revs (.pre-commit-config.yaml), the other half of the
-  # `python-dev` group above — the ruff hook is why the two share one. The
-  # actionlint rev is that tool's only copy too: CI's `actionlint` job runs the
-  # hook rather than a digest-pinned image, which this updater could not move.
+  # pre-commit hook revs (.pre-commit-config.yaml); the actionlint rev is also
+  # the only copy of that version, since CI runs the hook.
   - package-ecosystem: "pre-commit"
     directory: "/"
     multi-ecosystem-group: "python-dev"
@@ -121,10 +84,8 @@ updates:
     cooldown:
       default-days: 3
 
-  # The dev container's images (.devcontainer/Dockerfile). Every image there sits
-  # on a `FROM` line because that is the only line this updater reads a tag
-  # from — a registry image in a `COPY --from=` is a pin it never sees, and
-  # tests/test_repo_hardening_offline.py refuses one. The images move together.
+  # The dev container's images: only `FROM` lines are read, which
+  # tests/test_repo_hardening_offline.py enforces.
   - package-ecosystem: "docker"
     directory: "/.devcontainer"
     schedule:
@@ -140,8 +101,6 @@ updates:
       interval: "weekly"
 
   # Integration test harness (pip): `requirements-integration.txt` at the root.
-  # The dependency graph already scans that file, so an advisory in it alerts;
-  # what was missing is the pull request that fixes it.
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -149,23 +108,12 @@ updates:
     cooldown:
       default-days: 3
     exclude-paths:
-      # That one file is the whole point of this block, but the pip updater parses
-      # every manifest it finds in the directory — including the two the `uv`
-      # block owns. `requirements-dev.txt` is a `uv export` and says "do not edit
-      # by hand" on line 1; a pip edit to `pyproject.toml` leaves `uv.lock` behind,
-      # which the next `uv` command rewrites under whoever runs it. In scope, each
-      # dev package therefore arrives twice — once from `uv` with the lock, once
-      # from here without it.
-      #
-      # `exclude-paths` covers version updates only. A security advisory in either
-      # file can still open a pull request here; the `uv` block is what fixes one
-      # properly, and a duplicate is cheap next to a missed advisory.
+      # The two files the `uv` block owns: a pip edit would leave `uv.lock`
+      # behind. Security advisories in either can still open a pull request here.
       - "pyproject.toml"
       - "requirements-dev.txt"
     ignore:
-      # The same two pins as the `uv` block above, for the same reason and with
-      # the same version-update scope — this is the block aimed at the file that
-      # carries them, so the ignore has to be here too.
+      # The same two pins as the `uv` block above.
       - dependency-name: "homeassistant"
         update-types:
           - "version-update:semver-major"
