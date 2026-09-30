@@ -1,26 +1,17 @@
 """What one loaded config entry owns, and how any module reaches it.
 
-Home Assistant hands every config entry a `runtime_data` slot: setup fills it,
-Home Assistant clears it on unload, and a typed alias makes every read a checked
-one. HAventory keeps its repository, its store and the rest of its per-entry state
-there rather than in the shared `hass.data[DOMAIN]` dict.
+Per-entry state lives on the entry's `runtime_data`, which Home Assistant clears
+on unload. `hass.data[DOMAIN]` keeps only the registrations that outlive an entry.
 
 **Two lookups, and the difference matters.** `loaded_runtime` refuses unless the
-entry is `LOADED` — it is the client-facing boundary, the thing that makes a
-WebSocket command a dashboard left open still holds refuse once the entry is
-gone. `find_runtime` asks only whether a runtime exists. Teardown runs while the
-entry is *not* loaded (Home Assistant sets `UNLOAD_IN_PROGRESS` before calling
-`async_unload_entry`, and clears `runtime_data` only after it returns), so the
-final flush, the teardown broadcast and the subscription close callbacks all go
-through `find_runtime`. Routing any of them through the loaded check would drop
-the last write, or leave a subscriber never told its topics had stopped.
+entry is `LOADED`: it is the client-facing boundary. `find_runtime` asks only
+whether a runtime exists. Teardown runs while the entry is *not* loaded (Home
+Assistant sets `UNLOAD_IN_PROGRESS` before `async_unload_entry` and clears
+`runtime_data` after it), so the final flush, the teardown broadcast and the
+subscription close callbacks go through `find_runtime`; the loaded check would
+drop the last write.
 
-Single-instance (`single_config_entry` in the manifest, enforced again in the
-config flow), so "the entry" is `async_entries(DOMAIN)[0]` or nothing at all.
-
-What stays in `hass.data[DOMAIN]` is what outlives an entry: the flags recording
-an aiohttp route, a frontend module URL or a sidebar panel, none of which Home
-Assistant can hand back on unload.
+Single-instance, so "the entry" is `async_entries(DOMAIN)[0]` or nothing.
 """
 
 from __future__ import annotations
@@ -45,12 +36,7 @@ if TYPE_CHECKING:
 
 
 class Subscription(TypedDict, total=False):
-    """One open `haventory/subscribe`, as the broadcaster matches it.
-
-    Lives here rather than in `subscriptions.py` because the registry holding
-    these is a field of the runtime, and typing that field from the module that
-    reads the registry would be a cycle.
-    """
+    """One open `haventory/subscribe`; here because typing it in `subscriptions.py` is a cycle."""
 
     topic: str
     location_id: str | None
@@ -62,11 +48,7 @@ class Subscription(TypedDict, total=False):
 
 @dataclass(slots=True)
 class TodoBridgeState:
-    """The shopping-list bridge's own state, scoped to the entry like the rest.
-
-    Its `Store` is a second file beside the inventory's — the link map survives a
-    restart, so a line the household already ticked off is not written back.
-    """
+    """The shopping-list bridge's state; its `Store` is a second file beside the inventory's."""
 
     entity_id: str = ""
     links: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -92,30 +74,19 @@ class HAventoryRuntime:
     todo: TodoBridgeState = field(default_factory=TodoBridgeState)
 
 
-# A `type` statement rather than an assignment: its value is evaluated lazily, so
-# `ConfigEntry[HAventoryRuntime]` is never subscripted at import time. That keeps
-# it working against a stub `ConfigEntry` as well as the real generic one.
+# A `type` statement is evaluated lazily, so a non-generic stub `ConfigEntry` works too.
 type HAventoryConfigEntry = ConfigEntry[HAventoryRuntime]
 
 
 def find_entry(hass: HomeAssistant) -> HAventoryConfigEntry | None:
     """The one config entry, in whatever state it is in."""
 
-    config_entries = getattr(hass, "config_entries", None)
-    if config_entries is None:
-        return None
-    entries = config_entries.async_entries(DOMAIN)
+    entries = hass.config_entries.async_entries(DOMAIN)
     return entries[0] if entries else None
 
 
 def find_runtime(hass: HomeAssistant) -> HAventoryRuntime | None:
-    """The runtime if one exists, whatever state its entry is in.
-
-    For the paths that run outside a loaded entry: the teardown flush, the
-    teardown broadcast, and the subscription callbacks a closing connection fires
-    long after the entry went. See the module docstring for why they must not go
-    through `loaded_runtime`.
-    """
+    """The runtime if one exists, whatever state its entry is in (see the module docstring)."""
 
     entry = find_entry(hass)
     if entry is None:
@@ -127,16 +98,14 @@ def find_runtime(hass: HomeAssistant) -> HAventoryRuntime | None:
 def loaded_runtime(hass: HomeAssistant) -> HAventoryRuntime:
     """The runtime of a `LOADED` entry, or `NotLoadedError`.
 
-    The client-facing boundary. Home Assistant cannot unregister a WebSocket
-    command or a service, so both go on listening after the entry is unloaded,
-    disabled or removed; this refusal is what makes them answer the contract's
-    `storage_error` instead of serving state nothing owns.
+    Home Assistant cannot unregister a WebSocket command or a service, so this
+    refusal is what makes them answer `storage_error` once the entry is gone.
     """
 
     entry = find_entry(hass)
     if entry is None:
         raise NotLoadedError("no HAventory config entry; add the integration")
-    if getattr(entry, "state", None) is not ConfigEntryState.LOADED:
+    if entry.state is not ConfigEntryState.LOADED:
         raise NotLoadedError("HAventory config entry is not loaded; run integration setup")
     runtime = getattr(entry, "runtime_data", None)
     if not isinstance(runtime, HAventoryRuntime):

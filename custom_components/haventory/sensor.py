@@ -26,10 +26,7 @@ from .const import (
     SIGNAL_INVENTORY_CHANGED,
     HaventorySensorDescription,
 )
-from .logs import context_logger
 from .runtime import find_runtime
-
-LOGGER = context_logger(__name__)
 
 
 async def async_setup_entry(
@@ -37,8 +34,19 @@ async def async_setup_entry(
 ) -> None:
     """Add one sensor per count in the catalog."""
 
-    async_add_entities(
-        HaventoryCountSensor(hass, entry, description) for description in SENSOR_DESCRIPTIONS
+    async_add_entities(HaventoryCountSensor(entry, d) for d in SENSOR_DESCRIPTIONS)
+
+
+def device_info(entry: ConfigEntry) -> DeviceInfo:
+    """The one HAventory device every entity this integration owns sits on."""
+
+    return DeviceInfo(
+        identifiers={(DOMAIN, entry.entry_id)},
+        name="HAventory",
+        manufacturer="HAventory",
+        model="Inventory",
+        sw_version=INTEGRATION_VERSION,
+        entry_type="service",
     )
 
 
@@ -49,25 +57,13 @@ class HaventoryCountSensor(SensorEntity):
     _attr_should_poll = False
     _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(
-        self, hass: HomeAssistant, entry: ConfigEntry, description: HaventorySensorDescription
-    ) -> None:
-        self._hass = hass
+    def __init__(self, entry: ConfigEntry, description: HaventorySensorDescription) -> None:
         self._description = description
         self._attr_translation_key = description.translation_key
         self._attr_icon = description.icon
-        # entry_id, not a domain-global string: removing and re-adding the entry
-        # is a fresh install, and must not resurrect the removed entry's
-        # entity_ids.
+        # Entry-scoped, so re-adding the entry does not resurrect the old entity_ids.
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name="HAventory",
-            manufacturer="HAventory",
-            model="Inventory",
-            sw_version=INTEGRATION_VERSION,
-            entry_type="service",
-        )
+        self._attr_device_info = device_info(entry)
 
     async def async_added_to_hass(self) -> None:
         """Subscribe to the two things that move this count."""
@@ -76,10 +72,8 @@ class HaventoryCountSensor(SensorEntity):
             async_dispatcher_connect(self.hass, SIGNAL_INVENTORY_CHANGED, self._handle_update)
         )
         if self._description.date_derived:
-            # A date-derived count compares today's date against stored dates,
-            # so it moves at midnight with nothing having been mutated. The
-            # instance's midnight, not UTC's: the counts compare against the
-            # instance's local day, the same one `calendar.py` rolls over on.
+            # The instance's local midnight, not UTC's: the counts compare
+            # against the local day.
             self.async_on_remove(
                 async_track_time_change(
                     self.hass, self._handle_time_change, hour=0, minute=0, second=0
@@ -110,13 +104,4 @@ class HaventoryCountSensor(SensorEntity):
 
     def _counts(self) -> dict[str, Any] | None:
         runtime = find_runtime(self.hass)
-        if runtime is None:
-            return None
-        try:
-            return dict(runtime.repository.get_counts())
-        except Exception:  # pragma: no cover - defensive
-            LOGGER.exception(
-                "Failed to read counts for a sensor",
-                extra={"domain": DOMAIN, "op": "sensor_counts", "key": self._description.key},
-            )
-            return None
+        return None if runtime is None else runtime.repository.get_counts()
