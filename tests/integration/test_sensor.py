@@ -335,7 +335,7 @@ async def test_the_location_sensor_moves_on_a_location_mutation(
 ) -> None:
     """A location create touches no item, and the count is still a sensor.
 
-    Only `events.notify_location_changed` moves it; without that call the entity
+    Only `events.notify_location_mutation` moves it; without that call the entity
     reports the old figure until something happens to edit an item.
     """
 
