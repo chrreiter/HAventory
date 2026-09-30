@@ -1,126 +1,125 @@
 # Developing HAventory
 
-Everything needed to work on the integration and the card: the toolchain, the gate that
-runs before every commit, both backend test modes, what the backend and the card are made
-of, the CI jobs, and the dev helper scripts. [CONTRIBUTING.md](../CONTRIBUTING.md) is the
-shorter, process-facing companion: how to file, branch and release.
+How to set up, test and find your way around the integration and the card.
+[CONTRIBUTING.md](../CONTRIBUTING.md) is the process side: the gate that runs before every
+commit, the conventions, pull requests and releases.
 
 ## Setup (Linux/bash)
 
-Prerequisites: [uv](https://docs.astral.sh/uv/), Node 22.13+ (or 24 LTS), git.
+You need [uv](https://docs.astral.sh/uv/), git, and a Node inside the range `engines`
+declares in `cards/haventory-card/package.json`. uv fetches the Python that
+`requires-python` in `pyproject.toml` names. The toolchain is Linux/bash only; on Windows,
+work inside WSL2 ([CONTRIBUTING.md](../CONTRIBUTING.md#development-setup)).
 
 ```bash
 # One-shot bootstrap: uv env + card deps + pre-commit hooks
 scripts/setup.sh
 
-# ...or manually:
-uv sync                                   # creates .venv from pyproject.toml + uv.lock
-(cd cards/haventory-card && npm ci)       # reproducible install from the committed lockfile
+# ...or by hand:
+uv sync                                   # .venv from pyproject.toml + uv.lock
+(cd cards/haventory-card && npm ci)       # card deps from the committed lockfile
+uv run pre-commit install                 # optional: ruff and codespell on commit
 ```
 
-Run any Python tool through uv (`uv run <tool>`), so it uses the locked dev environment.
+Run every Python tool through uv (`uv run <tool>`) so it uses the locked environment.
 
 ## Tooling
 
-- **uv**: Python env, dependency resolution, and lockfile (`uv.lock`). Dev deps live in
-  `pyproject.toml` under `[dependency-groups]`; `requirements-dev.txt` is a generated,
-  pip-installable export for environments without uv. Regenerate it rather than edit it —
-  `bash scripts/export_dev_requirements.sh` rewrites it from the lock, and
-  `tests/test_toolchain_pins.py` fails while the two disagree.
-- **Ruff**: lint and format, configured and pinned in `pyproject.toml`. The hook in
-  `.pre-commit-config.yaml` pins the same version and `tests/test_toolchain_pins.py` holds
-  the two together.
-- **mypy** `2.x`: type checking, scoped to `custom_components/haventory`. The core modules
-  are held to per-module strict mode against the local HA stubs in `stubs/`; the rest sits at
-  the non-strict baseline. Which modules those are is the `[[tool.mypy.overrides]]` list in
-  `pyproject.toml`.
-- **ESLint** `10` (flat config `cards/haventory-card/eslint.config.js`) with
-  `@typescript-eslint 8`.
-- **TypeScript** `6`, **Vite** `8`, **Vitest** `4` (plus `@vitest/coverage-v8`) for the card.
-- **pre-commit**: ruff, codespell, basic hooks.
+- **uv** owns the Python environment and the lockfile. Dev dependencies are the
+  `[dependency-groups]` in `pyproject.toml`. `requirements-dev.txt` is a pip-installable
+  export for environments without uv: regenerate it with
+  `bash scripts/export_dev_requirements.sh` rather than editing it, because
+  `tests/test_toolchain_pins.py` fails while it disagrees with the lock.
+- **Ruff** lints and formats. The `dev` group pins it exactly, and the hook in
+  `.pre-commit-config.yaml` must name the same version (`tests/test_toolchain_pins.py`),
+  because two ruff releases can format the same file differently.
+- **mypy** checks `custom_components/haventory` against the local Home Assistant stubs in
+  `stubs/`. The modules listed in `[[tool.mypy.overrides]]` in `pyproject.toml` are held to
+  strict mode; the rest sit at the non-strict baseline.
+- **The card** is Lit, TypeScript, Vite and Vitest with jsdom, linted by ESLint's flat config
+  (`cards/haventory-card/eslint.config.js`). The versions are the ones `package.json` pins.
+- **pre-commit** runs ruff, codespell and the basic hygiene hooks.
 
 ## The gate
 
-Both halves have to be green before every commit. The commands, and why `npm audit` is one
-of them, are in [CONTRIBUTING.md](../CONTRIBUTING.md#the-gate).
-
-Or all at once: `scripts/ci_local.sh` (backend lint, types and tests with coverage, then
-frontend install, audit, lint, types, test and build).
+Both halves, green before every commit. The commands, and why `npm audit` is one of them,
+are in [CONTRIBUTING.md](../CONTRIBUTING.md#the-gate). `scripts/ci_local.sh` runs the whole
+gate in one go, with coverage, and stops at the first failing step.
 
 ## Testing
 
-There are two backend test modes, kept deliberately separate:
-
-- **Offline (fast, default).** HA is stubbed in `tests/conftest.py`, so the suite runs in
-  milliseconds with no HA install. Invoke with plugin autoload disabled; async tests use
-  `@pytest.mark.asyncio`:
-
-  ```bash
-  PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
-  ```
-
-  The stub **records** what `services.setup()` registers, so which services exist, with
-  which schema and which response mode, is asserted here. How HA *dispatches* to a handler
-  is asserted in the other mode or not at all.
-
-- **In-process HA integration (opt-in).** Runs the integration inside a *real* Home
-  Assistant core via [`pytest-homeassistant-custom-component`][phacc] (phacc), catching
-  drift against real HA APIs the stubs can't see. See below.
-
 Every feature or fix ships with tests: the happy path plus at least one edge or error case.
+The backend has two test modes, kept apart on purpose.
 
-Timings are measured where the load is real, with the `test-haventory` skill's `stress.py`
-against a live Home Assistant. A budget asserted inside the offline suite would only be
-measuring the runner it happened to land on.
+**Offline** is the default and runs in seconds with no Home Assistant install. HA is stubbed
+in `tests/conftest.py`, and the WebSocket stub applies each command's schema before
+dispatch, so a test sends the frames a real client could send. Async tests use
+`@pytest.mark.asyncio`.
 
-[phacc]: https://github.com/MatthewFlamm/pytest-homeassistant-custom-component
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
+```
+
+The stub **records** what `services.setup()` registers, so which services exist, with which
+schema and which response mode, is asserted offline. How Home Assistant *dispatches* to a
+handler is asserted only in the in-process mode.
+
+**In-process** runs the integration inside a real Home Assistant core, catching drift
+against real HA APIs that the stubs cannot see. It is opt-in, below.
+
+Timings are measured against a live Home Assistant with the `test-haventory` skill's
+`stress.py`. A budget asserted inside the offline suite would only measure the machine it
+ran on. Every write re-serializes the whole store, so a create's cost follows the store's
+size. The reference curve, one editor at a time: about 2.5 ms on an empty store, 9.5 ms at
+1 000 items, 17 ms at 2 000 and 43 ms at 5 000, with occasional 230–280 ms save spikes above
+about 3 000. A batch or an import writes once.
 
 ### In-process HA integration tests (opt-in)
 
-These load a genuine HA core, so they need **Python 3.14** and a full HA install (phacc,
-from `requirements-integration.txt`, kept out of `pyproject`, `uv.lock` and the offline
-`.venv` so the fast suite stays lean). They live under `tests/integration/` and run with
-plugin autoload **on** (phacc must load) in pytest-asyncio's auto mode.
+These load a genuine Home Assistant core through
+[`pytest-homeassistant-custom-component`](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component)
+(phacc). phacc and HA come from `requirements-integration.txt`, which pins HA to the
+declared floor and stays out of `pyproject.toml`, `uv.lock` and the offline `.venv`. The
+tests live in `tests/integration/`, one file per subject: config-entry setup and unload,
+WebSocket CRUD and error envelopes, persistence and schema migration, services and their
+broadcasts, the sensors, calendar, repairs, diagnostics, to-do bridge, attachments,
+translations, the retired-files sweep and the frontend registration.
 
 ```bash
-# One-shot: provisions Python 3.14 + a dedicated .venv-integration, then runs them
+# One-shot: provisions the interpreter and a dedicated .venv-integration, then runs them
 scripts/test_integration.sh
 
-# ...or manually:
+# ...or by hand:
 uv venv --python 3.14 .venv-integration
 uv pip install --python .venv-integration/bin/python -r requirements-integration.txt
 .venv-integration/bin/python -m pytest -o asyncio_mode=auto tests/integration
 ```
 
-Do **not** set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` for this mode. `tests/conftest.py` detects
-the real `homeassistant` package these tests pull in and installs none of the offline stubs,
-so the two modes never collide; the offline run never collects `tests/integration/`. They
-cover most of the HA-facing surface: config-entry setup and unload, WebSocket CRUD and error
-envelopes, persistence and schema migration, services and their broadcasts, the sensors,
-calendar, repairs, diagnostics, to-do bridge, attachments, translations, the retired-files
-sweep and the frontend registration, one file per subject.
+- **Do not set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` here.** phacc must load, and with the flag
+  the run silently collects nothing. `tests/conftest.py` sees the real `homeassistant`
+  package and installs none of the offline stubs, and the offline run never collects
+  `tests/integration/`, so the two modes cannot collide.
+- **Build the card first** (`npm run build`), or `tests/integration/test_frontend.py` skips
+  half its cases.
+- **It needs network access** to fetch the interpreter and Home Assistant. A sandbox without
+  it cannot run this mode; CI runs it in its own `integration` job.
+- **It cannot run on a Windows host**: the script builds a POSIX venv path and HA core
+  imports `fcntl`. Run it in a container with the venv on a named volume. The image needs uv
+  and nothing else. The first run takes about three minutes, a re-run about thirty seconds,
+  and host edits are picked up through the mount:
 
-> Restricted-egress environments (sandboxes that can't fetch Python 3.14 or the HA core)
-> can't run this mode. CI provisions Python 3.14 and runs it in its own job.
-
-Build the card first, or `tests/integration/test_frontend.py` skips half its cases.
-
-`scripts/test_integration.sh` **cannot run on a Windows host**: it builds a POSIX venv path
-and HA core imports `fcntl`. Run it in a container with the venv on a named volume. The
-first run takes about three minutes, re-runs about thirty seconds, and host edits are picked
-up through the mount. The script installs its own interpreter, so the image needs uv and
-nothing else:
-
-```bash
-MSYS_NO_PATHCONV=1 docker run -d --name hav-int -v "$(pwd):/work" \
-  -v hav-int-venv:/work/.venv-integration -w /work \
-  ghcr.io/astral-sh/uv:bookworm sleep 7200
-MSYS_NO_PATHCONV=1 docker exec hav-int bash -lc 'cd /work && bash scripts/test_integration.sh'
-```
+  ```bash
+  MSYS_NO_PATHCONV=1 docker run -d --name hav-int -v "$(pwd):/work" \
+    -v hav-int-venv:/work/.venv-integration -w /work \
+    ghcr.io/astral-sh/uv:bookworm sleep 7200
+  MSYS_NO_PATHCONV=1 docker exec hav-int bash -lc 'cd /work && bash scripts/test_integration.sh'
+  ```
 
 ### Online smoke tests (opt-in)
 
-These hit a real Home Assistant instance over WebSocket and need three variables:
+These drive a running Home Assistant over WebSocket: `tests/test_ws_smoke_online.py`,
+`tests/test_ws_smoke_advanced_online.py` and `tests/test_ws_areas_online.py`, marked
+`online`. Everything they create has a unique name and is deleted again.
 
 ```bash
 export RUN_ONLINE=1
@@ -130,281 +129,235 @@ scripts/smoke_online.sh
 # or: uv run pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
 ```
 
-The full online gate against a **disposable** HA (the Docker dev container, say), including
-the destructive and area-registry scenarios:
+Two more flags unlock the rest of the suite, **for a disposable instance only** (the Docker
+dev container, say):
+
+- `HAV_ONLINE_DESTRUCTIVE=1` runs the scenarios that **purge every HAventory item and
+  location** first and then assert exact totals.
+- `HA_ALLOW_AREA_MUTATIONS=1` runs the area-registry test, which creates and deletes areas.
 
 ```bash
-export RUN_ONLINE=1
-export HA_BASE_URL=http://localhost:8123
-export HA_TOKEN=<your-long-lived-token>
 export HA_CONTAINER=home-assistant     # lets smoke_online.sh purge and reload_addon.sh deploy
-export HAV_ONLINE_DESTRUCTIVE=1        # unlocks the purging tests; disposable instances only!
-export HA_ALLOW_AREA_MUTATIONS=1       # unlocks the area-registry e2e test
+export HAV_ONLINE_DESTRUCTIVE=1
+export HA_ALLOW_AREA_MUTATIONS=1
 
-# Deploy the current working tree into the container and (re)create the config
-# entry, so the instance matches the local CURRENT_SCHEMA_VERSION:
+# Deploy the working tree into the container and (re)create the config entry, so the
+# instance runs the local schema:
 scripts/reload_addon.sh --container "$HA_CONTAINER"
 
-uv run pytest -q -m online             # all three online files
+uv run pytest -q -m online             # all three files
 ```
 
-Run the suite sequentially (no `-n`/xdist): destructive tests purge and then assert exact
-totals, so they assume exclusive access to the instance.
-
-> ⚠️ **Destructive scenario tests are double-gated.** A subset of the online suite
-> **purges ALL HAventory items and locations** on the target instance before running. Those
-> tests are skipped unless you *also* set `HAV_ONLINE_DESTRUCTIVE=1`. Do that only against a
-> disposable HA. Everything that runs without the flag is self-contained: it creates
-> uniquely-named entities and deletes them again.
-
-Area-registry e2e (optional; temporarily mutates your HA instance):
-
-```bash
-export HA_ALLOW_AREA_MUTATIONS=1
-uv run pytest -q -m online -k ws_areas_online
-```
-
-Included: `tests/test_ws_smoke_online.py`, `tests/test_ws_smoke_advanced_online.py`,
-`tests/test_ws_areas_online.py`.
+Run them sequentially (no `-n`/xdist): the destructive tests assume exclusive access to the
+instance. With `HA_CONTAINER` set, `smoke_online.sh` deletes the store before it runs, so
+never point it at an inventory you keep.
 
 ### Live-update browser smoke (opt-in)
 
-`cards/haventory-card/e2e/live-updates.smoke.mjs` drives the **real card** in a headless
-browser against a running HA and asserts that out-of-band inventory changes (made over a
-separate WebSocket connection) reach the card purely through its subscription: create,
-rename, delete, live, with no manual re-list. It guards the "green unit tests, dead feature"
-class of regression that unit mocks cannot, because a mock is only as truthful as the
-contract its author imagined.
+`cards/haventory-card/e2e/live-updates.smoke.mjs` drives the **real card** in headless
+Chromium against a running Home Assistant. It creates, renames and deletes an item over a
+separate WebSocket connection and asserts that each change reaches the card through its
+subscription alone, with no re-list. That catches the "green unit tests, dead feature"
+regression unit mocks cannot, because a mock is only as truthful as the contract its author
+imagined.
 
 ```bash
 export RUN_ONLINE=1
 export HA_BASE_URL=http://localhost:8123
 export HA_TOKEN=<your-long-lived-token>
 cd cards/haventory-card
-npm i && npx playwright install chromium   # one-time
-npm run test:e2e                            # skips cleanly if RUN_ONLINE is unset
+npx playwright install chromium   # one-time; playwright itself is a dev dependency
+npm run test:e2e                  # skips cleanly when RUN_ONLINE is unset
 ```
 
-The card must be on a dashboard (deploy with `scripts/reload_addon.sh`, for example), but
-no path is assumed: the run walks the instance's dashboards for a view holding a
-`custom:haventory-card` in a normal column and prints the one it chose. `--path <ha-url-path>`
-forces a different view. The test creates a uniquely-named item and deletes it, with
-best-effort cleanup even on failure.
+The card must be on a dashboard (`scripts/reload_addon.sh` deploys it). The run walks the
+instance's dashboards for a view holding `custom:haventory-card` in a normal column and
+prints the one it chose; `--path <ha-url-path>` picks another. Its test item is deleted even
+when the run fails.
 
 ### Coverage
 
-- Backend: `scripts/ci_local.sh` produces `coverage.xml` and a browsable `htmlcov/index.html`.
-- Frontend: `npx vitest run --coverage` (report at `cards/haventory-card/coverage/`).
+- Backend: `scripts/ci_local.sh` writes `coverage.xml` and `htmlcov/index.html`.
+- Card: `npx vitest run --coverage` writes `cards/haventory-card/coverage/`.
 
-## Backend (custom component)
+## Backend architecture
 
-- `custom_components/haventory/` with `manifest.json`, `__init__.py`, `config_flow.py`,
-  `services.yaml`.
-- Store: `entry.runtime_data.store` with a versioned schema and safe writes. The schema is
-  at **1**, and the load fills in every field a store predates rather than stepping it
-  through versions. A store stamped above 1 is refused and never rewritten, so a rollback
-  cannot relabel data the running build cannot read. There are two refusals because there
-  are two ways out: stamps 2 through 9 are this project's own from before the collapse to
-  1, and a 0.8.x build is what reads one; anything above them was written by a newer
-  HAventory. `import_export` draws the same line on a document's `schema_version`.
-- Persistence:
-  - **WebSocket and service handlers** save immediately via `async_persist_repo`. Storage
-    errors propagate to clients as `storage_error`.
-  - **Shutdown and unload** save immediately via `async_persist_immediate`.
-  - **Concurrency**: all persist paths use one `asyncio.Lock` to serialize writes.
-- WebSocket-first CRUD via `homeassistant.components.websocket_api` decorators.
-- Services via `hass.services.async_register` with `voluptuous` schemas. Handlers re-raise
-  validation, repository and storage errors so HA surfaces them.
-- Areas via `homeassistant.helpers.area_registry.async_get(hass)`. Never auto-create areas.
-- Every free-text and collection field is capped on the way in (4000 characters of
-  description, 50 tags, 50 custom fields, and so on beside the 120-character name limit),
-  because the store is one JSON document rewritten in full on every mutation. The caps
-  refuse growth, never data that already exists: an item written before a cap existed still
-  loads, saves, exports and imports, on the backend and in the card's editor alike. The
-  full table is in [`docs/data_shapes.md`](data_shapes.md) → "Input caps".
-- Case-insensitive search; denormalized `location_path` on items; item `version` for
-  optimistic concurrency. `version` counts *item* mutations only. Renaming or moving a
-  location rewrites the derived `location_path` across its subtree without bumping
-  `version` or restamping `updated_at`, so an expected version taken before the rename is
-  still accepted after it.
-- Calendar-derived counts on `haventory/stats`, each with a matching `item/list` filter:
-  `overdue_count` / `overdue_only` for a passed `due_date` (checked-out items only), and
-  `inspection_overdue_count` / `inspection_overdue_only` for a passed `inspection_date`
-  (whole inventory). Each has a *due* twin that counts today as well:
-  `checked_out_due_count` / `checked_out_due_only` and `inspection_due_count` /
-  `inspection_due_only`. All of them move with the calendar and emit no event when the date
-  rolls over.
-- A stored per-item **status**: exactly one slug from the store's `statuses` collection,
-  seeded with the built-in `ok` / `missing` / `needs_repair` and the household's from there.
-  `status/create`, `status/update`, `status/reorder` and `status/delete` maintain the
-  vocabulary, and the card's organize dialog is where it is edited. `ok` is the fixed default
-  and the way a flagged state clears. Filterable via the `item/list` `status` filter,
-  counted on `haventory/stats` as `missing_count` / `needs_repair_count` and as
-  `status_counts` for every defined slug, and settable everywhere an item is written. A
-  store written before the field existed has it filled in on load; an export without it
-  reads as `ok` too, and one without a `statuses` section means the built-in three.
-- **JSON import/export** via `haventory/export`, `haventory/import/preview` and
-  `haventory/import/execute`: back up to a versioned document before a breaking update and
-  restore afterwards. Preview reports would-be adds, updates and conflicts without touching
-  state; execute applies a `merge` / `replace` / `skip` policy and rolls back on failure, so
-  a bad import never leaves partial state. This complements Home Assistant's own backups:
-  the store file is already captured by an HA backup, and the export adds a portable,
-  human-readable document you can inspect, diff and restore on its own. See
-  [`backend_api_contract.md`](backend_api_contract.md) and
-  [`docs/data_shapes.md`](data_shapes.md). Identity is the entity id and never the name,
-  which is what a restore onto entities deleted and recreated by hand turns on.
+`custom_components/haventory/` is a local-push, single-instance integration. Each module's
+docstring states its own constraints; this is the map.
 
-## Frontend (Lovelace card)
+**A write, end to end.** A WebSocket command (`ws.py`) or a `haventory.*` service
+(`services.py`) validates its frame against its own schema. A write both surfaces make then
+runs the one function in `ops.py` for it, which makes the repository call and returns what
+the write earns; a write only the WebSocket makes (attachments, statuses, reminder set and
+clear, subtree moves) calls the repository from its handler. Either way the caller then
+persists, announces and answers, always in that order:
 
-Lit + TypeScript + Vite, tests with Vitest, real-time over WebSocket with optimistic writes.
-The build writes one bundle to `custom_components/haventory/www/haventory-card.js`, which
-is git-ignored and inside the integration package, the only tree HACS copies, so a card
-change reaches an install through a release like any backend change. That one bundle draws
-the dashboard card and the sidebar page and registers the icon set the backend's
-`PANEL_ICON` names; `tests/test_frontend_registration.py` holds the two sides together.
+1. **Persist.** `repository.py` holds the inventory in memory with its indexes. Every write
+   is awaited through one persist path, serialized by one lock, and a failure reaches the
+   client as `storage_error`. There is no scheduled or deferred save; shutdown and unload
+   flush immediately.
+2. **Announce.** `events.py` has one function per kind of change, and each covers every
+   surface at once: the WebSocket topics (fanned out by `subscriptions.py`), the Home
+   Assistant bus events, the low-stock diff, and the dispatcher signal the sensors and the
+   calendar repaint on. It is the only module that broadcasts, so the two write surfaces
+   cannot announce the same change differently.
+3. **Answer.** Entities go out through `serialization.py`, shared by both surfaces.
 
-What the card does for a household is the [README](../README.md#what-it-is) and
-[`installing.md`](installing.md). How it is built (the component map, the store, the shared
-`ui/` layer, the column preferences, the phone breakpoints and the known gaps) is
-[`frontend_architecture.md`](frontend_architecture.md).
+The API contract's "What an event guarantees" is what this order buys.
 
-Three rules a card change is judged by, in full in
-[CONTRIBUTING.md](../CONTRIBUTING.md#conventions): the card renders no `ha-*` element, no
-user-facing string is a literal, and a component test mounts through `mountComponent` from
-`src/test.utils.ts` rather than a private copy.
+**Validation** lives in `models.py`: the entity dataclasses, the input and filter shapes,
+and every refusal, so one bad value gets one answer on every surface. Most command schema
+fields are typed `object` so that the model, not Home Assistant, names the bad field
+(contract → "`validation_error` or `invalid_format`").
 
-- The integration registers the card as a Lovelace resource on setup, under
-  `…/haventory-card.js?v=<version>`, and points an entry left at an older version at the
-  current URL rather than adding a second one.
-- A page already open when the card is installed or rebuilt has to be reloaded once before
-  the card is in it. An ordinary reload is enough, because the resource URL carries the
-  version and the bundle is served without a `Cache-Control` header.
-- Phone surfaces hold a 44px touch minimum (`--hv-tap-min`) and 16px field text. iOS zooms
-  a page whose fields are smaller and never zooms back.
-- Deletes ask through `hv-confirm`, never `window.confirm`.
+**Storage** is Home Assistant's `Store`, one JSON document rewritten in full on every
+mutation, which is why every free-text and collection field is capped
+([`data_shapes.md`](data_shapes.md) → "Input caps"). The load fills in any field a store
+lacks rather than stepping it through versions, and `migrations.py` is forward-only and
+idempotent. A store stamped with a newer schema than the build knows is refused and never
+rewritten, so a downgrade cannot relabel data it cannot read. `import_export.py` draws the
+same line on a document's `schema_version`.
 
-## CI/CD & Ops
+**The other modules:** `media.py` (attachment files and the authenticated view that serves
+them), `sensor.py` and `calendar.py` / `calendar_projection.py` (entities, repainted on the
+dispatcher signal and at local midnight), `todo_bridge.py` (the low-stock set mirrored onto
+a to-do list), `repairs.py` and `diagnostics.py`, `config_flow.py`, and `stale_files.py`
+(files an upgrade must delete). Areas are read from Home Assistant's area registry and never
+created.
 
-- GitHub Actions (`ubuntu-latest`): backend (uv, ruff, mypy, pytest with coverage, Python
-  3.14), a dedicated **integration** job (in-process HA via phacc, Python 3.14), frontend
-  (npm audit, eslint, tsc, vitest, build on a Node 22/24 matrix), actionlint, hassfest and
-  HACS validation, CodeQL, and dependency review. Third-party actions, a `docker://` image
-  among them, name an immutable revision (a commit SHA or an image digest), which
-  `tests/test_repo_hardening_offline.py` enforces, because a tag can be repointed by whoever
-  owns it. GitHub's own `actions/*` are exempt and pinned by major tag.
-- **`ha-latest`** runs the same integration suite against the *newest* Home Assistant on
-  the 8th of each month (and on demand via *Run workflow*). The `integration` job above
-  pins the declared floor, so this is the only thing in CI that meets a current core. A
-  failure here is drift against that newer Home Assistant, not a regression in whatever
-  pull request is open that day. It opens or updates one issue labelled `ci:ha-latest`,
-  which a later passing run closes again, and reports no check on a pull request.
-- **`card-smoke`** is the frontend counterpart, on the same schedule: it boots Home
-  Assistant `stable` and `beta` in the runner, onboards them over REST
-  (`scripts/ci_provision_ha.py`), installs the integration and the built card, and drives
-  `cards/haventory-card/e2e/live-updates.smoke.mjs` against each. Nothing in the unit suite
-  renders the card against a real Home Assistant, so this is what would catch the card's
-  contact surface breaking. Same handling: one issue labelled `ci:card-smoke`, closed again
-  by a later passing run, and no check on a pull request.
-- PR hygiene: Conventional-Commit PR-title check, path-based auto-labeling
-  (`.github/labeler.yml`), labels-as-code (`.github/labels.yml`), CODEOWNERS review requests,
-  and issue/PR templates.
-- Dependabot: grouped updates for `github-actions`, `npm` (card) and `uv` (Python), plus a
-  `pip` block for `requirements-integration.txt` so an advisory in that file arrives as a
-  pull request and not only as an alert. The `uv` block and a `pre-commit` block share one
-  multi-ecosystem group, so a ruff bump moves the `dev` pin and the hook rev that
-  `tests/test_toolchain_pins.py` holds equal to it in the same pull request. CI's
-  `actionlint` job runs that pre-commit hook rather than its own copy of the tool, so the
-  hook rev is the only place either version is written. A `docker` block reads
-  `.devcontainer/Dockerfile`, where every image sits on a `FROM` line because that is the
-  only line the updater takes a tag from, and a `devcontainers` block moves the features in
-  `devcontainer.json`. Both root Python blocks ignore *version* updates to `homeassistant`
-  and `home-assistant-frontend`, which are the declared floor and the wheel that release
-  asks for, not dependencies to keep current. The `pip` block is scoped off `pyproject.toml`
-  and the generated `requirements-dev.txt`, which belong to the `uv` block; the `uv` block is
-  scoped off that export as well, since it is written from `uv.lock` rather than resolved on
-  its own, so a lock bump carries a regenerated export in the same pull request.
-- `main` is protected by a checked-in ruleset (`.github/rulesets/main.json`): pull request
-  required, the CI/CodeQL/dependency-review/PR-title checks required, no force-push or
-  deletion. Edit it under *Settings → Rules → Rulesets*, or `PUT` the file to
-  `repos/{owner}/{repo}/rulesets/{id}`. The required checks must keep matching the job names
-  in `.github/workflows/`, or a pull request can never satisfy them.
-- The repository's social preview is `docs/assets/social-preview.png`, rendered from the
-  `.html` beside it. GitHub has no API for it; upload it under *Settings → General*.
-- The icons and logos Home Assistant shows for the integration live in
-  `custom_components/haventory/brand/` and are served from there, at
-  `/api/brands/integration/haventory/<file>`. A custom integration's own images win over the
-  brands CDN, so nothing has to be published anywhere for them to appear. They are rendered
-  from the card's mark constants and the outlined wordmark by
-  `uv run python scripts/render_brand_assets.py`. Regenerate rather than edit;
+**Naming.** Package and domain `haventory`; services `haventory.*`; the card bundle lives in
+`custom_components/haventory/www/`, served at `/haventory_static/`; the calendar entity is
+`calendar.haventory`, whose `unique_id` is `CALENDAR_UNIQUE_ID` in `const.py`.
+
+### Changing the WebSocket API
+
+1. Add or change the command in `ws.py`: its schema, its handler under `@ws_guard`, and its
+   entry in `HANDLERS`. A write both surfaces make goes in `ops.py`; a service also needs its
+   entry in `services.py`, `services.yaml`, `strings.json` and every
+   `translations/<tag>.json`.
+2. Update [`backend_api_contract.md`](backend_api_contract.md) and
+   [`data_shapes.md`](data_shapes.md) in the same pull request.
+   `tests/test_docs_contract_offline.py` checks the lists in the contract that name code.
+3. Test it offline through `ws_send` from `tests/ws_helpers.py`, and in
+   `tests/integration/` if it touches a Home Assistant API.
+4. If the card calls it, add it to `WSClient` (`cards/haventory-card/src/store/ws.ts`) and
+   to `makeMockHass` in `src/test.utils.ts`, which throws on any command it does not handle.
+
+## Frontend
+
+The card is one bundle, `custom_components/haventory/www/haventory-card.js`, git-ignored and
+built into the integration package because that is the only tree HACS copies. It draws the
+dashboard card and the sidebar page and registers the icon set the backend's `PANEL_ICON`
+names; `tests/test_frontend_registration.py` holds the two sides together.
+
+- On setup the integration registers the bundle as a Lovelace resource at
+  `…/haventory-card.js?v=<version>`, and repoints an entry left at an older version rather
+  than adding a second one.
+- A page open when the card is installed or rebuilt needs one ordinary reload: the resource
+  URL carries the version, and the bundle is served without a `Cache-Control` header.
+
+How the card is built (the component map, the store, the shared `ui/` layer, the Home
+Assistant contact surface, the phone breakpoints and the known gaps) is
+[`frontend_architecture.md`](frontend_architecture.md). What it does for a household is the
+[README](../README.md#what-it-is) and [`installing.md`](installing.md).
+
+## CI and repository automation
+
+- **CI** (`.github/workflows/ci.yml`) runs the backend gate with coverage, the in-process
+  suite pinned to the declared Home Assistant floor (`integration`), the card gate on every
+  Node major `engines` names, `actionlint` (through its pre-commit hook), hassfest and HACS
+  validation. CodeQL, dependency review and the Conventional-Commit PR-title check run as
+  their own workflows.
+- **Action pinning.** Third-party actions, `docker://` images included, name an immutable
+  revision (a commit SHA or an image digest), because a tag can be repointed by whoever owns
+  it. GitHub's own `actions/*` are pinned by major tag. `tests/test_repo_hardening_offline.py`
+  enforces both.
+- **`ha-latest`** runs the in-process suite against the newest Home Assistant on the 8th of
+  each month and on demand. **`card-smoke`**, on the same schedule, boots Home Assistant
+  `stable` and `beta`, onboards them over REST (`scripts/ci_provision_ha.py`), installs the
+  integration and the built card, and runs the live-update smoke against each. Both catch
+  drift against a newer Home Assistant rather than a regression in an open pull request, so
+  neither reports a check on a pull request: each opens or updates one issue (labelled
+  `ci:ha-latest` / `ci:card-smoke`) and closes it again on a later passing run.
+- **Dependabot** groups updates for `github-actions`, `npm`, `uv`, `pip`
+  (`requirements-integration.txt`), `docker` (`.devcontainer/Dockerfile`) and
+  `devcontainers`. The `uv` and `pre-commit` blocks share one group, so a ruff bump moves the
+  pin and the hook rev in one pull request. The declared Home Assistant floor and the
+  frontend wheel it asks for are ignored for version updates, because they are floors, not
+  dependencies to keep current.
+- **`main` is protected** by the checked-in ruleset `.github/rulesets/main.json`: a pull
+  request and the CI, CodeQL, dependency-review and PR-title checks are required, and
+  force-push and deletion are blocked. The required check names must match the job names in
+  `.github/workflows/`, or no pull request can satisfy them. Edit it under *Settings → Rules
+  → Rulesets*, or `PUT` the file to `repos/{owner}/{repo}/rulesets/{id}`.
+- **Pull request hygiene**: path-based labels (`.github/labeler.yml`), labels as code
+  (`.github/labels.yml`), CODEOWNERS review requests, and the issue and PR templates.
+- **Brand assets** in `custom_components/haventory/brand/` are what Home Assistant shows
+  for the integration, served at `/api/brands/integration/haventory/<file>`; a custom
+  integration's own images win over the brands CDN. Regenerate them with
+  `uv run python scripts/render_brand_assets.py` rather than editing them;
   `tests/test_brand_assets.py` fails when artwork and mark drift apart.
-- Release automation via **release-please**: merging its release PR tags the version, drafts
-  the GitHub Release, builds and attaches `haventory.zip` (the bundle HACS installs), and
-  publishes the draft last. See [CONTRIBUTING.md](../CONTRIBUTING.md) → Releases.
-- Contributor guide: [CONTRIBUTING.md](../CONTRIBUTING.md).
-- Conventional Commits; update `README.md` when behavior changes.
-
----
+- **The social preview** is `docs/assets/social-preview.png`, rendered from the `.html`
+  beside it. GitHub has no API for it; upload it under *Settings → General*.
+- **Releases** are cut by release-please: [CONTRIBUTING.md](../CONTRIBUTING.md#releases).
 
 ## Reproducible dev environment (.devcontainer)
 
-Open the repo in VS Code or GitHub Codespaces and "Reopen in Container" for a ready-to-go
-environment (uv + Node 24). `post-create` runs `scripts/setup.sh` and verifies the offline
-suite. To bring up a real Home Assistant with HACS against the working tree, run
-`bash .devcontainer/develop.sh` (needs network; provisions Python 3.14): current stable Home
-Assistant in its own `.venv-ha/`, its config in `.ha-config/`, both git-ignored, with the
-integration symlinked in and HAventory logging at debug. Set it up in the browser at
-`http://localhost:8123`: onboarding, then *Settings → Devices & services → Add
-integration*. A restart from the UI starts Home Assistant again on the working tree's current
-code. The online smokes above run against it with `HA_BASE_URL=http://localhost:8123` and a
-long-lived token from its profile page.
+Open the repository in VS Code or GitHub Codespaces and choose *Reopen in Container*. The
+post-create step runs `scripts/setup.sh` and the offline suite.
+
+To run a real Home Assistant with HACS against the working tree, run
+`bash .devcontainer/develop.sh` (needs network). It installs the current stable Home
+Assistant into `.venv-ha/` with its config in `.ha-config/` (both git-ignored), symlinks the
+integration in and logs HAventory at debug. Open `http://localhost:8123`, onboard, then add
+the integration under *Settings → Devices & services*. A restart from the UI picks up the
+working tree's current code, and the online smokes run against it with
+`HA_BASE_URL=http://localhost:8123` and a long-lived token from its profile page.
 
 On a Windows or macOS host, clone into a container volume (*Dev Containers: Clone Repository
-in Container Volume*) rather than reopening a bind-mounted checkout. `.venv`, `node_modules`
-and the Home Assistant environment are tens of thousands of small files, and a bind mount
-makes every one of them slow.
-
----
+in Container Volume*) rather than reopening a bind-mounted checkout: `.venv`,
+`node_modules` and the Home Assistant environment are tens of thousands of small files, and a
+bind mount makes every one of them slow.
 
 ## Dev helper scripts
 
-All scripts are Linux/bash under `scripts/`, and the Python helpers assume a UTF-8 terminal.
-There is no Windows host support; use WSL2. This is the whole list.
+Everything under `scripts/` is Linux/bash, and the Python helpers assume a UTF-8 terminal.
 
 | Script | What it does |
 |---|---|
-| `setup.sh` | the one-shot bootstrap under [Setup](#setup-linuxbash) |
+| `setup.sh` | the bootstrap under [Setup](#setup-linuxbash); `--ci` skips the pre-commit hooks |
 | `ci_local.sh` | the whole gate in one run, with coverage |
-| `test_integration.sh` | provisions `.venv-integration` and runs the in-process HA suite |
-| `reload_addon.sh` | deploys the working tree into a running HA dev container |
+| `export_dev_requirements.sh` | regenerates `requirements-dev.txt` from `uv.lock` |
+| `test_integration.sh` | provisions `.venv-integration` and runs the in-process suite |
+| `reload_addon.sh` | deploys the working tree into a running Home Assistant dev container |
 | `smoke_online.sh` | the online WebSocket smoke; purges the store first when `HA_CONTAINER` is set |
-| `ws_init_haventory.py` | creates the config entry over WebSocket |
+| `ws_init_haventory.py` | creates the config entry through Home Assistant's config-flow REST API, then checks `haventory/version` over WebSocket |
 | `ci_provision_ha.py` | onboards a fresh Home Assistant over REST; what `card-smoke` uses |
 | `probe_attachments.py`, `probe_fixtures.py` | the attachment path against a live instance (below) |
 | `render_brand_assets.py`, `brand_wordmark.py` | regenerate `custom_components/haventory/brand/` |
 | `check_version_consistency.py`, `check_release_zip.py` | the release checks CI runs |
-| `dev_env.py` | which instance a helper is about to talk to (below); imported, never run |
+| `dev_env.py` | which instance a helper talks to (below); imported, never run |
 | `common.sh` | the shared bash helpers every `.sh` here sources |
 
-Driving the WebSocket API by hand is the `run-haventory` skill's `driver.py`, which holds
-one authenticated connection for a whole sequence: `status`, `send`, `watch` and `smoke`.
+Driving the WebSocket API by hand is the `run-haventory` skill's `driver.py`, which holds one
+authenticated connection for a whole sequence: `status`, `send`, `watch` and `smoke`.
 
 ### Which instance a helper talks to
 
-Every Python helper takes `HA_BASE_URL` / `HA_TOKEN` from the `.env` at the root of the
-checkout it is run from, and that file **wins over an inherited export**. A worktree
-carrying its own `.env` names the instance that worktree is for, whatever a shell profile
-exported. `HAVENTORY_IGNORE_ENV_FILE=1` hands the decision back to the environment for one
-run, which is how a recipe points a helper at a remote instance while a dev `.env` sits in
-the tree. Each helper prints the resolved target (the base URL, where that value came from,
-and the store's item and location totals) on stderr before it acts, so a run against the
-wrong inventory shows up in the first line of output. `scripts/dev_env.py` implements both
-rules.
+Every Python helper takes `HA_BASE_URL` and `HA_TOKEN` from the `.env` at the root of the
+checkout it runs from, and that file **wins over an inherited export**, so a worktree's own
+`.env` names the instance that worktree is for whatever a shell profile exported.
+`HAVENTORY_IGNORE_ENV_FILE=1` hands the decision back to the environment for one run, which
+is how a recipe points a helper at a remote instance while a dev `.env` sits in the tree.
+Before it acts, each helper prints on stderr the base URL, where that value came from, and
+the store's item and location totals, so a run against the wrong inventory shows in the
+first line of output. `scripts/dev_env.py` implements both rules.
 
 ### Attachment probes
 
-`scripts/probe_attachments.py` checks the attachment path against a live instance, and
-against the **bytes on Home Assistant's disk**, not what the card reported. Pillow comes
-from the non-default `probes` dependency group, so a plain `uv sync` stays lean:
+`scripts/probe_attachments.py` checks the attachment path against a live instance, reading
+the **bytes on Home Assistant's disk** rather than what the card reported. Pillow comes from
+the non-default `probes` dependency group, so a plain `uv sync` stays lean:
 
 ```bash
 uv sync --group probes
@@ -413,25 +366,10 @@ export HA_CONTAINER=home-assistant     # or HA_CONFIG_DIR for a bind-mounted con
 uv run --group probes python scripts/probe_attachments.py
 ```
 
-It covers the 2 MiB re-encode threshold and the 2048-pixel cap, EXIF orientation applied
+It covers the card's re-encode threshold and pixel cap (the constants in
+`cards/haventory-card/src/ui/downscale.ts`, mirrored in Pillow), EXIF orientation applied
 before the re-encode, PNG transparency surviving as WebP, an animated GIF kept whole, a
-sub-threshold JPEG round-tripping byte-identical, the `206`/`404`/no-answer presence
-semantics, and the `Content-Disposition` name. Exit codes: `0` pass, `1` a probe failed, `2`
-setup error, `3` timeout.
-
-`scripts/probe_fixtures.py --out DIR` writes those fixtures on their own. Its header says
-what the five frames are for and how much disk they take. They are never committed.
-
----
-
-## Conventions
-
-- Domain/package: `haventory` under `custom_components/haventory`; services `haventory.*`;
-  built assets `custom_components/haventory/www/`, served at `/haventory_static/`; calendar
-  entity `calendar.haventory`, whose `unique_id` is the constant `haventory_calendar`.
-- Logging: every module takes its logger from `logs.context_logger`, which writes the
-  `extra=` context into the message text as `key=value` pairs and passes the mapping on for
-  any structured handler. Home Assistant's formatter renders the message and drops
-  everything else, so a field that stayed in `extra=` was invisible in exactly the log a bug
-  report carries. Avoid reserved `LogRecord` keys in the extras: use `item_name` /
-  `location_name`, not `name`.
+small JPEG round-tripping byte-identical, the `206`/`404`/no-answer presence semantics and
+the `Content-Disposition` name. Exit codes: `0` pass, `1` a probe failed, `2` setup error,
+`3` timeout. `scripts/probe_fixtures.py --out DIR` writes the fixtures on their own; its
+header says what each is for. They are never committed.

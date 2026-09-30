@@ -9,8 +9,9 @@ docs and code are all welcome. Taking part means following the
 
 - **Report a bug** or **request a feature** through the
   [issue tracker](https://github.com/chrreiter/HAventory/issues). The forms ask for the
-  details we need. Features are frozen until the first public release, so an idea is staged
-  after it, and a usability problem with something that already exists is a bug.
+  details we need. Features are frozen until the first public release (see "Releases"), so
+  a new idea is staged after it, and a usability problem with something that already exists
+  is a bug.
 - **Ask a question or discuss an idea** in
   [Discussions](https://github.com/chrreiter/HAventory/discussions) or the
   [Home Assistant community](https://community.home-assistant.io/).
@@ -21,8 +22,17 @@ reporting route and says what to expect from a one-maintainer project.
 
 ## Development setup
 
-Prerequisites: [uv](https://docs.astral.sh/uv/), Node 22.13+ (or 24 LTS), git. The target is
-**Home Assistant 2026.6.0+**, which means **Python 3.14** and **Node 22.13+/24**.
+[`docs/developing.md`](docs/developing.md#setup-linuxbash) has the bootstrap: uv, git and a
+supported Node, then `uv sync` and `npm ci`. Each platform floor is declared in exactly one
+file. `tests/test_min_ha_version.py` and `tests/test_toolchain_pins.py` register every other
+copy and fail when one disagrees, so a new copy is written only together with its entry
+there:
+
+| Floor | Declared in |
+|---|---|
+| Home Assistant | `hacs.json` (`homeassistant`), which HACS enforces at install |
+| Python | `pyproject.toml` (`requires-python`) |
+| Node | `cards/haventory-card/package.json` (`engines`) |
 
 The development toolchain is **Linux/bash only**. The scripts, the test scaffolding and CI
 all assume it, and nothing here is tested on a Windows host. On Windows, develop inside WSL2.
@@ -34,12 +44,10 @@ changes: the HA APIs the integration touches, the Python floor those releases ca
 security. A declared floor is a recommendation about what to run, so it must not point at a
 release with a known unpatched **high or critical** advisory. Lower severities do not move
 it, because "any advisory at all" would turn the floor into a treadmill. Re-derive the number
-rather than assuming the current one is still right. `hacs.json` is the one place the floor
-is declared; `tests/test_min_ha_version.py` checks every copy of it, and `dependency-review`
-fails CI if `requirements-integration.txt` is pinned below it.
-
-[`docs/developing.md`](docs/developing.md) has the rest: the bootstrap script, the full
-toolchain, both backend test modes, the online smokes and the helper scripts.
+rather than assuming the current one is still right. Raising it means editing `hacs.json`
+and `requirements-integration.txt`, which pins the in-process suite to the same release.
+`tests/test_min_ha_version.py` checks every copy, and `dependency-review` flags an advisory
+against the newly pinned release in the same pull request.
 
 ## The gate
 
@@ -65,8 +73,9 @@ repository's Dependabot rule dismisses dev-scope alerts, so the alert dashboard 
 truth for the card's lockfile, CI is. The level is `moderate` for the same reason. CI and
 `scripts/ci_local.sh` run the same level, so a lower one locally is green against a red CI.
 
-`scripts/ci_local.sh` runs everything at once. CI runs the same checks plus `actionlint`,
-`hassfest`, HACS validation, CodeQL and dependency review.
+`scripts/ci_local.sh` runs everything at once. CI runs the same checks plus the in-process
+Home Assistant suite, `actionlint`, `hassfest`, HACS validation, CodeQL, dependency review
+and the PR-title check.
 
 ## Conventions
 
@@ -106,6 +115,11 @@ truth for the card's lockfile, CI is. The level is `moderate` for the same reaso
   `tn()` from `cards/haventory-card/src/i18n/`, and the integration through `strings.json`
   plus `translations/<tag>.json`. See "Adding a language" below for the shape, and
   `docs/frontend_architecture.md` for why copy cannot be a module constant.
+- **Logging.** Every module takes its logger from `logs.context_logger(__name__)`, never
+  `logging.getLogger` (`tests/test_logs_offline.py` checks). Attach context through
+  `extra=`: `context_logger` folds it into the message text as `key=value` pairs, because
+  Home Assistant's formatter drops everything else. Avoid reserved `LogRecord` keys there:
+  `item_name` / `location_name`, not `name`.
 - Update `README.md` when behavior changes. Report out-of-scope findings under a
   "Follow-ups" note rather than fixing them in the same PR.
 
