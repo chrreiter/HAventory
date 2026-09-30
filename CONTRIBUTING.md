@@ -24,7 +24,9 @@ reporting route and says what to expect from a one-maintainer project.
 
 [`docs/developing.md`](docs/developing.md#setup-linuxbash) has the bootstrap: uv, git and a
 supported Node, then `uv sync` and `npm ci`. Each platform floor is declared in exactly one
-file, and tests fail on a copy anywhere else that disagrees with it:
+file. `tests/test_min_ha_version.py` and `tests/test_toolchain_pins.py` register every other
+copy and fail when one disagrees, so a new copy is written only together with its entry
+there:
 
 | Floor | Declared in |
 |---|---|
