@@ -2,7 +2,7 @@ import { html } from 'lit';
 import type { ReactiveControllerHost, TemplateResult } from 'lit';
 import type { ColumnKey } from './store/columns';
 import { loadColumnPrefs, saveColumnPrefs } from './store/columns';
-import { activeFilterCount, defaultFilters } from './store/store';
+import { activeFilterCount } from './store/store';
 import type { Store } from './store/store';
 import type { ImportPolicy, ImportPreview, ImportSummary } from './store/types';
 import { t, tn } from './i18n';
@@ -17,13 +17,6 @@ import './components/hv-organize-dialog';
 import './components/hv-import-sheet';
 import './components/hv-diagnostics-panel';
 
-/**
- * All that these surfaces need from the element hosting them: a redraw, and a
- * lifecycle for the viewport watcher below to hang on.
- */
-type SurfaceHost = ReactiveControllerHost;
-
-/** What a confirmation prompt needs to say and do. */
 interface ConfirmSpec {
   heading: string;
   message: string;
@@ -44,46 +37,26 @@ interface SurfaceHooks {
 }
 
 /**
- * Every surface `hv-full-view` can raise but not answer itself.
- *
- * The view names these actions — from its ⋮ menu, its sidebar's "+" buttons,
- * its editor's Delete and its empty state's offers — but none of them can be
- * answered where they are raised: the column choice is a per-browser preference,
- * an export has to leave the page as a file, and the confirm/organize/import/
- * diagnostics dialogs must outlive the surface that asked for them. They bubble
- * out to whichever element Home Assistant instantiated — the Lovelace card
- * (via `hv-card-shell`) and the sidebar panel are each one of those — so the
- * state, the wiring and the ⋮ menu contents live here, held by the host rather
- * than repeated in it. The one action that stays host-specific is
- * `select-items`, which is about where selection happens, not a dialog.
+ * Every surface `hv-full-view` can raise but not answer itself: the column
+ * choice, exports, and the confirm/organize/import/diagnostics dialogs, which
+ * must outlive the surface that asked. Held by the card shell and the sidebar
+ * panel alike, with the ⋮ menu contents, so the two cannot drift apart.
  */
 export class HostSurfaces {
   /** The full view's table columns. Feed this to `hv-full-view.columns`. */
   columns: ColumnKey[] = loadColumnPrefs();
 
-  /**
-   * How a file reaches the user's disk. A seam: a test can replace it, and
-   * nothing else has a reason to.
-   */
+  /** How a file reaches the user's disk; a test seam. */
   download: (filename: string, text: string) => void = triggerDownload;
 
   /** When the caches were last known-good, for the diagnostics "since" tile. */
   lastRefresh: string | null = null;
   refreshBusy = false;
 
-  private readonly host: SurfaceHost;
+  private readonly host: ReactiveControllerHost;
   private readonly getStore: () => Store | undefined;
   private readonly hooks: SurfaceHooks;
-  /**
-   * The phone predicate for every dialog here, measured against the viewport.
-   *
-   * Not the card's width: these are `position: fixed`, so they are laid out
-   * against the window whatever the card measures. Handed the card's own
-   * measurement, the organize dialog takes its full-bleed phone page on a
-   * desktop monitor whenever the card sits in a normal dashboard column, and
-   * expanding the card does not change it — the measured element is still the
-   * card underneath.
-   */
+  /** Measured against the viewport, not the card: these dialogs are `position: fixed`. */
   private readonly viewport: ViewportNarrow;
   private pickerOpen = false;
   private confirmSpec: ConfirmSpec | null = null;
@@ -96,18 +69,14 @@ export class HostSurfaces {
   private importBusy = false;
   private importError: string | null = null;
 
-  constructor(host: SurfaceHost, getStore: () => Store | undefined, hooks: SurfaceHooks = {}) {
+  constructor(host: ReactiveControllerHost, getStore: () => Store | undefined, hooks: SurfaceHooks = {}) {
     this.host = host;
     this.getStore = getStore;
     this.hooks = hooks;
     this.viewport = new ViewportNarrow(host);
   }
 
-  /**
-   * Run a menu action if a surface here owns it, and say whether one did. An id
-   * this does not know belongs to the host, which must not treat a `false` as
-   * "handled" and drop it on the floor.
-   */
+  /** Run a menu action if a surface here owns it; `false` leaves it to the host. */
   handleAction(id: string, tab?: OrganizeTab): boolean {
     switch (id) {
       case 'columns':
@@ -121,8 +90,6 @@ export class HostSurfaces {
         void this.exportDownload('view');
         return true;
       case 'organize':
-        // The expanded sidebar's facet headings ask for a specific tab; the ⋮
-        // menus ask for none and get Locations.
         this.organizeTab = tab ?? 'locations';
         this.organizeOpen = true;
         this.host.requestUpdate();
@@ -152,14 +119,7 @@ export class HostSurfaces {
     this.host.requestUpdate();
   }
 
-  /**
-   * The one place the card asks whether typed edits may be thrown away.
-   *
-   * Every form that can be left with typing in it — the inline expander, the
-   * phone add sheet, the detail sheet's form, the full view's — is handed this
-   * and calls it without knowing which host it is on. A bound field rather than
-   * a method so a host can pass it straight down as a property.
-   */
+  /** The one place the card asks whether typed edits may be thrown away; a bound field, so it can be passed down. */
   readonly confirmDiscard: ConfirmDiscard = (onConfirm) => {
     this.confirm({ ...discardPrompt(), onConfirm });
   };
@@ -193,20 +153,12 @@ export class HostSurfaces {
     }
   }
 
-  /**
-   * The full view's ⋮ menu. Both hosts serve this same list, so the card's
-   * expanded view and the sidebar panel cannot drift apart on what it offers.
-   *
-   * Every hint line under an entry — `meta` and `sub` alike — is a list of
-   * `·`-separated segments, and each segment opens with a capital. A line that
-   * reads as a sentence beside one that reads as a list makes the two look like
-   * different kinds of thing when they are the same kind.
-   */
+  /** The full view's ⋮ menu. Every hint line is `·`-separated segments, each capitalized. */
   menuEntries(): OverflowMenuEntry[] {
     const st = this.getStore()?.state.value ?? null;
     const total = st?.statsCounts?.items_total ?? null;
     const filtered = st?.total ?? null;
-    const filtersOn = activeFilterCount(st?.filters ?? defaultFilters()) > 0;
+    const filtersOn = !!st && activeFilterCount(st.filters) > 0;
     return [
       { id: 'select-items', label: t('hv.surfaces.menu.selectItems'), glyph: 'select' },
       {
@@ -227,8 +179,7 @@ export class HostSurfaces {
         id: 'diagnostics',
         label: t('hv.diagnostics.title'),
         glyph: 'alertCircle',
-        // Badge only when there is actually something wrong — otherwise it is a plain row.
-        ...(this.diagnosticsBadge ? { badge: this.diagnosticsBadge } : {}),
+        ...(st?.degraded.connectionLost ? { badge: t('hv.surfaces.badge.offline') } : {}),
       },
       { divider: true },
       { caption: t('hv.surfaces.menu.data') },
@@ -241,9 +192,7 @@ export class HostSurfaces {
             ? t('hv.surfaces.menu.exportAllSub')
             : tn('hv.surfaces.menu.exportAllCount', total),
       },
-      // Only while a filter is on. Unfiltered, "the current view" is the whole
-      // inventory that Export backup above already offers, and the entry could
-      // only say so by claiming a filter that is not there.
+      // Unfiltered, the current view is the whole inventory offered above.
       ...(filtersOn
         ? [
             {
@@ -259,13 +208,6 @@ export class HostSurfaces {
         : []),
       { id: 'import', label: t('hv.surfaces.menu.import'), glyph: 'upload' },
     ];
-  }
-
-  /** Short badge for the Diagnostics menu row, or null when all is well. */
-  private get diagnosticsBadge(): string | null {
-    const st = this.getStore()?.state.value ?? null;
-    if (!st) return null;
-    return st.degraded.connectionLost ? t('hv.surfaces.badge.offline') : null;
   }
 
   /** Every dialog these surfaces own. Render once, after the host's main UI. */
@@ -376,8 +318,6 @@ export class HostSurfaces {
       const stamp = (doc.exported_at ?? '').replace(/[:]/g, '-') || 'backup';
       this.download(`haventory-export-${stamp}.json`, json);
     } catch (err: unknown) {
-      // The surface that raised the action owns the error banner; export
-      // failures are rare and not worth one, so they go to the console.
       console.error('HAventory export failed', err);
     }
   }
@@ -415,8 +355,7 @@ export class HostSurfaces {
         data?: { errors?: { path: string; message: string }[] };
       };
       if (anyErr?.code === 'validation_error' && anyErr.data?.errors?.length) {
-        // The backend rejected the document itself — show the structured list
-        // rather than flattening it into one message.
+        // A rejected document shows its structured list, not one message.
         this.importPreview = {
           valid: false,
           errors: anyErr.data.errors,

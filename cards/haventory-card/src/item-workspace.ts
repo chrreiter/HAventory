@@ -11,89 +11,44 @@ import './components/hv-checkout-popover';
 import './components/hv-detail-sheet';
 import './components/hv-item-editor';
 
-/**
- * All that this workspace needs from the element hosting it: a redraw, a
- * lifecycle for the store subscription, and somewhere to raise a row event the
- * table below it does not answer.
- */
-type WorkspaceHost = ReactiveControllerHost & EventTarget;
-
-/** Where an editor, a read sheet or a check-out step is being drawn. */
 interface SurfaceOptions {
   /** The per-surface `data-testid`; the browser harnesses locate these. */
   testid: string;
-  /** Finger-sized controls and the one-column form. */
   mobile: boolean;
 }
 
 /** The ways a host differs; everything else in this workspace is identical. */
 export interface WorkspaceHooks {
-  /**
-   * The host's discard question. The card's shells raise it through their
-   * `HostSurfaces`, the expanded view through the property its host sets, and
-   * `null` leaves a form without one.
-   */
+  /** The host's discard question; `null` leaves a form without one. */
   confirmDiscard: () => ConfirmDiscard | null;
-  /**
-   * The open form, wherever this host renders it — the dirty check has to find
-   * it across whichever shadow root it landed in.
-   */
+  /** The open form, in whichever shadow root this host renders it. */
   editor: () => HVItemEditor | null;
-  /**
-   * A row was opened: tapped, or Enter on it. The expanded view answers this
-   * and the menu entry below identically; the card does not, because a tap on
-   * a phone opens the read sheet and the menu entry opens the form.
-   */
+  /** A row was tapped or entered; on a phone the card opens the read sheet. */
   openItem: (itemId: string) => void;
   /** The row menu's Edit entry. */
   editItem: (itemId: string) => void;
-  /**
-   * A delete was asked for, from a row menu, the open form or the read sheet.
-   * The card confirms it in its own `HostSurfaces`; the expanded view has none,
-   * so it hands the request to whichever element is hosting it.
-   */
+  /** A delete was asked for, from a row menu, the open form or the read sheet. */
   requestDelete: (detail: { itemId: string; name?: string }) => void;
 }
 
 /**
- * Everything both of the card's shells do to one item.
- *
- * The compact card and the expanded view are two sizes of the same workspace:
- * each opens the edit form, holds on to the row it is open on, saves it, shows
- * one item in a read sheet at phone width, and runs a check-out step from a
- * row. Written twice, the two copies were free to drift on when typing is
- * asked about, what a refused save leaves on screen and which events a row may
- * raise — so the state, the store calls and the three templates live here,
- * held by the host rather than repeated in it. The same arrangement
- * `HostSurfaces` uses for the dialogs.
- *
- * The templates take the surface's own `data-testid` and phone flag as
- * parameters: `inline-editor` / `full-editor` / `sheet-editor` and their
- * neighbours are what the browser harnesses locate, and one renderer is what
- * keeps them from drifting apart in anything else.
+ * Everything both of the card's shells do to one item: the edit form and the
+ * row it is open on, saving, the phone read sheet and the check-out step. Held
+ * here once, as `HostSurfaces` holds the dialogs, so the compact card and the
+ * expanded view cannot drift apart.
  */
 export class ItemWorkspace implements ReactiveController {
   /** Row expanded into the editor, or `'new'` for the create form. */
   editing: string | 'new' | null = null;
-  /** True while a save is in flight; the form greys itself out. */
   editorBusy = false;
   /**
-   * What the open form says about a save the store refused.
-   *
-   * The store reports failures through its error queue rather than throwing,
-   * and the form can be tall enough to have scrolled the host's banner list off
-   * the screen — so the account of what happened goes inside the form, beside
-   * the text it kept.
+   * A refused save, shown inside the form: the store queues failures rather
+   * than throwing, and a tall form can scroll the banners out of sight.
    */
   editorError: string | null = null;
   /**
-   * The last copy of the row being edited, kept for as long as the form is
-   * open.
-   *
-   * A filter change refetches, and the edited row can drop out of the result.
-   * The editor rebuilds its model whenever the item it was handed changes, so
-   * handing it `null` there would wipe the typed edits just as surely as
-   * unmounting it. `syncPinnedItem` keeps this at the freshest listed copy.
+   * The last copy of the row being edited. A refetch can drop it from the list,
+   * and handing the editor `null` would wipe the typed edits.
    */
   pinnedItem: Item | null = null;
   /** Item shown in the read sheet, which is the phone's read surface. */
@@ -102,7 +57,7 @@ export class ItemWorkspace implements ReactiveController {
   checkout: { itemId: string; mode: 'check-out' | 'set-due-date'; anchor: DOMRect | null } | null =
     null;
 
-  private readonly host: WorkspaceHost;
+  private readonly host: ReactiveControllerHost & EventTarget;
   private readonly getStore: () => Store | undefined;
   private readonly hooks: WorkspaceHooks;
   private storeUnsub?: () => void;
@@ -110,7 +65,7 @@ export class ItemWorkspace implements ReactiveController {
   private mediaFor?: Store;
   private mediaBindings: MediaBindings | null = null;
 
-  constructor(host: WorkspaceHost, getStore: () => Store | undefined, hooks: WorkspaceHooks) {
+  constructor(host: ReactiveControllerHost & EventTarget, getStore: () => Store | undefined, hooks: WorkspaceHooks) {
     this.host = host;
     this.getStore = getStore;
     this.hooks = hooks;
@@ -132,10 +87,7 @@ export class ItemWorkspace implements ReactiveController {
     this.subscribe();
   }
 
-  /**
-   * Both hosts are passed a stable `store` object, so a property binding would
-   * never re-render them — the workspace watches the store itself.
-   */
+  /** The `store` object is stable, so a property binding never re-renders the host. */
   private subscribe(): void {
     const store = this.getStore();
     if (!store || store === this.subscribedTo) return;
@@ -152,13 +104,7 @@ export class ItemWorkspace implements ReactiveController {
     return this.st?.items.find((i) => i.id === itemId);
   }
 
-  /**
-   * Picture access for every surface below, built once per store.
-   *
-   * A fresh object each render would read as a changed property on every row
-   * and re-render the whole list, so it is rebuilt only when the store is
-   * swapped.
-   */
+  /** Picture access, built once per store: a fresh object would re-render every row. */
   get media(): MediaBindings | null {
     const store = this.getStore();
     if (!store) return null;
@@ -183,16 +129,10 @@ export class ItemWorkspace implements ReactiveController {
   }
 
   /**
-   * Hold on to the row being edited, and close what is open on it when it is
-   * really gone.
-   *
-   * Falling off the current page and being deleted look identical from the item
-   * list alone; the store is the only place that knows which happened, so it is
-   * asked rather than guessed at.
+   * Hold on to the row being edited, and close what is open on an item the
+   * store says was removed rather than filtered off the page.
    */
   syncPinnedItem(): void {
-    // The read sheet holds an id too, and a deleted item leaves it showing
-    // nothing at all rather than closing.
     if (this.detailItemId !== null && this.getStore()?.wasRemoved(this.detailItemId)) {
       this.detailItemId = null;
     }
@@ -211,24 +151,13 @@ export class ItemWorkspace implements ReactiveController {
     if (listed) this.pinnedItem = listed;
   }
 
-  /**
-   * Open a form, closing whichever one is open. Only one row edits at a time;
-   * if the open one has unsaved changes the user is asked first, rather than
-   * silently losing them.
-   */
+  /** Open a form, closing the one that is open; only one row edits at a time. */
   startEdit(next: string | 'new' | null): void {
     if (this.editing === next) return;
     this.leave(() => this.setEditing(next));
   }
 
-  /**
-   * Leave the open form — for another row, for the create form, or by taking
-   * the whole surface down — asking first if there is typing to lose.
-   *
-   * The form asks for its own Cancel, ✕ and Escape, but only about closing.
-   * Everything here has somewhere else to be afterwards, so the destination is
-   * held in the callback until the host's question comes back answered.
-   */
+  /** Leave the open form for `go`, asking first if there is typing to lose. */
   leave(go: () => void): void {
     const ask = this.hooks.confirmDiscard();
     if (ask && this.editing !== null && this.hooks.editor()?.dirty) {
@@ -245,33 +174,25 @@ export class ItemWorkspace implements ReactiveController {
     this.host.requestUpdate();
   }
 
-  /** Open the read sheet on an item. */
   openDetail(itemId: string): void {
     this.detailItemId = itemId;
     this.host.requestUpdate();
   }
 
-  /** Close the read sheet, dropping what the last save said inside it. */
   closeDetail(): void {
     this.detailItemId = null;
     this.editorError = null;
     this.host.requestUpdate();
   }
 
-  /**
-   * A delete has been confirmed and sent. Close whatever is still pointing at
-   * the item, ahead of the store broadcasting its disappearance.
-   */
+  /** A confirmed delete: close whatever still points at the item. */
   forgetItem(itemId: string): void {
     if (this.editing === itemId) this.editing = null;
     if (this.detailItemId === itemId) this.detailItemId = null;
     this.host.requestUpdate();
   }
 
-  /**
-   * The editor's first-run way out of an empty location picker: a root location
-   * with no area, handed back so the form can file the item in it at once.
-   */
+  /** The editor's way out of an empty location picker: a root location with no area. */
   readonly createLocationForEditor = (name: string): Promise<Location> => {
     const store = this.getStore();
     if (!store) return Promise.reject(new Error(t('hv.card.notConnected')));
@@ -298,13 +219,9 @@ export class ItemWorkspace implements ReactiveController {
     } finally {
       this.editorBusy = false;
     }
-    // The store reports failures through its error queue rather than throwing,
-    // so a new entry is how we know the save did not land. Keep the form open
-    // in that case so the user's edits are still there to retry.
-    // The read sheet reads `busy` falling with `errorMessage` still null as the
-    // save having landed, so the two are settled together in this synchronous
-    // run, ahead of the one redraw below. An await between them would hand the
-    // sheet the fall before the message, and it would drop the form on a refusal.
+    // A new error-queue entry means the save was refused, so the form stays open.
+    // `busy` and the message settle in one synchronous run: the read sheet takes
+    // `busy` falling with no message as a landed save and drops the form.
     const queue = this.st?.errorQueue ?? [];
     const failed = queue.length > before;
     this.editorError = failed ? editorErrorText(queue[queue.length - 1]) : null;
@@ -312,11 +229,7 @@ export class ItemWorkspace implements ReactiveController {
     this.host.requestUpdate();
   };
 
-  /**
-   * What a row's ⋮ entry means. The ids and their meanings come from one list,
-   * so a household learns Check out / Check in / due date / Edit / Delete once
-   * however it reached them.
-   */
+  /** What a row's ⋮ entry means, the same wherever it was reached. */
   onRowAction(detail: { itemId?: string; action?: string; anchor?: DOMRect }): void {
     const item = this.itemById(detail.itemId);
     if (!item) return;
@@ -338,11 +251,7 @@ export class ItemWorkspace implements ReactiveController {
     }
   }
 
-  /**
-   * Everything a row, a table row or the read sheet can raise about one item.
-   * A name this does not know is re-raised on the host, which is where a
-   * surface above it can still answer.
-   */
+  /** Everything a row or the read sheet can raise about one item; others are re-raised on the host. */
   onRowEvent(name: string, detail: { itemId?: string }): void {
     const item = this.itemById(detail.itemId);
     if (!item) return;
@@ -377,13 +286,7 @@ export class ItemWorkspace implements ReactiveController {
     }
   }
 
-  /**
-   * The edit form.
-   *
-   * `noHeader` is for the phone add sheet, which draws its own title bar — the
-   * editor's own header leads with an expander chevron that means nothing once
-   * the form is not an expander.
-   */
+  /** The edit form. `noHeader` is for the phone add sheet, which draws its own title bar. */
   renderEditor(opts: SurfaceOptions & { noHeader?: boolean }): TemplateResult {
     const st = this.st;
     return html`<hv-item-editor
@@ -411,11 +314,7 @@ export class ItemWorkspace implements ReactiveController {
     ></hv-item-editor>`;
   }
 
-  /**
-   * The read sheet: one item, at phone width, with Edit one tap deeper inside
-   * it. The sheet reads the viewport itself, so it takes no phone flag from
-   * here — only its host decides whether to draw it at all.
-   */
+  /** The phone read sheet, which reads the viewport itself. */
   renderDetailSheet(opts: Pick<SurfaceOptions, 'testid'>): TemplateResult {
     const st = this.st;
     return html`<hv-detail-sheet
@@ -448,17 +347,14 @@ export class ItemWorkspace implements ReactiveController {
   }
 
   /**
-   * The check-out step for one row.
-   *
-   * Never inline: that presentation is a step drawn inside the body of the
-   * surface that opened it, and this is a sibling at the end of a shell with no
-   * body around it. It hangs off the row that opened it wherever the row hands
-   * a rectangle over, which the card's do and the table's do not — the table's
-   * ⋮ sits in a column that scrolls sideways out of view, so there the step is
-   * centred and scrimmed instead. The card's phone branch reaches its check-out
-   * through the read sheet, which mounts its own.
+   * The check-out step for one row, anchored to the row when it hands a
+   * rectangle over, else centred (the table's ⋮ can scroll out of view).
    */
   renderCheckoutPopover(opts: SurfaceOptions): TemplateResult {
+    const close = () => {
+      this.checkout = null;
+      this.host.requestUpdate();
+    };
     return html`<hv-checkout-popover
       data-testid=${opts.testid}
       ?open=${this.checkout !== null}
@@ -467,19 +363,14 @@ export class ItemWorkspace implements ReactiveController {
       .anchor=${this.checkout?.anchor ?? null}
       .item=${this.checkout ? (this.itemById(this.checkout.itemId) ?? null) : null}
       @check-out=${(e: CustomEvent) => {
-        this.checkout = null;
-        this.host.requestUpdate();
+        close();
         this.onCheckOut(e);
       }}
       @set-due-date=${(e: CustomEvent) => {
-        this.checkout = null;
-        this.host.requestUpdate();
+        close();
         this.onSetDueDate(e);
       }}
-      @cancel=${() => {
-        this.checkout = null;
-        this.host.requestUpdate();
-      }}
+      @cancel=${close}
     ></hv-checkout-popover>`;
   }
 

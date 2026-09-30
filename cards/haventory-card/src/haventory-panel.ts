@@ -14,26 +14,17 @@ interface PanelInfo {
 }
 
 /**
- * HAventory as a page of its own, for the sidebar.
- *
- * Home Assistant's custom-panel loader creates this element, sets `hass`,
- * `narrow`, `route` and `panel` on it, and gives it the whole content area.
- * It owns a `Store` on the lifecycle it shares with `haventory-card`, and a
- * `HostSurfaces` instance (the same one `hv-card-shell` holds on the card
- * side), and hands the inventory itself to `hv-full-view` — embedded rather
- * than modal, since a page has nowhere to close to.
+ * HAventory as a sidebar page. HA's custom-panel loader sets `hass`, `narrow`,
+ * `route` and `panel`; this element owns a `Store` and a `HostSurfaces`, and
+ * embeds `hv-full-view`, since a page has nowhere to close to.
  */
 export class HAventoryPanel extends StoreHostElement {
   static styles = css`
     :host {
       display: block;
-      /* Home Assistant gives a custom panel the content area but puts no height
-         on anything between the drawer and this element, so a percentage would
-         resolve against an auto-height chain and collapse the grid inside. The
-         sidebar is a drawer beside the content rather than a bar above it, so
-         the content area is the viewport — which is how the frontend sizes its
-         own iframe-hosted custom panels, second declaration and all: dvh tracks
-         a phone's retracting toolbar, vh covers a browser without it. */
+      /* Nothing above this element has a height, so a percentage would collapse;
+         the content area is the viewport. dvh tracks a phone's retracting
+         toolbar, vh covers a browser without it. */
       height: 100vh;
       height: 100dvh;
       font-family: var(--paper-font-body1_-_font-family, var(--ha-card-font-family, Arial, sans-serif));
@@ -50,12 +41,8 @@ export class HAventoryPanel extends StoreHostElement {
   @property({ attribute: false }) route?: unknown;
 
   /**
-   * No `onItemDeleted` hook — the embedded view closes its own editor when the
-   * item vanishes. No `onBrowse` — the full view here is the page itself, so
-   * there is nothing to open when the organize dialog hands back a filter.
-   *
-   * The dialogs read the viewport themselves, and deliberately not HA's
-   * `narrow` — that flag is about the sidebar and flips at a tablet width.
+   * No `onItemDeleted` or `onBrowse`: the embedded view closes its own editor,
+   * and is itself the page a browse would open.
    */
   readonly surfaces = new HostSurfaces(this, () => this.store);
 
@@ -81,22 +68,12 @@ export class HAventoryPanel extends StoreHostElement {
     `;
   }
 
-  /**
-   * Which pills the panel offers.
-   *
-   * One source only: a panel has no Lovelace config to carry a per-dashboard
-   * `quick_filters:`, so the integration's options flow decides, and `null` —
-   * no choice made, or the store has not answered yet — means every pill.
-   */
+  /** A panel has no dashboard config, so only the integration decides; null is every pill. */
   private _quickFilters(): QuickFilterKey[] | null {
     return this.store?.state.value.quickFilters ?? null;
   }
 
-  /**
-   * The heading, most specific source first: the title the panel was registered
-   * with, then the name configured in the integration's options flow, then the
-   * fallback that covers the moment before the store has answered.
-   */
+  /** The registered panel title, then the integration's, then the built-in default. */
   private _heading(): string {
     const configured = this.panel?.config?.title;
     return (
@@ -106,10 +83,7 @@ export class HAventoryPanel extends StoreHostElement {
     );
   }
 
-  /**
-   * `select-items` never reaches this handler — the view answers it in place —
-   * so the shared surfaces cover the entire remaining vocabulary.
-   */
+  /** The view answers `select-items` itself; the shared surfaces cover the rest. */
   private _onMenuAction = (e: CustomEvent): void => {
     const { id, tab } = e.detail as { id: string; tab?: OrganizeTab };
     this.surfaces.handleAction(id, tab);
