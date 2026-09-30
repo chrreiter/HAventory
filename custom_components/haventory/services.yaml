@@ -20,10 +20,8 @@ item_create:
       example: "ok"
       selector:
         select:
-          # The built-ins are suggestions, not the whole vocabulary: a household
-          # defines its own statuses and Home Assistant cannot make a selector's
-          # options dynamic. The backend validates the slug against the live set
-          # either way.
+          # Suggestions only: a selector's options cannot be dynamic, and the
+          # backend validates the slug against the household's live set.
           custom_value: true
           options:
             - "ok"
@@ -64,8 +62,7 @@ item_create:
     tags:
       required: false
       example: ["tool", "garage"]
-      # A list of strings, which is what `item_update` declares for the same
-      # field: a text box would hand the schema a bare string.
+      # A list of strings: a text box would hand the schema a bare string.
       selector:
         object:
     category:
@@ -116,10 +113,8 @@ item_update:
       example: "ok"
       selector:
         select:
-          # The built-ins are suggestions, not the whole vocabulary: a household
-          # defines its own statuses and Home Assistant cannot make a selector's
-          # options dynamic. The backend validates the slug against the live set
-          # either way.
+          # Suggestions only: a selector's options cannot be dynamic, and the
+          # backend validates the slug against the household's live set.
           custom_value: true
           options:
             - "ok"
