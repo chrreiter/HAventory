@@ -892,7 +892,11 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         cache_headers: bool = True
 
     ha_http.StaticPathConfig = StaticPathConfig
+    ha_http.HomeAssistantView = type("HomeAssistantView", (), {})
     sys.modules["homeassistant.components.http"] = ha_http
+    sys.modules["homeassistant.components.lovelace"] = types.SimpleNamespace(
+        LOVELACE_DATA="lovelace"
+    )
 
     # homeassistant.components.frontend
     ha_frontend = types.ModuleType("homeassistant.components.frontend")

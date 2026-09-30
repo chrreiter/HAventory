@@ -14,12 +14,8 @@ const DEFAULT_ICON: Record<BannerKind, IconName> = {
 };
 
 /**
- * The one alert treatment in the card: conflicts, storage failures,
- * connection loss and import reloads all render through this.
- *
- * Purely presentational — the caller supplies the copy and slots in whatever
- * actions belong to that state (`slot="actions"` for trailing buttons,
- * `slot="below"` for the stacked button rows the conflict alert uses).
+ * The card's one alert treatment. The caller supplies the copy and slots its
+ * actions: `slot="actions"` trailing, `slot="below"` stacked under the text.
  */
 @customElement('hv-banner')
 export class HVBanner extends LitElement {
@@ -103,10 +99,9 @@ export class HVBanner extends LitElement {
   @property({ attribute: false }) glyph: IconName | null = null;
 
   render() {
-    const kind: BannerKind = DEFAULT_ICON[this.kind] ? this.kind : 'warning';
     return html`
-      <div class="banner ${kind}" role="alert" data-testid="banner" data-kind=${kind}>
-        <span class="glyph">${icon(this.glyph ?? DEFAULT_ICON[kind], 18)}</span>
+      <div class="banner ${this.kind}" role="alert" data-testid="banner" data-kind=${this.kind}>
+        <span class="glyph">${icon(this.glyph ?? DEFAULT_ICON[this.kind], 18)}</span>
         <div class="body">
           ${this.heading ? html`<span class="heading">${this.heading}</span> ` : null}<span
             data-testid="banner-message"

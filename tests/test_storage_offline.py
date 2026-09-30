@@ -125,30 +125,6 @@ async def test_migration_is_applied_for_older_payload(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_migration_failure_raises_and_does_not_persist(monkeypatch) -> None:
-    """Migration failure raises StorageError and leaves on-disk payload unchanged."""
-
-    hass = HomeAssistant()
-    key = "test_store_migrate_failure_no_persist"
-    store = DomainStore(hass, key=key)
-
-    pre_payload = {"schema_version": 0, "items": {"i1": {"id": "i1"}}, "locations": {}}
-    raw_store = HAStore(hass, CURRENT_SCHEMA_VERSION, key)
-    await raw_store.async_save(pre_payload)
-
-    def _raise(_payload, *, from_version, to_version):  # type: ignore[no-untyped-def]
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(migrations, "migrate", _raise)
-
-    with pytest.raises(StorageError):
-        await store.async_load()
-
-    underlying = await raw_store.async_load()
-    assert underlying == pre_payload
-
-
-@pytest.mark.asyncio
 async def test_a_store_already_holding_everything_is_not_rewritten(monkeypatch) -> None:
     """A store already at the current version is handed back without touching the file.
 

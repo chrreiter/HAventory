@@ -1,20 +1,14 @@
 """Mirror the low-stock set onto a Home Assistant to-do list.
 
-The bridge converges instead of reacting. Every trigger runs one pass that
-compares what is low *right now* against the map of lines this integration put
-on the list, and issues only the difference. That is what makes a restart, a
-re-fired event, a dropped event and a wholesale import all land on the same
-list: nothing remembers "did I already add this" except the map, and the map is
-persisted beside the inventory rather than inside it.
+The bridge converges instead of reacting: every trigger runs one pass that
+compares what is low right now against the persisted map of lines this
+integration wrote, and issues only the difference.
 
-Identity on the list is the summary the bridge wrote. `todo.add_item` answers
-nothing — Home Assistant registers it with the default `SupportsResponse.NONE`
-— so there is no uid to record, and none is needed: `todo.remove_item` and
-`todo.update_item` both match their `item` field against a uid *or* a summary.
+Identity on the list is the summary the bridge wrote. `todo.add_item` returns no
+uid, and `todo.remove_item` and `todo.update_item` match a uid *or* a summary.
 
-Nothing here may fail a mutation. By the time a pass runs the inventory write
-has already happened, so a to-do list that refuses is a warning, never a
-rollback.
+Nothing here may fail a mutation: the inventory write has already happened, so
+a to-do list that refuses is a warning, never a rollback.
 """
 
 from __future__ import annotations
@@ -47,37 +41,28 @@ SERVICE_ADD_ITEM = "add_item"
 SERVICE_REMOVE_ITEM = "remove_item"
 SERVICE_UPDATE_ITEM = "update_item"
 
-# `TodoListEntityFeature.DELETE_TODO_ITEM`, in the two spellings the two readers
-# need: the bit, to test against a state's `supported_features`, and the name an
-# entity selector's filter takes, which Home Assistant resolves by importing the
-# module. Spelled out rather than imported because the offline suite has no
-# `homeassistant.components.todo` to read them from, and both are part of Home
-# Assistant's published entity API rather than internals.
+# `TodoListEntityFeature.DELETE_TODO_ITEM` as the bit a state carries and as the
+# name an entity selector's filter takes. Spelled out because the offline suite
+# has no `homeassistant.components.todo`.
 TODO_FEATURE_DELETE_ITEM = 2
 TODO_FEATURE_DELETE_ITEM_NAME = "todo.TodoListEntityFeature.DELETE_TODO_ITEM"
 
-# The multiplication sign, U+00D7 — not the letter x a line like "Peanut butter
-# x2" would carry. It is what the card prints against a quantity, so the list
-# and the card read the same way.
+# U+00D7, what the card prints against a quantity, so the two read the same.
 MULTIPLICATION_SIGN = "\u00d7"
 
 
 def summary_for(name: str, quantity: int, threshold: int) -> str:
-    """The line the list carries: what to buy, and how many of it.
+    """The line the list carries: the name and the shortfall, floored at 1.
 
-    The count is the shortfall — how many it takes to reach the threshold —
-    floored at 1, because an item with a threshold of 0 is low at a quantity of
-    0, and a line asking the household to buy none of something is not one.
+    A threshold of 0 is low at a quantity of 0, which would otherwise ask for none.
     """
 
     return f"{name} {MULTIPLICATION_SIGN}{max(threshold - quantity, 1)}"
 
 
-def configured_entity_id(entry: ConfigEntry) -> str:
-    """The list this entry mirrors onto, or `""` when the bridge is off."""
+def clean_todo_entity_id(value: Any) -> str:
+    """The chosen list as an entity id, or `""` for off (a cleared selector sends none)."""
 
-    options = entry.options
-    value = options.get(CONF_TODO_ENTITY_ID, DEFAULT_TODO_ENTITY_ID)
     return value.strip() if isinstance(value, str) else DEFAULT_TODO_ENTITY_ID
 
 
@@ -87,7 +72,7 @@ def apply_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     runtime = find_runtime(hass)
     if runtime is None:
         return
-    runtime.todo.entity_id = configured_entity_id(entry)
+    runtime.todo.entity_id = clean_todo_entity_id(entry.options.get(CONF_TODO_ENTITY_ID))
 
 
 async def async_setup(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -101,12 +86,8 @@ async def async_setup(hass: HomeAssistant, entry: ConfigEntry) -> None:
     runtime.todo.links = await _async_load_links(store)
     apply_options(hass, entry)
 
-    # The public automation surface rather than a hook in every mutation
-    # handler. Both events, because neither covers the other: a rename or a
-    # quantity edit that leaves an item low fires only `item_changed`, and the
-    # bulk path — which passes no item — fires only `low_stock`. A mutation
-    # firing both runs the pass twice, and the second finds the list already
-    # converged and calls nothing.
+    # Both events, because neither covers the other: an edit that leaves an item
+    # low fires only `item_changed`, and the bulk path fires only `low_stock`.
     async def _on_inventory_event(_event: Any) -> None:
         await async_reconcile(hass)
 
@@ -117,17 +98,9 @@ async def async_setup(hass: HomeAssistant, entry: ConfigEntry) -> None:
         await async_reconcile(hass)
         return
 
-    # A list owned by another integration may not be in the state machine yet
-    # while Home Assistant is still starting, and the pass refuses to write to a
-    # list it cannot see. Waiting for the start event is what lets a restart
-    # converge on its own, without anything in the inventory having to change.
-    #
-    # `async_listen`, not `async_listen_once`: a one-time listener takes itself
-    # off the bus the moment it fires, so the unsubscribe it hands back names a
-    # listener Home Assistant no longer has — and the unload that calls it gets
-    # an ERROR line carrying this module's name for something that worked.
-    # Removing it here gives the removal one owner, and whichever of the two
-    # paths gets there first leaves nothing for the other to do.
+    # Another integration's list may not be in the state machine until Home
+    # Assistant has started. `async_listen`, not `async_listen_once`: unloading
+    # after a one-time listener fired logs an ERROR for the stale unsubscribe.
     remove_started: Callable[[], None] | None = None
 
     def _stop_waiting_for_start() -> None:
@@ -153,8 +126,6 @@ async def async_reconcile(hass: HomeAssistant) -> None:
 
     runtime = find_runtime(hass)
     if runtime is None or runtime.todo.store is None:
-        # The entry was torn down between the write and this call, or never set
-        # a bridge up at all.
         return
 
     try:
@@ -174,10 +145,7 @@ async def _async_reconcile_locked(hass: HomeAssistant, runtime: HAventoryRuntime
     links = runtime.todo.links
     entity_id = runtime.todo.entity_id
     if not entity_id:
-        # Off. The map is kept rather than retracted: clearing the option means
-        # "stop managing the list", not "delete what is on it", and keeping it
-        # is what lets a household that switches the bridge back on carry on
-        # instead of listing everything a second time.
+        # Off. The map is kept: turning the bridge off does not clear the list.
         return
 
     if not _list_is_available(hass, entity_id):
@@ -194,9 +162,7 @@ async def _async_reconcile_locked(hass: HomeAssistant, runtime: HAventoryRuntime
         await _async_restate(hass, links, desired, entity_id)
         await _async_extend(hass, links, desired, entity_id)
     finally:
-        # Compared against the snapshot rather than flagged along the way, in
-        # `finally`, so a pass that dies halfway still records the lines it did
-        # write — losing them would mean writing them all a second time.
+        # In `finally`, so a pass that dies halfway still records what it wrote.
         if links != before:
             await _async_save_links(runtime)
 
@@ -209,11 +175,8 @@ async def _async_retract(
 ) -> None:
     """Take back every line whose item is no longer low, or is on another list.
 
-    First of the three phases: one item leaving the low-stock set while another
-    enters it can produce the same line, and removing after adding would take
-    the new one straight back off. A link naming a different list belongs to a
-    household that changed the option, and comes off the list it was written to
-    before `_async_extend` writes it to the new one.
+    First, because an item leaving the set and another entering it can produce
+    the same line, and removing after adding would take the new one off again.
     """
 
     for item_id, link in list(links.items()):
@@ -229,11 +192,7 @@ async def _async_restate(
     desired: dict[str, str],
     entity_id: str,
 ) -> None:
-    """Rewrite a line whose count or item name has moved on.
-
-    The shortfall is what the line is for, so a stale one is wrong rather than
-    merely old.
-    """
+    """Rewrite a line whose count or item name has moved on."""
 
     for item_id, summary in desired.items():
         link = links.get(item_id)
@@ -259,11 +218,7 @@ async def _async_extend(
 
 
 def _desired_summaries(repo: Any) -> dict[str, str]:
-    """What the list should carry right now, keyed by item id.
-
-    Read off the low-stock index rather than through `list_items`, which
-    paginates — a page limit would silently cap the shopping list.
-    """
+    """What the list should carry right now, keyed by item id (not paginated)."""
 
     desired: dict[str, str] = {}
     for item_id in repo.low_stock_item_ids:
@@ -276,37 +231,24 @@ def _desired_summaries(repo: Any) -> dict[str, str]:
 
 
 def _list_can_delete(hass: HomeAssistant, entity_id: str) -> bool:
-    """Whether the list advertises the one feature the bridge cannot work around.
+    """Whether the list can delete its lines; only one that says it cannot answers no.
 
-    A `todo` entity is free to offer `CREATE_TODO_ITEM` without
-    `DELETE_TODO_ITEM`, and the options flow's picker only hides such a list from
-    a household choosing one now — an option set before this shipped, or through
-    the API, still names one. Read from the state the same way Home Assistant
-    reads it before refusing the service, so the two agree.
-
-    Only a list that positively says it cannot delete is treated as one. An
-    entity missing from the state machine, or one publishing no
-    `supported_features` at all, answers yes and is left to the ordinary path.
+    The options picker hides such a list, but an option set through the API can
+    still name one.
     """
 
     state = hass.states.get(entity_id)
     if state is None:
         return True
-    features = getattr(state, "attributes", {}).get("supported_features")
-    if features is None:
-        return True
-    try:
-        return bool(int(features) & TODO_FEATURE_DELETE_ITEM)
-    except TypeError, ValueError:  # pragma: no cover - defensive
-        return True
+    features = state.attributes.get("supported_features")
+    return features is None or bool(int(features) & TODO_FEATURE_DELETE_ITEM)
 
 
 def _list_is_available(hass: HomeAssistant, entity_id: str) -> bool:
     """Whether the configured list is in the state machine and answering.
 
-    Home Assistant does not raise when an entity service names an entity that is
-    missing or unavailable — it logs and drops the call — so a pass without this
-    check would record a link for a line that was never written.
+    A service call naming a missing or unavailable entity is dropped, not raised,
+    so without this a pass would link a line that was never written.
     """
 
     state = hass.states.get(entity_id)
@@ -339,20 +281,12 @@ async def _async_add_line(hass: HomeAssistant, entity_id: str, summary: str) -> 
 
 
 async def _async_remove_line(hass: HomeAssistant, link: dict[str, str]) -> bool:
-    """Take one line back off the list. False keeps the link, so nothing duplicates.
+    """Take one line back off the list. False keeps the link.
 
-    Most of what Home Assistant refuses here is about that one line and will not
-    change — it was deleted by hand, or the list is gone — and a link held for a
-    line that cannot be retracted would stop that item from ever being listed
-    again. So the link is given up and the line, if any, is left to be cleared by
-    hand.
-
-    A list that cannot delete at all is the exception, and the only unbounded
-    one: that refusal repeats on every future crossing, and giving up the link
-    each time means the next crossing writes a fresh duplicate of a line the
-    bridge has forgotten. Keeping the link caps the damage at one stale line per
-    item — the restate phase then rewrites that line in place when the item
-    crosses again, rather than adding a second.
+    A refused removal gives the link up (the line was deleted by hand, or the
+    list is gone), or the item could never be listed again. A list that cannot
+    delete at all keeps it, so the next crossing restates that one line instead
+    of adding a duplicate.
     """
 
     if not _list_can_delete(hass, link["entity_id"]):
@@ -418,11 +352,7 @@ async def _async_rename_line(
 
 
 async def _async_load_links(store: Store[dict[str, Any]]) -> dict[str, dict[str, str]]:
-    """Read the persisted map, keeping only the rows a pass can act on.
-
-    A row missing either half cannot be retracted, and holding it would keep its
-    item off the list for good; dropping it costs at most one duplicate line.
-    """
+    """Read the persisted map, keeping only rows with both an entity id and a summary."""
 
     try:
         payload = await store.async_load()

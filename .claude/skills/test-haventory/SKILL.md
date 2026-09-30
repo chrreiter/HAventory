@@ -217,7 +217,7 @@ suite (`scripts/test_integration.sh`, phacc, real HA core) are documented in
   applies nothing, which is what `docs/backend_api_contract.md` promises. `bulk`'s p50
   climbs with the size of the store, because every write re-serializes the whole
   inventory; a batch is one write, so the curve tracks the store and not the batch.
-  README → "Known limitations" carries the measured numbers to compare a run against.
+  `docs/developing.md` → "Testing" carries the reference curve to compare a run against.
 - **E2E: assert on the item NAME, not the quantity cell**: the card renders quantity only
   when that column is active, but the name always renders.
 - **Log scan is part of the pass gate**: subscription/connection bugs can pass offline unit

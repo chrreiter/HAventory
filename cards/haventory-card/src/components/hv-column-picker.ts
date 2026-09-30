@@ -8,20 +8,10 @@ import type { ColumnKey } from '../store/columns';
 import { COLUMN_DEFS, canonicalOrder, columnLabel, moveColumn, normalizeColumns } from '../store/columns';
 
 /**
- * Small modal to choose which optional columns show in a given view, and in
- * which order.
- *
- * Presentational: it reflects `columns` (the current selection, in the order it
- * is drawn) and emits a `change` event with the new selection whenever a column
- * is toggled or moved. The container owns persistence.
- *
- * Up/down buttons rather than a drag handle, matching the organize dialog's
- * status rows and the editor's photo strip: they work from the keyboard without
- * a second implementation beside the pointer one.
- *
- * Styled from the card's design tokens alone — nothing here reaches past them
- * to Home Assistant's own variables, and every row and button honours the touch
- * minimum a narrow host declares, the same as any other target in the card.
+ * Small modal to choose which optional columns show, and in which order. It
+ * reflects `columns` and emits `change` with the new selection; the container
+ * persists it. Up/down buttons rather than dragging, so the keyboard needs no
+ * second implementation.
  */
 @customElement('hv-column-picker')
 export class HVColumnPicker extends LitElement {
@@ -50,8 +40,6 @@ export class HVColumnPicker extends LitElement {
         align-items: center;
         gap: 2px;
       }
-      /* The same control the filter panel's checkboxes use, so a tick means the
-         same thing — and picks up --hv-tap-min on a phone. */
       .option {
         display: flex;
         align-items: center;
@@ -76,9 +64,7 @@ export class HVColumnPicker extends LitElement {
         flex: none;
         gap: 2px;
       }
-      /* WCAG 2.2 asks 24px of every pointer target; the token is what a host
-         declares when the card is narrow, and the fallback covers the panel,
-         which declares none. */
+      /* At least WCAG 2.2's 24px where no host declares --hv-tap-min. */
       .move button {
         display: inline-grid;
         place-items: center;
@@ -119,8 +105,6 @@ export class HVColumnPicker extends LitElement {
         gap: 8px;
         padding-top: 8px;
       }
-      /* Left of the confirming button, because it undoes work inside the dialog
-         rather than closing it. */
       .actions .reset {
         margin-right: auto;
       }
@@ -144,38 +128,20 @@ export class HVColumnPicker extends LitElement {
     this.dispatchEvent(new CustomEvent('change', { detail: { columns }, bubbles: true, composed: true }));
   }
 
-  /**
-   * A column switched on joins the list at the end rather than at its canonical
-   * index: the order on screen is the user's, and dropping a re-enabled column
-   * back into the middle of it would move a column they never touched.
-   */
+  /** A column switched on joins at the end, so the user's order is not disturbed. */
   private _toggle(key: ColumnKey, checked: boolean): void {
     const current = normalizeColumns(this.columns);
     this._emit(checked ? [...current, key] : current.filter((k) => k !== key));
   }
 
-  private _move(key: ColumnKey, delta: -1 | 1): void {
-    this._emit(moveColumn(this.columns, key, delta));
-  }
-
   /**
-   * The rows to draw: the chosen columns in their chosen order, then the ones
-   * that are off, in canonical order.
-   *
-   * Only a shown column has a position, so only those carry move buttons —
-   * ordering an invisible column is a promise about where it would land that
-   * the toggle then does not keep.
+   * The chosen columns in their order, then the others in canonical order. Only
+   * a shown column has a position, so only those carry move buttons.
    */
   private _rows(): { key: ColumnKey; label: string; on: boolean }[] {
     const selected = normalizeColumns(this.columns);
-    return [
-      ...selected.map((key) => ({ key, label: columnLabel(key), on: true })),
-      ...COLUMN_DEFS.filter((c) => !selected.includes(c.key)).map((c) => ({
-        key: c.key,
-        label: columnLabel(c.key),
-        on: false,
-      })),
-    ];
+    const off = COLUMN_DEFS.map((c) => c.key).filter((key) => !selected.includes(key));
+    return [...selected, ...off].map((key) => ({ key, label: columnLabel(key), on: selected.includes(key) }));
   }
 
   render() {
@@ -205,26 +171,21 @@ export class HVColumnPicker extends LitElement {
                 </button>
                 ${r.on
                   ? html`<span class="move">
-                      <button
-                        data-testid="column-up"
-                        data-key=${r.key}
-                        aria-label=${t('hv.columns.moveUp', { column: r.label })}
-                        title=${t('hv.term.moveUp')}
-                        ?disabled=${index === 0}
-                        @click=${() => this._move(r.key, -1)}
-                      >
-                        ${icon('chevronUp', 15)}
-                      </button>
-                      <button
-                        data-testid="column-down"
-                        data-key=${r.key}
-                        aria-label=${t('hv.columns.moveDown', { column: r.label })}
-                        title=${t('hv.term.moveDown')}
-                        ?disabled=${index === shown - 1}
-                        @click=${() => this._move(r.key, 1)}
-                      >
-                        ${icon('chevronDown', 15)}
-                      </button>
+                      ${([-1, 1] as const).map((delta) => {
+                        const up = delta === -1;
+                        return html`<button
+                          data-testid=${up ? 'column-up' : 'column-down'}
+                          data-key=${r.key}
+                          aria-label=${up
+                            ? t('hv.columns.moveUp', { column: r.label })
+                            : t('hv.columns.moveDown', { column: r.label })}
+                          title=${up ? t('hv.term.moveUp') : t('hv.term.moveDown')}
+                          ?disabled=${up ? index === 0 : index === shown - 1}
+                          @click=${() => this._emit(moveColumn(this.columns, r.key, delta))}
+                        >
+                          ${icon(up ? 'chevronUp' : 'chevronDown', 15)}
+                        </button>`;
+                      })}
                     </span>`
                   : null}
               </li>

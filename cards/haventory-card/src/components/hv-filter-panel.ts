@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import type { TranslationKey } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
@@ -27,29 +28,16 @@ const SORT_FIELDS: readonly SortField[] = [
 /** How many category chips to show before collapsing the rest behind "More…". */
 const CATEGORY_CHIP_LIMIT = 4;
 
-/**
- * The same for tags, higher because a household names far more of them than it
- * names categories — eight is two rows of chips at phone width. Without a cap
- * the group is as long as the whole vocabulary, and every label is a tab stop
- * between the sort controls and whatever follows the panel.
- */
+/** The same for tags, of which a household names more: two rows at phone width. */
 const TAG_CHIP_LIMIT = 8;
 
 /**
  * Which values of a facet the panel draws, and in which order.
  *
- * `distinct_values` answers alphabetically, so a cut taken in that order spends
- * the group's handful of chips on whatever the household named first —
- * singletons at the head of the alphabet, while the labels on a hundred items
- * sit behind "More…". The cut is taken over `count` instead, ties by value so
- * two equally used labels keep one order whichever way the answer arrived.
- * Never over `matching_count`: that number moves with every edit of a filter
- * being built, and the chips would reshuffle under the pointer.
- *
- * A selected value past the cut is drawn anyway — the chip that says the filter
- * is on must not be the one "More…" hides. Expanded, the group draws the
- * answer's own order: a long list is read alphabetically, which is how a value
- * is looked up in it.
+ * The cut ranks by `count` (ties by value), not by the alphabetical answer or
+ * by `matching_count`, which moves while a filter is built and would reshuffle
+ * the chips. A selected value past the cut is drawn anyway. Expanded, the group
+ * draws the answer's alphabetical order.
  */
 const cutChips = (
   all: readonly DistinctValue[],
@@ -64,14 +52,22 @@ const cutChips = (
   return [...ranked.slice(0, limit), ...ranked.slice(limit).filter((v) => selected.has(v.value))];
 };
 
-/**
- * The element the location chip discloses, named so `aria-controls` can point at
- * it. The holder stays in the tree whether or not it is open — an `aria-controls`
- * that resolves to nothing announces the chip as controlling nothing — and only
- * its contents come and go. Shadow scoping keeps the id unique even with the
- * desktop panel and the phone sheet both mounted.
- */
+/** What the location chip discloses; the holder stays in the tree so `aria-controls` resolves. */
 const LOCATION_TREE_ID = 'filter-location-tree-holder';
+
+/** `list` with `value` added, or taken out if it was there. */
+const toggled = (list: string[], value: string) =>
+  list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+
+/** The "Show only" facets: filter key, label, the tone an applied chip takes, and its tally. */
+type ShowOnlyKey = 'lowStockOnly' | 'checkedOutOnly' | 'overdueOnly' | 'inspectionDueOnly' | 'orphansOnly';
+const SHOW_ONLY: [ShowOnlyKey, TranslationKey, '' | 'warning' | 'error', keyof StatsCounts, string][] = [
+  ['lowStockOnly', 'hv.term.lowStock', 'warning', 'low_stock_count', 'filter-low-stock-only'],
+  ['checkedOutOnly', 'hv.term.checkedOut', '', 'checked_out_count', 'filter-checked-out'],
+  ['overdueOnly', 'hv.term.overdue', 'error', 'overdue_count', 'filter-overdue'],
+  ['inspectionDueOnly', 'hv.term.inspectionDue', 'warning', 'inspection_due_count', 'filter-inspection-due'],
+  ['orphansOnly', 'hv.term.noLocation', '', 'no_location_count', 'filter-orphans'],
+];
 
 /** The two timestamps a "Changed" row can compare, and the filter keys behind them. */
 type DateField = 'updated' | 'created';
@@ -82,15 +78,9 @@ const DATE_KEYS = {
 } as const;
 
 /**
- * Every filter the backend accepts, in one panel — and the same set as a staged
- * bottom-sheet body on mobile.
- *
- * Two pairs stay apart because the backend treats them differently: "Low stock"
- * is a filter (`low_stock_only`) while "Low stock first" is an ordering hint
- * (`low_stock_first`), and tags are one selection with an any/all mode routing
- * to `tags_any` or `tags_all`. Desktop applies each change immediately; mobile
- * stages edits and prices the apply button, so the consequence is visible
- * before it is committed.
+ * Every filter the backend accepts, in one panel, and the same set as a staged
+ * bottom-sheet body on mobile. Desktop applies each change at once; mobile
+ * stages edits until the priced apply button commits them.
  */
 @customElement('hv-filter-panel')
 export class HVFilterPanel extends LitElement {
@@ -132,9 +122,7 @@ export class HVFilterPanel extends LitElement {
         gap: 7px;
         align-items: center;
       }
-      /* These are values in a form, sat beside the panel's own selects and date
-         fields, so they read at the size of those rather than at the size of a
-         chip that annotates a row elsewhere in the card. */
+      /* Form values, sized like the selects and date fields beside them. */
       .chip {
         gap: 5px;
         padding: 5px 12px;
@@ -145,8 +133,6 @@ export class HVFilterPanel extends LitElement {
         padding: 0 14px;
         font-size: 13.5px;
       }
-      /* Nothing is picked here yet — an outline that has not been drawn in
-         rather than a value that has. */
       .chip.more {
         border-style: dashed;
       }
@@ -166,20 +152,13 @@ export class HVFilterPanel extends LitElement {
         padding: 7px 11px;
         font: 400 12.5px var(--hv-font);
       }
-      /*
-       * 13.5px is the chip beside it — the area select sits in the same row as
-       * "Any location", and taking the card's 16px input size made the one
-       * full-width control on the page shout at the chips, checkboxes and
-       * headings around it. Desktop matches at 12.5px.
-       */
+      /* The chips' size, not the card's 16px input size. */
       :host([mobile]) .field {
         min-height: 46px;
         width: 100%;
         font-size: 13.5px;
       }
-      /* Except a box you type free text into: 16px is what stops iOS zooming
-         the page when it takes focus, and a select or a date field opens
-         native UI instead of a keyboard. */
+      /* Except a free-text box: 16px stops iOS zooming the page on focus. */
       :host([mobile]) .field input[type='search'] {
         font-size: var(--hv-input-font, 16px);
       }
@@ -206,13 +185,8 @@ export class HVFilterPanel extends LitElement {
         color: inherit;
         font: inherit;
       }
-      /*
-       * The comparison is a button, not a caption: it says which field the row
-       * is about and which way the comparison runs, and clicking it flips the
-       * direction. Its own outline and fill against the field's is the smallest
-       * treatment that reads as a control at rest — a hover-only affordance
-       * never arrives on a touch screen at all.
-       */
+      /* The comparison is a button that flips the direction; it needs an outline
+         at rest because a touch screen never hovers. */
       .field .direction {
         white-space: nowrap;
         box-sizing: border-box;
@@ -223,8 +197,6 @@ export class HVFilterPanel extends LitElement {
         margin: -2px 0 -2px -4px;
         font: inherit;
         color: var(--hv-text-secondary);
-        /* It sits inline in the field's label, so it takes height from the
-           field it is in rather than becoming a block of its own. */
         display: inline-flex;
         align-items: center;
         min-height: var(--hv-tap-min, auto);
@@ -238,11 +210,7 @@ export class HVFilterPanel extends LitElement {
         border-color: var(--hv-primary);
         color: var(--hv-primary-dark);
       }
-      /*
-       * An appearance:none select is only as wide as its text, so the drawn
-       * chevron sat outside it and clicking the chevron did nothing. The select
-       * now fills the field and the chevron is decoration on top of it.
-       */
+      /* The select fills the field, so the drawn chevron on top of it is clickable. */
       .field.select-field {
         position: relative;
         padding-right: 27px;
@@ -250,8 +218,7 @@ export class HVFilterPanel extends LitElement {
       .field.select-field select {
         flex: 1;
         min-width: 0;
-        /* The wrapper looked like a 46px control while the select inside it,
-           which is what actually takes the tap, was 19px tall. */
+        /* The select is what takes the tap, so it takes the field's height. */
         min-height: var(--hv-tap-min, auto);
       }
       .field .chevron {
@@ -275,8 +242,6 @@ export class HVFilterPanel extends LitElement {
         color: var(--hv-chip-text);
         padding: 4px 12px;
         font: 400 11.5px var(--hv-font);
-        /* The pill around them looked like a control; each segment inside was
-           22px tall. */
         min-height: var(--hv-tap-min, auto);
       }
       .segmented button.on {
@@ -284,23 +249,13 @@ export class HVFilterPanel extends LitElement {
         color: var(--hv-text-on-primary);
         font-weight: 500;
       }
-      /*
-       * A "Show only" row is a chip in another shape and carries the chip class
-       * to say so: same filter, same announcement, so it takes the chip's
-       * outline and on-state rather than restating those tokens — a row that
-       * paints a checkbox while announcing a toggle describes two widgets. Only
-       * what a full-width row needs on top of a chip lives here: five stack
-       * under "Show only" in the sheet, and pills each sized to their own label
-       * leave that column with a ragged right edge.
-       */
+      /* A "Show only" row is a full-width chip, so the stacked column has one right edge. */
       :host([mobile]) .check {
         box-sizing: border-box;
         width: 100%;
         min-height: var(--hv-tap-min, 44px);
       }
-      /* The mark holds its width while the row is off, so a stacked column keeps
-         one left edge for its labels instead of shifting each row as it is
-         pressed. The two widths are the glyph sizes the row renderer asks for. */
+      /* The mark holds the glyph's width while off, so labels keep one left edge. */
       .check .mark {
         display: inline-grid;
         place-items: center;
@@ -330,7 +285,6 @@ export class HVFilterPanel extends LitElement {
         border: none;
         outline: none;
         min-width: 0;
-        /* Same trap as the select: a 46px field wrapping a 21px input. */
         min-height: var(--hv-tap-min, auto);
         flex: 1;
       }
@@ -357,8 +311,7 @@ export class HVFilterPanel extends LitElement {
   /** The applied filters. In staged mode this is the baseline, not the edit target. */
   @property({ attribute: false }) filters!: StoreFilters;
   @property({ attribute: false }) distinct: DistinctValues | null = null;
-  /** The status vocabulary from `haventory/config`; the built-ins stand in
-   * until it answers. */
+  /** The status vocabulary from `haventory/config`; the built-ins stand in until it answers. */
   @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
   @property({ attribute: false }) locations: Location[] | null = null;
@@ -369,12 +322,7 @@ export class HVFilterPanel extends LitElement {
   @property({ type: Number }) grandTotal: number | null = null;
   /** Stage edits and apply on commit (mobile sheet) instead of applying live. */
   @property({ type: Boolean, reflect: true }) mobile = false;
-  /**
-   * Whole-inventory stat counts, which price both the "Show only" rows and the
-   * status chips, so a user can see what a filter is worth before applying it.
-   * Null until the first `haventory/stats` answer arrives, and then each tally
-   * is drawn only where the payload prices it.
-   */
+  /** Whole-inventory stat counts that price the "Show only" rows and the status chips. */
   @property({ attribute: false }) counts: StatsCounts | null = null;
 
   @state() private _draft: StoreFilters | null = null;
@@ -387,11 +335,7 @@ export class HVFilterPanel extends LitElement {
     created: 'after',
   };
 
-  /**
-   * The Where chip's tree. A filter narrows by a set, so adding to it means
-   * picking again and the tree stays open; clearing the selection is the one
-   * pick that finishes the job.
-   */
+  /** The Where chip's tree, which stays open while a set of locations is picked. */
   private readonly _location = new LocationPicker(this, { keepOpenOnSelect: true });
 
   /** The filter set the controls are bound to. */
@@ -411,13 +355,7 @@ export class HVFilterPanel extends LitElement {
     this._draft = this.mobile ? { ...this.filters, tags: [...this.filters.tags] } : null;
   }
 
-  /**
-   * The sheet's "Clear all". In staged mode this has to empty the *draft* — a
-   * store-level clear left the panel bound to its untouched draft, so the list
-   * behind the sheet reloaded while every control stayed exactly as it was.
-   * Nothing is applied until the footer button commits, like every other edit
-   * in the sheet.
-   */
+  /** "Clear all". Staged, it empties the draft, which the footer button commits. */
   clearAll() {
     if (!this.mobile) {
       this.dispatchEvent(new CustomEvent('clear-filters', { bubbles: true, composed: true }));
@@ -448,37 +386,11 @@ export class HVFilterPanel extends LitElement {
   }
 
   private _toggleTag(tag: string) {
-    const tags = this.working.tags;
-    const next = tags.includes(tag) ? tags.filter((t) => t !== tag) : [...tags, tag];
-    this._patch({ tags: next });
-  }
-
-  // No Any/All control beside these two, unlike tags: an item carries exactly
-  // one category and sits in exactly one location, so a selection of several
-  // can only ever mean OR.
-  private _toggleCategory(category: string) {
-    const current = this.working.categories;
-    const next = current.includes(category)
-      ? current.filter((c) => c !== category)
-      : [...current, category];
-    this._patch({ categories: next });
-  }
-
-  private _toggleLocation(locationId: string | null) {
-    if (locationId === null) {
-      this._patch({ locationIds: [] });
-      return;
-    }
-    const current = this.working.locationIds;
-    const next = current.includes(locationId)
-      ? current.filter((id) => id !== locationId)
-      : [...current, locationId];
-    this._patch({ locationIds: next });
+    this._patch({ tags: toggled(this.working.tags, tag) });
   }
 
   private _commitTagDraft() {
-    // Tags are normalized server-side (trimmed, lowercased, deduplicated), so
-    // lowercase on commit and what the user sees matches what is stored.
+    // The server lowercases tags, so the chip matches what is stored.
     const tag = this._tagDraft.trim().toLowerCase();
     this._tagDraft = '';
     if (!tag || this.working.tags.includes(tag)) return;
@@ -486,14 +398,8 @@ export class HVFilterPanel extends LitElement {
   }
 
   /**
-   * A labelled on/off filter row.
-   *
-   * Its state is `aria-pressed`, not a checkbox role: every filter toggle in
-   * the card announces as a pressed toggle button, and the "Show only" facets
-   * render as rows here and as chips on a wider screen, so one facet would
-   * otherwise change vocabulary with the viewport it is read on. The row takes
-   * the chip's on state to match, so what it draws and what it announces are
-   * one widget.
+   * A labelled on/off filter row. `aria-pressed`, not a checkbox role, so it
+   * announces as the same toggle as the chip it replaces on a wider screen.
    */
   private _renderCheckbox(
     label: string,
@@ -501,9 +407,7 @@ export class HVFilterPanel extends LitElement {
     onToggle: () => void,
     opts: { warning?: boolean; tally?: number | null; testid?: string } = {},
   ) {
-    // The hue is the applied state, never the facet: a chip tinted at rest reads
-    // as already on, which is what the identical desktop chip avoids by pairing
-    // `warning` with `on`.
+    // The hue marks the applied state only; tinted at rest it would read as on.
     return html`<button
       class="hv-chip toggle chip check ${on ? 'on' : ''} ${on && opts.warning ? 'warning' : ''}"
       aria-pressed=${String(on)}
@@ -521,10 +425,7 @@ export class HVFilterPanel extends LitElement {
   private _renderLocationGroup() {
     const f = this.working;
     const locations = this.locations ?? [];
-    // Named in words, not in a nested chip: this label lives inside a chip, and
-    // it has to read the same as the chip row the applied filter turns into.
-    // Several picked locations would not fit one chip's width, so past the first
-    // the chip counts them and the tree below is where they are read.
+    // Words, not a nested chip; several picked locations are counted instead.
     const label =
       f.locationIds.length > 1
         ? counted(f.locationIds.length, 'location')
@@ -577,7 +478,8 @@ export class HVFilterPanel extends LitElement {
             showCounts
             .totalCount=${this.grandTotal}
             @select=${(e: CustomEvent) => {
-              this._toggleLocation((e.detail as { locationId: string | null }).locationId);
+              const id = (e.detail as { locationId: string | null }).locationId;
+              this._patch({ locationIds: id === null ? [] : toggled(f.locationIds, id) });
             }}
           ></hv-location-tree>`,
         )}
@@ -602,27 +504,17 @@ export class HVFilterPanel extends LitElement {
               data-testid="filter-category"
               data-value=${c.value}
               aria-pressed=${String(selected.has(c.value))}
-              @click=${() => this._toggleCategory(c.value)}
+              @click=${() => this._patch({ categories: toggled(f.categories, c.value) })}
             >
               ${selected.has(c.value) ? icon('check', 12) : null}${c.value}
               <span class="hv-tally">${c.count}</span>
             </button>`,
           )}
-          ${hidden > 0
-            ? html`<button
-                class="hv-chip toggle chip more"
-                data-testid="filter-category-more"
-                @click=${() => {
-                  this._showAllCategories = true;
-                }}
-              >
-                ${t('hv.filter.more')} <span class="hv-tally">${hidden}</span>
-              </button>`
-            : null}
+          ${this._renderMore('filter-category-more', hidden, () => {
+            this._showAllCategories = true;
+          })}
         </div>
-        <!-- The tag group below carries an any/all control and this one does
-             not, so the rule has to be said rather than inferred from its
-             absence. -->
+        <!-- Categories have no any/all control, so the OR rule is said. -->
         <span class="hint">${t('hv.filter.categoryHint')}</span>
       </div>
     `;
@@ -641,11 +533,7 @@ export class HVFilterPanel extends LitElement {
       <div class="group">
         <div class="group-head">
           <span class="hv-label">${t('hv.field.tags')}</span>
-          <!-- Beside its own heading, not pushed to the far edge: an auto margin
-               parked Any/All against the right rim of a full-width panel, a
-               screen's width from the word it qualifies and directly above an
-               unrelated row. The Sort group's direction toggle already sits next
-               to what it sorts, so this matches it. -->
+          <!-- Beside the word it qualifies, as Sort's direction toggle is. -->
           <span class="segmented" role="radiogroup" aria-label=${t('hv.filter.tagMatchMode')}>
             ${(['any', 'all'] as const).map(
               (mode) => html`<button
@@ -685,17 +573,9 @@ export class HVFilterPanel extends LitElement {
               ${icon('check', 12)}${tagLabel(t)}
             </button>`,
           )}
-          ${hidden > 0
-            ? html`<button
-                class="hv-chip toggle chip more"
-                data-testid="filter-tag-more"
-                @click=${() => {
-                  this._showAllTags = true;
-                }}
-              >
-                ${t('hv.filter.more')} <span class="hv-tally">${hidden}</span>
-              </button>`
-            : null}
+          ${this._renderMore('filter-tag-more', hidden, () => {
+            this._showAllTags = true;
+          })}
           <label class="field" data-testid="filter-tag-add">
             <span class="hv-sr-only">${t('hv.filter.addTag')}</span>
             <input
@@ -721,87 +601,45 @@ export class HVFilterPanel extends LitElement {
     `;
   }
 
+  /** The "More…" chip that expands a cut facet, when the cut hid anything. */
+  private _renderMore(testid: string, hidden: number, onClick: () => void) {
+    if (hidden <= 0) return null;
+    return html`<button class="hv-chip toggle chip more" data-testid=${testid} @click=${onClick}>
+      ${t('hv.filter.more')} <span class="hv-tally">${hidden}</span>
+    </button>`;
+  }
+
+  /** The "Show only" facets: stacked rows on mobile, chips on desktop. */
   private _renderShowOnlyGroup() {
     const f = this.working;
-    const c = this.counts;
-    const tally = (n: number | null | undefined) =>
-      n === null || n === undefined ? null : html`<span class="hv-tally">${n}</span>`;
     return html`
       <div class="group">
         <span class="hv-label">${t('hv.filter.showOnly')}</span>
         <div class="chips">
-          ${this.mobile
-            ? html`
-                ${this._renderCheckbox(t('hv.term.lowStock'), f.lowStockOnly, () => this._patch({ lowStockOnly: !f.lowStockOnly }), { warning: true, tally: c?.low_stock_count, testid: 'filter-low-stock-only' })}
-                ${this._renderCheckbox(t('hv.term.checkedOut'), f.checkedOutOnly, () => this._patch({ checkedOutOnly: !f.checkedOutOnly }), { tally: c?.checked_out_count, testid: 'filter-checked-out' })}
-                ${this._renderCheckbox(t('hv.term.overdue'), f.overdueOnly, () => this._patch({ overdueOnly: !f.overdueOnly }), { warning: true, tally: c?.overdue_count, testid: 'filter-overdue' })}
-                ${this._renderCheckbox(t('hv.term.inspectionDue'), f.inspectionDueOnly, () => this._patch({ inspectionDueOnly: !f.inspectionDueOnly }), { warning: true, tally: c?.inspection_due_count, testid: 'filter-inspection-due' })}
-                ${this._renderCheckbox(t('hv.term.noLocation'), f.orphansOnly, () => this._patch({ orphansOnly: !f.orphansOnly }), { tally: c?.no_location_count, testid: 'filter-orphans' })}
-              `
-            : html`
-                <button
-                  class="hv-chip toggle chip ${f.lowStockOnly ? 'on warning' : ''}"
-                  data-testid="filter-low-stock-only"
-                  aria-pressed=${String(f.lowStockOnly)}
-                  @click=${() => this._patch({ lowStockOnly: !f.lowStockOnly })}
-                >
-                  ${f.lowStockOnly ? icon('check', 12) : null}${t('hv.term.lowStock')}${tally(
-                    c?.low_stock_count,
-                  )}
-                </button>
-                <button
-                  class="hv-chip toggle chip ${f.checkedOutOnly ? 'on' : ''}"
-                  data-testid="filter-checked-out"
-                  aria-pressed=${String(f.checkedOutOnly)}
-                  @click=${() => this._patch({ checkedOutOnly: !f.checkedOutOnly })}
-                >
-                  ${f.checkedOutOnly ? icon('check', 12) : null}${t('hv.term.checkedOut')}${tally(
-                    c?.checked_out_count,
-                  )}
-                </button>
-                <button
-                  class="hv-chip toggle chip ${f.overdueOnly ? 'on error' : ''}"
-                  data-testid="filter-overdue"
-                  aria-pressed=${String(f.overdueOnly)}
-                  @click=${() => this._patch({ overdueOnly: !f.overdueOnly })}
-                >
-                  ${f.overdueOnly ? icon('check', 12) : null}${t('hv.term.overdue')}${tally(
-                    c?.overdue_count,
-                  )}
-                </button>
-                <button
-                  class="hv-chip toggle chip ${f.inspectionDueOnly ? 'on warning' : ''}"
-                  data-testid="filter-inspection-due"
-                  aria-pressed=${String(f.inspectionDueOnly)}
-                  @click=${() => this._patch({ inspectionDueOnly: !f.inspectionDueOnly })}
-                >
-                  ${f.inspectionDueOnly
-                    ? icon('check', 12)
-                    : null}${t('hv.term.inspectionDue')}${tally(c?.inspection_due_count)}
-                </button>
-                <button
-                  class="hv-chip toggle chip ${f.orphansOnly ? 'on' : ''}"
-                  data-testid="filter-orphans"
-                  aria-pressed=${String(f.orphansOnly)}
-                  @click=${() => this._patch({ orphansOnly: !f.orphansOnly })}
-                >
-                  ${f.orphansOnly ? icon('check', 12) : null}${t('hv.term.noLocation')}${tally(
-                    c?.no_location_count,
-                  )}
-                </button>
-              `}
+          ${SHOW_ONLY.map(([key, label, tone, countKey, testid]) => {
+            const on = f[key];
+            const tally = this.counts?.[countKey] as number | null | undefined;
+            const toggle = () => this._patch({ [key]: !on });
+            if (this.mobile) return this._renderCheckbox(t(label), on, toggle, { warning: !!tone, tally, testid });
+            return html`<button
+              class="hv-chip toggle chip ${on ? `on ${tone}` : ''}"
+              data-testid=${testid}
+              aria-pressed=${String(on)}
+              @click=${toggle}
+            >
+              ${on ? icon('check', 12) : null}${t(label)}${tally === null || tally === undefined
+                ? null
+                : html`<span class="hv-tally">${tally}</span>`}
+            </button>`;
+          })}
         </div>
       </div>
     `;
   }
 
   /**
-   * The stored item status, as one single-select chip row.
-   *
-   * Single-select because the backend filter takes exactly one status, and each
-   * chip carries the tone its household picked. Every chip is priced, so what a
-   * status is worth is visible before it is picked; a backend too old to price
-   * them all leaves the rest bare rather than guessing.
+   * The stored item status, as one single-select chip row (the backend filter
+   * takes one status). Each chip carries its household tone and its tally.
    */
   private _renderStatusGroup() {
     const f = this.working;
@@ -844,13 +682,7 @@ export class HVFilterPanel extends LitElement {
     return this._dateDirection[field];
   }
 
-  /**
-   * One date row, with the comparison itself as the control.
-   *
-   * "Since" and "before" are the same question asked in two directions, so
-   * flipping ≥/≤ is cheaper than a second row — and a date already picked moves
-   * across with the flip, since it is the date you meant either way.
-   */
+  /** One date row, whose ≥/≤ button flips the comparison and carries a picked date across. */
   private _renderDateRow(field: DateField) {
     const { after: afterKey, before: beforeKey, noun: nounKey } = DATE_KEYS[field];
     const noun = t(nounKey);
@@ -872,8 +704,7 @@ export class HVFilterPanel extends LitElement {
         title=${before ? t('hv.filter.dateTitleBefore') : t('hv.filter.dateTitleSince')}
         @click=${() => {
           this._dateDirection = { ...this._dateDirection, [field]: before ? 'after' : 'before' };
-          // Nothing to re-apply on an empty row, and patching two nulls would
-          // reload the list for no reason.
+          // An empty row has nothing to re-apply; two nulls would reload the list.
           if (value) this._patch({ [afterKey]: before ? value : null, [beforeKey]: before ? null : value });
         }}
       >
@@ -957,9 +788,7 @@ export class HVFilterPanel extends LitElement {
       <div class="panel" data-testid="filter-panel">
         ${this._renderLocationGroup()} ${this._renderCategoryGroup()}
         ${this._renderShowOnlyGroup()} ${this._renderStatusGroup()} ${this._renderDateGroup()}
-        <!-- Sort sits above the tag cloud: a household's tag list grows without
-             limit and this one renders every tag in it, so anything below it is
-             several screens down inside the phone's filter sheet. -->
+        <!-- Sort sits above the tag cloud, which grows without limit. -->
         ${this._renderSortGroup()} ${this._renderTagGroup()}
         ${this.mobile
           ? null

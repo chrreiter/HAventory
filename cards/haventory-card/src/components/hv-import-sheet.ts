@@ -1,5 +1,5 @@
 import { t, tn } from '../i18n';
-import { LitElement, css, html } from 'lit';
+import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { Modal, modalChrome, modalSheet } from '../ui/modal';
@@ -8,50 +8,29 @@ import { counted } from '../ui/plural';
 import { copyText } from '../ui/clipboard';
 import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } from '../store/types';
 
-// Every policy decides one thing: what happens to an item the file and the
-// inventory both have — the same id, never the same name, so an item rebuilt by
-// hand carries a fresh id and is added alongside the file's copy. Each
-// description names the id as the match key and says that nothing is deleted:
-// "matching" alone reads as matching by name, and "Replace" alone reads like a
-// whole-inventory swap.
-/**
- * How many name clashes are listed individually before the block switches to a
- * count. A restore onto a hand-rebuilt inventory can clash on hundreds of
- * entries, and a list that long would push the import button off the sheet.
- */
+/** Name clashes listed one by one before the block switches to a count. */
 const WARNING_LIST_LIMIT = 5;
 
-/**
- * What the execute button promises to write.
- *
- * It names both kinds because either can be the whole document: a backup
- * restored onto a hand-rebuilt tree writes locations and no items. Added and
- * updated are left to the count tables above, which carry both kinds; here they
- * would take four numbers.
- */
-function importButtonLabel(itemWrites: number, locationWrites: number): string {
+/** The non-zero counts of both kinds, since either can be the whole document. */
+function countedKinds(items: number, locations: number): string[] {
   const parts: string[] = [];
-  if (itemWrites) parts.push(counted(itemWrites, 'item'));
-  if (locationWrites) parts.push(counted(locationWrites, 'location'));
+  if (items) parts.push(counted(items, 'item'));
+  if (locations) parts.push(counted(locations, 'location'));
+  return parts;
+}
+
+/** What the execute button promises to write. */
+function importButtonLabel(itemWrites: number, locationWrites: number): string {
+  const parts = countedKinds(itemWrites, locationWrites);
   return parts.length
     ? t('hv.import.button', { parts: parts.join(' · ') })
     : t('hv.import.buttonBare');
 }
 
-/**
- * What the completed import did, as one sentence.
- *
- * Every dimension that moved is named and every dimension that did not is
- * dropped, so a locations-only document reports its location updates instead of
- * a row of zeros. An import that changed nothing says so in words, not numbers.
- */
+/** What the completed import did, as one sentence naming only what moved. */
 export function importSummaryLine(summary: ImportSummary): string {
-  const added: string[] = [];
-  if (summary.items.add) added.push(counted(summary.items.add, 'item'));
-  if (summary.locations.add) added.push(counted(summary.locations.add, 'location'));
-  const updated: string[] = [];
-  if (summary.items.update) updated.push(counted(summary.items.update, 'item'));
-  if (summary.locations.update) updated.push(counted(summary.locations.update, 'location'));
+  const added = countedKinds(summary.items.add, summary.locations.add);
+  const updated = countedKinds(summary.items.update, summary.locations.update);
   const parts: string[] = [];
   if (added.length) parts.push(t('hv.import.added', { what: added.join(t('hv.import.and')) }));
   if (updated.length)
@@ -61,6 +40,8 @@ export function importSummaryLine(summary: ImportSummary): string {
   return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
 }
 
+// A policy decides what happens to an item the file and the inventory share by
+// id, never by name; each description says so and that nothing is deleted.
 const policies = (): { id: ImportPolicy; title: string; description: string }[] => [
   {
     id: 'merge',
@@ -79,21 +60,15 @@ const policies = (): { id: ImportPolicy; title: string; description: string }[] 
   },
 ];
 
-/**
- * The name a policy was picked by. The preview quotes the choice back, and the
- * wire value ("merge") is not what the user pressed ("Merge").
- */
+/** The translated name a policy was picked by, which the preview quotes back. */
 function policyTitle(id: ImportPolicy): string {
   return policies().find((p) => p.id === id)?.title ?? id;
 }
 
 /**
- * Restore from a backup.
- *
- * The server-side dry run is mandatory: nothing is written until the preview
- * has been seen. An invalid document comes back as a structured list of JSON
- * paths rather than counts, so it gets a state of its own instead of being
- * flattened into "import failed".
+ * Restore from a backup. Nothing is written until the server-side dry run's
+ * preview has been seen; an invalid document gets its own state listing the
+ * JSON paths at fault.
  */
 @customElement('hv-import-sheet')
 export class HVImportSheet extends LitElement {
@@ -131,8 +106,6 @@ export class HVImportSheet extends LitElement {
         color: var(--hv-text-secondary);
         margin-top: 3px;
       }
-      /* The one thing in this line the user chose, lifted out of the secondary
-         ink the rest of it sits in. */
       .head .sub .policy-name {
         color: var(--hv-text);
       }
@@ -381,6 +354,20 @@ export class HVImportSheet extends LitElement {
     this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
   };
 
+  private _invalidate = () => {
+    this.dispatchEvent(new CustomEvent('invalidate-preview', { bubbles: true, composed: true }));
+  };
+
+  private _alert(testid: string, content: unknown, glyph: 'alert' | 'alertCircle' = 'alert', role?: string) {
+    return html`<div class="alert warn" role=${role ?? nothing} data-testid=${testid}>
+      <span class="glyph">${icon(glyph, 18)}</span><span>${content}</span>
+    </div>`;
+  }
+
+  private _errorAlert() {
+    return this.errorMessage ? this._alert('import-error', this.errorMessage, 'alertCircle', 'alert') : null;
+  }
+
   private _emit(name: string) {
     const document = this._parsed();
     if (document === null) return;
@@ -402,7 +389,6 @@ export class HVImportSheet extends LitElement {
     this._copied = await copyText(text);
   }
 
-  // ---------- States ----------
   private _renderInput() {
     return html`
       <div class="head">
@@ -447,16 +433,8 @@ export class HVImportSheet extends LitElement {
             this._parseError = null;
           }}
         ></textarea>
-        ${this._parseError
-          ? html`<div class="alert warn" role="alert" data-testid="import-parse-error">
-              <span class="glyph">${icon('alert', 18)}</span><span>${this._parseError}</span>
-            </div>`
-          : null}
-        ${this.errorMessage
-          ? html`<div class="alert warn" role="alert" data-testid="import-error">
-              <span class="glyph">${icon('alertCircle', 18)}</span><span>${this.errorMessage}</span>
-            </div>`
-          : null}
+        ${this._parseError ? this._alert('import-parse-error', this._parseError, 'alert', 'alert') : null}
+        ${this._errorAlert()}
 
         <div>
           <span class="hv-label">${t('hv.import.ifExists')}</span>
@@ -471,7 +449,7 @@ export class HVImportSheet extends LitElement {
                 @click=${() => {
                   this._policy = policy.id;
                   // A preview is only valid for the policy it was run with.
-                  this.dispatchEvent(new CustomEvent('invalidate-preview', { bubbles: true, composed: true }));
+                  this._invalidate();
                 }}
               >
                 <span class="radio"></span>
@@ -507,17 +485,17 @@ export class HVImportSheet extends LitElement {
   ) {
     const caption =
       captionKey === 'items' ? t('hv.import.tableItems') : t('hv.field.locations');
-    const rows: [string, keyof ImportBucketCounts, string][] = [
-      [t('hv.import.bucket.add'), 'add', 'add'],
-      [t('hv.import.bucket.update'), 'update', 'update'],
-      [t('hv.import.bucket.conflict'), 'conflict', 'conflict'],
-      [t('hv.import.bucket.unchanged'), 'unchanged', 'unchanged'],
+    const rows: [string, keyof ImportBucketCounts][] = [
+      [t('hv.import.bucket.add'), 'add'],
+      [t('hv.import.bucket.update'), 'update'],
+      [t('hv.import.bucket.conflict'), 'conflict'],
+      [t('hv.import.bucket.unchanged'), 'unchanged'],
     ];
     return html`<div class="table">
       <div class="caption">${caption}</div>
       <div class="rows">
         ${rows.map(
-          ([label, key, cls]) => html`<div class="r ${cls}" data-testid="import-count" data-key=${`${captionKey}-${key}`}>
+          ([label, key]) => html`<div class="r ${key}" data-testid="import-count" data-key=${`${captionKey}-${key}`}>
             <span>${label}</span><span>${key === 'add' ? '+' : ''}${counts?.[key] ?? 0}</span>
           </div>`,
         )}
@@ -554,8 +532,7 @@ export class HVImportSheet extends LitElement {
         <button
           class="hv-pill"
           data-testid="import-back"
-          @click=${() =>
-            this.dispatchEvent(new CustomEvent('invalidate-preview', { bubbles: true, composed: true }))}
+          @click=${this._invalidate}
         >
           ${t('hv.import.backToInput')}
         </button>
@@ -567,19 +544,12 @@ export class HVImportSheet extends LitElement {
     const items = preview.counts.items;
     const locations = preview.counts.locations;
     const conflicts = preview.items.conflict.length + preview.locations.conflict.length;
-    // Both kinds count: a document that rebuilds a location tree and touches no
-    // item still changes the inventory, and the hint below speaks for the
-    // inventory rather than for its items.
     const itemWrites = (items?.add ?? 0) + (items?.update ?? 0);
     const locationWrites = (locations?.add ?? 0) + (locations?.update ?? 0);
     const willWrite = itemWrites + locationWrites;
-    // Absent on a preview from a backend that predates warnings.
     const warnings = preview.warnings ?? [];
-    // The export carries attachment metadata and not the bytes, so a document
-    // written on another machine points at files this one never had. There is
-    // nothing to fix before importing — but the photos are gone afterwards, and
-    // a user who was not told reads that as data loss. Zeroes when the backend
-    // predates the count, which renders as nothing.
+    // An export carries attachment metadata, not bytes: say which photos this
+    // install will not have, so their absence is not read as data loss.
     const files = preview.attachments ?? { referenced: 0, missing: 0 };
 
     return html`
@@ -595,65 +565,48 @@ export class HVImportSheet extends LitElement {
           ${this._countTable('items', items)}${this._countTable('locations', locations)}
         </div>
         ${conflicts
-          ? html`<div class="alert warn" data-testid="import-conflicts">
-              <span class="glyph">${icon('alert', 18)}</span>
-              <span>
-                ${tn('hv.import.conflicts', conflicts, {
-                  conflicts: counted(conflicts, 'conflict'),
-                })}
-                ${preview.policy === 'merge'
-                  ? t('hv.import.conflictsMerge')
-                  : preview.policy === 'skip'
-                    ? t('hv.import.conflictsSkip')
-                    : t('hv.import.conflictsReplace')}
-              </span>
-            </div>`
+          ? this._alert(
+              'import-conflicts',
+              html`${tn('hv.import.conflicts', conflicts, { conflicts: counted(conflicts, 'conflict') })}
+              ${preview.policy === 'merge'
+                ? t('hv.import.conflictsMerge')
+                : preview.policy === 'skip'
+                  ? t('hv.import.conflictsSkip')
+                  : t('hv.import.conflictsReplace')}`,
+            )
           : null}
         ${warnings.length
-          ? html`<div class="alert warn" data-testid="import-warnings">
-              <span class="glyph">${icon('alert', 18)}</span>
-              <span>
-                ${tn('hv.import.warnings', warnings.length, {
-                  clashes: counted(warnings.length, 'nameClash'),
-                })}
+          ? this._alert(
+              'import-warnings',
+              html`${tn('hv.import.warnings', warnings.length, { clashes: counted(warnings.length, 'nameClash') })}
                 <ul class="warn-list">
                   ${warnings.slice(0, WARNING_LIST_LIMIT).map((w) => html`<li>${w.message}</li>`)}
                 </ul>
                 ${warnings.length > WARNING_LIST_LIMIT
                   ? html`<span class="hint"
-                      >${t('hv.import.warningsMore', {
-                        count: warnings.length - WARNING_LIST_LIMIT,
-                      })}</span
+                      >${t('hv.import.warningsMore', { count: warnings.length - WARNING_LIST_LIMIT })}</span
                     >`
-                  : null}
-              </span>
-            </div>`
+                  : null}`,
+            )
           : null}
         ${files.missing
-          ? html`<div class="alert warn" data-testid="import-attachments-missing">
-              <span class="glyph">${icon('alert', 18)}</span>
-              <span>
-                ${tn('hv.import.attachmentsMissing', files.missing, {
+          ? this._alert(
+              'import-attachments-missing',
+              html`${tn('hv.import.attachmentsMissing', files.missing, {
                   missing: files.missing,
                   referenced: files.referenced,
                 })}
-                <span class="hint">${t('hv.import.attachmentsMissingHint')}</span>
-              </span>
-            </div>`
+                <span class="hint">${t('hv.import.attachmentsMissingHint')}</span>`,
+            )
           : null}
-        ${this.errorMessage
-          ? html`<div class="alert warn" role="alert" data-testid="import-error">
-              <span class="glyph">${icon('alertCircle', 18)}</span><span>${this.errorMessage}</span>
-            </div>`
-          : null}
+        ${this._errorAlert()}
         <div class="fine">${t('hv.import.allOrNothing')}</div>
       </div>
       <div class="foot">
         <button
           class="hv-text-button"
           data-testid="import-back"
-          @click=${() =>
-            this.dispatchEvent(new CustomEvent('invalidate-preview', { bubbles: true, composed: true }))}
+          @click=${this._invalidate}
         >
           ${t('hv.action.back')}
         </button>

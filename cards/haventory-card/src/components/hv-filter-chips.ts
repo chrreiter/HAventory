@@ -34,22 +34,13 @@ export interface FilterChip {
   key: FilterChipKey;
   label: string;
   tone: 'primary' | 'warning';
-  /**
-   * How the one chip whose colour a household picks rather than the card is
-   * painted: a `tone-*` class, an inline declaration for a literal colour, or
-   * both fields empty for every other chip. Either half present replaces
-   * `tone` entirely — the two palettes are deliberately disjoint (see
-   * `ui/chip.ts`), so a chip cannot carry one of each.
-   */
+  /** A status chip's household tone class, which replaces `tone` (see `ui/chip.ts`). */
   toneClass?: string;
   /** Inline custom properties for a status painted in a literal colour. */
   toneStyle?: string;
 }
 
-/**
- * Build the chip row from filter state. Both the card and the full view render
- * <hv-filter-chips>, so an active filter reads identically on either surface.
- */
+/** Build the chip row from filter state, for the card and the full view alike. */
 export function chipsFor(
   filters: StoreFilters,
   ctx: {
@@ -63,10 +54,7 @@ export function chipsFor(
 
   if (filters.locationIds.length) {
     const locations = ctx.locations ?? [];
-    // A chip is already the smallest thing on this row, so the area is named in
-    // words rather than nested in a chip of its own — the same "Area: X" the
-    // area filter's own chip prints two lines down. It drops out when the path
-    // opens with it, as the chip beside a path does.
+    // The area in words, not a nested chip; it drops out when the path opens with it.
     const paths = filters.locationIds.map((id) =>
       pathLabel(
         locationPathParts(
@@ -77,9 +65,7 @@ export function chipsFor(
         ),
       ),
     );
-    // One chip for the whole selection, the way the tag chip below carries every
-    // selected tag: the row counts narrowings, not values, and "+ sub" applies
-    // to all of them at once.
+    // One chip for the whole selection, as for tags; "+ sub" applies to all of it.
     const joined = paths.join(', ');
     chips.push({
       key: 'locationIds',
@@ -95,11 +81,7 @@ export function chipsFor(
       tone: 'primary',
     });
   }
-  // This row has no headings above it, so every chip on it has to name its own
-  // facet: a bare "Hardware" could be a category, a location or the search
-  // text. The facets that read as a bare value say so in words, the way Area
-  // and Status already do; tags carry the same mark they wear as chips, so the
-  // two vocabularies agree.
+  // The row has no headings, so each chip names its own facet.
   if (filters.categories.length)
     chips.push({
       key: 'categories',
@@ -118,25 +100,21 @@ export function chipsFor(
       tone: 'primary',
     });
   }
-  // Deliberately distinct chips: one is a filter, one is an ordering.
-  if (filters.lowStockOnly)
-    chips.push({ key: 'lowStockOnly', label: t('hv.chips.lowStockOnly'), tone: 'warning' });
-  if (filters.lowStockFirst)
-    chips.push({ key: 'lowStockFirst', label: t('hv.term.lowStockFirst'), tone: 'primary' });
-  if (filters.checkedOutOnly)
-    chips.push({ key: 'checkedOutOnly', label: t('hv.term.checkedOut'), tone: 'primary' });
-  if (filters.overdueOnly)
-    chips.push({ key: 'overdueOnly', label: t('hv.term.overdue'), tone: 'warning' });
-  if (filters.inspectionDueOnly)
-    chips.push({ key: 'inspectionDueOnly', label: t('hv.term.inspectionDue'), tone: 'warning' });
+  // Low stock as a filter and as an ordering are two distinct chips.
+  const flags: [FilterChipKey & keyof StoreFilters, TranslationKey, FilterChip['tone']][] = [
+    ['lowStockOnly', 'hv.chips.lowStockOnly', 'warning'],
+    ['lowStockFirst', 'hv.term.lowStockFirst', 'primary'],
+    ['checkedOutOnly', 'hv.term.checkedOut', 'primary'],
+    ['overdueOnly', 'hv.term.overdue', 'warning'],
+    ['inspectionDueOnly', 'hv.term.inspectionDue', 'warning'],
+  ];
+  for (const [key, label, tone] of flags) if (filters[key]) chips.push({ key, label: t(label), tone });
   if (filters.status) {
     const tone = statusTone(filters.status, ctx.statuses);
     chips.push({
       key: 'status',
       label: t('hv.chips.status', { label: statusLabel(filters.status, ctx.statuses) }),
-      // The status the household chose, in the colour the household gave it —
-      // the same chip the rows below this one carry. `tone` is the fallback for
-      // a consumer that reads neither of the two below.
+      // In the household's own colour; `tone` is the fallback.
       tone: 'primary',
       toneClass: tone.toneClass,
       toneStyle: tone.toneStyle,
@@ -144,8 +122,7 @@ export function chipsFor(
   }
   if (filters.orphansOnly)
     chips.push({ key: 'orphansOnly', label: t('hv.term.noLocation'), tone: 'primary' });
-  // One chip per bound rather than one per field: each is separately clearable,
-  // so a range narrowed too far can be half-undone.
+  // One chip per bound, so a range can be half-undone.
   const dateChips: [FilterChipKey, string | null, TranslationKey][] = [
     ['updatedAfter', filters.updatedAfter, 'hv.chips.updatedAfter'],
     ['updatedBefore', filters.updatedBefore, 'hv.chips.updatedBefore'],
@@ -171,14 +148,11 @@ export function clearedValueFor(key: FilterChipKey): Partial<StoreFilters> {
   switch (key) {
     case 'q':
       return { q: '' };
+    // An empty list, not null, is how the multi-select facets say "not narrowing".
     case 'tags':
-      return { tags: [] };
-    // The multi-select facets clear to an empty selection, not to null: an
-    // empty list is how "not narrowing by this" is spelled end to end.
     case 'locationIds':
-      return { locationIds: [] };
     case 'categories':
-      return { categories: [] };
+      return { [key]: [] };
     case 'areaId':
     case 'status':
     case 'updatedAfter':
@@ -208,26 +182,15 @@ export class HVFilterChips extends LitElement {
         gap: 6px;
         align-items: center;
       }
-      /* Each of these removes the filter it names, so the trailing × is part of
-         the target and the chip carries a little more room on that side. */
+      /* The trailing × is part of the target. */
       .chip {
         padding-right: 6px;
       }
       .chip:hover {
         opacity: 0.85;
       }
-      /*
-       * A chip names a narrowing; it is not where the value is read. Nothing
-       * caps what a household can put into one — a search term, a run of tags,
-       * a path several levels deep — and this row shares a phone-width line
-       * with the filter toggle, so one uncapped chip takes the row away from
-       * the controls beside it. The whole text stays on the title and on the
-       * accessible name.
-       *
-       * The elision belongs on the label rather than on the chip: the chip is
-       * an inline-flex container, so text-overflow on it would do nothing and
-       * the trailing × has to stay outside the clipped box to remain visible.
-       */
+      /* Capped, with the whole text on the title and the accessible name. On the
+         label, since text-overflow does nothing on the inline-flex chip. */
       .chip > .hv-chip-text {
         min-width: 0;
         overflow: hidden;
@@ -242,8 +205,7 @@ export class HVFilterChips extends LitElement {
 
   @property({ attribute: false }) filters!: StoreFilters;
   @property({ attribute: false }) locations: Location[] | null = null;
-  /** The status vocabulary from `haventory/config`; the built-ins stand in
-   * until it answers. */
+  /** The status vocabulary from `haventory/config`; the built-ins stand in until it answers. */
   @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
 
