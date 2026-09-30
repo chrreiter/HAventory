@@ -844,6 +844,10 @@ export class HVOrganizeDialog extends LitElement {
     </div>`;
   }
 
+  private _failure(testid: string, message: string | null) {
+    return message ? html`<div class="failure" role="alert" data-testid=${testid}>${message}</div>` : null;
+  }
+
   /** Touch has no hover, so a row's actions live in a sheet instead of beside it. */
   private _renderActionSheet(
     testid: string,
@@ -1292,9 +1296,7 @@ export class HVOrganizeDialog extends LitElement {
                 </div>`
           }
         </div>
-        ${this._locError
-          ? html`<div class="failure" role="alert" data-testid="location-error">${this._locError}</div>`
-          : null}
+        ${this._failure('location-error', this._locError)}
         ${this._renderFooter({
           lead: node
             ? html`<button
@@ -1684,9 +1686,7 @@ export class HVOrganizeDialog extends LitElement {
           }}
         />
       </label>
-      ${this._newValueError
-        ? html`<div class="failure" role="alert" data-testid="new-value-error">${this._newValueError}</div>`
-        : null}
+      ${this._failure('new-value-error', this._newValueError)}
       <span class="note">${t('hv.organize.draftNote', { noun: this._noun })}</span>
       ${this._renderFooter({
         cancelTestid: 'new-value-cancel',
@@ -1887,11 +1887,7 @@ export class HVOrganizeDialog extends LitElement {
             ${this._statusGuard?.slug === d.slug ? this._renderStatusGuard(this._statusGuard) : null}
           `;
         })}
-        ${this._statusError && !this._editingStatus
-          ? html`<div class="failure" role="alert" data-testid="status-error">
-              ${this._statusError}
-            </div>`
-          : null}
+        ${this._editingStatus ? null : this._failure('status-error', this._statusError)}
       </div>
     `;
   }
@@ -2005,11 +2001,7 @@ export class HVOrganizeDialog extends LitElement {
           )}
         </div>
 
-        ${this._statusError
-          ? html`<div class="failure" role="alert" data-testid="status-editor-error">
-              ${this._statusError}
-            </div>`
-          : null}
+        ${this._failure('status-editor-error', this._statusError)}
         ${this._renderFooter({
           cancelTestid: 'status-cancel',
           onCancel: () => this._cancelStatusEdit(),
