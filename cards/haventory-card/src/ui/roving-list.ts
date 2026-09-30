@@ -1,19 +1,8 @@
 /**
- * A list of rows as one tab stop, with the arrows moving inside it.
- *
- * A facet list is as long as the household's vocabulary, and every row being a
- * tab stop of its own put that vocabulary between the search box and the table:
- * a household with 122 labels made 184 presses of the walk. One row holds
- * `tabindex="0"`, the rest hold `-1`, and Arrow, Home and End move that stop
- * about. The locations tree carries the same pattern one level deeper — its
- * rows open and close, and Right and Left are what work the twisties, which is
- * why they are out of the tab order — so it reads from here too, and the four
- * lists cannot drift apart from each other.
- *
- * The rows are read from the rendered DOM by the caller rather than derived
- * from the data: what is drawn is already exactly what is walkable, and a
- * second walk over the values would be a second copy of the collapse and
- * filter rules to keep in step.
+ * A list of rows as one tab stop: one row holds `tabindex="0"`, and Arrow, Home
+ * and End move it, so a long facet list is not a long Tab walk. The locations
+ * tree adds Right and Left for its twisties. The caller reads the rows from the
+ * rendered DOM, which is exactly what is walkable.
  */
 
 /** The keys this layer answers to; everything else is the browser's. */
@@ -22,11 +11,7 @@ const MOVE_KEYS = ['ArrowDown', 'ArrowUp', 'Home', 'End'];
 /** What a list whose rows open and close adds to them. */
 const DISCLOSURE_KEYS = [...MOVE_KEYS, 'ArrowRight', 'ArrowLeft'];
 
-/**
- * Where the stop belongs before anyone has moved it: on what is already picked.
- * A pressable row says so with `aria-pressed` and a row inside a tree with
- * `aria-selected`; both mean the same thing to whoever arrives on the list.
- */
+/** Where the stop starts: on what is already picked (`aria-pressed` or `aria-selected`). */
 const isSelected = (el: HTMLElement) =>
   el.getAttribute('aria-pressed') === 'true' || el.getAttribute('aria-selected') === 'true';
 
@@ -34,17 +19,9 @@ const isSelected = (el: HTMLElement) =>
 const levelOf = (el: HTMLElement) => Number(el.getAttribute('aria-level') ?? '1');
 
 /**
- * Leave exactly one row in the tab order, and say which row that is.
- *
- * `held` is the key the caller stored last. A row drawn away since — a narrowed
- * vocabulary, a cleared filter — hands the stop to the selected row if there is
- * one and to the first row otherwise, so the list is never left without a way
- * in. Null back means the list is empty and there is nothing to hold.
- *
- * `riders` names controls that have no key of their own to reach them by and so
- * travel with their row: the tree's merge, edit and delete buttons are in the
- * tab order only while their row holds the stop, so Tab from the active row
- * steps through that row's actions and then leaves the list.
+ * Leave exactly one row in the tab order and return its key: `held` if still
+ * drawn, else the selected row, else the first; null for an empty list.
+ * `riders` are a row's own buttons, in the tab order only while it holds the stop.
  */
 export function syncRovingTabindex(
   rows: HTMLElement[],
@@ -65,27 +42,14 @@ export function syncRovingTabindex(
 export interface Disclosure {
   /** Open or close the node `el` stands for. */
   toggle: (el: HTMLElement) => void;
-  /**
-   * Every node is drawn open whatever its own state says — a filter is running
-   * — so closing one would move nothing on the screen and Left steps out
-   * instead.
-   */
+  /** Every node is drawn open (a filter is running), so Left steps out instead of closing. */
   frozen?: boolean;
 }
 
 /**
- * The row a key press moves to, or null when the press moved nothing: it was
- * not this list's key, or it opened or closed a node rather than travelling.
- *
- * The ends do not wrap: the end of a filter list is an end, and coming back
- * round to the other one reads as the focus having jumped somewhere else. Only
- * a handled key is claimed — Enter and Space stay the row's own, and an
- * unclaimed ArrowDown still scrolls the sidebar.
- *
- * With a `disclosure`, Right and Left work the twisties, which is what lets a
- * tree keep them out of the tab order: Right opens what is closed and steps
- * into what is open, Left closes what is open and otherwise steps out to the
- * parent — the nearest earlier row drawn one level shallower.
+ * The row a key press moves to, or null when it moved nothing. The ends do not
+ * wrap, and only a handled key is claimed. With a `disclosure`, Right opens or
+ * steps in, and Left closes or steps out to the parent.
  */
 export function rovingTarget(
   e: KeyboardEvent,
@@ -109,8 +73,7 @@ export function rovingTarget(
     case 'End':
       return rows[rows.length - 1];
     case 'ArrowRight':
-      // Open what is closed; on what is already open, step into it — the first
-      // child is the next row drawn. A leaf has neither and stays put.
+      // An open node's first child is the next row drawn; a leaf stays put.
       if (current.getAttribute('aria-expanded') === 'false') {
         disclosure?.toggle(current);
         return null;

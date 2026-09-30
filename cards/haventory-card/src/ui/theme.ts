@@ -1,20 +1,7 @@
 /**
- * Deciding whether the card is painted on a light or a dark surface.
- *
- * Home Assistant's dark mode is a frontend setting, not an OS one: a user can
- * run a dark HA theme on a light desktop, or the reverse. Keying the card's
- * dark values off `prefers-color-scheme` therefore mixes the two palettes —
- * near-black dividers on a white card, pale-amber badges no one can read.
- *
- * There is no CSS variable that says "this theme is dark", so we read the
- * surface the card actually paints on and classify it. The answer is published
- * as `color-scheme` on the card host, which
- *   * `light-dark()` in `tokens` resolves against, and
- *   * the browser uses to paint native controls (select arrows, date pickers),
- *     which would otherwise stay light-on-dark.
- *
- * `color-scheme` is inherited, so setting it once on the outermost host reaches
- * every `hv-*` component without threading anything through them.
+ * Whether the card is painted on a light or a dark surface. HA's dark mode is a
+ * frontend setting, not the OS's, and no variable says "this theme is dark", so
+ * the surface colour itself is classified and published as `color-scheme`.
  */
 
 import { SURFACE_VARS } from '../ha-contract';
@@ -75,23 +62,12 @@ export function schemeForSurface(cssColor: string): 'light' | 'dark' | null {
 }
 
 /**
- * The theme variables that describe the surface the card sits on, most specific
- * first. These are the same ones `--hv-surface` binds to, and they are declared
- * with the rest of the card's Home Assistant contact surface in `ha-contract`.
- */
-export { SURFACE_VARS };
-
-/**
- * The scheme implied by an element's resolved theme variables, or `null` when
- * none of them carry a usable colour — in which case the caller should leave
- * `color-scheme` alone so the OS preference keeps deciding.
- *
- * Custom properties inherit from `<html>`, where Home Assistant writes the
- * active theme, so reading them off the card host needs no probe element.
+ * The scheme implied by an element's resolved surface variables, or `null` when
+ * none carries a usable colour, which leaves the OS preference deciding.
  */
 export function resolveColorScheme(style: Pick<CSSStyleDeclaration, 'getPropertyValue'>): 'light' | 'dark' | null {
   for (const name of SURFACE_VARS) {
-    const scheme = schemeForSurface(style.getPropertyValue(name) ?? '');
+    const scheme = schemeForSurface(style.getPropertyValue(name));
     if (scheme) return scheme;
   }
   return null;

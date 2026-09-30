@@ -50,11 +50,7 @@ export class WSClient {
     return callWS<StatsCounts>(this.hass, { type: 'haventory/stats' });
   }
 
-  /**
-   * Distinct categories, tags and custom-field keys with usage counts. With a
-   * filter each category and tag also carries `matching_count`; the lists
-   * themselves never shrink, so autocomplete keeps its full vocabulary.
-   */
+  /** With a filter each category and tag also carries `matching_count`; the lists never shrink. */
   distinctValues(filter?: ItemFilter) {
     const msg: Record<string, unknown> = { type: 'haventory/distinct_values' };
     if (filter) msg.filter = filter;
@@ -62,9 +58,22 @@ export class WSClient {
   }
 
   // ---------- Items ----------
-  getItem(itemId: string) {
-    return callWS<Item>(this.hass, { type: 'haventory/item/get', item_id: itemId });
+  /** One command on one item, carrying `expected_version` only when one was given. */
+  private itemCommand<T = Item>(
+    type: string,
+    itemId: string,
+    fields: Record<string, unknown> = {},
+    expectedVersion?: number,
+  ) {
+    const msg: Record<string, unknown> = { type: `haventory/${type}`, item_id: itemId, ...fields };
+    if (typeof expectedVersion === 'number') msg.expected_version = expectedVersion;
+    return callWS<T>(this.hass, msg);
   }
+
+  getItem(itemId: string) {
+    return this.itemCommand('item/get', itemId);
+  }
+
   listItems(filter?: ItemFilter, sort?: Sort, limit?: number, cursor?: string) {
     const msg: Record<string, unknown> = { type: 'haventory/item/list' };
     if (filter) msg.filter = filter;
@@ -79,96 +88,55 @@ export class WSClient {
   }
 
   updateItem(itemId: string, changes: ItemUpdate, expectedVersion?: number) {
-    const payload: Record<string, unknown> = { type: 'haventory/item/update', item_id: itemId, ...changes };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
+    return this.itemCommand('item/update', itemId, { ...changes }, expectedVersion);
   }
 
   deleteItem(itemId: string, expectedVersion?: number) {
-    const payload: Record<string, unknown> = { type: 'haventory/item/delete', item_id: itemId };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<null>(this.hass, payload);
+    return this.itemCommand<null>('item/delete', itemId, {}, expectedVersion);
   }
 
   adjustQuantity(itemId: string, delta: number, expectedVersion?: number) {
-    const payload: Record<string, unknown> = { type: 'haventory/item/adjust_quantity', item_id: itemId, delta };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
+    return this.itemCommand('item/adjust_quantity', itemId, { delta }, expectedVersion);
   }
 
   setQuantity(itemId: string, quantity: number, expectedVersion?: number) {
-    const payload: Record<string, unknown> = { type: 'haventory/item/set_quantity', item_id: itemId, quantity };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
+    return this.itemCommand('item/set_quantity', itemId, { quantity }, expectedVersion);
   }
 
+  /** An explicit null due date clears it; `undefined` leaves the key off. */
   checkOut(itemId: string, dueDate?: string | null, expectedVersion?: number) {
-    const payload: Record<string, unknown> = { type: 'haventory/item/check_out', item_id: itemId };
-    if (dueDate !== undefined) payload.due_date = dueDate;
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
+    const fields = dueDate !== undefined ? { due_date: dueDate } : {};
+    return this.itemCommand('item/check_out', itemId, fields, expectedVersion);
   }
 
   markCheckedIn(itemId: string, expectedVersion?: number) {
-    const payload: Record<string, unknown> = { type: 'haventory/item/check_in', item_id: itemId };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
+    return this.itemCommand('item/check_in', itemId, {}, expectedVersion);
   }
 
-  /**
-   * Mark a recurring reminder done and move it to its next occurrence.
-   *
-   * The next date is the backend's to work out — it counts from the series
-   * anchor, which no client is sent in a form it could count from — so there is
-   * nothing to send but the item and its version.
-   */
+  /** The backend works out the next occurrence from the series anchor. */
   bumpReminder(itemId: string, expectedVersion?: number) {
-    const payload: Record<string, unknown> = {
-      type: 'haventory/reminder/bump',
-      item_id: itemId,
-    };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
+    return this.itemCommand('reminder/bump', itemId, {}, expectedVersion);
   }
 
   setLowStockThreshold(itemId: string, threshold: number | null, expectedVersion?: number) {
-    const payload: Record<string, unknown> = {
-      type: 'haventory/item/set_low_stock_threshold',
-      item_id: itemId,
-      low_stock_threshold: threshold,
-    };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
+    const fields = { low_stock_threshold: threshold };
+    return this.itemCommand('item/set_low_stock_threshold', itemId, fields, expectedVersion);
   }
 
   moveItem(itemId: string, locationId: string | null, expectedVersion?: number) {
-    const payload: Record<string, unknown> = { type: 'haventory/item/move', item_id: itemId, location_id: locationId };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
+    return this.itemCommand('item/move', itemId, { location_id: locationId }, expectedVersion);
   }
 
-  /**
-   * Run a mixed batch in one call. Partial failure is the normal case: the result
-   * is keyed by `op_id` and each entry independently succeeded or failed. There is
-   * no rollback — earlier successes stand.
-   */
+  /** A mixed batch keyed by `op_id`; each entry succeeds or fails on its own, with no rollback. */
   bulk(operations: BulkOperation[]) {
     return callWS<BulkResults>(this.hass, { type: 'haventory/items/bulk', operations });
   }
 
   // ---------- Attachments ----------
-
   /**
-   * Upload a file and attach it to an item, in the two steps the backend expects.
-   *
-   * The bytes go to Home Assistant core's `/api/file_upload` over HTTP — the
-   * WebSocket carries JSON frames, and an 8 MB photo base64'd into one would be
-   * both slower and larger. That POST hands back a `file_id`, which the
-   * `attachment/add` command consumes.
-   *
-   * Resolves to the item as the backend now holds it, one version on: the
-   * caller must take that item back into its form model, or its next save
-   * fails with `conflict` against a version the upload already moved past.
+   * Upload a file and attach it to an item. The bytes go to core's
+   * `/api/file_upload` over HTTP rather than base64 over the socket, and the
+   * `file_id` it answers is what `attachment/add` consumes.
    */
   async uploadAttachment(
     itemId: string,
@@ -182,54 +150,24 @@ export class WSClient {
     }
     const body = new FormData();
     body.append('file', file);
-    const response = await fetchWithAuth.call(this.hass, '/api/file_upload', {
-      method: 'POST',
-      body,
-    });
+    const response = await fetchWithAuth.call(this.hass, '/api/file_upload', { method: 'POST', body });
     if (!response.ok) {
       throw new Error(t('hv.store.uploadFailed', { status: response.status }));
     }
     const { file_id: fileId } = (await response.json()) as { file_id: string };
+    const fields = { file_id: fileId, kind, filename: file.name };
+    return this.itemCommand('item/attachment/add', itemId, fields, expectedVersion);
+  }
 
-    const payload: Record<string, unknown> = {
-      type: 'haventory/item/attachment/add',
-      item_id: itemId,
-      file_id: fileId,
-      kind,
-      filename: file.name,
-    };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
+  /** Retitle one attachment; the stored filename never changes. */
+  updateAttachment(itemId: string, attachmentId: string, title: string, expectedVersion?: number) {
+    const fields = { attachment_id: attachmentId, title };
+    return this.itemCommand('item/attachment/update', itemId, fields, expectedVersion);
   }
 
   /**
-   * Retitle one attachment.
-   *
-   * The stored filename never changes — it is what the bytes were uploaded as,
-   * and the title is only what the card shows in its place.
-   */
-  updateAttachment(
-    itemId: string,
-    attachmentId: string,
-    title: string,
-    expectedVersion?: number,
-  ) {
-    const payload: Record<string, unknown> = {
-      type: 'haventory/item/attachment/update',
-      item_id: itemId,
-      attachment_id: attachmentId,
-      title,
-    };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
-  }
-
-  /**
-   * Renumber one kind's attachments; the first id named takes position 0.
-   *
-   * A picture at position 0 is the item's cover, so "make cover" is this
-   * command rather than a flag of its own. The list must name every attachment
-   * of that kind exactly once — the backend refuses a partial permutation.
+   * Renumber one kind's attachments; the first id named takes position 0, the
+   * cover for pictures. The backend refuses a list that misses one.
    */
   reorderAttachments(
     itemId: string,
@@ -237,43 +175,21 @@ export class WSClient {
     attachmentIds: string[],
     expectedVersion?: number,
   ) {
-    const payload: Record<string, unknown> = {
-      type: 'haventory/item/attachment/reorder',
-      item_id: itemId,
-      kind,
-      attachment_ids: attachmentIds,
-    };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
+    const fields = { kind, attachment_ids: attachmentIds };
+    return this.itemCommand('item/attachment/reorder', itemId, fields, expectedVersion);
   }
 
-  /** Detach one file from an item; the backend deletes the bytes with it. */
   removeAttachment(itemId: string, attachmentId: string, expectedVersion?: number) {
-    const payload: Record<string, unknown> = {
-      type: 'haventory/item/attachment/remove',
-      item_id: itemId,
-      attachment_id: attachmentId,
-    };
-    if (typeof expectedVersion === 'number') payload.expected_version = expectedVersion;
-    return callWS<Item>(this.hass, payload);
+    const fields = { attachment_id: attachmentId };
+    return this.itemCommand('item/attachment/remove', itemId, fields, expectedVersion);
   }
 
   /**
-   * Sign a path so an `<img>` can fetch it.
-   *
-   * An `<img src>` carries no Authorization header, and the media view requires
-   * one. Core's `auth/sign_path` hands back the same path with a short-lived
-   * signature on it, which is what makes the tag work at all. The alternative —
-   * `fetchWithAuth` plus `URL.createObjectURL` — pins every decoded image in JS
-   * memory for the life of the view and needs manual revocation; a signed URL
-   * lets the browser cache and evict it normally.
+   * Sign a path so an `<img>`, which sends no Authorization header, can load
+   * it. Unlike a blob URL, a signed URL leaves caching to the browser.
    */
   async signPath(path: string, expires: number): Promise<string> {
-    const signed = await callWS<{ path: string }>(this.hass, {
-      type: 'auth/sign_path',
-      path,
-      expires,
-    });
+    const signed = await callWS<{ path: string }>(this.hass, { type: 'auth/sign_path', path, expires });
     return signed.path;
   }
 
@@ -289,11 +205,7 @@ export class WSClient {
     return callWS<Location>(this.hass, msg);
   }
 
-  /**
-   * Rename, re-area and/or re-parent in one call. `newParentId` moves the whole
-   * subtree, so an edit that also re-parents lands atomically instead of needing
-   * a second `move_subtree` round trip.
-   */
+  /** Rename, re-area and/or re-parent the whole subtree in one call. */
   updateLocation(
     locationId: string,
     changes: { name?: string; areaId?: string | null; newParentId?: string | null },
@@ -317,11 +229,7 @@ export class WSClient {
     });
   }
 
-  /**
-   * Nested tree nodes carrying `direct_item_count` / `subtree_item_count`.
-   * With a filter each node also carries the matching pair, so a sidebar can
-   * say how much of a location the active filter keeps.
-   */
+  /** With a filter each node also carries the matching pair of counts. */
   getLocationTree(filter?: ItemFilter) {
     const msg: Record<string, unknown> = { type: 'haventory/location/tree' };
     if (filter) msg.filter = filter;
@@ -333,26 +241,21 @@ export class WSClient {
   }
 
   // ---------- Import / export (data safety) ----------
-  /** Build a versioned backup document (optionally filtered to matching items). */
   exportDocument(filter?: ItemFilter) {
     const msg: Record<string, unknown> = { type: 'haventory/export' };
     if (filter) msg.filter = filter;
     return callWS<ExportDocument>(this.hass, msg);
   }
 
-  /** Validate + classify a document without mutating state. */
   importPreview(document: unknown, policy: ImportPolicy) {
     return callWS<ImportPreview>(this.hass, { type: 'haventory/import/preview', document, policy });
   }
 
-  /** Apply a document with the chosen conflict policy (rolls back on failure). */
   importExecute(document: unknown, policy: ImportPolicy) {
     return callWS<ImportSummary>(this.hass, { type: 'haventory/import/execute', document, policy });
   }
 
   // ---------- Status definitions ----------
-
-  /** The status vocabulary in display order. */
   listStatuses() {
     return callWS<StatusDefinition[]>(this.hass, { type: 'haventory/status/list' });
   }
@@ -367,30 +270,20 @@ export class WSClient {
     return callWS<StatusDefinition>(this.hass, { type: 'haventory/status/create', ...status });
   }
 
-  /** Edit presentation only — the slug is what items store and cannot change. */
+  /** The slug is what items store and cannot change. */
   updateStatus(
     slug: string,
     changes: { label?: string; color?: StatusColorValue; icon?: string; order?: number },
   ) {
-    return callWS<StatusDefinition>(this.hass, {
-      type: 'haventory/status/update',
-      slug,
-      ...changes,
-    });
+    return callWS<StatusDefinition>(this.hass, { type: 'haventory/status/update', slug, ...changes });
   }
 
-  /** Rewrite display order. `slugs` must name every status exactly once. */
+  /** `slugs` must name every status exactly once. */
   reorderStatuses(slugs: string[]) {
     return callWS<StatusDefinition[]>(this.hass, { type: 'haventory/status/reorder', slugs });
   }
 
-  /**
-   * Delete a status.
-   *
-   * Refused while items still carry it unless `reassignTo` says where they go;
-   * the move and the delete happen in one call, so no client can observe an
-   * item naming a status that no longer exists.
-   */
+  /** Refused while items carry the status, unless `reassignTo` moves them in the same call. */
   deleteStatus(slug: string, reassignTo?: string) {
     return callWS<{ status: StatusDefinition; reassigned: number }>(this.hass, {
       type: 'haventory/status/delete',
@@ -401,16 +294,10 @@ export class WSClient {
 
   // ---------- Subscriptions ----------
   /**
-   * Open one subscription, whichever way Home Assistant answers.
-   *
-   * HA hands back either the unsubscribe function or a promise of one,
-   * depending on how far its connection has got, and the promise can still be
-   * refused — which is the only notice that live updates never started, since
-   * no event will arrive to hint at it.
-   *
-   * The closure this returns is the caller's handle in both cases: called
-   * before the promise resolves it records the intent, and the resolution
-   * unsubscribes immediately rather than leaving a subscription nobody holds.
+   * Open one subscription. HA hands back the unsubscribe function or a promise
+   * of one, and a refused promise is the only notice that live updates never
+   * started. Called before the promise resolves, the returned closure records
+   * the intent and the resolution unsubscribes at once.
    */
   private openSubscription(
     msg: Record<string, unknown>,
@@ -421,21 +308,19 @@ export class WSClient {
 
     if (typeof unsubOrPromise === 'function') {
       opts?.onOpen?.();
-      return unsubOrPromise as unknown as Unsubscribe;
+      return unsubOrPromise;
     }
 
     let resolvedUnsub: Unsubscribe | null = null;
     let cancelRequested = false;
-    // The rejection handler is `then`'s second argument rather than a trailing
-    // `catch`, so a throw from `onOpen` cannot be misread as a refused subscribe.
-    Promise.resolve(unsubOrPromise).then(
+    // `then`'s second argument, so a throw from `onOpen` is not read as a refusal.
+    unsubOrPromise.then(
       (fn) => {
-        resolvedUnsub = fn as Unsubscribe;
+        resolvedUnsub = fn;
         if (cancelRequested) {
-          // Nobody is holding this any more, so a throwing unsubscribe has
-          // nothing left to report to.
+          // Nobody holds this any more, so a throwing unsubscribe has nobody to tell.
           try {
-            resolvedUnsub();
+            fn();
           } catch {
             /* ignore */
           }
@@ -456,81 +341,37 @@ export class WSClient {
     topic: 'items' | 'locations' | 'stats' | 'statuses',
     cb: (payload: AnyEventPayload) => void,
     opts?: {
-      location_id?: string | null;
-      /** Multi-select beside `location_id`, unioned with it by the backend. */
       location_ids?: string[];
       area_id?: string | null;
       include_subtree?: boolean;
-      /**
-       * Called when the backend rejects the subscribe, which otherwise kills
-       * live updates silently.
-       */
+      /** Called when the backend refuses the subscribe. */
       onError?: (err: unknown) => void;
-      /**
-       * Called once the backend has accepted the subscribe. The only positive
-       * signal there is: a caller retrying a refused subscribe needs to know
-       * when the topic is live again, and no event may ever arrive to prove it.
-       */
+      /** Called once the backend accepts it, the only positive signal there is. */
       onOpen?: () => void;
-    }
+    },
   ): Unsubscribe {
-    const id = nextSubscriptionId++;
-    const msg: Record<string, unknown> = {
-      id,
-      type: 'haventory/subscribe',
-      topic,
-    };
-    if (opts && 'location_id' in opts) msg.location_id = opts.location_id ?? null;
+    const msg: Record<string, unknown> = { id: nextSubscriptionId++, type: 'haventory/subscribe', topic };
     if (opts && 'location_ids' in opts) msg.location_ids = opts.location_ids ?? [];
     if (opts && 'area_id' in opts) msg.area_id = opts.area_id ?? null;
     if (opts && 'include_subtree' in opts) msg.include_subtree = !!opts.include_subtree;
-
-    // A rejected subscribe means no live updates at all, so `onError` is what
-    // lets the card retry, go degraded and offer a manual refresh instead of
-    // quietly showing stale data.
-    return this.openSubscription(
-      msg,
-      (event) => {
-        // Home Assistant's `subscribeMessage` delivers the *inner* event payload
-        // (the `event` field of the `{id, type:'event', event}` wire frame) to the
-        // callback — NOT the whole envelope. Guard only against a nullish payload.
-        if (!event) return;
-        cb(event);
-      },
-      opts,
-    );
+    // HA delivers the inner `event` of the wire frame, not the envelope.
+    return this.openSubscription(msg, cb, opts);
   }
 
   /**
-   * Call back each time the connection comes back after a drop.
-   *
-   * Home Assistant re-issues the subscriptions it was holding before it fires
-   * `ready`, so a dropped socket produces neither a refusal nor a fresh
-   * `subscribeAreaRegistry` call — the watch simply resumes, and anything the
-   * registry did meanwhile went to nobody. This event is the only notice the
-   * card gets that such a gap happened at all.
+   * Called each time the connection comes back. HA re-issues its subscriptions
+   * before `ready`, so this is the only notice that events may have been missed.
    */
   onConnectionReady(cb: () => void): Unsubscribe {
     return this.onConnectionEvent('ready', cb);
   }
 
-  /**
-   * Call back when the socket closes, before Home Assistant reconnects.
-   *
-   * Without it a surface nobody is touching cannot tell that it went stale:
-   * every other signal the card has comes from a call it made, so an idle list
-   * would keep showing data from before the outage with nothing to say so.
-   */
+  /** Called when the socket closes, before HA reconnects. */
   onConnectionLost(cb: () => void): Unsubscribe {
     return this.onConnectionEvent('disconnected', cb);
   }
 
-  /**
-   * Attach one connection-lifecycle listener.
-   *
-   * Returns a no-op unsubscribe when the connection does not expose the
-   * lifecycle, so a caller never has to branch on it.
-   */
+  /** A no-op unsubscribe when the connection does not expose the lifecycle. */
   private onConnectionEvent(event: 'ready' | 'disconnected', cb: () => void): Unsubscribe {
     const connection = this.hass.connection;
     const { addEventListener, removeEventListener } = connection;
@@ -543,18 +384,9 @@ export class WSClient {
   }
 
   /**
-   * Watch Home Assistant's area registry.
-   *
-   * Areas belong to HA, not to HAventory: renaming or deleting one moves no
-   * inventory data, so no `haventory/subscribe` topic reports it. This is HA's
-   * own event bus, subscribed the way the frontend's `subscribeEvents` does.
-   * The callback takes no payload — the event says only that the registry
-   * moved, and the caller refetches.
-   *
-   * A refusal is reported rather than thrown: the card keeps the areas it
-   * already holds, which is the whole of what it had before it listened at all,
-   * so the caller decides whether to retry. `onOpen` fires once the watch is
-   * actually established, which is the caller's cue that a gap has closed.
+   * Watch HA's area registry, which no `haventory/subscribe` topic covers. The
+   * callback takes no payload: the caller refetches. A refusal goes to
+   * `onError`, and `onOpen` fires once the watch is established.
    */
   subscribeAreaRegistry(
     cb: () => void,

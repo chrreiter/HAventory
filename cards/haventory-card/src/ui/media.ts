@@ -1,76 +1,38 @@
 /**
- * Signed URLs for item attachments, so an `<img>` can load one.
- *
- * The media view needs authentication and an `<img src>` carries no header, so
- * every URL is signed by core's `auth/sign_path` first; signatures expire, and
- * a view held open past the lifetime asks again rather than breaking the image.
- * No component signs for itself — each holds a `MediaUrls` and reads a URL out
- * of it synchronously, which is what a Lit template needs.
+ * Signed URLs for item attachments: an `<img src>` carries no auth header, so
+ * core's `auth/sign_path` signs each one, and an expiring signature is renewed.
+ * Components read URLs synchronously out of a `MediaUrls`.
  */
 
 import { t } from '../i18n';
 import type { Attachment, AttachmentKind, Item } from '../store/types';
 
-/**
- * The route the backend serves attachments on.
- *
- * A constant on both sides of the language boundary, pinned to the backend's
- * `MEDIA_URL_TEMPLATE` by `tests/test_frontend_registration.py` — neither side
- * can check the other on its own.
- */
+/** Pinned to the backend's `MEDIA_URL_TEMPLATE` by `tests/test_frontend_registration.py`. */
 export const MEDIA_URL_TEMPLATE = '/api/haventory/media/{item_id}/{attachment_id}';
 
 /**
- * Query parameter that versions a media URL by the name the file is served
- * under. Pinned to the backend's `MEDIA_NAME_TOKEN_PARAM` by
- * `tests/test_frontend_registration.py`.
- *
- * The bytes behind an attachment id never change, but a retitle rewrites the
- * name in `Content-Disposition`, and the backend only allows an indefinite
- * cache when the URL says which name it was fetched for. A cache entry outlasts
- * the signature by half an hour, and would keep saving the old name.
+ * Versions a URL by the name the file is served under, since a retitle changes
+ * `Content-Disposition` and the backend caches only a URL that names it. Pinned
+ * to the backend by `tests/test_frontend_registration.py`.
  */
 export const MEDIA_NAME_TOKEN_PARAM = 'v';
 
 /**
- * Which form of a picture to ask the backend for. Pinned to the backend's
- * `MEDIA_SIZE_PARAM` / `MEDIA_SIZE_THUMB` by
- * `tests/test_frontend_registration.py`.
- *
- * Only `thumb` exists, and only for a row tile: a 34–72px tile served the
- * original costs up to 8 MB for a few hundred pixels, invisible on Wi-Fi and
- * the difference between usable and not on a phone in a shop. The lightbox and
- * the large picture in the detail sheet ask for neither and get the stored
- * file. The backend falls back to the original when it cannot make a tile, so
- * this is a request, not a requirement.
+ * A row tile asks for the `thumb` variant rather than an up-to-8 MB original;
+ * the backend falls back to the original. Pinned to the backend's
+ * `MEDIA_SIZE_PARAM` / `MEDIA_SIZE_THUMB` by `tests/test_frontend_registration.py`.
  */
 export const MEDIA_SIZE_PARAM = 'size';
 export type MediaVariant = 'thumb';
 export const MEDIA_VARIANT_THUMB: MediaVariant = 'thumb';
 
-/**
- * How long a signature is asked for.
- *
- * A browser caches by full URL, signature included, so a re-signed URL is a
- * fresh download of bytes it already holds. Half an hour outlasts an ordinary
- * session with a list open, and is far too short for a URL copied out of the
- * DOM to be a lasting handle.
- */
+/** Half an hour: a re-signed URL is a fresh download, since browsers cache by full URL. */
 export const SIGNED_URL_TTL_SECONDS = 1800;
 
-/**
- * The box a row's leading thumbnail draws in, on every surface that shows one.
- *
- * One number rather than one per component: the full view's table has to
- * reserve this much inside its name column, and a box that outgrew the reserve
- * would take the width back out of the name.
- */
+/** A row thumbnail's box; the table reserves this much inside its name column. */
 export const ROW_THUMB_SIZE = 34;
 
-/**
- * The same box where a finger is the pointer. A phone shows one column of rows
- * and can spend the extra six pixels on making the picture legible.
- */
+/** The same box where a finger is the pointer. */
 export const ROW_THUMB_SIZE_TOUCH = 40;
 
 /** Re-sign this long before expiry, so an in-flight request never lands late. */
@@ -79,13 +41,7 @@ const REFRESH_MARGIN_MS = 60_000;
 /** Signs one path and hands back the signed one. */
 export type SignPath = (path: string, expires: number) => Promise<string>;
 
-/**
- * Everything a component needs to show or change an item's attachments.
- *
- * One object rather than four properties, and one instance per host rather
- * than a closure per render: a fresh function each render reads as a changed
- * property and re-renders every row that holds it.
- */
+/** Everything a component needs to show or change an item's attachments; one instance per host. */
 export interface MediaBindings {
   sign: SignPath;
   /** Upload one file; resolves to the item as the backend now holds it. */
@@ -103,13 +59,7 @@ interface MediaHost {
   requestUpdate(): void;
 }
 
-/**
- * Build the unsigned media path for one attachment.
- *
- * Home Assistant signs query parameters together with the path, so the name
- * token belongs here rather than appended to a signed URL. What it is for:
- * `MEDIA_NAME_TOKEN_PARAM`.
- */
+/** The unsigned media path; HA signs the query with the path, so the parameters go here. */
 export function mediaPath(
   itemId: string,
   attachmentId: string,
@@ -136,16 +86,11 @@ function urlKey(itemId: string, attachmentId: string, variant?: MediaVariant): s
 }
 
 /**
- * A short stable token for the name one attachment is served under.
- *
- * A hash, not the name: the name is user-supplied text of any length in any
- * script and this only has to *differ* when it does. It hashes
- * `attachmentTitle`, the precedence the backend builds `Content-Disposition`
- * from, so the token changes exactly when the saved filename would.
+ * A short token that changes exactly when the served filename would: an
+ * FNV-1a hash of `attachmentTitle`, the backend's `Content-Disposition` source.
  */
 export function attachmentNameToken(attachment: Attachment): string {
   const name = attachmentTitle(attachment);
-  // FNV-1a, 32-bit. Not a checksum and not a secret — a cache key.
   let hash = 0x811c9dc5;
   for (let i = 0; i < name.length; i += 1) {
     hash ^= name.charCodeAt(i);
@@ -170,14 +115,7 @@ export function pictureAlt(itemName: string, index: number, total: number): stri
     : t('hv.media.photoAltOnly', { name: itemName });
 }
 
-/**
- * One kind of attachment, in the order the item stores them in.
- *
- * `order` is per kind and counts from zero within it, so the two lists are
- * sorted separately — a manual at 0 does not push a picture at 1 down the
- * strip. It is absent on a payload written before the field existed, where the
- * stored list order *is* the order, so position stands in for it.
- */
+/** One kind of attachment by its per-kind `order`, list position standing in when absent. */
 function ofKind(attachments: Attachment[] | undefined, kind: AttachmentKind): Attachment[] {
   return (attachments ?? [])
     .filter((a) => a.kind === kind)
@@ -196,24 +134,12 @@ export function manuals(attachments: Attachment[] | undefined): Attachment[] {
   return ofKind(attachments, 'manual');
 }
 
-/**
- * What to call an attachment on screen.
- *
- * The title the user gave it, or its filename — `scan_0142.pdf` is a poor name
- * for a document list but it beats a blank row, and an untitled attachment is
- * the normal state right after an upload.
- */
+/** An attachment's title, or its filename when untitled. */
 export function attachmentTitle(attachment: Attachment): string {
   return attachment.title?.trim() || attachment.filename;
 }
 
-/**
- * Whether the bytes a reference names are actually on disk.
- *
- * `unknown` is the honest answer both before the check has run and when it
- * could not be made — only a 404 from the media route proves absence, and a
- * failed probe must not disable a document that opens perfectly well.
- */
+/** Whether a reference's bytes are on disk; only a 404 proves `missing`. */
 export type Presence = 'unknown' | 'present' | 'missing';
 
 /** Enough of a `Response` for a liveness check; `Response` itself in the browser. */
@@ -236,12 +162,8 @@ interface Entry {
 }
 
 /**
- * A component's view of the signed URLs it needs.
- *
- * `get` is synchronous because that is what a template can use: it returns a
- * live URL, or starts the signing request and returns null, asking the host to
- * re-render once the answer lands. A failed signing is remembered on the entry,
- * so the next render is answered from it rather than asking again.
+ * A component's signed URLs. `get` is synchronous for a template: a live URL,
+ * or null while signing, with a re-render when it lands. A failure is remembered.
  */
 export class MediaUrls {
   private readonly host: MediaHost;
@@ -256,13 +178,7 @@ export class MediaUrls {
     this.fetch = options.fetch ?? ((url, init) => globalThis.fetch(url, init));
   }
 
-  /**
-   * Point this at a signer.
-   *
-   * Called from the host's `willUpdate`, so a component not given one renders
-   * no images. A changed signer drops the cache: the old signatures were issued
-   * for a connection that is no longer the one being rendered.
-   */
+  /** Point this at a signer, from `willUpdate`; a changed signer drops the cache. */
   configure(sign: SignPath | null): void {
     if (this.sign === sign) return;
     this.sign = sign;
@@ -270,16 +186,9 @@ export class MediaUrls {
   }
 
   /**
-   * The signed URL for one attachment, or null while there is not one yet.
-   *
-   * Passing the attachment's `attachmentNameToken` keeps the URL in step with a
-   * retitle: a token the held URL was not signed for re-signs rather than
-   * serving a cached response that still carries the old filename. The entry is
-   * keyed on the two ids and the variant, so what `failed` and `presence` know
-   * about these bytes survives the re-sign, and a `variant` — a different URL
-   * and so a different signature — gets its own entry. `presence` takes none:
-   * whether the file is there is a question about the attachment, not the size
-   * asked for, and the backend answers 404 for both together.
+   * The signed URL for one attachment, or null while there is not one yet. A
+   * `nameToken` the held URL was not signed for re-signs it. Entries are keyed
+   * by ids and variant, so what is known about the bytes survives a re-sign.
    */
   get(
     itemId: string,
@@ -289,31 +198,19 @@ export class MediaUrls {
   ): string | null {
     const key = urlKey(itemId, attachmentId, variant);
     const entry = this.entries.get(key);
-    // No token means no opinion about the name, not "the untitled URL". The
-    // presence probe reads whatever URL is current without caring what it is
-    // called, and counting that as a mismatch would have the two callers
-    // re-sign over each other on every render.
+    // No token means no opinion about the name (the presence probe), not a mismatch.
     if (entry && (nameToken === undefined || entry.nameToken === nameToken)) {
       if (entry.failed || entry.pending) return entry.url;
       if (entry.url && entry.expiresAt - REFRESH_MARGIN_MS > this.now()) return entry.url;
     }
     this.request(key, itemId, attachmentId, nameToken, variant);
-    // A lapsed URL is still shown while its replacement is in flight: the
-    // browser has the image cached and swapping to a placeholder mid-view would
-    // be a worse answer than a URL that is briefly stale.
+    // A lapsed URL stays on screen while its replacement is signed.
     return entry?.url ?? null;
   }
 
   /**
    * Whether one attachment's file is really there, starting the check if not
-   * yet asked.
-   *
-   * Synchronous like `get`, and for the same reason. A caller that draws a link
-   * uses it to decide whether the link can lead anywhere: metadata outlives its
-   * bytes, because a JSON export carries the references and not the files. The
-   * probe asks for one byte — the media route rejects a missing file with 404
-   * before it opens anything, so a range that small settles the question
-   * without pulling the document down.
+   * yet asked. The probe asks for one byte; a missing file answers 404.
    */
   presence(itemId: string, attachmentId: string): Presence {
     const key = `${itemId}/${attachmentId}`;
@@ -337,8 +234,7 @@ export class MediaUrls {
   private settlePresence(key: string, presence: Presence): void {
     const entry = this.entries.get(key);
     if (!entry) return;
-    // `probing` stays set on an inconclusive answer: re-asking on every render
-    // would put one request per frame on a connection that has already failed.
+    // `probing` stays set, so an inconclusive answer is not re-asked every render.
     this.entries.set(key, { ...entry, presence });
     this.host.requestUpdate();
   }
@@ -353,16 +249,10 @@ export class MediaUrls {
     const sign = this.sign;
     if (!sign) return;
     const existing = this.entries.get(key);
-    // A caller with no opinion about the name keeps the one this entry was
-    // already signed for, rather than dropping it back to the untitled URL.
     const token = nameToken ?? existing?.nameToken;
-    // A request already in flight for this same name is the one to wait for; a
-    // retitle mid-flight is not, because that URL would arrive naming the file
-    // the row no longer shows.
+    // Wait for an in-flight request for this name; a retitle mid-flight re-signs.
     if (existing?.pending && existing.nameToken === token) return;
 
-    // A re-sign is a new URL for the same bytes, so whatever was learned about
-    // whether those bytes exist carries across it.
     const entry: Entry = {
       url: existing?.url ?? null,
       expiresAt: 0,
@@ -374,9 +264,7 @@ export class MediaUrls {
     };
     this.entries.set(key, entry);
 
-    // A second retitle can start another sign before this one lands. The token
-    // on the entry is the name last asked for, so an answer that no longer
-    // matches it is a late one and is dropped rather than overwriting it.
+    // A later retitle's request supersedes this one's answer.
     const superseded = () => this.entries.get(key)?.nameToken !== token;
 
     void sign(mediaPath(itemId, attachmentId, token, variant), SIGNED_URL_TTL_SECONDS).then(
@@ -395,8 +283,7 @@ export class MediaUrls {
       },
       () => {
         if (superseded()) return;
-        // Keep whatever URL was already working: a failed refresh is not a
-        // reason to blank an image the browser is still showing.
+        // A failed refresh keeps the URL that was already working.
         this.entries.set(key, {
           url: entry.url,
           expiresAt: 0,
@@ -412,25 +299,12 @@ export class MediaUrls {
   }
 }
 
-/**
- * What a tile should draw once the browser has had its try at the URL.
- *
- * `errored` is the gap between the failure and the answer: the picture may be
- * gone, or the signature may have lapsed under a connection that dropped, and
- * the two look identical from inside an `<img>`.
- */
+/** `errored`: the `<img>` failed and the probe has not proven the file missing. */
 export type PictureState = 'ok' | 'errored' | 'missing';
 
 /**
- * The missing-file state for surfaces that let the browser try the URL first.
- *
- * A row cannot probe up front the way a document list does: a table of two
- * hundred items would ask two hundred extra questions to draw tiles that are
- * almost always fine. It waits for the `<img>` to fail and only then asks
- * whether the file is missing — one probe per broken tile, none for a healthy
- * list. Only a 404 turns into `missing`; an inconclusive probe leaves the tile
- * in `errored`, where the caller hides the browser's glyph without claiming the
- * picture is gone.
+ * The missing-file state for rows, which probe only after an `<img>` fails:
+ * one probe per broken tile rather than one per row.
  */
 export class PictureFallback {
   private readonly host: MediaHost;
@@ -451,20 +325,11 @@ export class PictureFallback {
   /** One tile's image failed to load; find out whether its file is there. */
   noteError(itemId: string, attachmentId: string): void {
     this.errored.add(`${itemId}/${attachmentId}`);
-    // Starts the probe. Its answer arrives outside a render, which is what the
-    // re-render below and `MediaUrls`' own host call are for.
     this.urls.presence(itemId, attachmentId);
     this.host.requestUpdate();
   }
 
-  /**
-   * One tile's image loaded after all.
-   *
-   * A failure the probe could not explain sticks to the attachment, and the
-   * next URL for those same bytes — re-signed, half an hour later — is the
-   * first chance to learn it was the request and not the file. Without this the
-   * tile keeps the state one dropped connection left it in.
-   */
+  /** One tile's image loaded after all, e.g. on a re-signed URL: clear the error. */
   noteLoad(itemId: string, attachmentId: string): void {
     if (!this.errored.delete(`${itemId}/${attachmentId}`)) return;
     this.host.requestUpdate();

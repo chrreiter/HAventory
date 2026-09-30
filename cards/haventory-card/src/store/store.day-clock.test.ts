@@ -8,9 +8,8 @@ import { makeMockHass, makeItem } from '../test.utils';
  * built by another spec in the same file would therefore have armed it against
  * the real midnight, and the fake clock here would never reach it.
  *
- * What is under test is the backstop, not the primary path: the backend
- * broadcasts the counts at the instance's own midnight, and this is what covers
- * that event never being sent by an older backend.
+ * What is under test is the backstop for a device that slept through the
+ * backend's own midnight broadcast of the counts.
  */
 const TOMORROW = '2026-08-23';
 

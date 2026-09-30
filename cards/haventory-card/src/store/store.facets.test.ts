@@ -155,9 +155,8 @@ describe('Store', () => {
     ]);
   });
 
-  // The commonest filter of all is a category or a tag on its own. Gating the
-  // pair on what survives `facetCountFilters` left exactly that case mixed:
-  // location rows reading "8 / 37" beside category rows reading "43".
+  // A lone category or tag filter still prices every list, or location rows
+  // read "8 / 37" beside category rows reading "43".
   it('prices every list when the only filter is one the facets drop', async () => {
     const items = [
       makeItem({ id: '1', category: 'Tools', tags: ['red'] }),

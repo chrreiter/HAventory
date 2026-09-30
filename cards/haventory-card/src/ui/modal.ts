@@ -6,12 +6,8 @@ import { onEscape } from './keyboard';
 import { nextZBase } from '../utils/zindex';
 
 /**
- * The chrome every centred dialog in the card is drawn in: a backdrop, a
- * centring layer, and the box itself.
- *
- * A dialog supplies its own body, its width and whatever height rules it needs;
- * everything else is here. `.wrap` and `.panel` are the class names the mobile
- * restyle below reaches for, so a host that renames them loses its phone form.
+ * The chrome every centred dialog is drawn in: backdrop, centring layer, panel.
+ * `modalSheet` restyles `.wrap` and `.panel`, so a host must keep those names.
  */
 export const modalChrome = css`
   :host {
@@ -43,39 +39,24 @@ export const modalChrome = css`
 `;
 
 /**
- * The phone presentation of a centred dialog.
- *
- * A centred 330–500px box is a desktop shape. At 390px it leaves a strip of
- * page either side of a dialog that is effectively full width anyway, and it
- * arrives from the middle of the screen while the filter panel, the detail
- * sheet and the ⋮ menu all rise from the bottom edge — the same interaction
- * with two different manners. Under `mobile` a dialog takes the bottom-sheet
- * form instead, so one gesture vocabulary covers every surface on a phone.
- *
- * A restyle of `.wrap` and `.panel` rather than a wrapping `hv-bottom-sheet`:
- * moving the content into a slot would rebuild the focus handling, the Escape
- * binding and the stacking base `Modal` already owns, for a change that is
- * presentational. Separate from `modalChrome` because a dialog that is a
- * full-bleed page on a phone — the organize dialog — takes the chrome without
- * it.
+ * The phone form of a centred dialog: a bottom sheet, like every other phone
+ * surface. A restyle rather than an `hv-bottom-sheet` wrapper, so `Modal` keeps
+ * the focus, Escape and stacking; separate because the organize dialog, a
+ * full-bleed page on a phone, takes the chrome without it.
  */
 export const modalSheet = css`
   :host([mobile]) .wrap {
     padding: 0;
-    /* Stretched across the bottom edge, not centred in the middle of it. */
     place-items: end stretch;
   }
   :host([mobile]) .panel {
     width: 100%;
     max-width: none;
-    /* dvh, not vh: on a phone vh resolves against the viewport with the browser
-       chrome retracted, so a tall sheet could stand higher than the screen
-       actually showing and push its actions under the URL bar. */
+    /* dvh: vh ignores the browser chrome and could push actions under the URL bar. */
     max-height: 92dvh;
     border-radius: var(--hv-radius-sheet) var(--hv-radius-sheet) 0 0;
     box-shadow: var(--hv-shadow-sheet);
-    /* Clears the home indicator on a phone that reports one, and gives the
-       bottom row of actions a thumb's worth of air on one that does not. */
+    /* Clears the home indicator, with a thumb's air where there is none. */
     padding-bottom: max(12px, env(safe-area-inset-bottom));
     animation: hv-sheet-rise var(--hv-motion-sheet) var(--hv-ease-out);
   }
@@ -101,45 +82,27 @@ export interface ModalOptions {
   /** The panel's `data-testid`, which is what a harness locates it by. */
   testid: string;
   /**
-   * The one way out. Every dismissal — the backdrop, Escape, a Cancel button —
-   * calls this, and it reports rather than closes: a dialog never writes its own
-   * `open`, because the host binds that property from its own state. Lit
-   * compares against the value it last committed, sees no change, and never
-   * writes the property back, so a host with a question to ask first could only
-   * put the dialog up again by writing behind the binding's back.
+   * Every dismissal calls this, and it reports rather than closes: the host
+   * binds `open`, and Lit would never write back a value it thinks unchanged.
    */
   onClose: () => void;
   /** `alertdialog` where the dialog is a question the user has to settle. */
   role?: 'dialog' | 'alertdialog';
 }
 
-/** What the chrome needs from the element hosting it, for that element's life. */
 export interface ModalHostOptions {
   /** Whether the dialog is on screen. Read on every update. */
   open: () => boolean;
-  /**
-   * The control that takes the caret when the dialog opens, where landing on the
-   * panel is not enough — a confirmation puts it on the accepting button so
-   * Enter completes and Escape aborts. Omitted, focus stays on the panel.
-   */
+  /** The control that takes the caret on open; omitted, focus stays on the panel. */
   initialFocus?: () => HTMLElement | null | undefined;
-  /**
-   * Where focus goes when the close cannot return it to the opener — one the
-   * action removed, or one the browser refuses because it is hover-hidden with
-   * the pointer elsewhere. Called only when focus would otherwise be stranded
-   * on `<body>`; see `DialogFocus.sync`.
-   */
+  /** Where stranded focus goes when the opener cannot take it back; see `DialogFocus.sync`. */
   onOpenerGone?: () => void;
 }
 
 /**
- * The modal plumbing shared by the card's centred dialogs: one stacking base
- * per opening, focus into the dialog and back out again, and Escape.
- *
- * A controller rather than a plain function because two of the three are state
- * that outlives a render — where focus came from, and which pair of z-indexes
- * this opening claimed. It hangs on the host's own update cycle, so a dialog
- * declares it once and calls `render` from its `render()`.
+ * The modal plumbing shared by the centred dialogs: one stacking base per
+ * opening, focus in and back out, and Escape. A dialog declares it once and
+ * calls `render` from its `render()`.
  */
 export class Modal implements ReactiveController {
   private readonly _opts: ModalHostOptions;
@@ -156,12 +119,7 @@ export class Modal implements ReactiveController {
     host.addController(this);
   }
 
-  /**
-   * Claim a stacking base as the dialog opens, so the last surface raised sits
-   * over the one that raised it — a confirmation over the sheet that asked for
-   * it. Before the render that first draws the panel, which is where the pair
-   * of numbers is needed.
-   */
+  /** Claim a stacking base on opening, so the last surface raised sits on top. */
   hostUpdate(): void {
     const open = this._opts.open();
     if (open && !this._wasOpen) this._z = nextZBase();
@@ -175,9 +133,7 @@ export class Modal implements ReactiveController {
       this._landed = false;
       return;
     }
-    // The panel can arrive a render later than `open` — the lightbox signs its
-    // URL first — and `DialogFocus` waits for it. So does this, or the caret is
-    // aimed at a dialog that has not been drawn yet.
+    // The panel can arrive a render after `open`; wait for it.
     if (this._landed || !this._panel) return;
     this._landed = true;
     this._opts.initialFocus?.()?.focus({ preventScroll: true });

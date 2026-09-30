@@ -1,20 +1,8 @@
 import type { AreaRef, Location } from '../store/types';
 
-/**
- * Resolving the HA area behind a location, the way the backend does.
- *
- * Items arrive with `effective_area_id` already resolved, so item-facing
- * surfaces only need the id-to-name half. Location-facing ones (pickers, filter
- * chips, tree grouping) have a location and must resolve the area themselves.
- */
+/** Resolving the HA area behind a location, the way the backend does. */
 
-/**
- * An area's display name, or the raw id when the area cache has no entry for it.
- *
- * A stale id still names something: HA can drop an area from its registry while
- * locations continue to reference it, and a blank there would read as "no area"
- * — the one thing it is not.
- */
+/** An area's name, or the raw id for one HA dropped: a blank would read as "no area". */
 export function areaNameById(
   areas: readonly AreaRef[],
   id: string | null | undefined,
@@ -23,14 +11,7 @@ export function areaNameById(
   return areas.find((a) => a.id === id)?.name ?? id;
 }
 
-/**
- * The area a location belongs to: the first non-null `area_id` from the location
- * up through its ancestors.
- *
- * Mirrors the backend's own resolution. Assigning an area moves it to the root
- * of the location's tree and clears it from every node below, so a nested
- * location's area is never stored on the location itself.
- */
+/** The first non-null `area_id` from the location up through its ancestors. */
 export function effectiveAreaIdForLocation(
   locations: readonly Location[],
   id: string | null,
@@ -38,8 +19,7 @@ export function effectiveAreaIdForLocation(
   if (!id) return null;
   const byId = new Map(locations.map((l) => [l.id, l]));
   let cursor: string | null = id;
-  // No honest walk visits more nodes than exist, so a longer one is a parent
-  // cycle: bail out with no area rather than spinning.
+  // A walk longer than the node count is a parent cycle.
   for (let step = 0; cursor !== null && step <= byId.size; step += 1) {
     const loc: Location | undefined = byId.get(cursor);
     if (!loc) return null;
@@ -52,11 +32,7 @@ export function effectiveAreaIdForLocation(
 
 /** What saving the location editor's area select would actually do. */
 export interface AreaChangePreview {
-  /**
-   * `none` — the backend compares the selection against the location's own
-   * stored area and does nothing when they match. `clear-tree` and
-   * `assign-root` both rewrite every location in the tree.
-   */
+  /** `none`: the selection matches the stored area. The others rewrite the whole tree. */
   kind: 'none' | 'clear-tree' | 'assign-root';
   /** Where the area is stored afterwards; null for a tree with no resolvable root. */
   rootId: string | null;
@@ -77,12 +53,7 @@ export interface EditedLocation {
   parentId: string | null;
 }
 
-/**
- * The root of `start`'s tree, or null when the chain cannot be walked.
- *
- * Same reasoning as the area walk above: more steps than there are locations
- * means the parent chain cycles.
- */
+/** The root of `start`'s tree, or null when the chain is broken or cycles. */
 function rootIdFor(parentOf: ReadonlyMap<string, string | null>, start: string): string | null {
   let cursor: string | null = start;
   let root: string | null = null;
@@ -94,10 +65,7 @@ function rootIdFor(parentOf: ReadonlyMap<string, string | null>, start: string):
   return cursor === null ? root : null;
 }
 
-/**
- * Locations under `rootId`, itself included. Walks down behind a visited set, so
- * a cycle in the data cannot make it count a node twice or loop.
- */
+/** Locations under `rootId`, itself included, each counted once. */
 function subtreeSize(childrenOf: ReadonlyMap<string | null, string[]>, rootId: string): number {
   const seen = new Set<string>([rootId]);
   const queue = [rootId];
@@ -112,12 +80,8 @@ function subtreeSize(childrenOf: ReadonlyMap<string | null, string[]>, rootId: s
 }
 
 /**
- * What the location editor's area select does on save.
- *
- * The select reads like a per-location field and is not one: an area belongs to
- * a whole location tree. Assigning one moves it to the tree's root and clears it
- * from every node below; clearing one empties the tree. Both consequences reach
- * locations that are nowhere on screen, which is what this describes.
+ * What the location editor's area select does on save. An area belongs to a
+ * whole tree: assigning one moves it to the root, clearing one empties the tree.
  */
 export function areaChangePreview(
   locations: readonly Location[],
@@ -139,8 +103,7 @@ export function areaChangePreview(
     else childrenOf.set(parentId, [id]);
   }
 
-  // A location being created has no id to walk from, so its parent anchors the
-  // tree — and a top-level one anchors nothing, standing alone until it is saved.
+  // A new location is anchored by its parent; a new top-level one stands alone.
   const anchor = edited.id ?? edited.parentId;
   const rootId = anchor === null ? null : rootIdFor(parentOf, anchor);
   const pending = edited.id === null ? 1 : 0;
@@ -150,9 +113,7 @@ export function areaChangePreview(
     rootId,
     rootName: rootId === null ? null : (byId.get(rootId)?.name ?? null),
     treeSize: rootId === null ? 1 : subtreeSize(childrenOf, rootId) + pending,
-    // Clearing empties the tree; anything else leaves the location resolving to
-    // the selection, or — with nothing selected and nothing to change — to
-    // whatever the tree it is saved into already has.
+    // With nothing selected and nothing to change, the tree's existing area.
     effectiveAreaId:
       kind === 'clear-tree'
         ? null

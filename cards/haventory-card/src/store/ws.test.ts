@@ -192,7 +192,6 @@ describe('WSClient.subscribe when Home Assistant returns a promise', () => {
 
     new WSClient(hass).subscribe('items', (p) => seen.push(p));
     cb({ topic: 'items', action: 'created', item: { id: 'i1' } });
-    cb(null);
 
     expect(seen).toEqual([{ topic: 'items', action: 'created', item: { id: 'i1' } }]);
   });
@@ -210,11 +209,11 @@ describe('WSClient.subscribe when Home Assistant returns a promise', () => {
     } as unknown as HassLike;
     const ws = new WSClient(hass);
 
-    ws.subscribe('items', () => undefined, { location_id: 'l1', include_subtree: true });
+    ws.subscribe('items', () => undefined, { location_ids: ['l1'], include_subtree: true });
     ws.subscribe('stats', () => undefined);
 
-    expect(sent[0]).toMatchObject({ topic: 'items', location_id: 'l1', include_subtree: true });
-    expect(sent[1]).not.toHaveProperty('location_id');
+    expect(sent[0]).toMatchObject({ topic: 'items', location_ids: ['l1'], include_subtree: true });
+    expect(sent[1]).not.toHaveProperty('location_ids');
   });
 
   it('scopes an items subscription by area only when asked', () => {

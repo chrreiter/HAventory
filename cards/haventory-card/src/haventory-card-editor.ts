@@ -15,24 +15,11 @@ export interface HAventoryCardConfig {
 }
 
 /**
- * The visual editor Home Assistant opens from the card picker.
- *
- * One field. `setConfig` on the card reads `title` and `quick_filters`, and the
- * pill choice belongs to the integration's options flow instead — the sidebar
- * panel has no dashboard config at all, so a card editor could never reach it.
- *
- * The field is the card's own input rather than Home Assistant's `ha-form`.
- * That control is registered lazily inside HA's bundle, is not published for
- * card authors and is not versioned, so a card that renders it depends on an
- * internal that moves — and does not exist in jsdom, which means the break
- * would arrive as a user report after an upgrade rather than as a red test.
- * `ha-contract` states that rule for the whole card and `ha-contract.test.ts`
- * holds it at zero. The card's own tokens bind the dashboard's theme variables,
- * so a local field still takes the theme it is opened inside.
- *
- * Registered through `defineCardElement` rather than the decorator the `hv-*`
- * components use, because HA instantiates this element by tag name after the
- * frontend has swapped `window.customElements`. See `register.ts`.
+ * The visual editor HA opens from the card picker: one title field, the card's
+ * own input rather than `ha-form` (see `ha-contract`). The pill choice belongs
+ * to the integration's options flow, which the sidebar panel also reads.
+ * Registered through `defineCardElement` because HA creates it by tag name
+ * after swapping `window.customElements`.
  */
 export class HAventoryCardEditor extends LitElement {
   static styles = [
@@ -42,8 +29,7 @@ export class HAventoryCardEditor extends LitElement {
       :host {
         display: block;
       }
-      /* HA's own editor dialog stacks its rows with this much between them, so
-         a card editor that grows a second field sits in the same rhythm. */
+      /* The gap HA's own editor dialog stacks its rows with. */
       .field {
         display: flex;
         flex-direction: column;
@@ -61,11 +47,7 @@ export class HAventoryCardEditor extends LitElement {
     this._config = { ...config };
   }
 
-  /**
-   * Home Assistant sets `hass` as a plain property here rather than through the
-   * setter the card and the panel have, so the language is picked up on the
-   * update it arrives on.
-   */
+  /** `hass` is a plain property here, so the language is picked up on its update. */
   protected willUpdate(changed: PropertyValues<this>): void {
     if (changed.has('hass')) setLanguage(this.hass?.language);
   }
@@ -86,18 +68,13 @@ export class HAventoryCardEditor extends LitElement {
   }
 
   /**
-   * Spread the existing config rather than rebuilding it: the card ignores
-   * unknown keys instead of rejecting them, so a dashboard's `quick_filters` —
-   * or a key from a version this build has never seen — has to survive a trip
-   * through this form untouched.
-   *
-   * An emptied title is dropped rather than written as "", which is what hands
-   * the heading back to the integration-wide option.
+   * Spread the existing config so keys this form does not edit survive. An
+   * emptied title is dropped, handing the heading back to the integration.
    */
   private _onInput(event: Event): void {
     const title = (event.target as HTMLInputElement).value;
     const config: HAventoryCardConfig = { ...this._config };
-    if (typeof title === 'string' && title.trim() !== '') config.title = title;
+    if (title.trim() !== '') config.title = title;
     else delete config.title;
 
     this._config = config;

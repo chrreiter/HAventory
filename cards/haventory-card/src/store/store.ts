@@ -1,7 +1,6 @@
 import { t } from '../i18n';
 import type {
   AnyEventPayload,
-  AreasListResult,
   AttachmentKind,
   BulkFailure,
   BulkOperation,
@@ -9,6 +8,7 @@ import type {
   DegradedState,
   DistinctValue,
   DistinctValues,
+  ErrorEntry,
   ExportDocument,
   HassLike,
   ImportPolicy,
@@ -17,13 +17,10 @@ import type {
   Item,
   ItemCreate,
   ItemFilter,
-  ItemsEventPayload,
   ItemUpdate,
   ListItemsResult,
   LiveUpdatePause,
   Location,
-  LocationTreeNode,
-  StatsCounts,
   StatusColorValue,
   StatusDefinition,
   StoreFilters,
@@ -36,99 +33,47 @@ import { onDayChange } from '../ui/day-clock';
 import { normalizeQuickFilters } from '../ui/quick-filters';
 import { sortLocationTree } from './location-tree';
 
-/** Page size for the main list. */
 const PAGE_LIMIT = 50;
 
-/**
- * Operations per `haventory/items/bulk` call.
- *
- * The endpoint answers a whole batch in one response, so a single call can only
- * ever show an indeterminate spinner. Splitting the work into fixed chunks gives
- * the determinate progress bar the design draws ("Rewriting 24 of 38") and makes
- * "cancel stops after the in-flight batch" literally true.
- */
+/** Operations per `haventory/items/bulk` call, so progress and cancel work per chunk. */
 export const BULK_CHUNK_SIZE = 25;
 
 /**
- * Code for a failure that never came back from the backend at all.
- *
- * Home Assistant rejects a command with the server's own `{code, message}`
- * envelope when the socket carried it, and with a wrapper of its own — numeric
- * code, no top-level message — when the socket did not. Only the first kind
- * says anything about the request, so the second is named for what it is
- * instead of borrowing the taxonomy's `unknown_error` catch-all and reading, to
- * the person in front of it, as a fault in the thing they just did.
+ * Code for a failure that never reached a server: HA wraps those with a numeric
+ * code of its own, and they say nothing about the request itself.
  */
 const TRANSPORT_ERROR_CODE = 'connection_lost';
-
-/** What a transport failure says out loud; the rejection carries no usable text. */
-const transportErrorMessage = () => t('hv.store.transportError');
 
 /** Consecutive transport failures before the card declares the connection lost. */
 const CONNECTION_LOST_THRESHOLD = 2;
 
 /**
- * How long a closed socket may stay closed before the card says so.
- *
- * Home Assistant reconnects on its own, and a blip — a suspended tab waking, a
- * proxy recycling — is over before anyone could act on it, so announcing it at
- * once would flash a banner that answers nothing. Long enough to sit out an
- * ordinary reconnect, short enough that a real outage shows up while the user
- * is still looking at the surface that went stale.
- *
- * Home Assistant's client retries on a fixed ladder — immediately, then one
- * second later, then three, then six — so a reconnect does not take an
- * arbitrary amount of time, it lands on a rung. A socket that drops while the
- * network is briefly away misses the first two rungs and comes back on the
- * three-second one, which is an ordinary Wi-Fi roam and must stay silent. This
- * sits between that rung and the six-second one: past six, the network has been
- * gone long enough that the outage is worth saying out loud.
+ * How long a closed socket may stay closed before the card says so. HA retries
+ * at 0, 1, 3 and 6 s; a Wi-Fi roam lands on the 3 s rung and must stay silent.
  */
 const CONNECTION_LOST_GRACE_MS = 4_500;
 
 /**
- * Re-subscribes allowed while the backend reports itself unavailable, before the
- * card gives up and waits for the user.
- *
- * Generous, because a config-entry reload refuses for as long as setup takes and
- * giving up inside that window would leave a card that only ever needed to wait
- * stuck asking for a manual refresh. Still bounded — a disabled or removed
- * integration is not coming back on its own, and the banner has to stop
- * promising otherwise.
+ * Re-subscribes while the backend reports itself unavailable. Generous, because
+ * a config-entry reload refuses for as long as setup takes.
  */
 const SUBSCRIBE_UNAVAILABLE_ATTEMPTS = 7;
 
-/**
- * Ceiling on a single re-subscribe wait, so a doubling backoff off a large base
- * delay cannot park live updates for longer than a household would wait.
- */
 const SUBSCRIBE_RETRY_MAX_MS = 30_000;
 
 /** Topics `subscribeTopics` opens as one round: items, stats, locations, statuses. */
 const SUBSCRIBE_TOPIC_COUNT = 4;
 
 /**
- * Re-opens allowed after Home Assistant refuses the area-registry watch.
- *
- * Smaller than the topic budgets and spent quietly, because the two failures are
- * not the same size: a refused topic subscription stops live updates and raises a
- * banner, while this one costs freshness only — the card falls back to the areas
- * it fetched at boot. Without any retry, though, a single refusal freezes area
- * names for the life of the element, so the transient cases (a limiter, a
- * connection reopening mid-subscribe) get a few backoffs before the card settles
- * for the snapshot it has.
+ * Re-opens after HA refuses the area-registry watch. Spent quietly: a refusal
+ * costs only area freshness, and the card keeps the areas it fetched at boot.
  */
 const AREA_REGISTRY_RETRY_ATTEMPTS = 3;
 
 /** Event action the backend sends every open subscription as its entry tears down. */
 const BACKEND_UNAVAILABLE_ACTION = 'unavailable';
 
-/**
- * Removed item ids kept for `wasRemoved`.
- *
- * Only a host holding an open editor asks, and it asks about one id, so the
- * memory has to outlive a bulk delete of the surrounding rows and nothing more.
- */
+/** Removed item ids kept for `wasRemoved`: enough to outlive a bulk delete. */
 const REMOVED_ID_MEMORY = 200;
 
 const NO_DEGRADATION: DegradedState = {
@@ -139,46 +84,27 @@ const NO_DEGRADATION: DegradedState = {
   nextLiveRetryAt: null,
 };
 
-/**
- * The code a failure travelled home with.
- *
- * A string code means a server answered — the backend's taxonomy, or one of
- * Home Assistant's own refusals. Anything else (a numeric transport code, a
- * thrown `Error`, nothing at all) never reached one.
- */
+/** A string code means a server answered; anything else never reached one. */
 function errorCode(err: unknown): string {
   const code = (err as { code?: unknown } | undefined)?.code;
   return typeof code === 'string' && code ? code : TRANSPORT_ERROR_CODE;
 }
 
-/**
- * How long to wait before re-opening a refused subscription: exponential
- * backoff off the card's base delay, capped.
- */
+/** Exponential backoff off the base delay, capped. */
 export function subscribeRetryDelayMs(attempt: number, baseMs: number): number {
   return Math.min(baseMs * 2 ** attempt, SUBSCRIBE_RETRY_MAX_MS);
 }
 
-/**
- * Translate the card's filter state into the backend's `ItemFilter`.
- *
- * Exported because the staged mobile filter sheet needs to price a filter it has
- * not applied yet (`Store.countMatching`), and "Export current view" needs to
- * send the same object the list is showing.
- */
+/** Translate the card's filter state into the backend's `ItemFilter`. */
 export function toWireFilter(filters: StoreFilters): ItemFilter {
   const filter: ItemFilter = {
     q: filters.q || undefined,
     area_id: filters.areaId || undefined,
-    // The plural key throughout: the scalar is the backend's older spelling and
-    // sending both would only invite the two to disagree.
     location_ids: filters.locationIds.length ? [...filters.locationIds] : undefined,
-    // Sent explicitly: the list filter defaults it to false server-side while
-    // subscriptions default it to true.
+    // Sent explicitly: the list defaults it to false, subscriptions to true.
     include_subtree: filters.includeSubtree,
     checked_out: filters.checkedOutOnly || undefined,
     low_stock_only: filters.lowStockOnly || undefined,
-    // A presentation hint rather than a filter — it re-sorts, it does not exclude.
     low_stock_first: filters.lowStockFirst || undefined,
     orphaned_only: filters.orphansOnly || undefined,
     overdue_only: filters.overdueOnly || undefined,
@@ -224,14 +150,7 @@ export function defaultFilters(): StoreFilters {
   };
 }
 
-/**
- * The single location the view is pointed at, or null.
- *
- * Several surfaces speak about *a* location rather than a selection — the empty
- * state naming where it found nothing, the crumb above the table, the parent a
- * new location is created under. None of them has an honest reading of two, so
- * they ask for one and get null when the answer is "several" or "none".
- */
+/** The single location the view is pointed at; null for none or several. */
 export function soleLocationId(filters: StoreFilters): string | null {
   return filters.locationIds.length === 1 ? filters.locationIds[0] : null;
 }
@@ -246,7 +165,6 @@ export function activeFilterCount(filters: StoreFilters): number {
   let n = 0;
   if (filters.q) n += 1;
   if (filters.areaId) n += 1;
-  // One narrowing, however many values it names — the chip row says the same.
   if (filters.locationIds.length) n += 1;
   if (filters.checkedOutOnly) n += 1;
   if (filters.orphansOnly) n += 1;
@@ -272,16 +190,15 @@ export interface Observable<T> {
 }
 
 export function createObservable<T extends object>(initial: T): Observable<T> & { set(patch: Partial<T>): void } {
-  let listeners = new Set<() => void>();
-  let state = { ...initial } as T;
-  const notify = () => listeners.forEach((l) => l());
+  const listeners = new Set<() => void>();
+  const state = { ...initial };
   return {
     get value() {
       return state;
     },
     set(patch: Partial<T>) {
-      Object.assign(state as unknown as Record<string, unknown>, patch as Record<string, unknown>);
-      notify();
+      Object.assign(state, patch);
+      listeners.forEach((l) => l());
     },
     onChange(cb: () => void) {
       listeners.add(cb);
@@ -295,14 +212,7 @@ export interface StoreOptions {
   retryBaseMs?: number;
 }
 
-/**
- * A deferred call that can only ever have one fire outstanding.
- *
- * Every waiting the store does is this shape: a burst of events must ask once,
- * a retry must be droppable, and a disposed store must fire none of them. The
- * handle is held here rather than beside each caller so `dispose` cannot cancel
- * three of four and leave the fourth running against a store nobody holds.
- */
+/** A deferred call with at most one fire outstanding; `dispose` cancels each one. */
 class Coalesced {
   private handle: ReturnType<typeof setTimeout> | null = null;
 
@@ -328,11 +238,8 @@ class Coalesced {
 }
 
 /**
- * Which request of its kind is the newest.
- *
- * Two reads of the same thing can be in flight against different filters, and
- * the answer that lands last is not the answer to the question asked last — so
- * each caller claims a turn and drops its answer when the turn has passed.
+ * Which request of its kind is the newest: two reads can be in flight against
+ * different filters, and the one that lands last is not always the newest.
  */
 class Latest {
   private seq = 0;
@@ -355,8 +262,6 @@ export class Store {
   private inflight: Map<string, Promise<unknown>> = new Map();
   /** Ids removed since this store connected — see `noteRemoved`. */
   private readonly removedIds = new Set<string>();
-  /** The same ids in removal order, so the oldest can be evicted. */
-  private readonly removedOrder: string[] = [];
   private itemsUnsub: Unsubscribe | null = null;
   private statsUnsub: Unsubscribe | null = null;
   private locationsUnsub: Unsubscribe | null = null;
@@ -373,15 +278,10 @@ export class Store {
   private readonly areaRegistryRetry = new Coalesced();
   /** Counts down the grace period on a closed socket; idle while it is open. */
   private readonly connectionLostGrace = new Coalesced();
-  /** Which facet-tally request is the newest, so a superseded one cannot land. */
   private readonly latestFacetTally = new Latest();
-  /** Which tree refetch is the newest, for the same reason. */
   private readonly latestTree = new Latest();
-  /** Which filtered-total recount is the newest, for the same reason. */
   private readonly latestTotal = new Latest();
-  /** Which subscribe round is the newest, so a superseded one stops reporting. */
   private readonly latestSubscribeRound = new Latest();
-  /** Which area-registry watch is the newest, so a superseded one stops reporting. */
   private readonly latestAreaWatch = new Latest();
   /** Subscribes in the current round that have not resolved or been refused yet. */
   private subscribePending = 0;
@@ -391,10 +291,8 @@ export class Store {
   private subscribeAttempt = 0;
   /** Re-opens of the area-registry watch already spent on the current refusal. */
   private areaRegistryAttempt = 0;
-  /** Detaches the connection-lifecycle listeners; null while none is attached. */
   private connectionReadyUnsub: Unsubscribe | null = null;
   private connectionLostUnsub: Unsubscribe | null = null;
-  /** Detaches the day clock the counts are re-read on; null while none is attached. */
   private dayChangeUnsub: Unsubscribe | null = null;
   /** True once `dispose` ran, so a load still in flight wires nothing. */
   private disposed = false;
@@ -442,17 +340,10 @@ export class Store {
   /**
    * Load everything, then start watching for the ways it can go stale.
    *
-   * The watches are wired in a `finally` because a card is not always built
-   * against a backend that can answer. Home Assistant rebuilds the Lovelace
-   * view when its socket reconnects, and it does so before a restarting
-   * instance has finished setting the integration up — so the first load of
-   * that fresh card is refused, wholesale. Wiring the watches only on the happy
-   * path left such a card with no subscriptions, no connection listeners and
-   * nothing but the loading skeleton, permanently: every route back into the
-   * data is opened here, so failing to reach them is failing for good. Opened
-   * anyway, the refused subscribe retries on its own backoff and re-reads the
-   * inventory once it lands, which is the same path a disabled config entry
-   * already recovers through.
+   * The watches are wired in a `finally`: HA rebuilds the view on reconnect
+   * before a restarting instance has set the integration up, so the first load
+   * can be refused wholesale, and the refused subscribe is what retries and
+   * re-reads the inventory once it lands.
    */
   async init() {
     try {
@@ -467,10 +358,8 @@ export class Store {
       ]);
       await this.listItems(true);
     } finally {
-      // The element holding this store is unmounted on navigation, which can
-      // land while the first load is still in flight. Wiring the watches then
-      // would open subscriptions on Home Assistant's connection that nobody is
-      // left to close.
+      // The element can be unmounted while the first load is in flight, and
+      // nobody would be left to close subscriptions opened then.
       if (!this.disposed) {
         this.subscribeTopics();
         this.watchAreaRegistry();
@@ -481,35 +370,18 @@ export class Store {
   }
 
   /**
-   * Re-read the counts when the browser's day turns over.
-   *
-   * The pills are backend figures, and the backend broadcasts them at the
-   * instance's own midnight — that event is the primary path and it lands
-   * first. This is the backstop: an older backend does not send that event at
-   * all, which leaves the pills on yesterday's numbers until the next edit
-   * while the rows beside them have already rolled over. One read a day costs
-   * nothing.
+   * Re-read the counts when the browser's day turns over. The backend's midnight
+   * broadcast is the primary path; this catches a device that slept through it.
    */
   private watchDayChange() {
     this.dayChangeUnsub?.();
-    this.dayChangeUnsub = onDayChange(() => {
-      void this.refreshStats().catch(() => undefined);
-    });
+    this.dayChangeUnsub = onDayChange(() => void this.refreshStats().catch(() => undefined));
   }
 
   /**
-   * Follow the socket itself, in both directions.
-   *
-   * Coming back is the gap the registry watch cannot see: Home Assistant
-   * re-issues the subscriptions it held before it reports `ready`, so the
-   * subscribe neither fails nor re-opens and `watchAreaRegistry`'s catch-up
-   * never runs — yet an area renamed while the socket was down fired its event
-   * into a closed connection. Only a refetch closes that.
-   *
-   * Going down is what a surface nobody is touching has no other way to learn.
-   * Every other outage signal the card has comes from a call it made, so a list
-   * left open across a restart would go on showing pre-outage data, silently,
-   * until someone tried something.
+   * Follow the socket in both directions. HA re-issues its subscriptions before
+   * `ready`, so an area renamed while the socket was down reaches nobody and
+   * only a refetch catches it; and an idle surface learns of an outage only here.
    */
   private watchConnectionGaps() {
     this.connectionReadyUnsub?.();
@@ -532,27 +404,15 @@ export class Store {
     );
   }
 
-  /**
-   * Keep the area cache honest for as long as the card is mounted.
-   *
-   * The store is built once per element and a dashboard stays open for days, so
-   * a one-shot fetch would name areas by whatever the registry said at boot —
-   * every path the card prints carries an area, so a rename would go stale
-   * everywhere at once, and a deletion would show a raw id. Areas move rarely
-   * and the list is small, so the event only triggers a refetch.
-   */
+  /** Keep the area cache current while mounted; any registry event triggers a refetch. */
   private watchAreaRegistry(resetRetryBudget = true) {
     this.areaRegistryRetry.cancel();
     if (resetRetryBudget) this.areaRegistryAttempt = 0;
-    // A re-open spans a window in which the registry could have moved with
-    // nothing listening to say so, so the cache is re-read on the way back. The
-    // first open needs no catch-up: `init` fetched the areas moments ago.
+    // A re-open re-reads the cache, since the registry could have moved unheard.
     const catchUp = this.areaRegistryAttempt > 0;
-    // A refusal can arrive after this watch has been replaced or the store
-    // disposed, and HA's own subscribe carries no cancellation of its own.
     const current = this.latestAreaWatch.claim();
-    if (this.areaRegistryUnsub) this.areaRegistryUnsub();
-    this.areaRegistryUnsub = this.ws.subscribeAreaRegistry(() => this.scheduleAreasRefresh(), {
+    this.areaRegistryUnsub?.();
+    this.areaRegistryUnsub =this.ws.subscribeAreaRegistry(() => this.scheduleAreasRefresh(), {
       onOpen: () => {
         if (catchUp && current()) this.scheduleAreasRefresh();
       },
@@ -562,15 +422,7 @@ export class Store {
     });
   }
 
-  /**
-   * Home Assistant refused the registry watch — back off and try again, quietly.
-   *
-   * Nothing is reported to the user: the fallback is the area list the card
-   * already holds, so a banner would name a degradation nobody can act on, and
-   * the topic subscriptions' `degraded` state means live *inventory* updates are
-   * gone, which is not what happened here. Once the budget is spent the card
-   * keeps its boot-time snapshot, which is what it did before it listened.
-   */
+  /** HA refused the registry watch: back off and retry without telling the user. */
   private onAreaRegistryRefused() {
     if (this.areaRegistryAttempt >= AREA_REGISTRY_RETRY_ATTEMPTS) return;
     const delay = subscribeRetryDelayMs(this.areaRegistryAttempt, this.retryBaseMs);
@@ -583,20 +435,11 @@ export class Store {
     this.areasRefresh.schedule(delayMs, () => void this.refreshAreas().catch(() => undefined));
   }
 
-  /** (Re)open the topic subscriptions, starting the retry budget over. */
-  subscribeTopics() {
-    this.openSubscriptions(true);
-  }
-
   /**
-   * Open the four topic subscriptions as one round.
-   *
-   * The round, not the individual topic, is the unit of health: each subscribe
-   * is answered on its own, so one can be accepted and the next refused a moment
-   * later. Live updates only count as restored once every subscribe in the
-   * newest round has been accepted.
+   * (Re)open the four topic subscriptions as one round. Live updates count as
+   * restored only once every subscribe in the newest round has been accepted.
    */
-  private openSubscriptions(resetRetryBudget: boolean) {
+  subscribeTopics(resetRetryBudget = true) {
     this.subscribeRetry.cancel();
     if (resetRetryBudget) this.subscribeAttempt = 0;
     const round = this.latestSubscribeRound.claim();
@@ -604,55 +447,34 @@ export class Store {
     this.subscribeRefusal = null;
     const onOpen = () => this.onSubscribeSettled(round, null);
     const onError = (err: unknown) => this.onSubscribeSettled(round, { err });
-    // The backend's teardown signal arrives on whichever topics are open, and
-    // says the same thing on each — handle it once, ahead of the topic handlers,
-    // which only know how to fold an inventory payload into the view.
+    const opts = { onError, onOpen };
+    // The teardown signal arrives on every open topic; handle it ahead of them.
     const onEvent = (handle: (evt: AnyEventPayload) => void) => (evt: AnyEventPayload) => {
       if (evt.action === BACKEND_UNAVAILABLE_ACTION) this.onBackendUnavailable();
       else handle(evt);
     };
+    const { locationIds, areaId } = this.state.value.filters;
 
-    if (this.itemsUnsub) this.itemsUnsub();
+    this.itemsUnsub?.();
     this.itemsUnsub = this.ws.subscribe('items', onEvent((evt) => this.onItemsEvent(evt)), {
-      location_ids: this.state.value.filters.locationIds.length
-        ? [...this.state.value.filters.locationIds]
-        : undefined,
-      area_id: this.state.value.filters.areaId ?? undefined,
+      location_ids: locationIds.length ? [...locationIds] : undefined,
+      area_id: areaId ?? undefined,
       include_subtree: true,
-      onError,
-      onOpen,
+      ...opts,
     });
-    if (this.statsUnsub) this.statsUnsub();
-    this.statsUnsub = this.ws.subscribe('stats', onEvent((evt) => this.onStatsEvent(evt)), {
-      onError,
-      onOpen,
-    });
-    if (this.locationsUnsub) this.locationsUnsub();
-    this.locationsUnsub = this.ws.subscribe(
-      'locations',
-      onEvent((evt) => this.onLocationsEvent(evt)),
-      { onError, onOpen },
-    );
-    if (this.statusesUnsub) this.statusesUnsub();
-    // The vocabulary is small and changes rarely, so any event on the topic
-    // re-reads the whole list rather than applying a per-action patch. It also
-    // keeps a card correct when another client reorders, which no single
-    // event payload describes better than the list itself does.
-    this.statusesUnsub = this.ws.subscribe('statuses', onEvent(() => void this.refreshStatuses()), {
-      onError,
-      onOpen,
-    });
+    this.statsUnsub?.();
+    this.statsUnsub = this.ws.subscribe('stats', onEvent((evt) => this.onStatsEvent(evt)), opts);
+    this.locationsUnsub?.();
+    this.locationsUnsub = this.ws.subscribe('locations', onEvent((evt) => this.onLocationsEvent(evt)), opts);
+    this.statusesUnsub?.();
+    // Any event re-reads the whole (small) vocabulary rather than patching it.
+    this.statusesUnsub = this.ws.subscribe('statuses', onEvent(() => void this.refreshStatuses()), opts);
   }
 
   /**
-   * The config entry serving these subscriptions is tearing down.
-   *
-   * A reload is the common case and it ends by itself, so the card waits it out
-   * on the same backoff a refused subscribe uses rather than reporting an error
-   * for something that will be over in a moment. The first attempt is scheduled
-   * rather than immediate: the backend is mid-teardown and would certainly
-   * refuse. Disabled and removed look identical from here, and end as the
-   * budget running out.
+   * The config entry serving these subscriptions is tearing down. A reload ends
+   * by itself, so the card waits it out on the retry backoff; the first attempt
+   * is scheduled because the backend mid-teardown would refuse it.
    */
   private onBackendUnavailable() {
     if (this.state.value.degraded.liveUpdatesReason === 'unavailable') return;
@@ -674,9 +496,8 @@ export class Store {
       this.subscribeAttempt = 0;
       this.stateObs.set({ connected: { items: true, stats: true } });
       this.setDegraded({ liveUpdates: 'live', liveUpdatesReason: null, nextLiveRetryAt: null });
-      // A backend that went away and came back was reading its store afresh, and
-      // every event in between was addressed to subscriptions that no longer
-      // existed. Nothing on screen is trustworthy until it has been re-read.
+      // Every event while the backend was away went to subscriptions that no
+      // longer existed, so re-read everything.
       if (wasUnavailable) void this.reloadAll().catch(() => undefined);
       return;
     }
@@ -684,20 +505,10 @@ export class Store {
   }
 
   /**
-   * A refused subscribe means live updates are gone, silently — no event will
-   * ever arrive to hint at it.
-   *
-   * Two refusals are worth waiting out. `storage_error` is what a backend with
-   * no config entry answers, which a reload clears on its own; and
-   * `unknown_command` is Home Assistant's own answer for a command type nobody
-   * has registered, which for `haventory/subscribe` means the integration has
-   * not been set up yet. A restarting instance serves the frontend — and the
-   * Lovelace view it rebuilds on reconnect — before it gets that far, so a card
-   * refused this way is early rather than broken. Both back off and say the card
-   * is retrying instead of dropping an error on a user who has done nothing
-   * wrong. Once the budget is spent it stops, reports the refusal and leaves the
-   * manual refresh as the way back. Any other refusal is an outage and is
-   * reported at once.
+   * A refused subscribe means live updates are gone, silently. Two refusals are
+   * waited out on the backoff: `storage_error` (no config entry, which a reload
+   * clears) and `unknown_command` (a restarting instance serves the view before
+   * the integration is set up). Any other refusal is reported at once.
    */
   private onSubscribeRefused(err: unknown) {
     this.stateObs.set({ connected: { items: false, stats: false } });
@@ -734,7 +545,7 @@ export class Store {
       liveUpdatesReason: reason,
       nextLiveRetryAt: Date.now() + delay,
     });
-    this.subscribeRetry.schedule(delay, () => this.openSubscriptions(false));
+    this.subscribeRetry.schedule(delay, () => this.subscribeTopics(false));
   }
 
   /** Release everything this store holds outside itself. */
@@ -745,21 +556,13 @@ export class Store {
     this.locationsUnsub?.();
     this.statusesUnsub?.();
     this.areaRegistryUnsub?.();
-    // Held by Home Assistant's connection, which outlives every card on the
-    // dashboard — a listener left behind would refetch for a disposed store on
-    // every reconnect, for as long as the page is open.
+    // Held by HA's connection and the module-level day clock, which outlive every card.
     this.connectionReadyUnsub?.();
     this.connectionLostUnsub?.();
-    // Module-level, and so outliving this store exactly as the connection
-    // listeners above do.
     this.dayChangeUnsub?.();
-    this.dayChangeUnsub = null;
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
-    this.areaRegistryUnsub = null;
-    this.connectionReadyUnsub = null;
-    this.connectionLostUnsub = null;
-    // Nothing is listening after this, so a subscribe still in flight must not
-    // report and nothing already booked may fire.
+    this.areaRegistryUnsub = this.connectionReadyUnsub = this.connectionLostUnsub = null;
+    this.dayChangeUnsub = null;
     this.latestSubscribeRound.invalidate();
     this.latestAreaWatch.invalidate();
     this.connectionLostGrace.cancel();
@@ -774,13 +577,10 @@ export class Store {
 
   private onItemsEvent(evt: AnyEventPayload) {
     if (evt.topic !== 'items') return;
-    const item = (evt as ItemsEventPayload).item;
+    const item = evt.item;
     if (evt.action === 'reloaded' || item === undefined) {
-      // The dataset moved wholesale and the signal carries no item to merge:
-      // an import replaced everything, or a status was deleted and every item
-      // carrying it reassigned in one call. Either way a merge is impossible —
-      // refetch, and say so while it is in flight, because anything the user
-      // has open may be editing data that no longer exists.
+      // The dataset moved wholesale: refetch, and say so while it is in flight,
+      // because an open editor may be holding data that no longer exists.
       this.setDegraded({ reloading: true });
       void this.listItems(true)
         .catch(() => undefined)
@@ -809,43 +609,25 @@ export class Store {
         break;
       }
     }
-    // `total` counts every match across all pages and came off the last
-    // `item/list` reply, computed before this event existed. Moving it by what
-    // the event did to the loaded list keeps the footer's two numbers telling
-    // one story straight away, with no round trip and nothing to wait for.
+    // Move `total` by what the event did to the loaded list, so the footer
+    // agrees at once. That is a guess: the subscription is filtered by location
+    // only, so with any filter on the server is asked for the real count.
     const total = this.state.value.total;
     const delta = items.length - loadedBefore;
     this.stateObs.set(
       total !== null && delta !== 0 ? { items, total: Math.max(0, total + delta) } : { items },
     );
-    // That step is optimistic, and it has to be: a subscription is filtered by
-    // location only, so a row handed to a card with a search typed into it may
-    // not belong to the set the footer is counting — and an item on a page
-    // nobody has scrolled to can leave the set without the loaded list moving
-    // at all. Both are what the server is asked about here. Coalesced, and a
-    // count rather than a re-list: `countMatching` asks for one row and reads
-    // the total off the reply, which leaves the loaded pages and the scroll
-    // position alone.
     if (activeFilterCount(this.state.value.filters) > 0) this.scheduleTotalRefresh();
-    // Category/tag distributions can change on create/update/delete — keep the
-    // autocomplete source fresh. Other actions (quantity, check-out) can't.
     if (evt.action === 'created' || evt.action === 'updated' || evt.action === 'deleted') {
       void this.refreshDistinctValues().catch(() => undefined);
     }
-    // Per-location counts live on the tree, and only `stats/counts` is pushed —
-    // so anything that moves an item between locations needs a tree refetch.
+    // Per-location counts ride the tree, which is not pushed.
     if (evt.action === 'created' || evt.action === 'deleted' || evt.action === 'moved') {
       this.scheduleTreeRefresh();
     }
   }
 
-  /**
-   * Re-price the active filter's match set, coalesced.
-   *
-   * A burst of events — a bulk move, an import, a script adding a shelf's worth
-   * of items — must ask once, the way `scheduleTreeRefresh` does and for the
-   * same reason.
-   */
+  /** Coalesced, so a burst of events asks once. */
   private scheduleTotalRefresh(delayMs = 250) {
     this.totalRefresh.schedule(delayMs, () => void this.refreshTotal().catch(() => undefined));
   }
@@ -855,56 +637,37 @@ export class Store {
     const filters = this.state.value.filters;
     const asked = JSON.stringify(toWireFilter(filters));
     const total = await this.countMatching(filters);
-    // A newer recount has taken over, the filter moved under this one — in
-    // which case `listItems` has already answered for the new one — or the
-    // count failed and left nothing to apply.
+    // A moved filter is already answered by the `listItems` it triggered.
     if (!current() || total === null) return;
     if (JSON.stringify(toWireFilter(this.state.value.filters)) !== asked) return;
     this.stateObs.set({ total });
   }
 
-  /**
-   * Coalesce tree refetches. `location/tree` is a full walk with no parameters,
-   * so a burst of item events (a bulk move, an import) must not fire one per event.
-   */
   private scheduleTreeRefresh(delayMs = 250) {
     this.treeRefresh.schedule(delayMs, () => void this.refreshLocationTree().catch(() => undefined));
   }
 
-  /**
-   * Coalesce facet refetches, for the reason the tree's are coalesced: a filter
-   * panel patches several keys in a row and each patch would otherwise price
-   * every category and tag again.
-   */
   private scheduleFacetRefresh(delayMs = 250) {
     this.facetRefresh.schedule(delayMs, () => void this.refreshDistinctValues().catch(() => undefined));
   }
 
   private onStatsEvent(evt: AnyEventPayload) {
     if (evt.topic !== 'stats' || evt.action !== 'counts') return;
-    this.stateObs.set({ statsCounts: (evt as unknown as { counts: StatsCounts }).counts });
+    this.stateObs.set({ statsCounts: evt.counts });
   }
 
   private onLocationsEvent(evt: AnyEventPayload) {
     if (evt.topic !== 'locations') return;
-    if (evt.action === 'reloaded') {
-      void Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
-      void this.listItems(true);
-      return;
-    }
     void Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
-    // Moving or renaming a location rewrites the denormalized location_path on
-    // every item in its subtree — reload the list so rows reflect it live.
-    if (evt.action === 'moved' || evt.action === 'renamed') {
+    // Moving or renaming a location rewrites every `location_path` in its subtree.
+    if (evt.action === 'reloaded' || evt.action === 'moved' || evt.action === 'renamed') {
       void this.listItems(true);
     }
   }
 
   // ---------- Data fetchers ----------
-  // Every command the store sends goes through `run`, reads included: a run of
-  // transport failures on any of them is what "connection lost" means, and one
-  // answer that arrives is what takes that back down. The attachment family is
-  // the exception, and says there why.
+  // Every command goes through `run`, so transport failures on any of them grade
+  // the connection. The attachment family is the exception, and says why.
   async refreshStats() {
     const counts = await this.run(() => this.ws.stats());
     this.stateObs.set({ statsCounts: counts });
@@ -912,39 +675,21 @@ export class Store {
 
   async refreshAreas() {
     const areas = await this.run(() => this.ws.listAreas());
-    this.stateObs.set({ areasCache: areas as AreasListResult });
+    this.stateObs.set({ areasCache: areas });
   }
 
   /**
-   * The filter the category and tag tallies are measured against.
-   *
-   * Both dimensions drop out, for the reason `locationCountFilters` drops
-   * location: a facet fed its own selection zeroes every other row exactly when
-   * the user wants to see where else the matches are. One request prices both,
-   * so a chosen category does not narrow the tag tallies — the same trade the
-   * tree already makes for its own dimension.
+   * Refresh distinct categories/tags with counts. The tallies drop both
+   * dimensions from the filter, as the tree drops location, so a facet does
+   * not zero its own other rows; they are priced whenever any filter is on.
    */
-  private facetCountFilters(): StoreFilters {
-    return { ...this.state.value.filters, categories: [], tags: [] };
-  }
-
-  /** Refresh distinct categories/tags with counts (source for autocomplete). */
   async refreshDistinctValues() {
-    // Not every caller is debounced — item events land beside filter changes —
-    // so two of these can be in flight against different filters, and the
-    // tallies must price the newest one.
     const current = this.latestFacetTally.claim();
-    const counting = this.facetCountFilters();
-    // Priced whenever *anything* is narrowing the list, including a filter this
-    // measurement then drops. Gating on what survives the drop is what left a
-    // lone category filter reading "8 / 37" on the location rows beside a bare
-    // "43" on the category rows — the mixed column, one dimension narrower.
-    // With nothing else active every row prices at n / n, which is true and
-    // keeps one meaning for the number.
+    const counting = { ...this.state.value.filters, categories: [], tags: [] };
     const filtered = activeFilterCount(this.state.value.filters) > 0;
-    const distinct = (await this.run(() =>
+    const distinct = await this.run(() =>
       this.ws.distinctValues(filtered ? toWireFilter(counting) : undefined),
-    )) as DistinctValues;
+    );
     if (!current()) return;
     this.serverDistinct = distinct;
     this.serverDistinctPriced = filtered;
@@ -959,13 +704,9 @@ export class Store {
   }
 
   /**
-   * Name a category or tag before any item carries it.
-   *
-   * There is nothing to create server-side — `distinct_values` is derived from
-   * the items — so the value is held here at count 0 and offered as a
-   * suggestion until an item adopts it, at which point the refresh above drops
-   * the draft in favour of the real one. Returns false for a blank name or one
-   * that already exists.
+   * Name a category or tag before any item carries it. `distinct_values` is
+   * derived from the items, so the value is held here at count 0 until an item
+   * adopts it. Returns false for a blank name or one that already exists.
    */
   addDraftValue(kind: 'category' | 'tag', raw: string): boolean {
     const value = kind === 'tag' ? raw.trim().toLowerCase() : raw.trim();
@@ -998,9 +739,7 @@ export class Store {
   private publishDistinct() {
     const server = this.serverDistinct;
     if (!server) return;
-    // A draft carries no items, so it matches nothing — but it has to say so in
-    // the same shape the priced rows use, or one row in the list reads as
-    // unpriced while the rest read as "0 of N".
+    // A draft is priced in the same shape as the rows beside it.
     const draft = (value: string): DistinctValue =>
       this.serverDistinctPriced ? { value, count: 0, matching_count: 0 } : { value, count: 0 };
     const merge = (list: DistinctValue[], drafts: string[]): DistinctValue[] =>
@@ -1018,34 +757,21 @@ export class Store {
     });
   }
 
-  /** Version banner for the diagnostics panel. */
   async refreshVersion() {
     const info = await this.run(() => this.ws.version());
     this.stateObs.set({ versionInfo: info });
   }
 
-  /** Re-read the status vocabulary after another client changed it. */
   async refreshStatuses() {
     const statuses = await this.run(() => this.ws.listStatuses()).catch(() => null);
     if (statuses) this.stateObs.set({ statuses });
   }
 
-  /**
-   * What the integration decided: card heading, quick-filter pills, the status
-   * vocabulary, the attachment caps.
-   *
-   * All of it cosmetic, so a backend that does not answer the command — an
-   * integration older than this bundle — leaves every one of them at its
-   * built-in default instead of failing the whole init.
-   */
+  /** Card heading, quick-filter pills, statuses and attachment caps; all cosmetic, so a failure keeps the defaults. */
   async refreshConfig() {
     const config = await this.run(() => this.ws.config()).catch(() => null);
     const title = config?.card_title;
     if (typeof title === 'string' && title) this.stateObs.set({ cardTitle: title });
-    // `undefined` is a backend too old to answer and leaves the state alone;
-    // `null` is one that answered "no opinion". Both read as every pill, but
-    // only the second is a report, and an explicit `[]` is a third answer the
-    // normalizer keeps whole.
     if (config && 'quick_filters' in config) {
       this.stateObs.set({ quickFilters: normalizeQuickFilters(config.quick_filters) });
     }
@@ -1056,16 +782,11 @@ export class Store {
   // ---------- Attachments ----------
 
   /**
-   * Take the item a call answered with into the list, and hand it back.
+   * Take the answered item into the list and hand it back, one version on, so
+   * the caller's form does not save against a stale version.
    *
-   * The caller needs that item too: it is one version on, so a form that goes
-   * on holding the copy it had fails its next save with `conflict`.
-   *
-   * Attachment work is the one family that does not go through `run`. Its
-   * failures belong to the file picker that raised them — shown per file, next
-   * to the file that failed — and the upload's own HTTP errors carry no
-   * backend error code, so counting them would read a rejected file as a lost
-   * connection.
+   * Attachment calls skip `run`: their failures are shown per file, and an
+   * upload's HTTP errors carry no code, so they would read as a lost connection.
    */
   private async applyResult(call: Promise<Item>): Promise<Item> {
     const updated = await call;
@@ -1073,12 +794,6 @@ export class Store {
     return updated;
   }
 
-  /**
-   * Upload one file and attach it to an item.
-   *
-   * Its own action rather than part of the item save: an 8 MB POST inside a
-   * form submit makes the save look hung.
-   */
   uploadAttachment(
     itemId: string,
     file: File,
@@ -1123,38 +838,23 @@ export class Store {
   }
 
   /**
-   * The filter the per-location counts are measured against.
-   *
-   * Everything the user has narrowed by *except* location: the tree is how you
-   * choose a location, so applying the current choice to it would zero every
-   * other branch exactly when you want to see where else the matches are.
+   * The tree's counts are measured against every filter except location, which
+   * the tree itself chooses, and are priced whenever any filter is on.
    */
-  private locationCountFilters(): StoreFilters {
-    return {
+  async refreshLocationTree() {
+    const current = this.latestTree.claim();
+    const counting = {
       ...this.state.value.filters,
       locationIds: [],
       includeSubtree: true,
       orphansOnly: false,
     };
-  }
-
-  async refreshLocationTree() {
-    // Superseded responses are dropped, the way refreshDistinctValues drops
-    // them: the per-location counts ride the tree, so a stale answer would
-    // stick an older filter's numbers on the sidebar just the same.
-    const current = this.latestTree.claim();
-    const counting = this.locationCountFilters();
-    // Same rule as the facet tallies, and the same reason: a lone location
-    // filter would otherwise leave this list bare while the two beside it read
-    // a pair.
     const filtered = activeFilterCount(this.state.value.filters) > 0;
     const tree = await this.run(() => this.ws.getLocationTree(filtered ? toWireFilter(counting) : undefined));
     if (!current()) return;
-    // Sorted once here so every consumer — sidebar, pickers, organize dialog —
-    // sees the same order; the API returns nodes in insertion order.
-    this.stateObs.set({ locationTreeCache: sortLocationTree((tree ?? []) as LocationTreeNode[]) });
-    // The tree covers filed items only, so the whole-inventory match count comes
-    // separately; "No location" is then the remainder, with no third query.
+    // The API returns insertion order; sorted once here for every consumer.
+    this.stateObs.set({ locationTreeCache: sortLocationTree(tree) });
+    // The tree covers filed items only; "No location" is this total's remainder.
     const matchTotal = filtered ? await this.countMatching(counting) : null;
     if (!current()) return;
     this.stateObs.set({ locationMatchTotal: matchTotal });
@@ -1162,8 +862,8 @@ export class Store {
 
   async refreshLocationsFlat() {
     const locs = await this.run(() => this.ws.listLocations());
-    const list = (locs as Location[]).slice().sort((a, b) =>
-      (a.path?.sort_key || '').localeCompare(b.path?.sort_key || '', undefined, { sensitivity: 'base' }),
+    const list = locs.slice().sort((a, b) =>
+      a.path.sort_key.localeCompare(b.path.sort_key, undefined, { sensitivity: 'base' }),
     );
     this.stateObs.set({ locationsFlatCache: list });
   }
@@ -1185,8 +885,7 @@ export class Store {
         this.stateObs.set({
           items: merged,
           cursor: res.next_cursor,
-          // `total` counts every match across all pages, not just this one.
-          total: typeof res.total === 'number' ? res.total : null,
+          total: res.total,
           loading: false,
         });
       })
@@ -1200,27 +899,17 @@ export class Store {
     return p as Promise<void>;
   }
 
-  /**
-   * How many items a filter would match, without applying it.
-   *
-   * The staged mobile filter sheet shows a live "Show 38 items" before the user
-   * commits, and there is no count-only endpoint — so ask for one row and read
-   * the filtered `total` off the response.
-   */
+  /** How many items a filter would match: one row asked for, `total` read off it. */
   async countMatching(filters: StoreFilters): Promise<number | null> {
     try {
       const res = await this.run(() => this.ws.listItems(toWireFilter(filters), filters.sort, 1));
-      return typeof res.total === 'number' ? res.total : null;
+      return res.total;
     } catch {
       return null;
     }
   }
 
-  /**
-   * Every item matching a filter, in one shot. Omitting `limit` makes the backend
-   * return the whole match set — that is what "Load all N to select" and the
-   * tag/category merge rewrites need, since selection cannot span unloaded pages.
-   */
+  /** Every item matching a filter; no `limit` makes the backend return them all. */
   async listAllMatching(filter: ItemFilter): Promise<Item[]> {
     const res = await this.run(() => this.ws.listItems(filter));
     return res.items;
@@ -1233,7 +922,8 @@ export class Store {
       const before = this.state.value.cursor;
       await this.listItems(false);
       pages += 1;
-      if (this.state.value.cursor === before) break; // defensive: cursor not advancing
+      // A failed page leaves the cursor where it was.
+      if (this.state.value.cursor === before) break;
     }
   }
 
@@ -1249,25 +939,13 @@ export class Store {
     const previous = this.state.value.filters;
     const scopeChanged =
       !sameStrings(next.locationIds, previous.locationIds) || next.areaId !== previous.areaId;
-    // The rows already loaded stay on screen until the refetch lands, marked as
-    // loading. Blanking them is what tore the scroller down mid-edit and took an
-    // open editor with it; `listItems(true)` replaces the array wholesale anyway,
-    // so nothing here has to clear it first.
-    this.stateObs.set({
-      filters: next,
-      cursor: null,
-      loading: true,
-      // A row that is no longer listed cannot stay selected.
-      selection: new Set<string>(),
-    });
-    // The items subscription is scoped by location and area, so those two are
-    // the only filters that need the sockets torn down and rebuilt.
+    // Loaded rows stay until the refetch replaces them: blanking them would tear
+    // the scroller, and an open editor with it, down mid-edit.
+    this.stateObs.set({ filters: next, cursor: null, loading: true, selection: new Set<string>() });
+    // The items subscription is scoped by location and area only.
     if (scopeChanged) this.subscribeTopics();
     void this.listItems(true);
-    // Per-location, per-category and per-tag counts are all measured against the
-    // filter, so they move with it. Coalesced: a filter panel can patch several
-    // keys in a row. Re-ordering changes no count, and a sortable table header
-    // would otherwise walk the whole tree on every click.
+    // The counts move with every filter but not with the sort.
     if (Object.keys(patch).some((key) => key !== 'sort')) {
       this.scheduleTreeRefresh();
       this.scheduleFacetRefresh();
@@ -1280,33 +958,23 @@ export class Store {
   }
 
   // ---------- Selection (bulk actions) ----------
-  private setSelection(next: Set<string>) {
-    this.stateObs.set({ selection: next });
-  }
-
   toggleSelected(itemId: string) {
     const next = new Set(this.state.value.selection);
-    if (next.has(itemId)) next.delete(itemId);
-    else next.add(itemId);
-    this.setSelection(next);
+    if (!next.delete(itemId)) next.add(itemId);
+    this.setSelected(next);
   }
 
   setSelected(itemIds: Iterable<string>) {
-    this.setSelection(new Set(itemIds));
+    this.stateObs.set({ selection: new Set(itemIds) });
   }
 
   clearSelection() {
-    if (this.state.value.selection.size === 0) return;
-    this.setSelection(new Set<string>());
+    if (this.state.value.selection.size > 0) this.setSelected([]);
   }
 
-  /**
-   * Select the rows that are loaded — deliberately not "all matching". Cursor
-   * pagination means the card only holds a prefix of the match set, so the UI
-   * labels this honestly and offers `loadAllThenSelectAll` as the explicit path.
-   */
+  /** The loaded rows only; `loadAllThenSelectAll` is the explicit "all matching". */
   selectAllLoaded() {
-    this.setSelection(new Set(this.state.value.items.map((i) => i.id)));
+    this.setSelected(this.state.value.items.map((i) => i.id));
   }
 
   /** Page in every remaining match, then select the lot. */
@@ -1318,27 +986,20 @@ export class Store {
   // ---------- Degraded / retry plumbing ----------
   private setDegraded(patch: Partial<DegradedState>) {
     const cur = this.state.value.degraded;
-    // A patch that names only values already held publishes nothing: every
-    // subscriber re-renders on any notify, and the retry ladder sets the same
-    // state repeatedly while it waits.
+    // A no-op patch publishes nothing: every subscriber re-renders on notify.
     const keys = Object.keys(patch) as (keyof DegradedState)[];
     if (keys.every((key) => cur[key] === patch[key])) return;
     this.stateObs.set({ degraded: { ...cur, ...patch } });
   }
 
-  /** Any successful round trip proves the socket is alive. */
   private noteSuccess() {
     this.consecutiveTransportFailures = 0;
-    if (this.state.value.degraded.connectionLost) this.setDegraded({ connectionLost: false });
+    this.setDegraded({ connectionLost: false });
   }
 
   /**
-   * Classify a failure. A refusal that came back over the socket — including
-   * the taxonomy's `unknown_error` catch-all — proves the transport works and
-   * says only that the command was rejected. A run of failures that carry no
-   * such answer is the second "connection lost" signal, alongside the socket's
-   * own `disconnected` event: it catches the outages that close no socket, such
-   * as a server that accepts the connection and stops answering on it.
+   * A refusal that came back over the socket proves the transport works. A run
+   * of failures that did not catches outages that close no socket.
    */
   private noteFailure(err: unknown) {
     if (errorCode(err) !== TRANSPORT_ERROR_CODE) {
@@ -1351,13 +1012,7 @@ export class Store {
     }
   }
 
-  /**
-   * Run a command and grade the outcome.
-   *
-   * Every call goes through here so one place decides what a success and a
-   * failure say about the connection; the caller sees the answer, or the error,
-   * exactly as the socket gave it.
-   */
+  /** Run a command and grade what its outcome says about the connection. */
   private async run<T>(fn: () => Promise<T>): Promise<T> {
     try {
       const out = await fn();
@@ -1369,34 +1024,20 @@ export class Store {
     }
   }
 
-  /**
-   * Re-list everything and clear the degraded flags.
-   *
-   * This is the recovery the contract prescribes: a dropped subscription event
-   * is undetectable, so the only honest fix is an explicit, user-triggered
-   * re-read of items, locations and stats.
-   */
+  /** The user-triggered recovery the contract prescribes: re-read and re-subscribe. */
   async refreshAll(): Promise<void> {
     this.consecutiveTransportFailures = 0;
-    // The calls below re-answer the question the grace period was waiting on.
     this.connectionLostGrace.cancel();
     this.setDegraded({ ...NO_DEGRADATION });
     await this.reloadAll();
-    // Re-establish subscriptions in case one of them was refused earlier.
     this.subscribeTopics();
   }
 
   // ---------- Optimistic writes ----------
   /**
-   * Show a change on the row, send it, and take the server's copy back — or put
-   * the row the way it was when the call is refused.
-   *
-   * `patch` is what the row looks like while the call is in flight, applied to
-   * the row as it stands so a relative change (a delta, a due date that keeps
-   * the old one) has something to count from. Null where the answer cannot be
-   * guessed, which also means there is nothing to roll back. `details` rides
-   * the error entry: a conflict banner offers the edit again and needs both the
-   * row it was refused for and the changes it was refused with.
+   * Show `patch` on the row while the call is in flight, then take the server's
+   * copy, or restore the row when refused. A null `patch` means the answer
+   * cannot be guessed. `details` lets a conflict banner offer the edit again.
    */
   private async optimisticWrite(
     itemId: string,
@@ -1417,10 +1058,8 @@ export class Store {
   async createItem(input: ItemCreate) {
     try {
       const created = await this.run(() => this.ws.createItem(input));
-      // The items event carries this row too, so merge by id: whichever of the
-      // two arrives first, the row is there once.
-      const items = mergeUniqueById(this.state.value.items, [created]);
-      this.stateObs.set({ items });
+      // The items event carries this row too, so merge by id.
+      this.stateObs.set({ items: mergeUniqueById(this.state.value.items, [created]) });
     } catch (err) {
       this.pushError(err);
     }
@@ -1465,8 +1104,7 @@ export class Store {
   async checkOut(itemId: string, dueDate?: string | null, expectedVersion?: number) {
     await this.optimisticWrite(
       itemId,
-      // No date named means the item keeps the one it has: the command is
-      // "check this out", not "check this out with no due date".
+      // No date named keeps the one the item has.
       (before) => ({ checked_out: true, due_date: dueDate ?? before.due_date }),
       () => this.ws.checkOut(itemId, dueDate, expectedVersion),
     );
@@ -1480,14 +1118,7 @@ export class Store {
     );
   }
 
-  /**
-   * Mark a reminder done; the backend answers with the occurrence after it.
-   *
-   * No optimistic update, unlike the other mutations here: where the next
-   * occurrence falls is month arithmetic counted from the series anchor, and
-   * guessing it would show a date that is wrong for exactly the month-end
-   * series the anchor exists to keep right.
-   */
+  /** Not optimistic: the next occurrence is month arithmetic from the series anchor. */
   async bumpReminder(itemId: string, expectedVersion?: number) {
     await this.optimisticWrite(itemId, null, () => this.ws.bumpReminder(itemId, expectedVersion));
   }
@@ -1509,14 +1140,7 @@ export class Store {
   }
 
   // ---------- Locations ----------
-  /**
-   * Run a location change and re-read both views of the tree.
-   *
-   * The flat list and the nested tree are the same locations shaped for
-   * different surfaces, and every change moves both — the sidebar's counts ride
-   * the tree, the pickers read the flat list. Neither is pushed: the
-   * `locations` topic says a change happened, not what the walk now returns.
-   */
+  /** Run a location change and re-read the flat list and the tree, neither of which is pushed. */
   private async afterLocationChange<T>(call: () => Promise<T>): Promise<T> {
     const result = await this.run(call);
     await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
@@ -1531,8 +1155,6 @@ export class Store {
 
   async updateLocation(
     locationId: string,
-    // `newParentId` re-parents the whole subtree in the same call — the WS
-    // command takes it, so an edit that also moves the location is one trip.
     changes: { name?: string; areaId?: string | null; newParentId?: string | null },
   ): Promise<Location> {
     return this.afterLocationChange(() => this.ws.updateLocation(locationId, changes));
@@ -1554,12 +1176,7 @@ export class Store {
   }
 
   // ---------- Status definitions ----------
-  /**
-   * Run a status change and re-read the vocabulary.
-   *
-   * Display order is part of the list, so the whole list is read back rather
-   * than patched from the one definition the call answered with.
-   */
+  /** Run a status change and re-read the whole vocabulary, whose order is part of it. */
   private async afterStatusChange<T>(call: () => Promise<T>): Promise<T> {
     const result = await this.run(call);
     await this.refreshStatuses();
@@ -1575,7 +1192,6 @@ export class Store {
     return this.afterStatusChange(() => this.ws.createStatus(status));
   }
 
-  /** Edit presentation. No item moves, so nothing but the vocabulary refreshes. */
   async updateStatus(
     slug: string,
     changes: { label?: string; color?: StatusColorValue; icon?: string },
@@ -1588,15 +1204,8 @@ export class Store {
   }
 
   /**
-   * Delete a status, moving the items that carry it when a target is given.
-   *
-   * Rejects with `validation_error` when items still reference the slug and no
-   * target was chosen — the backend refuses rather than orphaning them.
-   *
-   * A reassignment rewrote items, so the item list and the counts are re-read
-   * too. The `statuses` subscription would deliver that eventually, but every
-   * other mutator here refreshes what it changed rather than waiting on its own
-   * broadcast.
+   * Delete a status, moving its items to `reassignTo`; refused while items still
+   * carry it and no target is given. A reassignment re-reads items and counts.
    */
   async deleteStatus(slug: string, reassignTo?: string): Promise<number> {
     const { reassigned } = await this.afterStatusChange(() =>
@@ -1608,12 +1217,8 @@ export class Store {
 
   // ---------- Bulk operations ----------
   /**
-   * Run a batch of item operations, chunked, reporting progress as it goes.
-   *
-   * Partial failure is the normal case for `haventory/items/bulk`: successes
-   * persist, failures come back per operation, and nothing is rolled back. The
-   * caller gets both halves so it can show "39 of 42 moved" and retry only the
-   * three that failed.
+   * Run a batch of item operations in chunks, reporting progress. Partial
+   * failure is normal: successes persist and nothing is rolled back.
    */
   async bulkExecute(
     ops: BulkOperation[],
@@ -1640,24 +1245,21 @@ export class Store {
       const chunk = ops.slice(i, i + chunkSize);
       const byId = new Map(chunk.map((op) => [op.op_id, op]));
       try {
-        const res = await this.run(() => this.ws.bulk(chunk));
-        const results = res?.results ?? {};
+        const { results } = await this.run(() => this.ws.bulk(chunk));
         for (const [opId, result] of Object.entries(results)) {
           const op = byId.get(opId);
-          if (result?.success) {
+          if (result.success) {
             succeededOpIds.add(opId);
-            // `item_delete` succeeds with a null result — there is no item to merge.
-            const item = result.result;
-            if (item && typeof item.id === 'string') {
-              succeeded.push(item);
-              this.applyOptimistic(item);
+            // `item_delete` succeeds with a null result.
+            if (result.result) {
+              succeeded.push(result.result);
+              this.applyOptimistic(result.result);
             }
           } else if (op) {
-            failed.push({ op, error: result?.error ?? unknownBulkError(), itemId: opTargetId(op) });
+            failed.push({ op, error: result.error ?? unknownBulkError(), itemId: opTargetId(op) });
           }
         }
-        // An op whose id never came back is reported rather than silently
-        // dropped — the endpoint collapses duplicate op_ids to the last one.
+        // The endpoint collapses duplicate op_ids, so a missing one is reported.
         for (const op of chunk) {
           if (!(op.op_id in results)) {
             failed.push({
@@ -1696,13 +1298,7 @@ export class Store {
   }
 
   // ---------- Import / export (data safety) ----------
-  /**
-   * Build a versioned backup document.
-   *
-   * `scope: 'view'` applies the active filter — the export endpoint accepts one,
-   * and the document still carries each item's location ancestry so a filtered
-   * backup stays self-consistent.
-   */
+  /** Build a versioned backup document; `scope: 'view'` applies the active filter. */
   async exportDocument(scope: 'all' | 'view' = 'all'): Promise<ExportDocument> {
     return this.run(() =>
       this.ws.exportDocument(scope === 'view' ? toWireFilter(this.state.value.filters) : undefined),
@@ -1735,36 +1331,28 @@ export class Store {
 
   // ---------- Errors ----------
   private pushError(err: unknown, details?: { itemId?: string; changes?: ItemUpdate }) {
-    // Home Assistant callWS returns an error envelope with {code, message, context}
-    const anyErr = err as { code?: unknown; message?: unknown; context?: unknown; data?: unknown } | undefined;
+    const anyErr = err as { message?: unknown; context?: unknown; data?: unknown } | undefined;
     const code = errorCode(err);
     const transport = code === TRANSPORT_ERROR_CODE;
-    // An outage fails every call in flight and every one the user tries next,
-    // each of them with the same sentence. One entry stands for all of them —
-    // the degraded stack above is what tracks the connection itself.
+    // One transport entry stands for every call an outage fails.
     if (transport && this.state.value.errorQueue.some((e) => e.code === TRANSPORT_ERROR_CODE)) return;
-    // A transport rejection carries either nothing or a socket-level string; in
-    // both cases the card's own wording is the only one worth showing.
-    const message = transport
-      ? transportErrorMessage()
-      : String(anyErr?.message ?? t('hv.store.unknownError'));
-    const context = (anyErr?.context ?? anyErr?.data ?? null) as Record<string, unknown> | null;
-    const entry = {
+    const entry: ErrorEntry = {
       id: `${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
       code,
-      message,
-      context: context ?? undefined,
-      kind: code === 'conflict' ? 'conflict' as const : 'error' as const,
+      // A transport rejection carries no text worth showing.
+      message: transport
+        ? t('hv.store.transportError')
+        : String(anyErr?.message ?? t('hv.store.unknownError')),
+      context: (anyErr?.context ?? anyErr?.data ?? undefined) as Record<string, unknown> | undefined,
+      kind: code === 'conflict' ? 'conflict' : 'error',
       itemId: details?.itemId,
       changes: details?.changes,
     };
-    const next = this.state.value.errorQueue.concat([entry]);
-    this.stateObs.set({ errorQueue: next });
+    this.stateObs.set({ errorQueue: [...this.state.value.errorQueue, entry] });
   }
 
   dismissError(id: string) {
-    const next = this.state.value.errorQueue.filter((e) => e.id !== id);
-    this.stateObs.set({ errorQueue: next });
+    this.stateObs.set({ errorQueue: this.state.value.errorQueue.filter((e) => e.id !== id) });
   }
 
   async refreshItem(itemId: string) {
@@ -1792,28 +1380,20 @@ export class Store {
   }
 
   /**
-   * Remember an id the backend no longer has, newest last and bounded.
-   *
-   * A host with an open editor has to tell two disappearances apart: the row
-   * fell out of the filtered page, where the typed edits are still worth
-   * keeping, or the item is gone, where the form has nothing left to save
-   * against. Only a real removal is recorded — a refetch that stops listing an
-   * id says nothing about whether it still exists.
+   * Remember an id the backend no longer has, bounded. An open editor must tell
+   * a row filtered off the page from an item that is gone; a refetch that stops
+   * listing an id is not a removal.
    */
   private noteRemoved(itemId: string) {
-    if (this.removedIds.has(itemId)) return;
     this.removedIds.add(itemId);
-    this.removedOrder.push(itemId);
-    while (this.removedOrder.length > REMOVED_ID_MEMORY) {
-      const evicted = this.removedOrder.shift();
-      if (evicted !== undefined) this.removedIds.delete(evicted);
+    // A Set iterates in insertion order, so the first entry is the oldest.
+    if (this.removedIds.size > REMOVED_ID_MEMORY) {
+      this.removedIds.delete(this.removedIds.values().next().value as string);
     }
   }
 
   private forgetRemoved(itemId: string) {
-    if (!this.removedIds.delete(itemId)) return;
-    const idx = this.removedOrder.indexOf(itemId);
-    if (idx >= 0) this.removedOrder.splice(idx, 1);
+    this.removedIds.delete(itemId);
   }
 
   /** True when this id was removed rather than merely filtered off the page. */
@@ -1824,13 +1404,7 @@ export class Store {
 
 let bulkOpSeq = 0;
 
-/**
- * Build a batch operation with an id that is unique for the process.
- *
- * The backend keys results by `op_id` and silently keeps only the last entry for
- * a duplicate, which would leave the client unable to say which op failed — so
- * ids are never derived from the item alone.
- */
+/** Build a batch operation with an `op_id` unique for the process: the backend keeps only the last duplicate. */
 export function makeBulkOp(
   kind: BulkOperation['kind'],
   payload: Record<string, unknown>,
@@ -1849,11 +1423,9 @@ function unknownBulkError(message = t('hv.store.operationFailed')) {
   return { code: 'unknown_error', message };
 }
 
+/** Existing rows in place (replaced when incoming has them), then the new ones. */
 function mergeUniqueById(existing: Item[], incoming: Item[]): Item[] {
-  const map = new Map<string, Item>();
-  for (const it of existing) map.set(it.id, it);
-  for (const it of incoming) map.set(it.id, it);
-  // Keep order: existing first then incoming new ones
-  const incomingOnly = incoming.filter((i) => !existing.some((e) => e.id === i.id));
-  return existing.map((e) => map.get(e.id)!) .concat(incomingOnly);
+  const byId = new Map(incoming.map((i) => [i.id, i]));
+  const known = new Set(existing.map((e) => e.id));
+  return existing.map((e) => byId.get(e.id) ?? e).concat(incoming.filter((i) => !known.has(i.id)));
 }

@@ -1,12 +1,7 @@
 /**
- * The HAventory mark, published to Home Assistant as a custom icon set.
- *
- * A `panel_custom` sidebar icon is a *string*, so artwork can only reach the
- * sidebar through HA's icon registry: `ha-icon` resolves any prefix outside
- * `mdi:` against `window.customIcons`, and registering here is what makes the
- * backend's `PANEL_ICON` — `haventory:logo` — resolvable. The sidebar cannot
- * ask for it before its panel list arrives over the websocket, which is well
- * after this bundle (loaded on every page as an extra module) has evaluated.
+ * The HAventory mark as a custom icon set. A sidebar icon is a string, and
+ * `ha-icon` resolves a non-`mdi:` prefix against `window.customIcons`, which
+ * is what makes the backend's `PANEL_ICON` (`haventory:logo`) resolvable.
  */
 
 /** Prefix of the icon string: the integration domain, so nothing else claims it. */
@@ -45,22 +40,11 @@ const HANDLES = [
 ];
 
 /**
- * The mark as a single path.
- *
- * `ha-svg-icon` renders one `<path d>` and sets no `fill-rule`, so the default
- * `nonzero` decides what is solid: a subpath is a hole only when it is wound
- * against the shape enclosing it. Reversing any of the three groups above turns
- * the crates back into solid blocks.
- *
- * `docs/assets/social-preview.html` draws the same outline, wound the other way
- * for `fill-rule="evenodd"`, under which winding means nothing. The two
- * spellings are not interchangeable — taking that one for this file fills the
- * crates in. `tests/test_brand_assets.py` normalises both to one winding and
- * fails if the outlines diverge, and separately pins each file's winding to the
- * rule it is written for. The brand images under
- * `custom_components/haventory/brand/`, which Home Assistant serves for the
- * integrations page, are rendered from the constants here, so they are not a
- * third place to edit.
+ * The mark as a single path. `ha-svg-icon` sets no `fill-rule`, so under
+ * `nonzero` the winding above is what cuts the holes. `social-preview.html`
+ * draws the same outline for `evenodd`, so the two are not interchangeable;
+ * `tests/test_brand_assets.py` pins both, and the images under
+ * `custom_components/haventory/brand/` are rendered from these constants.
  */
 export const HAVENTORY_MARK_PATH = [HOUSE, ...CRATES, ...HANDLES].join(' ');
 
@@ -80,23 +64,15 @@ declare global {
   }
 }
 
-/**
- * Publish the mark under the `haventory:` prefix.
- *
- * Idempotent, and safe whichever side of the frontend's own boot this runs on.
- */
+/** Publish the mark under the `haventory:` prefix; idempotent. */
 export function registerBrandIcon(): void {
   if (typeof window === 'undefined') return;
 
-  // Mutate, never replace: the frontend captures this object once, when it
-  // first imports its icon module, and reads every later lookup off that same
-  // reference — a fresh object here would never be consulted.
+  // Mutate, never replace: the frontend keeps the reference it captured first.
   const registry = (window.customIcons ??= {});
 
   registry[HAVENTORY_ICONSET] = {
-    // Every name in the set answers with the mark. HA calls this without
-    // handling a rejection, so a mistyped icon renders the logo rather than
-    // raising an unhandled rejection inside the frontend.
+    // Every name answers with the mark: HA does not handle a rejection here.
     getIcon: () =>
       Promise.resolve({ path: HAVENTORY_MARK_PATH, viewBox: HAVENTORY_MARK_VIEW_BOX }),
     getIconList: () => Promise.resolve([{ name: HAVENTORY_ICON_NAME }]),

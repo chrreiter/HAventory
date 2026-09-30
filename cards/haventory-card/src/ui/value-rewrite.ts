@@ -4,15 +4,9 @@ import { normalizeTags } from './item-form';
 import type { BulkOperation, Item, ItemFilter } from '../store/types';
 
 /**
- * Tag and category rename / merge / delete, as batch rewrites.
- *
- * There is no rename or merge endpoint — the backend stores tags and categories
- * on the items themselves. So every one of these is "fetch the affected items,
- * then rewrite them in one batch", which is why the organize dialog needs the
- * same progress and partial-failure treatment as bulk actions.
- *
- * Each op carries the item's `expected_version`, so a row someone else changed
- * mid-rewrite comes back as a conflict rather than silently losing their edit.
+ * Tag and category rename / merge / delete as batch rewrites of the items that
+ * carry them; there is no endpoint for either. Each op carries the item's
+ * `expected_version`, so a row changed mid-rewrite comes back as a conflict.
  */
 
 export type ValueKind = 'tag' | 'category';
@@ -22,13 +16,7 @@ export function filterForValue(kind: ValueKind, value: string): ItemFilter {
   return kind === 'tag' ? { tags_any: [value] } : { category: value };
 }
 
-/**
- * Rewrite `from` to `to` on every given item. A null `to` removes the value —
- * that is what "delete this tag" means when tags live on items.
- *
- * Items that would not actually change produce no operation, so a rewrite never
- * bumps a version for nothing.
- */
+/** Rewrite `from` to `to` (null removes it); an item that would not change gets no op. */
 export function rewriteOps(
   kind: ValueKind,
   items: readonly Item[],

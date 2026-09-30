@@ -1,14 +1,10 @@
 /**
  * Custom element registration that survives Home Assistant's registry swap.
  *
- * The frontend installs its own CustomElementRegistry while it boots. A
- * definition made before that swap stays behind in the registry it replaced,
- * where the dashboard never looks, and the card renders as a "custom element
- * doesn't exist" error instead. Which side of the swap a module lands on is
- * decided by how quickly the browser fetches it — as an extra module URL the
- * card can evaluate either side, and engines disagree about which — so the
- * definition is re-asserted whenever the current registry is no longer the one
- * it was made in.
+ * The frontend installs its own CustomElementRegistry while it boots, and a
+ * definition made before that stays behind where the dashboard never looks.
+ * The bundle can evaluate on either side of the swap, so the definition is
+ * re-asserted whenever the current registry is not the one it was made in.
  */
 
 const RECHECK_INTERVAL_MS = 250;
@@ -29,9 +25,7 @@ export function defineCardElement(tag: string, ctor: CustomElementConstructor): 
 
   if (typeof window === 'undefined') return;
 
-  // The swap happens once, during boot, so the first change observed is also
-  // the last: re-assert there and stop. The window bounds the wait on a cold
-  // start, where the frontend takes seconds to come up.
+  // The swap happens once, so stop at the first change; the window bounds a cold start.
   const until = Date.now() + RECHECK_WINDOW_MS;
   const timer = window.setInterval(() => {
     if (register() || Date.now() >= until) window.clearInterval(timer);

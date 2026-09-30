@@ -38,47 +38,28 @@ import type { AnyEventPayload, Unsubscribe } from './store/types';
 export type { Unsubscribe };
 
 /**
- * The part of the `hass` object this card uses, structurally.
- *
- * Structural rather than an import of Home Assistant's own type: the frontend
- * publishes no package a card can depend on, and naming only what is used means
- * a field the card never reads cannot break it.
+ * The part of the `hass` object this card uses, structurally: HA publishes no
+ * package a card can depend on, and a field the card never reads cannot break it.
  */
 export interface HassLike {
-  /** Home Assistant's `callWS` returns the `result` part of the message. */
+  /** Resolves to the `result` part of the answer. */
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
-  /**
-   * The language the user reads Home Assistant in, as a BCP-47 tag (`de`,
-   * `de-CH`, `en-GB`). Optional because this interface is structural and
-   * because a `hass` object handed over before the profile has loaded may not
-   * carry one yet; the card resolves anything it cannot answer to English.
-   */
+  /** A BCP-47 tag; absent before the profile loads, which resolves to English. */
   language?: string;
-  /**
-   * `fetch` with the user's auth header attached — the only way to POST to
-   * core's `/api/file_upload`, which is how attachment bytes reach the server
-   * without crossing the WebSocket. Optional because this interface is
-   * structural: a caller that never uploads need not provide it.
-   */
+  /** `fetch` with the user's auth header, for POSTing attachment bytes. */
   fetchWithAuth?(path: string, init?: RequestInit): Promise<Response>;
   connection: {
     /**
-     * Home Assistant delivers the *inner* event payload to the callback (the
-     * `event` field of the `{id, type:'event', event}` wire frame), not the
-     * whole envelope. A mock that delivered the envelope once kept the unit
-     * suite green while the card had stopped reflecting live changes, which is
-     * why `e2e/live-updates.smoke.mjs` exists.
+     * Delivers the inner `event` of the `{id, type:'event', event}` frame, not
+     * the envelope; `e2e/live-updates.smoke.mjs` checks that against a real HA.
      */
     subscribeMessage(
       cb: (event: AnyEventPayload) => void,
       msg: Record<string, unknown>,
     ): Unsubscribe | Promise<Unsubscribe>;
     /**
-     * Connection lifecycle. `disconnected` fires when the socket closes, before
-     * Home Assistant starts reconnecting; `ready` fires once it is back and HA
-     * has re-issued the subscriptions it was holding, so a listener runs with
-     * the watches already live again. Optional because the interface is
-     * structural: a caller may pass a connection that only sends messages.
+     * `disconnected` fires when the socket closes; `ready` once it is back and
+     * HA has re-issued the subscriptions it was holding.
      */
     addEventListener?(event: 'ready' | 'disconnected', cb: () => void): void;
     removeEventListener?(event: 'ready' | 'disconnected', cb: () => void): void;
@@ -90,15 +71,7 @@ export function callWS<T>(hass: HassLike, msg: Record<string, unknown>): Promise
   return hass.callWS<T>(msg);
 }
 
-/**
- * Open one subscription over the same socket.
- *
- * Home Assistant returns either the unsubscribe function or a promise of one,
- * depending on how far the connection has got, so the caller has to handle both
- * — this hands back exactly what HA gave rather than papering over it, since a
- * component that awaited unconditionally would leak a subscription it never
- * managed to close.
- */
+/** Open one subscription; HA answers with the unsubscribe function or a promise of one. */
 export function subscribeMessage(
   hass: HassLike,
   cb: (event: AnyEventPayload) => void,
@@ -124,15 +97,8 @@ declare global {
 }
 
 /**
- * Advertise a card to Home Assistant's picker.
- *
- * The list is shared with every other custom card on the instance, so it is
- * appended to rather than replaced, and an entry is added only once — the
- * bundle can be evaluated twice on one page, and a second entry would show the
- * card twice in the picker.
- *
- * Does nothing outside a browser, so importing the bundle in a test or a build
- * step is not a registration.
+ * Advertise a card to HA's picker. The list is shared with every custom card,
+ * and the bundle can be evaluated twice on one page, so an entry is added once.
  */
 export function registerCustomCard(meta: CustomCardMeta): void {
   if (typeof window === 'undefined') return;
@@ -142,20 +108,12 @@ export function registerCustomCard(meta: CustomCardMeta): void {
 }
 
 /**
- * The Home Assistant theme variables the card binds, and the only ones.
- *
- * Every one is read with a fallback of its own, so a variable Home Assistant
- * renames costs that binding and not the card — the token falls back to its
- * literal and the card keeps its own palette. That is the whole reason this
- * list can be a note rather than a worry.
- *
- * `ha-contract.test.ts` sweeps every source file for a `var(--…)` that is not
- * one of the card's own `--hv-*`, so a binding added anywhere without a line
- * here fails rather than going unrecorded.
+ * The HA theme variables the card binds, each read with a fallback so a rename
+ * costs that binding only. `ha-contract.test.ts` fails on any other `var(--…)`
+ * that is not one of the card's own `--hv-*`.
  */
 export const HA_THEME_VARS = [
-  // Surfaces, text, lines and the accent — bound in `ui/tokens`, one `--hv-*`
-  // token each.
+  // Surfaces, text, lines and the accent, bound in `ui/tokens`.
   '--card-background-color',
   '--ha-card-background',
   '--primary-background-color',
@@ -170,17 +128,12 @@ export const HA_THEME_VARS = [
   '--ha-card-border-radius',
   '--ha-card-font-family',
   '--paper-font-body1_-_font-family',
-  // The two the card and the sidebar panel set their own body type from, so a
-  // host page's text metrics do not decide the card's.
+  // The card's and the panel's own body type.
   '--mdc-typography-body2-font-size',
   '--mdc-typography-body2-line-height',
 ] as const;
 
-/**
- * The subset that describes the surface the card is drawn on, most specific
- * first — the ones `--hv-surface` binds to, and the ones `ui/theme` reads back
- * to decide which `color-scheme` the card is living in.
- */
+/** The surface variables, most specific first: `--hv-surface` binds them and `ui/theme` reads them back. */
 export const SURFACE_VARS = [
   '--card-background-color',
   '--ha-card-background',

@@ -620,8 +620,7 @@ view requires one.
 column takes in the full-view table, and the backend sort field it maps to where there is
 one. Status, category and tags have none, so their headers are not clickable.
 
-`DEFAULT_COLUMNS` is derived, not written out: every key except those in `OFF_BY_DEFAULT`,
-which is `reminder_date` alone. The stored array *is* the order. `normalizeColumns`
+`DEFAULT_COLUMNS` is derived, not written out: every key except `reminder_date`. The stored array *is* the order. `normalizeColumns`
 validates and dedupes without re-sorting, and `canonicalOrder` is what "Reset order"
 restores. The full set is wider than a phone and wider than many desktops, which
 `hv-data-table` answers by scrolling sideways rather than dropping columns. The name track

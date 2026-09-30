@@ -1,23 +1,12 @@
 /**
- * The card's count strings.
- *
- * The forms come from the dictionaries, one pair per noun. A hand-written
- * `n === 1 ? '' : 's'` at each call site drifts between components that count
- * the same thing, and it is no plural at all in a language that does not build
- * one by appending a letter. A count *inside* a sentence does not come through
- * here at all — it gets a key for the whole sentence, because where the number
- * sits and what the verb does with it are the sentence's business, not the
- * noun's.
+ * The card's count strings, one dictionary pair per noun. A count inside a
+ * sentence gets a key for the whole sentence instead.
  */
 
 import { tn } from '../i18n';
 import type { PluralKey } from '../i18n';
 
-/**
- * Every noun the card counts on its own, read off the key universe — so a
- * `hv.count.*` pair added to the dictionaries is immediately callable, and one
- * removed stops compiling at its call sites.
- */
+/** Every noun the card counts, read off the `hv.count.*` keys. */
 export type CountNoun = {
   [K in PluralKey]: K extends `hv.count.${infer Noun}` ? Noun : never;
 }[PluralKey];
@@ -28,21 +17,10 @@ export function counted(count: number, noun: CountNoun): string {
 }
 
 /**
- * The line under a list saying how much of the set is on screen.
- *
- * The card and the expanded view report the same fact about the same store, so
- * they say it in the same words — and the words name what is being counted,
- * which a bare "Showing 50 of 60" never did. `total` is what matches the active
- * filters, so with any of them on the noun says so; null means the server has
- * not priced the set yet. A surface may append its own suffix (the expanded
- * view offers "scroll to load more"), but not rephrase this.
- *
- * The two numbers are read at different moments — the total off a list reply,
- * the rows including whatever a subscription event has added since — so they
- * can disagree, and a total behind the rows would print a line that cannot be
- * true ("Showing 1 of 0 matching items"). Then the count of what is on screen
- * is the part still worth saying, and the claim about the match set is dropped
- * rather than repaired with a number nothing stands behind.
+ * The line under a list saying how much of the set is on screen, shared by the
+ * card and the expanded view. `total` counts the filter's matches, null until
+ * priced. A total behind the loaded rows (an event added one since) cannot be
+ * true, so then only the rows on screen are counted.
  */
 export function showingCount(
   loaded: number,

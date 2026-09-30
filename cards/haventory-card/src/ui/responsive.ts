@@ -1,41 +1,19 @@
 import type { ReactiveController, ReactiveControllerHost } from 'lit';
 
-/**
- * Container width at or below which the card switches to its mobile layout.
- * Matches the ~600px breakpoint the design calls for.
- */
+/** Card element width at or below which the card takes its mobile layout. */
 export const MOBILE_BREAKPOINT = 600;
 
 /**
- * Viewport width at or below which a surface that covers the screen takes its
- * phone form.
- *
- * Two breakpoints live here because they answer two different questions.
- * `MOBILE_BREAKPOINT` measures the card *element*, which is what in-card layout
- * depends on: a card in a dashboard column is 300–500px wide inside a 1920px
- * window, and its list, steppers and in-card sheets have to lay out for that
- * width. An overlay is placed against the viewport instead — `position: fixed`
- * ignores the card entirely — so the card's width says nothing about the room
- * an overlay has. Dialogs, menus and sheets use this query; everything drawn
- * inside the card's own box keeps the element measurement.
- *
- * `hv-full-view` and `hv-overflow-menu` spell the same width as a CSS `@media`
- * block, which cannot read a constant. Tests pin the two spellings together.
+ * Viewport width at or below which a `position: fixed` overlay takes its phone
+ * form. A second breakpoint because an overlay ignores the card's own width.
+ * `hv-full-view` and `hv-overflow-menu` spell it as `@media`; tests pin the two.
  */
 export const NARROW_QUERY = '(max-width: 700px)';
 
 /**
- * Follows `NARROW_QUERY` for a component that draws a `position: fixed` surface
- * of its own.
- *
- * A component already handed a `mobile` property cannot answer this from it:
- * that property is the card element's width on the card's side of the tree, and
- * a fixed overlay is laid out against the window whatever the card measures.
- * The property keeps governing in-flow layout; the overlay asks this.
- *
- * `matchMedia` is missing in jsdom unless a test provides one; without it the
- * answer stays `false`, which is the desktop form — the honest default for a
- * host that cannot say how wide the window is.
+ * Follows `NARROW_QUERY` for a component drawing its own fixed overlay; a
+ * `mobile` property measures the card, not the window. Without `matchMedia`
+ * (jsdom) the answer stays `false`, the desktop form.
  */
 export class ViewportNarrow implements ReactiveController {
   private readonly host: ReactiveControllerHost;
@@ -43,10 +21,7 @@ export class ViewportNarrow implements ReactiveController {
   private query: MediaQueryList | null = null;
   private matches = false;
 
-  /**
-   * `onChange` is for a host holding state that only means something at one
-   * width — it is dropped when the answer flips. The redraw happens either way.
-   */
+  /** `onChange` lets a host drop state that means something at one width only. */
   constructor(host: ReactiveControllerHost, onChange?: (narrow: boolean) => void) {
     this.host = host;
     this.notify = onChange;
@@ -77,13 +52,9 @@ export class ViewportNarrow implements ReactiveController {
 }
 
 /**
- * Drives the card's mobile/desktop mode from its own rendered width.
- *
- * Media queries are unreliable inside HA dashboards — a card can be narrow in a
- * wide viewport — so the handoff asks for element-based detection.
- * `ResizeObserver` is used rather than `@container` because jsdom implements
- * neither container queries nor layout, so a test can stand an observer in that
- * reports the width it wants and the mode is decided the way it is in a browser.
+ * Drives the card's mobile mode from its own rendered width, since a card can be
+ * narrow in a wide viewport. `ResizeObserver` rather than `@container`, so a
+ * jsdom test can stand one in that reports the width it wants.
  */
 export class ResponsiveController implements ReactiveController {
   private readonly host: ReactiveControllerHost & Element;
