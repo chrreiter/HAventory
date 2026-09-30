@@ -10,20 +10,12 @@ import type { AreaRef, Item, StatusDefinition } from '../store/types';
 import type { MediaBindings } from '../ui/media';
 import './hv-list-row';
 
-/**
- * Placeholder rows drawn while the first page is in flight. Enough to fill the
- * scroller's default cap, so the list does not visibly grow when the real rows
- * land.
- */
+/** Placeholder rows while the first page is in flight, enough to fill the default cap. */
 const SKELETON_ROWS = 5;
 
 /**
  * The standard card's list: skeletons while loading, a named empty state, rows,
  * and the near-end signal that drives infinite scroll.
- *
- * The empty state is deliberately specific — "no items yet", "nothing matched
- * these filters" and "nothing in this location" want different offers, and the
- * design calls for all three.
  */
 @customElement('hv-list')
 export class HVList extends LitElement {
@@ -40,12 +32,7 @@ export class HVList extends LitElement {
         overscroll-behavior: contain;
         max-height: var(--hv-list-max-height, 420px);
       }
-      /*
-       * A refetch keeps the rows it already has, so the only thing left to say
-       * is that fresher ones are on the way. Absolutely positioned over the
-       * list's top edge: a bar in the flow would move every row by two pixels
-       * on each keystroke in the search box.
-       */
+      /* A refetch keeps its rows; out of the flow, so the rows do not shift. */
       .refreshing {
         position: absolute;
         inset: 0 0 auto 0;
@@ -75,11 +62,7 @@ export class HVList extends LitElement {
           transform: translateX(250%);
         }
       }
-      /*
-       * The row being edited can stop matching the filter the user just changed.
-       * Pinning it keeps typed edits alive; the hint is what stops the pin from
-       * reading as a list that failed to filter.
-       */
+      /* The form stays open on a row that no longer matches the filter. */
       .pinned-hint {
         margin: 0;
         padding: 6px 16px;
@@ -87,13 +70,7 @@ export class HVList extends LitElement {
         color: var(--hv-text-secondary);
         border-top: 1px solid var(--hv-row-divider);
       }
-      /*
-       * The inline editor renders inside this same scroller and is roughly
-       * 720px tall, so the compact cap buried its Save/Cancel row and the
-       * custom-fields group. While an editor is open the card grows to fit the
-       * form — as the design shows — but stays bounded so a long row list
-       * cannot run away with the page.
-       */
+      /* The inline editor is taller than the compact cap, so the list grows, bounded. */
       :host([editing]) .scroller {
         max-height: var(--hv-list-editing-max-height, min(80dvh, 760px));
       }
@@ -164,28 +141,13 @@ export class HVList extends LitElement {
   @property({ type: String }) emptyKind: EmptyKind = 'no-items';
   /** Location name for the "Nothing in X" empty state. */
   @property({ type: String }) emptyLocationName: string | null = null;
-  /**
-   * Inline editing: the host supplies a template and says which row it belongs
-   * to. Passing a callback rather than editor props keeps this component from
-   * needing to know anything about the edit form.
-   */
+  /** Inline editing: the host's template for the form, so this list knows nothing about it. */
   @property({ attribute: false }) editorTemplate: ((itemId: string | null) => unknown) | null = null;
-  /**
-   * Opaque token the host changes when the template would draw something new.
-   *
-   * The template is a stable callback, so Lit re-runs it only when one of this
-   * component's *own* reactive properties changes — and the form it returns
-   * reads host state that has nothing to do with a list of rows. Carrying the
-   * signal as a value nothing here reads is what keeps that ignorance intact:
-   * the host decides what counts as a change, this component only redraws.
-   */
+  /** Opaque token the host changes when the stable template would draw something new. */
   @property({ attribute: false }) editorEpoch: unknown = 0;
   /** Row currently expanded into the editor; its own row is hidden while it is. */
   @property({ type: String }) editingItemId: string | null = null;
-  /**
-   * The host's copy of the row being edited, so the open form can outlive a
-   * refetch that stops listing it — see `_rows`.
-   */
+  /** The host's copy of the row being edited, so the form outlives a refetch that drops it. */
   @property({ attribute: false }) pinnedItem: Item | null = null;
   /** Pin an empty editor at the top of the list ("Add item"). */
   @property({ type: Boolean }) addingNew = false;
@@ -204,12 +166,7 @@ export class HVList extends LitElement {
     this.dispatchEvent(new CustomEvent('near-end', { detail: { ratio }, bubbles: true, composed: true }));
   };
 
-  /**
-   * The wording and the offered actions come from ui/empty-state, so this list
-   * and the expanded view's table cannot describe the same situation two
-   * different ways. Only the CSS is local — style rules do not cross a shadow
-   * boundary.
-   */
+  /** The shared ui/empty-state, as the full view's table draws it. */
   private _renderEmpty() {
     return renderEmptyState(this.emptyKind, {
       locationName: this.emptyLocationName,
@@ -219,27 +176,21 @@ export class HVList extends LitElement {
   }
 
   /**
-   * The rows to draw: the listed ones, plus the edited row if it has fallen off
-   * the page.
-   *
-   * Changing a filter refetches, and the row being edited can legitimately drop
-   * out of the result. It is put back at the top rather than rendered beside the
-   * list, because `repeat` only carries a DOM node across renders while its key
-   * stays in the same keyed set — moving the open form out of it would rebuild
-   * the element and discard everything typed into it, which is the whole bug.
+   * The listed rows, plus the edited row at the top if a refetch dropped it.
+   * It stays inside `repeat`'s keyed set, or the open form would be rebuilt and
+   * lose what was typed.
    */
   private _rows(): { rows: Item[]; pinnedId: string | null } {
     const id = this.editingItemId;
     const pinned = this.pinnedItem;
-    if (id === null || !this.editorTemplate || pinned?.id !== id) return { rows: this.items, pinnedId: null };
-    if (this.items.some((it) => it.id === id)) return { rows: this.items, pinnedId: null };
+    if (id === null || !this.editorTemplate || pinned?.id !== id || this.items.some((it) => it.id === id)) {
+      return { rows: this.items, pinnedId: null };
+    }
     return { rows: [pinned, ...this.items], pinnedId: id };
   }
 
   render() {
-    // An open editor outranks the skeleton: replacing the scroller is what
-    // discards the form, and a filter that currently matches nothing is exactly
-    // when the pinned row has to survive.
+    // An open editor outranks the skeleton, which would replace the scroller and the form.
     const editorOpen = Boolean(this.editorTemplate) && (this.addingNew || this.editingItemId !== null);
     if (this.loading && !this.items.length && !editorOpen) {
       return html`<div class="scroller" data-testid="list-skeleton" aria-busy="true">
@@ -272,8 +223,7 @@ export class HVList extends LitElement {
           (it) => it.id,
           (it) =>
             this.editingItemId === it.id && this.editorTemplate
-              ? // The expander carries the item's name in its own header, so
-                // showing the collapsed row as well would just be a duplicate.
+              ? // The expander's header names the item, so the row stands down.
                 html`${it.id === pinnedId
                   ? html`<p class="pinned-hint" data-testid="pinned-editor-hint">
                       ${t('hv.list.noLongerMatches')}
