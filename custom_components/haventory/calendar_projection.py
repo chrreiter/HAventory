@@ -1,15 +1,9 @@
 """Projection of stored item dates onto calendar occurrences.
 
-Home Assistant is not imported here. The entity in `calendar.py` is a thin
-wrapper over these functions, which keeps the projection testable in the offline
-suite — importing `calendar.py` there would mean standing in for the entity
-platform, the device registry and the time helpers, none of which the projection
-itself touches.
-
-Nothing is scheduled and nothing is stored: an occurrence exists because a date
-on an item falls inside the window somebody asked about. A recurring reminder is
-the same rule applied more than once — the anchor and the interval generate the
-occurrences the window covers, and none of them is written anywhere.
+Home Assistant is not imported here, so the projection is testable offline;
+`calendar.py` is the entity wrapper. Nothing is scheduled and nothing is stored:
+an occurrence exists because a date on an item, or a reminder's anchor and
+interval, falls inside the window somebody asked about.
 """
 
 from __future__ import annotations
@@ -25,26 +19,17 @@ from .models import Item, ReminderInterval
 
 LOGGER = context_logger(__name__)
 
-# Which unreadable stored dates have already been reported, as
-# ``(item_id, field, value)``. The projection runs on every calendar read, so an
-# unguarded warning would repeat for as long as the row is there; one line per
-# distinct bad value is what makes the log worth reading. Bounded by the
-# inventory, and only ever holds rows no write path could have produced.
+# ``(item_id, field, value)`` already warned about: the projection runs on every
+# calendar read, and one line per distinct bad value is enough.
 _REPORTED_UNREADABLE: set[tuple[str, str, str]] = set()
 
-# The dated fields on `Item`, and the word each one contributes to an event's
-# summary. `due_date` only exists while an item is checked out
-# (`models.validate_due_date_rules`), so the due half of the calendar is the
-# checked-out population.
+# The dated fields on `Item`. `due_date` only exists while an item is checked out.
 KIND_DUE = "due"
 KIND_INSPECTION = "inspection"
 KIND_REMINDER = "reminder"
 
-# How each kind's summary is written, keyed by kind. English, because this
-# module has no Home Assistant to ask; `calendar.py` resolves the household's
-# language once and passes the result in. The item's name is a `{name}`
-# placeholder rather than a suffix so a translation can put the noun where its
-# language puts it.
+# English defaults; `calendar.py` passes the translated patterns in. `{name}` is
+# a placeholder so a translation can put the noun where its language puts it.
 SUMMARY_PATTERNS: Mapping[str, str] = MappingProxyType(
     {
         KIND_DUE: "{name} due back",
@@ -53,9 +38,7 @@ SUMMARY_PATTERNS: Mapping[str, str] = MappingProxyType(
     }
 )
 
-# What one item's reminder may contribute to one window. A bound on the answer,
-# not on the data: a daily reminder against a decade-wide window is a request
-# nothing renders, and the alternative is building a list nothing can draw.
+# What one item's reminder may contribute to one window.
 MAX_REMINDER_OCCURRENCES = 500
 
 _ONE_DAY = timedelta(days=1)
@@ -82,14 +65,9 @@ class ProjectedEvent:
 def window_dates(start: datetime, end: datetime) -> tuple[date, date]:
     """Reduce a datetime range to the half-open range of days it touches.
 
-    All-day occurrences have no time of day, so a range is only ever compared
-    day by day. The exclusive end rounds *up* past any time component: a request
-    for the next four hours from midday overlaps today's all-day occurrences, and
-    truncating would answer with nothing.
-
-    Both bounds are read in whatever offset they carry — the caller converts to
-    local time first, because a UTC-stamped midnight is the previous day for half
-    the world.
+    The exclusive end rounds *up* past any time component, or a request for the
+    next four hours from midday would miss today. The caller converts both bounds
+    to local time first.
     """
 
     last = end.date()
@@ -103,12 +81,7 @@ def build_events(
     *,
     summaries: Mapping[str, str] = SUMMARY_PATTERNS,
 ) -> list[ProjectedEvent]:
-    """Every occurrence inside `[start, end)`, ordered for display.
-
-    A date exactly on `start` is included and one exactly on `end` is not, which
-    is the same half-open rule Home Assistant applies to the all-day events this
-    produces.
-    """
+    """Every occurrence inside the half-open `[start, end)`, ordered for display."""
 
     return sorted(_iter_events(items, start, end, summaries=summaries), key=_order)
 
@@ -121,14 +94,8 @@ def next_event(
 ) -> ProjectedEvent | None:
     """The earliest occurrence from `on_or_after` onwards, or none.
 
-    What the entity reports as its state. An all-day occurrence covers the whole
-    of its day, so today's counts as current rather than past.
-
-    Unbounded ahead rather than scanning a fixed horizon: a date years out is
-    still the next thing that happens if nothing is nearer, and picking a horizon
-    would be picking how far ahead the state stops being true. A recurring
-    reminder contributes only its next occurrence to this walk, so an unbounded
-    window costs no more than a bounded one.
+    What the entity reports as its state; today's counts as current. Unbounded
+    ahead, and each recurring reminder contributes only its next occurrence.
     """
 
     return min(
@@ -141,11 +108,7 @@ def next_event(
 def next_occurrence_after(
     anchor: date, interval: ReminderInterval | None, after: date
 ) -> date | None:
-    """Where a reminder lands once the thing it reminds about has been done.
-
-    A one-off has no next occurrence and answers none — bumping it is clearing
-    it, which is the caller's decision to make rather than this function's.
-    """
+    """Where a reminder lands once it has been done; none for a one-off."""
 
     if interval is None:
         return None
@@ -165,12 +128,7 @@ def _iter_events(
 
 
 def _summary(summaries: Mapping[str, str], kind: str, item: Item) -> str:
-    """One event's title, from the pattern its kind is written with.
-
-    Substituted rather than `str.format`ted: an item name may hold braces, and a
-    translation Home Assistant could not parse would otherwise raise here and
-    cost the whole calendar its events rather than that one row its title.
-    """
+    """One event's title. Substituted, not `str.format`ted: a name may hold braces."""
 
     pattern = summaries.get(kind) or SUMMARY_PATTERNS[kind]
     return pattern.replace("{name}", item.name)
@@ -198,12 +156,9 @@ def _reminder_events(
 ) -> Iterator[ProjectedEvent]:
     """Every occurrence of the item's reminder inside `[start, end)`.
 
-    With no interval `reminder_date` is the whole series — a one-off. With one,
-    the series is measured from `reminder_anchor` and begins at `reminder_date`:
-    the anchor is what the month steps count from, and the date is how far the
-    household has marked it done. They are equal until the first bump, so a
-    reminder nobody has bumped projects from its own date either way, and the
-    anchor may be years before `start`.
+    With no interval `reminder_date` is a one-off. With one, the series is
+    measured from `reminder_anchor` and begins at `reminder_date`, which is how
+    far the household has marked it done.
     """
 
     if item.reminder_date is None:
@@ -222,18 +177,14 @@ def _reminder_events(
     anchor = _stored_date(item, "reminder_anchor", item.reminder_anchor or item.reminder_date)
     if anchor is None:
         return
-    # Nothing before the stored occurrence: those are the ones already marked
-    # done, and the window cannot un-do them.
+    # Nothing before the stored occurrence: those are already marked done.
     step = _first_step_on_or_after(anchor, interval, max(start, occurrence))
     for _ in range(limit):
         day = _occurrence(anchor, interval, step)
         if day >= end:
             return
-        # Each occurrence carries its own date in the uid. This calendar is
-        # read-only — it implements neither `async_create_event` nor
-        # `async_delete_event` — so a uid's whole job is to name the same
-        # occurrence the same way twice, which one shared across a series
-        # could not do.
+        # Each occurrence carries its own date in the uid, so every one is
+        # named the same way on every read.
         yield _event(
             item, KIND_REMINDER, summary, day, uid=f"{item.id}:{KIND_REMINDER}:{day.isoformat()}"
         )
@@ -243,11 +194,8 @@ def _reminder_events(
 def _stored_date(item: Item, field: str, stored: str) -> date | None:
     """Read one stored date, or none if this build cannot parse it.
 
-    Every write path validates these, so a value that lands here came from a
-    hand-edited store or an import written before the import side validated
-    them. Skipping the row's own occurrences costs that row its events; raising
-    would cost every item on the calendar theirs, because one projection serves
-    the whole entity.
+    Only a hand-edited store gets here. Skipping costs that row its events;
+    raising would cost the whole calendar.
     """
 
     try:
@@ -273,13 +221,9 @@ def _stored_date(item: Item, field: str, stored: str) -> date | None:
 def _first_step_on_or_after(anchor: date, interval: ReminderInterval, target: date) -> int:
     """How many steps from the anchor the first occurrence not before `target` is.
 
-    Jumped to rather than stepped to: a daily reminder anchored decades back
-    would otherwise cost one iteration per day before the window even opens.
-
-    The jump is exact for days and weeks. For months it can land one step short —
-    whole elapsed months undercount when the anchor's day of month falls later
-    than the target's — so one correction follows. It cannot overshoot: the step
-    before the estimate always lands in an earlier month than `target`.
+    Jumped to rather than stepped to. Exact for days and weeks; for months it can
+    land one step short when the anchor's day of month is later than the
+    target's, so one correction follows.
     """
 
     if anchor >= target:
@@ -304,11 +248,8 @@ def _first_step_after(anchor: date, interval: ReminderInterval, target: date) ->
 def _occurrence(anchor: date, interval: ReminderInterval, step: int) -> date:
     """The occurrence `step` intervals after the anchor.
 
-    Always measured from the anchor rather than from the occurrence before it.
-    Month steps clamp onto short months, and clamping the *previous* result would
-    make a series anchored on the 31st slip to the 28th in February and stay
-    there; measured from the anchor it returns to the 31st in the months that
-    have one.
+    Measured from the anchor, not the previous occurrence, so a series anchored
+    on the 31st returns to it after a clamped February.
     """
 
     if step <= 0:
@@ -321,12 +262,7 @@ def _occurrence(anchor: date, interval: ReminderInterval, step: int) -> date:
 
 
 def _add_months(day: date, months: int) -> date:
-    """`day` moved `months` on, clamped onto the target month's last day.
-
-    The 31st plus one month is the 28th, 29th or 30th — that month has no 31st,
-    and a household that said "every month" means the end of it rather than a
-    date that slips into the month after.
-    """
+    """`day` moved `months` on, clamped onto the target month's last day."""
 
     index = (day.year * 12 + day.month - 1) + months
     year, month = divmod(index, 12)
