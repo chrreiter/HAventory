@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Run the full local gate: backend lint + types + tests (with coverage), then
-# frontend install + audit + lint + types + tests + build. Mirrors the CI pipeline.
+# The full local gate, mirroring CI.
 source "$(dirname "$0")/common.sh"
 
 cd "$REPO_ROOT"
