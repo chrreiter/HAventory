@@ -53,44 +53,21 @@ import './hv-confirm';
 export type OrganizeTab = 'locations' | 'categories' | 'tags' | 'statuses';
 
 /**
- * What the colour input opens on before a household has chosen a colour of its
- * own. A native colour input has no empty state — it always shows something —
- * so this is a starting point, not a value: it is stored only once the picker
- * reports a choice. Held off the ten tones so an accidental accept is visibly
- * a custom colour rather than a token's near-twin.
+ * What the colour input opens on, since a native one has no empty state. It is
+ * stored only once the picker reports a choice, and is held off the ten tones
+ * so an accidental accept is visibly custom.
  */
 const CUSTOM_COLOR_SEED = '#7b5ea7';
 
-/**
- * The trees the two location pickers open, named so `aria-controls` can point at
- * them. Each holder stays in the tree whether or not it is open — an
- * `aria-controls` that resolves to nothing announces the control as controlling
- * nothing — and only the tree inside comes and goes, so closing a picker still
- * discards its scroll and filter.
- */
+/** Picker holders, named so `aria-controls` can point at them while closed. */
 const LOC_PARENT_TREE_ID = 'location-parent-tree-holder';
 const MERGE_TARGET_TREE_ID = 'merge-target-tree-holder';
-
-/** The same, for the list of values a category or tag merge can land on. */
 const MERGE_VALUE_LIST_ID = 'merge-value-list-holder';
 
-/**
- * How many values the merge list shows before it earns a filter of its own.
- *
- * The box is 200px tall and a row is about 32px of it, so six are on screen at
- * once: over a shorter list a search field would narrow nothing that is not
- * already visible. A household's tags run to hundreds, which is what it is
- * there for.
- */
+/** Values the merge list holds before it earns a filter: six fit its 200px box. */
 const VALUE_FILTER_FROM = 6;
 
-/**
- * The three batch rewrites.
- *
- * A kind rather than a label: every line a rewrite prints — the running count,
- * the "nothing to do", both finished forms — is a different sentence per
- * language, and only English builds them by appending "d" to the verb.
- */
+/** A kind rather than a label, since each rewrite line is its own sentence per language. */
 type RewriteKind = 'merge' | 'rename' | 'remove';
 
 interface RewriteState {
@@ -103,15 +80,16 @@ interface RewriteState {
   error?: string | null;
 }
 
+/** The failed request's own message, or the card's fallback sentence. */
+function errorText(err: unknown, fallback: TranslationKey, params?: Record<string, string>): string {
+  return (err as { message?: string })?.message ?? t(fallback, params);
+}
+
 /**
- * "Organize".
- *
- * One dialog, four tabs: locations, categories, tags and statuses. Locations
- * edit in place with a guarded delete — a location that still holds items or
- * children gets an inline explanation, never a browser confirm. Categories and
- * tags have no rename or merge endpoint, so those are batch rewrites over every
- * affected item, with the progress and partial-failure treatment bulk actions
- * get.
+ * "Organize": one dialog, four tabs (locations, categories, tags, statuses).
+ * Locations edit in place with a guarded delete. Categories and tags have no
+ * rename or merge endpoint, so those are batch rewrites over every affected
+ * item, with the progress and partial-failure treatment bulk actions get.
  */
 @customElement('hv-organize-dialog')
 export class HVOrganizeDialog extends LitElement {
@@ -123,13 +101,8 @@ export class HVOrganizeDialog extends LitElement {
     idRow,
     css`
       :host {
-        /*
-         * The vertical padding of every row in this dialog, declared once so
-         * the four tabs cannot drift apart: the value rows below read it, and
-         * it inherits through the shadow boundary into the hv-location-tree the
-         * Locations tab hosts, which reads it with its own fallback. Nothing
-         * outside declares it, so the sidebar's tree keeps its own spacing.
-         */
+        /* Every row's vertical padding, inherited into the hosted
+           hv-location-tree too so the four tabs cannot drift apart. */
         --hv-organize-row-pad: 8px;
       }
       .wrap {
@@ -223,18 +196,13 @@ export class HVOrganizeDialog extends LitElement {
         font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
         color: var(--hv-text);
       }
-      /* How many of this tab's thing there is — every tab prints one, hence a
-         shared class. nowrap because on a phone the row has no width to spare
-         and "13 locations" would break over two lines. */
       .toolbar-count {
         flex: none;
         white-space: nowrap;
         font-size: 12.5px;
         color: var(--hv-text-secondary);
       }
-      /* Three items in a 335px row left the filter field 110px wide, with its own
-         placeholder clipped to "Filter loca". The field takes the row and the
-         count keeps the button company on the next one. */
+      /* A phone row is too narrow for three parts: the field takes a row. */
       :host([mobile]) .toolbar {
         flex-wrap: wrap;
       }
@@ -260,22 +228,15 @@ export class HVOrganizeDialog extends LitElement {
       .value-row:hover {
         background: var(--hv-hover-overlay);
       }
-      /* Two arrow buttons rather than a drag handle: this is the card's first
-         reordering control, and buttons work from the keyboard without a
-         parallel implementation for it.
-
-         Side by side, because stacked they made the row they sit in twice as
-         tall as the same row on every other tab — the pair was the whole of
-         that difference. */
+      /* Arrow buttons rather than a drag handle, so reordering works from the
+         keyboard; side by side so the row is no taller than on other tabs. */
       .move {
         display: flex;
         flex-direction: row;
         flex: none;
         gap: 3px;
       }
-      /* Sized rather than left at the glyph: WCAG 2.2 asks 24px of every
-         pointer, and a pair that has to be aimed at is the complaint this
-         answers, so they take more than the minimum. */
+      /* Above WCAG 2.2's 24px pointer target. */
       .move button {
         display: inline-grid;
         place-items: center;
@@ -288,9 +249,7 @@ export class HVOrganizeDialog extends LitElement {
         padding: 0;
         line-height: 0;
       }
-      /* A phone keeps them stacked: a horizontal pair at the platform's 44px
-         is 88px of row, which does not fit beside the chip, the count and two
-         44px actions. */
+      /* A phone stacks them: a 44px pair side by side does not fit the row. */
       :host([mobile]) .move {
         flex-direction: column;
         gap: 1px;
@@ -306,10 +265,7 @@ export class HVOrganizeDialog extends LitElement {
         opacity: 0.3;
         cursor: default;
       }
-      /* The identity items store, shown in the editor only: services.yaml and an
-         export document carry it, and it is muted there because a household
-         never needs to type it. It carries a title attribute too, because a
-         slug long enough to outrun its line still elides. */
+      /* The stored slug, muted; a title attribute carries one that elides. */
       .status-slug {
         font: 400 12px var(--hv-font);
         color: var(--hv-text-tertiary);
@@ -318,11 +274,7 @@ export class HVOrganizeDialog extends LitElement {
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      /* A label is a household's own words and can be long enough that the row
-         overruns on its own — the fixed parts beside it (a 44px reorder column,
-         the count, two 44px actions) leave a phone row barely 130px for it.
-         Unshrinkable, the chip pushes the delete button past the dialog edge
-         where no finger reaches it. */
+      /* A long label must shrink, or it pushes the delete button off a phone row. */
       .status-row .hv-status-chip {
         flex: 0 1 auto;
         min-width: 0;
@@ -337,9 +289,7 @@ export class HVOrganizeDialog extends LitElement {
         flex: 1 1 180px;
         width: auto;
       }
-      /* The editor shows the slug for people writing automations, so here it
-         keeps its full width and drops to a line of its own rather than eliding
-         while the row still has room — the opposite of the list row above. */
+      /* In the editor the slug is for automation writers: it wraps, never elides. */
       .status-name .status-slug {
         flex: 0 0 auto;
         max-width: 100%;
@@ -350,10 +300,8 @@ export class HVOrganizeDialog extends LitElement {
         gap: 6px;
         margin: 2px 0 4px;
       }
-      /* A tone is a pair — a tint and the ink that reads on it — so the swatch
-         shows both, with the glyph the status will carry standing in for the
-         label. A bare fill leaves the five light tints all but identical on
-         white, and in dark it leaves them washes with nothing behind them. */
+      /* A swatch shows the tone's tint and ink both, with the status glyph as
+         the ink: a bare fill leaves the light tints all but identical. */
       .swatch {
         justify-content: center;
         width: 34px;
@@ -366,8 +314,7 @@ export class HVOrganizeDialog extends LitElement {
         width: var(--hv-tap-min, 44px);
         height: var(--hv-tap-min, 44px);
       }
-      /* The stand-in when a definition names a glyph this bundle does not
-         carry: the swatch still has to show ink on its tint. */
+      /* Stands in for a glyph this bundle does not carry. */
       .swatch .letters {
         font: 600 12px var(--hv-font);
       }
@@ -389,20 +336,15 @@ export class HVOrganizeDialog extends LitElement {
         width: var(--hv-tap-min, 44px);
         height: var(--hv-tap-min, 44px);
       }
-      /* The eleventh swatch: a household's own colour, opening the browser's
-         colour picker. The native control is the whole target rather than a
-         thing beside it, so it is stretched over the swatch and made
-         invisible — Chrome and Firefox each draw their own box, neither of
-         which can be styled to match the ten. Focus still lands on it, so the
-         ring below is drawn from the swatch around it. */
+      /* A household's own colour: the native colour input, which cannot be
+         styled to match, is stretched invisibly over the swatch and the focus
+         ring is drawn from the swatch around it. */
       .swatch.custom {
         position: relative;
         overflow: hidden;
-        /* The unchosen state — a plain chip face, saying "pick one" where the
-           ten say "this one" without borrowing a hue that means something.
-           Written as the pair .hv-status-chip reads, never as background and
-           color: a longhand here outranks that rule, and the inline pair a
-           chosen colour arrives as would then never paint. */
+        /* The unchosen face, written as the pair .hv-status-chip reads: a
+           background longhand would outrank the inline pair a chosen colour
+           arrives as. */
         --hv-status-bg: var(--hv-chip-bg);
         --hv-status-fg: var(--hv-text-secondary);
       }
@@ -434,13 +376,9 @@ export class HVOrganizeDialog extends LitElement {
         color: var(--hv-primary-dark);
         font: 400 12px var(--hv-font);
         padding: 0;
-        /* "12 items" wrapping to two lines makes the row taller without making
-           it narrower — the slug beside it is what gives way instead. */
         white-space: nowrap;
         flex: none;
-        /* 12px text is a 14px-tall target, so the box is told to be bigger than
-           its own line: WCAG 2.2 asks 24px of any pointer. Every tab prints a
-           count, and one dialog cannot offer two sizes for one control. */
+        /* WCAG 2.2's 24px pointer target, taller than the 12px text. */
         display: inline-flex;
         align-items: center;
         min-height: 24px;
@@ -477,10 +415,6 @@ export class HVOrganizeDialog extends LitElement {
         color: var(--hv-text-secondary);
         padding: 0;
       }
-      /* A phone row grows to hold a tappable action — a 44px child takes a
-         ~44px row to ~66px. That height is the cost of the target: sizing one
-         tab's actions and not the rest leaves 26px controls beside 44px ones
-         in the same dialog. */
       :host([mobile]) .row-actions button {
         width: var(--hv-tap-min, 44px);
         height: var(--hv-tap-min, 44px);
@@ -512,10 +446,7 @@ export class HVOrganizeDialog extends LitElement {
         display: grid;
         gap: 4px;
         min-width: 0;
-        /* The area cell carries a preview line the name cell has no counterpart
-           for, so the two are not the same height; packed to the start, the
-           shorter one's field stays beside the other's instead of sinking to the
-           bottom of the row. */
+        /* The area cell's preview line makes it taller; keep fields aligned. */
         align-content: start;
       }
       .cell.wide {
@@ -543,8 +474,6 @@ export class HVOrganizeDialog extends LitElement {
         min-height: 46px;
         font-size: 15px;
       }
-      /* The merge target takes what the struck-through source leaves of the row,
-         and stops shrinking before the name it holds is unreadable. */
       .control.grow {
         flex: 1;
         min-width: 180px;
@@ -565,8 +494,6 @@ export class HVOrganizeDialog extends LitElement {
         padding: 4px 0;
         margin-top: 6px;
       }
-      /* The merge target list shares that box, so its own parts carry the
-         padding the box leaves off the sides. */
       .list-filter {
         display: block;
         padding: 4px 8px 6px;
@@ -620,9 +547,7 @@ export class HVOrganizeDialog extends LitElement {
       .guard {
         display: flex;
         align-items: flex-start;
-        /* The reassign guard puts three parts in here; unwrapped they share one
-           row and the select comes out ~44px wide, which hides the one thing
-           the guard exists to show. */
+        /* Wraps, or the reassign guard's select is squeezed to ~44px. */
         flex-wrap: wrap;
         gap: 9px;
         padding: 10px 12px;
@@ -633,16 +558,10 @@ export class HVOrganizeDialog extends LitElement {
         font-size: 12.5px;
         line-height: 1.5;
       }
-      /* A guard's alert mark is a statement, not a control: warn ink and a
-         width it will not give up, and nothing that would read as a button. */
       .guard-mark {
         color: var(--hv-warn);
         flex: none;
       }
-      /* Where the items go is the guard's own sentence, not a note beside one:
-         it takes a line to itself rather than competing with the select for
-         width, and the guard's ink rather than the tertiary grey a note carries
-         on a plain surface, which lands at 2.5:1 over this fill. */
       .status-guard .guard-message {
         flex: 1 1 100%;
       }
@@ -653,8 +572,6 @@ export class HVOrganizeDialog extends LitElement {
         flex-direction: column;
         align-items: stretch;
       }
-      /* Stacked, the three parts each take a line of their own; the basis above
-         is a width and means nothing once the main axis is vertical. */
       :host([mobile]) .status-guard .guard-message,
       :host([mobile]) .status-guard .actions {
         flex: none;
@@ -662,8 +579,6 @@ export class HVOrganizeDialog extends LitElement {
       .guard-target {
         display: flex;
         align-items: center;
-        /* Below ~330px the label and a readable select no longer share a line;
-           the select drops under it rather than overflowing the dialog. */
         flex-wrap: wrap;
         gap: 8px;
         flex: 1 1 auto;
@@ -672,8 +587,6 @@ export class HVOrganizeDialog extends LitElement {
       .guard-target > span {
         flex: none;
       }
-      /* A select showing "O⌄" names nothing. It grows into the row instead of
-         collapsing to its own arrow. */
       .guard-target select.control {
         flex: 1 1 auto;
         width: auto;
@@ -699,8 +612,7 @@ export class HVOrganizeDialog extends LitElement {
         color: var(--hv-error-deep);
         font-size: 12.5px;
       }
-      /* Shaped like .failure and coloured a step softer: it reports something
-         the household may go ahead with, so it must not read as a refusal. */
+      /* A step softer than .failure: the household may go ahead regardless. */
       .hint {
         display: flex;
         gap: 8px;
@@ -779,11 +691,7 @@ export class HVOrganizeDialog extends LitElement {
   @state() private _valueFilter = '';
   @state() private _rewrite: RewriteState | null = null;
   @state() private _confirmRemove: string | null = null;
-  /**
-   * Which value the last delete confirmation was about, kept past the close so
-   * the focus rescue can still find its row: nulling `_confirmRemove` is what
-   * closes the confirmation, and the rescue runs after that re-render.
-   */
+  /** The last confirmation's value, kept past the close for the focus rescue. */
   private _lastConfirmValue: string | null = null;
   @state() private _sheetValue: string | null = null;
   /** The "New category"/"New tag" row, open with the name being typed. */
@@ -808,11 +716,14 @@ export class HVOrganizeDialog extends LitElement {
     return this.store?.state.value ?? null;
   }
 
+  private _subscribe() {
+    this._storeUnsub?.();
+    this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+  }
+
   connectedCallback(): void {
     super.connectedCallback();
-    if (this.store && !this._storeUnsub) {
-      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
-    }
+    if (this.store && !this._storeUnsub) this._subscribe();
   }
 
   disconnectedCallback(): void {
@@ -825,30 +736,17 @@ export class HVOrganizeDialog extends LitElement {
   private _opening = false;
 
   /**
-   * Bring a disclosure into view as it opens, and hand a form's first field the
-   * caret. Each renders below its trigger inside a pane that scrolls, so one
-   * opened from a row near the bottom lands off screen and the tap reads as
-   * having done nothing. `block: 'nearest'` moves nothing already on screen and
-   * names no `behavior`, so there is no motion to gate on a preference.
-   *
-   * A ref fires when the element is built and not on the re-renders that
-   * follow, which is what "newly open" means — as long as each disclosure is
-   * `keyed` on what it is about, so a second row rebuilds it. Only a form takes
-   * the caret: a guard announces itself through `role="alert"`, and a ⋮ sheet
-   * is a menu, so pulling focus into either answers a tap nobody made.
-   *
-   * Not on the update that opens the dialog, where a disclosure carried over
-   * from last time would scroll a pane nobody has looked at and take focus off
-   * the panel `Modal` just put it on. And a microtask late, because a ref fires
-   * while its subtree is still detached, where a scroll has nothing to act on
-   * and `focus()` is a silent no-op.
+   * Scroll a disclosure into view as it opens, and give a form's field (named
+   * by `data-field`) the caret. A ref fires only when the element is built, so
+   * each disclosure is `keyed` on its subject. Skipped on the update that opens
+   * the dialog, where `Modal` owns focus, and deferred a microtask because a
+   * ref fires while its subtree is still detached.
    */
   private _reveal = (el?: Element) => {
     if (!el || this._opening) return;
     queueMicrotask(() => {
       if (!el.isConnected) return;
-      // Scrolling needs a layout, and an environment that performs none offers
-      // no `scrollIntoView` to call.
+      // Optional: a test DOM without layout has no scrollIntoView.
       (el as HTMLElement).scrollIntoView?.({ block: 'nearest' });
       const field = (el as HTMLElement).dataset.field;
       if (field) el.querySelector<HTMLElement>(`[data-testid="${field}"]`)?.focus();
@@ -856,9 +754,8 @@ export class HVOrganizeDialog extends LitElement {
   };
 
   protected updated() {
-    // A native select stops following its options' `selected` attributes once it
-    // has been touched, so an area chosen in the parent tree is written to the
-    // live element rather than left to the bindings to express.
+    // A touched native select stops following its options' `selected`, so an
+    // area chosen in the parent tree is written to the live element.
     const areaSelect = this.renderRoot.querySelector<HTMLSelectElement>(
       '[data-testid="location-area"]',
     );
@@ -867,10 +764,7 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   protected willUpdate(changed: Map<string, unknown>) {
-    if (changed.has('store') && this.store) {
-      this._storeUnsub?.();
-      this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
-    }
+    if (changed.has('store') && this.store) this._subscribe();
     if (changed.has('open') && this.open) {
       this._opening = true;
       this._resetTransient();
@@ -901,11 +795,7 @@ export class HVOrganizeDialog extends LitElement {
   };
 
   // ---------- Chrome the four tabs share ----------
-  /**
-   * A tab's head row: what it is filtering, how many there are, and the one
-   * thing this tab creates. Statuses are a fixed vocabulary to scroll rather
-   * than a list to search, so the field is optional.
-   */
+  /** A tab's head row: its filter (statuses have none), its count and its create button. */
   private _renderToolbar(opts: {
     search?: { label: string; placeholder: string };
     count: string;
@@ -936,11 +826,7 @@ export class HVOrganizeDialog extends LitElement {
     </div>`;
   }
 
-  /**
-   * The commit row every inline form and guard ends with. A guard's commit is a
-   * text button in the error ink: it is the destructive half of a refusal, and
-   * the filled shape would read as the recommended way on.
-   */
+  /** The commit row every inline form and guard ends with; `danger` for a guard's. */
   private _renderFooter(opts: {
     lead?: unknown;
     cancelTestid: string;
@@ -1045,8 +931,7 @@ export class HVOrganizeDialog extends LitElement {
       }
       this._editingLocation = null;
     } catch (err) {
-      this._locError =
-        (err as { message?: string })?.message ?? t('hv.organize.locationSaveFailed');
+      this._locError = errorText(err, 'hv.organize.locationSaveFailed');
     }
   }
 
@@ -1054,8 +939,7 @@ export class HVOrganizeDialog extends LitElement {
     const children = node.children?.length ?? 0;
     const items = node.subtree_item_count ?? 0;
     if (children > 0 || items > 0) {
-      // Guard before asking the backend: it refuses a non-empty location, and
-      // saying why up front beats surfacing a validation error after the fact.
+      // The backend refuses a non-empty location; say why before asking it.
       const parts: string[] = [];
       if (items) parts.push(counted(items, 'item'));
       if (children) parts.push(counted(children, 'subLocation'));
@@ -1074,8 +958,7 @@ export class HVOrganizeDialog extends LitElement {
     } catch (err) {
       this._guard = {
         locationId: node.id,
-        message:
-          (err as { message?: string })?.message ?? t('hv.organize.locationDeleteFailed'),
+        message: errorText(err, 'hv.organize.locationDeleteFailed'),
       };
     }
   }
@@ -1090,46 +973,41 @@ export class HVOrganizeDialog extends LitElement {
     this._mergePicker.close();
   }
 
+  private _progress(
+    kind: RewriteKind,
+    done: number,
+    total: number,
+    finished = false,
+    failed: BulkFailure[] = [],
+    error: string | null = null,
+  ) {
+    this._rewrite = { kind, done, total, failed, finished, error };
+  }
+
   /**
-   * Fold one location into another and delete it.
-   *
-   * There is no merge endpoint, so this is the three moves it decomposes into:
-   * the items filed directly here are re-filed in one batch, each child subtree
-   * is re-parented (which rewrites its descendants' paths server-side), and the
-   * emptied location is deleted. The delete is skipped if anything before it
-   * failed — a location that still holds items is refused, and reporting the
-   * real reason beats a second, misleading error.
+   * Fold one location into another and delete it, as the three moves it
+   * decomposes into: re-file its direct items in one batch, re-parent each
+   * child subtree, delete the emptied location. The delete is skipped if
+   * anything before it failed, so the error reported is the real one.
    */
   private async _runLocationMerge(source: LocationTreeNode, targetId: string) {
-    const kind: RewriteKind = 'merge';
     this._mergingLocation = null;
-    this._rewrite = { kind, done: 0, total: 0, failed: [], finished: false, error: null };
+    this._progress('merge', 0, 0);
 
     let items: Item[];
     try {
       items = (await this.store?.listAllMatching({ location_id: source.id, include_subtree: false })) ?? [];
     } catch (err) {
-      this._rewrite = {
-        kind,
-        done: 0,
-        total: 0,
-        failed: [],
-        finished: true,
-        error: (err as { message?: string })?.message ?? t('hv.organize.locationReadFailed'),
-      };
+      this._progress('merge', 0, 0, true, [], errorText(err, 'hv.organize.locationReadFailed'));
       return;
     }
 
     const ops = items.map((i) =>
       makeBulkOp('item_move', { item_id: i.id, location_id: targetId, expected_version: i.version }),
     );
-    this._rewrite = { kind, done: 0, total: ops.length, failed: [], finished: false, error: null };
+    this._progress('merge', 0, ops.length);
     const outcome = ops.length
-      ? await this.store?.bulkExecute(ops, {
-          onProgress: (done, total) => {
-            this._rewrite = { kind, done, total, failed: [], finished: false, error: null };
-          },
-        })
+      ? await this.store?.bulkExecute(ops, { onProgress: (done, total) => this._progress('merge', done, total) })
       : undefined;
     const failed = outcome?.failed ?? [];
 
@@ -1141,9 +1019,7 @@ export class HVOrganizeDialog extends LitElement {
         }
         await this.store?.deleteLocation(source.id);
       } catch (err) {
-        error =
-          (err as { message?: string })?.message ??
-          t('hv.organize.mergeMovedNotRemoved', { name: source.name });
+        error = errorText(err, 'hv.organize.mergeMovedNotRemoved', { name: source.name });
       }
     } else {
       error = t('hv.organize.mergeKeptSource', {
@@ -1152,7 +1028,7 @@ export class HVOrganizeDialog extends LitElement {
       });
     }
 
-    this._rewrite = { kind, done: ops.length, total: ops.length, failed, finished: true, error };
+    this._progress('merge', ops.length, ops.length, true, failed, error);
   }
 
   // ---------- Categories & tags ----------
@@ -1160,10 +1036,15 @@ export class HVOrganizeDialog extends LitElement {
     return this.tab === 'tags' ? 'tag' : 'category';
   }
 
-  private get _values(): DistinctValue[] {
+  /** Every value of the open tab's facet. */
+  private get _allValues(): DistinctValue[] {
     const distinct = this.st?.distinctValuesCache;
-    const list = this.tab === 'tags' ? (distinct?.tags ?? []) : (distinct?.categories ?? []);
+    return (this.tab === 'tags' ? distinct?.tags : distinct?.categories) ?? [];
+  }
+
+  private get _values(): DistinctValue[] {
     const needle = this._filter.trim().toLowerCase();
+    const list = this._allValues;
     return needle ? list.filter((v) => v.value.toLowerCase().includes(needle)) : list;
   }
 
@@ -1177,10 +1058,7 @@ export class HVOrganizeDialog extends LitElement {
     return this.tab === 'tags' ? t('hv.organize.plural.tags') : t('hv.organize.plural.categories');
   }
 
-  /**
-   * One value of whichever facet the open tab manages, chipped the way the rest
-   * of the card chips it: a tag blue and marked, a category neutral.
-   */
+  /** One value of the open tab, chipped the way the rest of the card chips it. */
   private _valueChip(value: string, opts: { style?: string; testid?: string } = {}) {
     const style = opts.style ?? '';
     const testid = opts.testid ?? '';
@@ -1213,8 +1091,6 @@ export class HVOrganizeDialog extends LitElement {
     this._editingValue = { value, mode };
     this._sheetValue = null;
     this._rewrite = null;
-    // The list belongs to the row being opened, so it starts shut and unfiltered
-    // however the last one was left.
     this._valuePicker.close();
     if (mode === 'merge') {
       // Pre-fill the closest existing value, which is usually the typo fix.
@@ -1227,46 +1103,31 @@ export class HVOrganizeDialog extends LitElement {
   /** Fetch every affected item, then rewrite them in one chunked batch. */
   private async _runRewrite(from: string, to: string | null, rewrite: RewriteKind) {
     const kind = this._kind;
-    this._rewrite = { kind: rewrite, done: 0, total: 0, failed: [], finished: false };
+    this._progress(rewrite, 0, 0);
     let items;
     try {
       items = (await this.store?.listAllMatching(filterForValue(kind, from))) ?? [];
     } catch {
-      this._rewrite = { kind: rewrite, done: 0, total: 0, failed: [], finished: true };
+      this._progress(rewrite, 0, 0, true);
       return;
     }
     const ops = rewriteOps(kind, items, from, to);
     if (!ops.length) {
-      this._rewrite = { kind: rewrite, done: 0, total: 0, failed: [], finished: true };
+      this._progress(rewrite, 0, 0, true);
       this._editingValue = null;
       return;
     }
 
-    this._rewrite = { kind: rewrite, done: 0, total: ops.length, failed: [], finished: false };
+    this._progress(rewrite, 0, ops.length);
     const outcome = await this.store?.bulkExecute(ops, {
-      onProgress: (done, total) => {
-        this._rewrite = {
-          kind: rewrite,
-          done,
-          total,
-          failed: this._rewrite?.failed ?? [],
-          finished: false,
-        };
-      },
+      onProgress: (done, total) => this._progress(rewrite, done, total),
     });
-    this._rewrite = {
-      kind: rewrite,
-      done: ops.length,
-      total: ops.length,
-      failed: outcome?.failed ?? [],
-      finished: true,
-    };
+    this._progress(rewrite, ops.length, ops.length, true, outcome?.failed ?? []);
     this._editingValue = null;
     await this.store?.refreshDistinctValues().catch(() => undefined);
   }
 
   private _showValue(value: string) {
-    // Filtering by a value is the list's job, so hand it back and get out of the way.
     if (this.tab === 'tags') this.store?.setFilters({ tags: [value], tagsMode: 'any' });
     else this.store?.setFilters({ categories: [value] });
     this._browse();
@@ -1278,12 +1139,7 @@ export class HVOrganizeDialog extends LitElement {
     this._browse();
   }
 
-  /**
-   * Close, asking the host for the expanded surface.
-   *
-   * This dialog is full-screen, so returning to the small card to look at what
-   * you just picked means expanding again straight away.
-   */
+  /** Close, asking the host for the expanded surface to show what was picked. */
   private _browse() {
     this.dispatchEvent(new CustomEvent('browse', { bubbles: true, composed: true }));
     this._close();
@@ -1291,19 +1147,16 @@ export class HVOrganizeDialog extends LitElement {
 
   // ---------- Render ----------
   /**
-   * The consequence of the area select, spelled out before Save.
-   *
-   * An area belongs to a location tree, not to a location: assigning one moves it
-   * to the tree's root and clears every node below, and clearing one empties the
-   * tree. Both reach locations the editor does not show.
+   * The consequence of the area select, spelled out before Save: an area
+   * belongs to a whole location tree, so a change reaches locations the editor
+   * does not show.
    */
   private _renderAreaPreview(preview: AreaChangePreview) {
     const areas = this.st?.areasCache?.areas ?? [];
     const chip = renderAreaChip(areaNameById(areas, preview.effectiveAreaId));
     const wholeTree = preview.treeSize > 1 && preview.rootName !== null;
     const size = counted(preview.treeSize, 'location');
-    // The chip is an element, so the sentence around it is split at the
-    // placeholder rather than interpolated as text.
+    // The chip is an element, so the sentence is split at its placeholder.
     const around = (key: TranslationKey, params?: Record<string, string | number>) => {
       const [before, after] = t(key, { ...params, chip: '\u0000' }).split('\u0000');
       return html`${before}${chip}${after}`;
@@ -1324,9 +1177,7 @@ export class HVOrganizeDialog extends LitElement {
         ? html`${t('hv.organize.areaClearTree', { root: preview.rootName ?? '', size })}`
         : html`${t('hv.organize.areaClearOne')}`;
     } else if (this._locArea === null && preview.effectiveAreaId !== null) {
-      // Nothing to warn about — the save is a no-op — but a location that stores no
-      // area of its own still resolves to one, and the empty option it sits on says
-      // only where that comes from, never which area it is.
+      // No change, but name the area the empty option inherits.
       line = around('hv.organize.areaInherited');
     } else {
       return null;
@@ -1335,13 +1186,7 @@ export class HVOrganizeDialog extends LitElement {
     return html`<span class="note" data-testid="location-area-preview">${line}</span>`;
   }
 
-  /**
-   * What the parent button reads.
-   *
-   * A top-level location names the area it is filed under as well: the picker
-   * sets both, and the button would otherwise look untouched after an area was
-   * chosen in it.
-   */
+  /** What the parent button reads; a top-level one names its area, which the picker also sets. */
   private _parentLabel(parent: LocationTreeNode | null, areas: readonly AreaRef[]): string {
     if (parent) return parent.name;
     const areaName = areaNameById(areas, this._locArea);
@@ -1355,10 +1200,7 @@ export class HVOrganizeDialog extends LitElement {
     const node = nodeId === 'new' ? null : this._findNode(tree, nodeId);
     const parent = this._locParent ? this._findNode(tree, this._locParent) : null;
     const areas = this.st?.areasCache?.areas ?? [];
-    // The backend holds a tree's area on its root and resolves it downwards, so a nested
-    // location's effective area comes from the tree rather than from its immediate parent
-    // — naming the parent here would point at the wrong node. A top-level location has
-    // nothing above it to resolve from, so for it the empty value just means no area.
+    // A nested location inherits from its tree's root; a top-level one has no area.
     const areaDefaultLabel = parent
       ? t('hv.organize.areaInherit')
       : t('hv.term.noArea');
@@ -1384,10 +1226,7 @@ export class HVOrganizeDialog extends LitElement {
               }}
             />
           </div>
-          ${
-            // An inventory whose Home Assistant defines no areas has nothing to pick
-            // from, and the select would offer its own empty option alone.
-            areas.length
+          ${areas.length
               ? html`<div class="cell">
                   <label class="hv-label" for="org-loc-area">${t('hv.organize.locationArea')}</label>
                   <select
@@ -1405,8 +1244,7 @@ export class HVOrganizeDialog extends LitElement {
                   </select>
                   ${this._renderAreaPreview(preview)}
                 </div>`
-              : null
-          }
+              : null}
           <div class="cell wide">
             <span class="hv-label">
               ${t('hv.organize.parentLocation')}
@@ -1438,9 +1276,7 @@ export class HVOrganizeDialog extends LitElement {
                   this._locParent = (e.detail as { locationId: string | null }).locationId;
                 }}
                 @select-area=${(e: CustomEvent) => {
-                  // An area heads the top level rather than sitting in the tree,
-                  // so picking one is both halves of the move: out to the top
-                  // level, and into that area.
+                  // Picking an area moves the location to the top level, in it.
                   this._locParent = null;
                   this._locArea = (e.detail as { areaId: string }).areaId;
                 }}
@@ -1448,9 +1284,7 @@ export class HVOrganizeDialog extends LitElement {
             )}
           </div>
           ${
-            // haventory.item_create and location_create take this string as
-            // location_id / parent_id. A location that has not been saved yet has
-            // none, so the create form says nothing rather than showing a blank.
+            // The id automations pass as location_id / parent_id; unsaved has none.
             nodeId === 'new'
               ? null
               : html`<div class="cell wide">
@@ -1569,9 +1403,7 @@ export class HVOrganizeDialog extends LitElement {
               target: target.name,
               source: source.name,
             })
-          : // An area heads the tree without being part of it and holds no items
-            // of its own, so it is the one row here that cannot take a merge.
-            // Editing the location is where a whole subtree moves into an area.
+          : // An area cannot take a merge; the note points at editing instead.
             `${t('hv.organize.mergePickLocation')}${
               (this.st?.areasCache?.areas?.length ?? 0) > 0
                 ? t('hv.organize.mergeAreasNote')
@@ -1597,8 +1429,6 @@ export class HVOrganizeDialog extends LitElement {
     const tree = this.st?.locationTreeCache ?? [];
     const merging = this._mergingLocation ? this._findNode(tree, this._mergingLocation) : null;
     const sheeted = this._sheetLocation ? this._findNode(tree, this._sheetLocation) : null;
-    // Counted at every depth and against the filter, exactly as the other two
-    // tabs count their values, so all three tabs state a total in one idiom.
     const count = countLocations(tree, this._filter);
     return html`
       ${this._renderToolbar({
@@ -1614,7 +1444,7 @@ export class HVOrganizeDialog extends LitElement {
       })}
       <div class="body">
         ${this._editingLocation === 'new' ? this._renderLocationEditor('new') : null}
-        ${this._rewrite ? this._renderRewrite() : null}
+        ${this._rewrite ? this._renderRewrite(this._rewrite) : null}
         <hv-location-tree
           data-testid="organize-tree"
           manage
@@ -1674,9 +1504,7 @@ export class HVOrganizeDialog extends LitElement {
     return t(`hv.organize.rewrite.done.${rewrite.kind}`, { total });
   }
 
-  private _renderRewrite() {
-    const rewrite = this._rewrite;
-    if (!rewrite) return null;
+  private _renderRewrite(rewrite: RewriteState) {
     const pct = rewrite.total ? Math.round((rewrite.done / rewrite.total) * 100) : 100;
     const trouble = rewrite.failed.length > 0 || !!rewrite.error;
     return html`<div class="expander" data-testid="rewrite-status">
@@ -1704,13 +1532,7 @@ export class HVOrganizeDialog extends LitElement {
           >
         </div>`,
       )}
-      ${
-        // Only worth saying while it can still be interrupted, or when something
-        // did go wrong and "how much of this stands?" is a live question.
-        rewrite.finished && !trouble
-          ? null
-          : html`<span class="note">${t('hv.organize.rewriteNote')}</span>`
-      }
+      ${rewrite.finished && !trouble ? null : html`<span class="note">${t('hv.organize.rewriteNote')}</span>`}
       <div class="actions">
         <span class="spacer"></span>
         <button
@@ -1726,20 +1548,9 @@ export class HVOrganizeDialog extends LitElement {
     </div>`;
   }
 
-  /**
-   * The other values of the open tab, which is what a merge can land on.
-   *
-   * A value merged into itself is a no-op the Merge button would still offer,
-   * so the source is not among them.
-   */
+  /** The values a merge of `value` can land on: every other one of the tab. */
   private _otherValues(value: string): string[] {
-    return (
-      this.tab === 'tags'
-        ? (this.st?.distinctValuesCache?.tags ?? [])
-        : (this.st?.distinctValuesCache?.categories ?? [])
-    )
-      .map((v) => v.value)
-      .filter((v) => v !== value);
+    return this._allValues.map((v) => v.value).filter((v) => v !== value);
   }
 
   /** The tab's value as the merge target field prints it: a tag wears its mark. */
@@ -1747,13 +1558,7 @@ export class HVOrganizeDialog extends LitElement {
     return this.tab === 'tags' ? tagLabel(value) : value;
   }
 
-  /**
-   * What the merge target is set to, on the button that opens the list.
-   *
-   * The trigger and its list are the two halves of one control, drawn apart
-   * because the row above holds the struck source and the arrow and the list
-   * takes the full width under them.
-   */
+  /** The merge target's trigger, drawn apart from its full-width list below. */
   private _renderValueTargetTrigger(others: string[]) {
     const picked = this._valueDraft.trim();
     return this._valuePicker.renderTrigger({
@@ -1769,13 +1574,8 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   /**
-   * The values a merge can land on, as the card's own elements.
-   *
-   * A native `<datalist>` draws its suggestions as browser chrome, and the Home
-   * Assistant companion app's Android WebView draws none at all: the field
-   * there opens nothing, and a household on a phone has no way to name a
-   * target. It is a pick rather than free text — a merge lands on a value that
-   * already exists, and typing one that does not is what rename is for.
+   * The values a merge can land on, as the card's own elements: the companion
+   * app's Android WebView draws no `<datalist>` suggestions at all.
    */
   private _renderValueTargetList(others: string[]) {
     const picked = this._valueDraft.trim();
@@ -1919,30 +1719,15 @@ export class HVOrganizeDialog extends LitElement {
     return statusList(this.st?.statuses);
   }
 
-  /**
-   * How many items carry a slug.
-   *
-   * Every row here names a status this dialog just listed, so a slug the counts
-   * cannot price is one the payload has not caught up with — a row reading
-   * "0 items" for the moment it takes is better than a row with no count at
-   * all, because the count doubles as this tab's link into the items.
-   */
+  /** How many items carry a slug; 0 until the counts catch up with a new one. */
   private _statusCount(slug: string): number {
     return statusCount(this.st?.statsCounts, slug) ?? 0;
   }
 
   /**
-   * The label of the status the one being typed would duplicate, or null.
-   *
-   * Two statuses labelled the same are indistinguishable in every row badge,
-   * filter chip and select on the card — only the slug tells them apart, and
-   * the slug is what the editor hides. The status being edited is excluded:
-   * keeping its own name is not a collision.
-   *
-   * Compared against what each status *displays*, not what it stores: a reader
-   * in German sees "Fehlt" on the chips, and typing that word is the collision
-   * they would have to live with. The stored English behind it is not on any
-   * screen, so a warning about it would name a word nobody can see.
+   * The displayed label of another status the one being typed would duplicate,
+   * or null. Compared against what each status displays, since that is what
+   * would be indistinguishable on the card.
    */
   private get _duplicateLabel(): string | null {
     const typed = this._statusLabel.trim().toLowerCase();
@@ -1957,10 +1742,8 @@ export class HVOrganizeDialog extends LitElement {
   private _startStatusEdit(slug: string | 'new') {
     const existing = slug === 'new' ? undefined : this._statusDefs.find((d) => d.slug === slug);
     this._editingStatus = slug;
-    // The stored label, never the displayed one. The box is what `_saveStatus`
-    // writes: seeded with a translation, a German household that opened this
-    // editor and pressed save would rename the built-in three for everyone,
-    // English readers included, and no language could translate them again.
+    // The stored label, never the displayed one: seeded with a translation, a
+    // save would rename a built-in for every language.
     this._statusLabel = existing?.label ?? '';
     this._statusColor = existing?.color ?? 'neutral';
     this._statusIcon = existing?.icon ?? 'check';
@@ -1995,8 +1778,7 @@ export class HVOrganizeDialog extends LitElement {
       this._editingStatus = null;
       this._statusError = null;
     } catch (err) {
-      this._statusError =
-        (err as { message?: string })?.message ?? t('hv.organize.statusSaveFailed');
+      this._statusError = errorText(err, 'hv.organize.statusSaveFailed');
     }
   }
 
@@ -2013,19 +1795,13 @@ export class HVOrganizeDialog extends LitElement {
     try {
       await this.store?.reorderStatuses(slugs);
     } catch (err) {
-      this._statusError =
-        (err as { message?: string })?.message ?? t('hv.organize.statusReorderFailed');
+      this._statusError = errorText(err, 'hv.organize.statusReorderFailed');
     }
   }
 
   /**
-   * Ask before deleting, in one idiom whichever branch it is.
-   *
-   * Both branches open the same inline disclosure: the in-use one carries the
-   * reassign select — the backend refuses a delete that would strand items, and
-   * picking where they go turns that refusal into a completed move — and the
-   * unused one carries the question alone. Split across a disclosure and a
-   * modal, the consequential path takes the lighter ceremony.
+   * Ask before deleting, in one inline disclosure; an in-use status adds the
+   * reassign select, since the backend refuses a delete that strands items.
    */
   private _askDeleteStatus(slug: string) {
     const count = this._statusCount(slug);
@@ -2040,8 +1816,7 @@ export class HVOrganizeDialog extends LitElement {
       this._statusGuard = null;
       this._statusError = null;
     } catch (err) {
-      this._statusError =
-        (err as { message?: string })?.message ?? t('hv.organize.statusDeleteFailed');
+      this._statusError = errorText(err, 'hv.organize.statusDeleteFailed');
     }
   }
 
@@ -2060,8 +1835,7 @@ export class HVOrganizeDialog extends LitElement {
         ${defs.map((d, index) => {
           const isDefault = d.slug === DEFAULT_STATUS;
           const count = this._statusCount(d.slug);
-          // What the chip beside these buttons says, so a screen reader names
-          // the row the same way the screen does.
+          // What the chip says, so a screen reader names the row the same way.
           const shown = displayLabel(d);
           return html`
             <div class="value-row status-row" data-testid="status-row" data-value=${d.slug}>
@@ -2120,7 +1894,7 @@ export class HVOrganizeDialog extends LitElement {
               </span>
             </div>
             ${this._editingStatus === d.slug ? this._renderStatusEditor(d.slug) : null}
-            ${this._statusGuard?.slug === d.slug ? this._renderStatusGuard() : null}
+            ${this._statusGuard?.slug === d.slug ? this._renderStatusGuard(this._statusGuard) : null}
           `;
         })}
         ${this._statusError && !this._editingStatus
@@ -2144,13 +1918,9 @@ export class HVOrganizeDialog extends LitElement {
     const duplicate = this._duplicateLabel;
     const glyph = knownIcon(this._statusIcon);
     const custom = isHexColor(this._statusColor) ? this._statusColor : null;
-    // A built-in nobody has renamed stores English and prints the reader's
-    // language, so for that reader the box and the chips say different words.
-    // Showing what the box's text prints as is what stops the English in it
-    // reading as a mistake to be corrected — correcting it is exactly the
-    // rename that would take the translation away from everyone. Dropped as
-    // soon as the box stops holding the stored label: from that keystroke on
-    // it is a new name, and the translation no longer describes it.
+    const face = glyph ? icon(glyph, 15) : html`<span class="letters">Aa</span>`;
+    // While the box holds an untranslated stored label, show what it prints as,
+    // so the English is not "corrected" into a rename for everyone.
     const stored = creating ? undefined : this._statusDefs.find((d) => d.slug === slug);
     const shown = stored ? displayLabel(stored) : null;
     const printsAs =
@@ -2201,7 +1971,7 @@ export class HVOrganizeDialog extends LitElement {
                 this._statusColor = c;
               }}
             >
-              ${glyph ? icon(glyph, 15) : html`<span class="letters">Aa</span>`}
+              ${face}
             </button>`,
           )}
           <label
@@ -2218,7 +1988,7 @@ export class HVOrganizeDialog extends LitElement {
                 this._statusColor = (e.target as HTMLInputElement).value.toLowerCase();
               }}
             />
-            ${glyph ? icon(glyph, 15) : html`<span class="letters">Aa</span>`}
+            ${face}
           </label>
         </div>
         ${custom
@@ -2262,9 +2032,7 @@ export class HVOrganizeDialog extends LitElement {
     );
   }
 
-  private _renderStatusGuard() {
-    const guard = this._statusGuard;
-    if (!guard) return null;
+  private _renderStatusGuard(guard: { slug: string; count: number }) {
     const label = statusLabel(guard.slug, this._statusDefs);
     const targets = this._statusDefs.filter((d) => d.slug !== guard.slug);
     const inUse = guard.count > 0;
@@ -2332,7 +2100,7 @@ export class HVOrganizeDialog extends LitElement {
       })}
       <div class="body">
         ${this._creatingValue ? this._renderValueCreator() : null}
-        ${this._rewrite ? this._renderRewrite() : null}
+        ${this._rewrite ? this._renderRewrite(this._rewrite) : null}
         ${values.length
           ? values.map(
               (v) => html`
@@ -2455,17 +2223,13 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   /**
-   * Focus for a closed delete confirmation whose ✕ refused the return: the ✕
-   * sits in hover-revealed row actions and the pointer is on the confirmation
-   * at that moment, so a real browser will not focus it. The row takes the
-   * focus instead — `:focus-within` re-reveals its actions, and Tab continues
-   * from the user's place in the list. The panel catches the row being gone,
-   * which is what a confirmed removal leaves behind.
+   * Focus for a closed delete confirmation whose ✕ opener is hidden in
+   * hover-revealed row actions: the row takes it (`:focus-within` re-reveals
+   * the actions), or the panel once a removal has taken the row away.
    */
   private _refocusConfirmRow = () => {
     const value = this._lastConfirmValue;
-    // Matched on `dataset` rather than an attribute selector: a tag is free
-    // text, and a quote in one ends the selector early.
+    // Matched on `dataset`: a quote in a tag would end an attribute selector.
     const row =
       value === null
         ? null
@@ -2480,13 +2244,7 @@ export class HVOrganizeDialog extends LitElement {
 
   render() {
     if (!this.open) return null;
-    const removeCount =
-      this._values.find((v) => v.value === this._confirmRemove)?.count ??
-      (this.tab === 'tags'
-        ? (this.st?.distinctValuesCache?.tags ?? [])
-        : (this.st?.distinctValuesCache?.categories ?? [])
-      ).find((v) => v.value === this._confirmRemove)?.count ??
-      0;
+    const removeCount = this._allValues.find((v) => v.value === this._confirmRemove)?.count ?? 0;
 
     return html`
       ${this._modal.render(
@@ -2539,11 +2297,7 @@ export class HVOrganizeDialog extends LitElement {
         `,
       )}
 
-      <!-- The confirmation answers to this dialog, and its answer stops here: it
-           reports a dismissal as a cancel event, which is what a host listening
-           on this element reads as "close Organize". Unstopped, backing out of
-           one tag's delete takes the whole dialog down with it, and the caret
-           the confirmation hands back lands behind a surface that is gone. -->
+      <!-- Its events stop here: an escaping cancel reads to the host as "close Organize". -->
       <hv-confirm
         data-testid="organize-confirm"
         ?open=${this._confirmRemove !== null}
