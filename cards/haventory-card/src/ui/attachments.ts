@@ -8,36 +8,16 @@ import type { Item } from '../store/types';
 import '../components/hv-lightbox';
 
 /**
- * The photo tile and the document row, as the editor and the detail sheet both
- * draw them.
- *
- * The two surfaces show the same attachments for two different jobs — one
- * manages them, one reads them — so their strips differ in size, in what sits
- * beside each entry and in the words on the link. What they must never differ
- * in is what happens when the backend has no file behind a reference: an export
- * carries the metadata and not the bytes, so a fresh install genuinely holds
- * pictures and documents whose files were never uploaded to it, and both
- * surfaces answer that with the same amber mark rather than handing an `<img>`
- * or a link a URL that can only 404. That rule, and the branch it hangs on,
- * are written here once.
- *
- * The sizes, the tile classes and the test-ids stay parameters: a browser
- * harness locates the editor's and the sheet's strips separately, and one
- * renderer is what keeps them byte-identical.
+ * The photo tile and the document row, shared by the editor and the detail
+ * sheet. An import can carry references whose files this install never got, so
+ * both mark a missing file the same way rather than handing out a URL that 404s.
  */
 
-/** Two classes into one attribute, without the gap an absent one would leave. */
 const classes = (...parts: (string | undefined)[]) => parts.filter(Boolean).join(' ');
 
 /**
- * The glyph {@link renderDocumentRow} puts at the head of every document row.
- *
- * It is drawn here, so its box is declared here too: the rows are a flex line
- * and the glyph is the one part that must not give up width to the file name
- * beside it, whatever the surface sizes the row at.
- *
- * Usage: `static styles = [tokens, base, docIcon, css\`...\`]`, on a surface
- * whose list carries `documents`.
+ * The document row's leading glyph, which must not give up width to the name.
+ * Usage: `static styles = [tokens, base, docIcon, css\`...\`]` on a `documents` list.
  */
 export const docIcon = css`
   .documents .doc-icon {
@@ -66,10 +46,7 @@ export interface PhotoFigureStyle {
   tileClass?: string;
   /** Classes on the button that opens the lightbox. */
   openClass?: string;
-  /**
-   * Draw a tile while there is no URL yet. Without it the figure is left out
-   * of the strip entirely until there is something in it to show.
-   */
+  /** Draw a tile while there is no URL yet, rather than leaving the figure out. */
   pendingTile?: boolean;
 }
 
@@ -82,13 +59,8 @@ export interface PhotoFigure extends AttachmentFile {
 }
 
 /**
- * One tile of a picture strip, or nothing when there is neither a picture to
- * show nor a state to report.
- *
- * `extra` is whatever the surface hangs on the tile — the editor's remove
- * button and its reorder row — and it is drawn for every state, including the
- * missing one: a reference the backend cannot resolve is still the item's to
- * clear.
+ * One tile of a picture strip, or nothing to show. `extra` (the editor's remove
+ * and reorder controls) is drawn in every state: a missing file is still clearable.
  */
 export function renderPhotoFigure(
   photo: PhotoFigure,
@@ -134,13 +106,8 @@ export interface DocumentRowStyle {
 }
 
 /**
- * One row of a document list: the file glyph, whatever the surface puts in the
- * middle, the way in or the reason there is none, and whatever the surface
- * hangs on the end.
- *
- * The link is an anchor to the signed URL rather than a button that fetches
- * one: the URL has to be on the element before the tap, or a popup blocker
- * eats the tab a handler would open after awaiting a signature.
+ * One row of a document list. The link is an anchor to the already-signed URL,
+ * since a popup blocker eats a tab opened after awaiting a signature.
  */
 export function renderDocumentRow(
   doc: AttachmentFile,
@@ -179,20 +146,12 @@ export interface LightboxHost {
   media: MediaBindings | null;
   /** Which picture to open at, null for closed. */
   index: number | null;
-  /**
-   * Where focus belongs when the photo that opened it has been removed from
-   * under it. Only the surface still on screen knows.
-   */
+  /** Where focus goes when the photo that opened it was removed. */
   onOpenerGone: () => void;
   onClose: () => void;
 }
 
-/**
- * The lightbox, hung outside the surface that opens it.
- *
- * Its `close` is stopped here: a host listening to the surface for "the user is
- * done" must not read a photo being shut as the surface being shut.
- */
+/** The lightbox; its `close` is stopped here so a host does not read it as its own. */
 export function renderLightboxHost(opts: LightboxHost): TemplateResult {
   return html`<hv-lightbox
     data-testid=${opts.testid}

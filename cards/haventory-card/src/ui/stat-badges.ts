@@ -8,15 +8,8 @@ import type { QuickFilterKey } from './quick-filters';
 import type { StatsCounts, StoreFilters } from '../store/types';
 
 /**
- * The counts both of the card's surfaces price, as pressable filters.
- *
- * The compact card draws them as badges in its header and the expanded view as
- * pills on its coloured bar: same five counts, same keys, same gates, two
- * dressings. Written twice the two copies were free to disagree about which
- * count a pill reads and when it is drawn at all, so the arithmetic lives here
- * and what each surface calls its pills is a parameter — the browser harnesses
- * locate `badge-*` and `full-badge-*`, and one renderer is what keeps them
- * byte-identical.
+ * The five counts as pressable filters, for the card's header badges and the
+ * expanded view's pills alike; each surface passes its own test-id prefix.
  */
 
 /** The hue a pill carries; what each one means is `ui/chip`'s vocabulary. */
@@ -41,11 +34,7 @@ interface BadgeSpec {
   title: TranslationKey;
 }
 
-/**
- * The five, in the order both surfaces draw them. The optional counts are the
- * calendar-derived ones an older backend does not send; absent reads as none,
- * which is the gate below anyway.
- */
+/** The five, in drawing order. */
 const BADGES: readonly BadgeSpec[] = [
   {
     quick: 'low_stock',
@@ -98,16 +87,9 @@ const BADGES: readonly BadgeSpec[] = [
 export interface StatBadgeOptions {
   /** `badge` on the card, `full-badge` in the expanded view. */
   prefix: string;
-  /**
-   * The chip classes a pill of that hue wears, after `hv-chip`. A surface that
-   * paints its own fills answers for the hues it substitutes, and for any it
-   * declines to carry.
-   */
+  /** The chip classes a pill of that hue wears, after `hv-chip`. */
   chipClass: (tone: BadgeTone) => string;
-  /**
-   * Draw the inventory total as a quiet chip, in the classes named here. It
-   * reports rather than filters, and only the card's header has a row for it.
-   */
+  /** Draw the inventory total as a quiet, non-filtering chip in these classes. */
   total?: string;
   setFilters: (patch: Partial<StoreFilters>) => void;
 }
@@ -128,14 +110,7 @@ export interface StatBadges {
   any: boolean;
 }
 
-/**
- * Price the inventory's exceptions, or answer null when there are no counts to
- * price yet.
- *
- * A pill shows when the dashboard allows it *and* its count clears the gate it
- * always had: the config decides what is on offer, the count decides whether
- * there is anything to say.
- */
+/** The pills the config allows and whose count is above zero; null before any counts. */
 export function renderStatBadges(
   st: StatBadgeState | null,
   quickFilters: QuickFilterKey[] | null,
