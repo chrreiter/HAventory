@@ -2,16 +2,18 @@
 
 ## Overview
 
-The HAventory Lovelace card is a Home Assistant dashboard component built with:
+The HAventory Lovelace card lives in `cards/haventory-card/` and is built with:
 
-- **Framework**: Lit 3 (web components, shadow DOM)
-- **Language**: TypeScript 6 (`strict`)
-- **Build**: Vite 8, producing a single ESM bundle at
+- **Framework**: Lit (web components, shadow DOM)
+- **Language**: TypeScript (`strict`)
+- **Build**: Vite, producing a single ESM bundle at
   `custom_components/haventory/www/haventory-card.js`, which the integration serves at
   `/haventory_static/haventory-card.js`
-- **Tests**: Vitest 4 with jsdom
+- **Tests**: Vitest with jsdom
 
-It provides the full inventory UI, updating live over the HAventory WebSocket API.
+The versions are the ones `package.json` pins. The card is the full inventory UI, updating
+live over the HAventory WebSocket API ([`backend_api_contract.md`](backend_api_contract.md)).
+Paths below are relative to `cards/haventory-card/`.
 
 ---
 
@@ -79,9 +81,9 @@ removed. The `sidebar_panel_enabled` option turns it off, and both calls fire th
 panel-update event, so the sidebar follows without a restart.
 
 Both hosts hold a `HostSurfaces` instance (`src/host-surfaces.ts`): every surface
-`hv-full-view` can raise but not answer itself. That is the column picker, the export
-download, the delete/discard confirmation, the organize dialog, the import sheet, the
-diagnostics panel with its refresh state, and the shared ⋮ menu-entry builder. On the card
+`hv-full-view` can raise but not answer itself. That is the five dialogs (column picker,
+delete/discard confirmation, organize dialog, import sheet, diagnostics panel with its
+refresh state), the export download, and the shared ⋮ menu-entry builder. On the card
 side the instance lives in `hv-card-shell`; on the panel it lives in the panel element
 directly. Host differences enter as constructor hooks (`onItemDeleted`, `onBrowse`). The
 phone form of those dialogs is not one of them: the instance watches the viewport itself
@@ -122,11 +124,12 @@ Home Assistant theme variable bound without a line in `HA_THEME_VARS`.
 ```
 haventory-card                     Lovelace element; store owner
 └── hv-card-shell                  container: header, search, filters, list, footer;
-    │                              holds the HostSurfaces instance (the four dialogs
+    │                              holds the HostSurfaces instance (the five dialogs
     │                              below it render through that) and the ItemWorkspace
     │                              (the editor, the read sheet and the check-out step)
     ├── hv-overflow-menu           the ⋮ menu (also used by the app bar and rows)
     ├── hv-filter-chips            removable chips for every active filter
+    ├── hv-bottom-sheet            phone surface for the filter sheet and the add sheet
     ├── hv-filter-panel            the complete filter set; desktop panel / mobile sheet
     │   └── hv-location-tree       recursive tree with backend counts
     ├── hv-list                    rows, skeletons, empty states, near-end scroll
@@ -141,15 +144,16 @@ haventory-card                     Lovelace element; store owner
     ├── hv-detail-sheet            the narrow read view, on the card and the full
     │   │                          view alike: read + edit in one sheet (a save that
     │   │                          lands returns it to read), photo gallery strip and
-    │   │                          the Documents list
+    │   │                          the Documents list; drawn in an hv-bottom-sheet
     │   ├── hv-item-editor
     │   ├── hv-lightbox            photos full-size, with arrows and a counter
     │   └── hv-checkout-popover    inline due-date step
     ├── hv-checkout-popover        desktop: anchored due-date step
+    ├── hv-column-picker           which table columns show, and their order
     ├── hv-organize-dialog         Locations / Categories / Tags / Statuses
     ├── hv-import-sheet            input → preview → summary (+ invalid-document state)
     ├── hv-diagnostics-panel       subscriptions, counts, version, copy report
-    ├── hv-confirm                 in-app confirmation (replaces window.confirm)
+    ├── hv-confirm                 in-app confirmation, never window.confirm
     ├── hv-banner                  the one alert treatment; the degraded and error
     │                              stacks are built in ui/banners.ts and rendered
     │                              by the card and the full view alike
@@ -410,7 +414,7 @@ of the tree the save produces. With no areas defined the field is left out entir
 (`store/location-tree.ts`, pure and DOM-free) and draws one header row per area, ordered by
 area name with the same collator that sorts the tree. Roots belonging to no area follow
 under a "No area" header, which appears only when at least one area group does, so an
-inventory that uses no areas renders as before. Headers are `treeitem`s one level above
+inventory that uses no areas renders no headers at all. Headers are `treeitem`s one level above
 their members, collapse like any node (a `_collapsedAreas` set, so absence means open), sum
 their members' subtree counts, and stay visible while any member survives the text filter.
 
@@ -444,7 +448,7 @@ it, so each container subscribes to `store.state.onChange` itself, through the
 
 | Module | What it does |
 |---|---|
-| `tokens.ts` | Every design token as a `--hv-*` custom property, bound to the HA theme variable first with the mock hex as fallback, plus dark-mode and reduced-motion overrides. `base` adds the pill, icon-button, chip and input primitives. Composed as `static styles = [tokens, base, css\`…\`]`. |
+| `tokens.ts` | Every design token as a `--hv-*` custom property, bound to the HA theme variable first with a fixed hex as fallback, plus dark-mode and reduced-motion overrides. `base` adds the pill, icon-button, chip and input primitives. Composed as `static styles = [tokens, base, css\`…\`]`. |
 | `icons.ts` | Material Design Icons path data, inlined and rendered as `<svg fill="currentColor">`. See the note below. |
 | `brand-icon.ts` | The HAventory mark as one path, published to HA's icon registry (`window.customIcons`) under the `haventory:` prefix so the sidebar entry can name it. The backend's `PANEL_ICON` is the matching string. |
 | `responsive.ts` | The two phone predicates, both as Lit reactive controllers: `ResponsiveController` drives mobile mode from the card's own measured width (≤600px), and `ViewportNarrow` follows `NARROW_QUERY`, the viewport query every fixed overlay switches on. |
@@ -469,14 +473,31 @@ it, so each container subscribes to `store.state.onChange` itself, through the
 | `attachments.ts` | The photo figure, the document row and the lightbox host the item editor and the detail sheet share, in particular the one answer both give to a reference whose file the backend does not have. |
 | `plural.ts` | Count agreement for every count string in the card. |
 | `theme.ts` | Whether the card is painted on a light or dark surface, read from HA's own theme variables rather than `prefers-color-scheme`. |
+| `chip.ts` | The chip vocabulary (`.hv-area-chip` among it): the small pill that reports one fact beside the thing it qualifies, at one size on every surface. |
+| `banners.ts` | The connection and error banner stacks, rendered through `hv-banner` by the card, the full view and the panel alike. |
+| `stat-badges.ts` | The counts both surfaces show as pressable filters: badges in the card header, pills on the full view's bar. |
+| `quick-filters.ts` | The quick-filter pill vocabulary (`QUICK_FILTER_KEYS`) and the rule for which pills a dashboard allows. |
+| `filter-chrome.ts` | The search box, applied-filter chips, filter panel and the head and commit rows a staged panel needs. |
+| `row-chrome.ts` | What a row of items is made of, shared by `hv-list-row` and `hv-data-table`. |
+| `browse-row.ts` | The metrics of a browse row, shared by `hv-location-tree` and the full view's facet lists so a name starts at the same inset in both. |
+| `discard.ts` | `discardPrompt()`, the one question asked before typed edits are thrown away. |
+| `editor-error.ts` | What an open editor says about a save that did not land. |
+| `reminder.ts` | Reading a reminder off an item: whether it has one, and whether it has come round. |
+| `field-label.ts` | A custom field's key written for reading (`purchase_price` → `Purchase price`); editing surfaces keep the key as typed. |
+| `clipboard.ts` | Copying one string, falling back to `execCommand` where `navigator.clipboard` is missing (plain `http://`). |
+| `card-title.ts` | `DEFAULT_CARD_TITLE`, which must equal the integration's `const.py` value. |
+
+Beside `ui/`, `src/utils/` holds `debounce` and `nextZBase` (the z-index pair each modal
+takes, counted on `window` so several cards stack correctly), and `src/store/` holds the
+store and its helpers (below).
 
 ### Inline SVG instead of `<ha-icon>`
 
 `ha-icon` resolves only inside the Home Assistant frontend: in Vitest/jsdom it is an
 unresolved custom element that renders nothing, and it leaves the card icon-less anywhere HA
 has not loaded its icon set. The glyphs are inlined as path data instead (Material Design
-Icons, Apache-2.0), which renders everywhere and is assertable in a test. `ha-button-menu` /
-`mwc-list-item` are replaced by `hv-overflow-menu` for the same reason. The rule in full is
+Icons, Apache-2.0), which renders everywhere and is assertable in a test. `hv-overflow-menu`
+stands in for `ha-button-menu` / `mwc-list-item` for the same reason. The rule in full is
 [`CONTRIBUTING.md`](../CONTRIBUTING.md) → "The card renders no `ha-*` element".
 
 ---
@@ -555,20 +576,20 @@ for as long as the page stayed open.
 
 **The day turning over.** Every date the card renders (the overdue and inspection chips, the
 table's tones, the sheet's facts) is a pure function of the item and the clock, read at
-render, so nothing redrew when the only thing that moved was the date. A card on a wall
-tablet sat on yesterday's chips until somebody edited something, while the sensors beside it
-had rolled over at midnight. `ui/day-clock.ts` is one module-level timer to the next local
-midnight (plus a second, so a timer firing a hair early still reads the new day).
-`hv-list-row`, `hv-data-table`, `hv-detail-sheet` and `hv-item-editor` subscribe on connect
-and re-render, and the store re-reads `haventory/stats`. It also compares the day on
-`visibilitychange`, because a device that slept through midnight wakes with a timer that
-fired late or not at all.
+render, so nothing would redraw when only the date moved: a card on a wall tablet would sit
+on yesterday's chips while the sensors beside it rolled over. `ui/day-clock.ts` is one
+module-level timer to the next local midnight (plus a second, so a timer firing a hair early
+still reads the new day). `hv-list-row`, `hv-data-table`, `hv-detail-sheet` and
+`hv-item-editor` subscribe on connect and re-render, and the store re-reads
+`haventory/stats`. It also compares the day on `visibilitychange`, because a device that
+slept through midnight wakes with a timer that fired late or not at all.
 
-The counts have two paths and want both: the backend broadcasts `stats/counts` at the
-*instance's* midnight, which is the one that keeps the pills agreeing with the sensors, and
-the store's own read covers that event being served by a backend too old to send it. The
-rows follow the *browser's* midnight. The two are one instant in the ordinary case, and the
-zone split is the follow-up #579 named.
+The counts have two paths: the backend broadcasts `stats/counts` at the *instance's*
+midnight, which keeps the pills agreeing with the sensors, and the store's own re-read at
+the *browser's* midnight is the backstop if that event is missed. The rows follow the
+browser's midnight. The two are one instant when the browser and the instance share a time
+zone; when they do not, the rows and the counts can disagree until both midnights have
+passed.
 
 **Why the card offers a manual Refresh.** Subscription events carry no sequence number, so
 a client that missed one cannot detect the gap. Re-listing on demand is the documented
@@ -641,8 +662,8 @@ Any other key in that record is ignored, so an older or newer payload never brea
   and the lightbox wait for the image to fail and ask then (`PictureFallback`), because a
   table of two hundred rows would otherwise put two hundred extra questions to the backend.
   Only a 404 counts as missing; an inconclusive probe leaves the picture alone.
-- **Optimistic writes** stay as they were; a rejected save keeps the expander open with the
-  user's text in it, and conflicts render as a banner with *View latest* / *Re-apply*.
+- **Writes are optimistic.** A rejected save keeps the expander open with the user's text in
+  it, and a conflict renders as a banner with *View latest* / *Re-apply*.
 - **An item save carries only what the edit changed**, measured against the copy of the
   item the form was filled from. The form stays open across live events, so by the time
   Save is pressed the version it writes against can already carry another member's edit.
@@ -674,8 +695,9 @@ Any other key in that record is ignored, so an older or newer payload never brea
 ## Data flow
 
 **Startup**: `hass` set, `new Store(hass)`, `init()` warms stats, areas, tree, flat
-locations, distinct values and version in parallel, then `listItems(true)`, then subscribes
-to items, locations and stats, and to HA's `area_registry_updated`.
+locations, distinct values, version and config in parallel, then `listItems(true)`, then
+opens the four topic subscriptions (items, stats, locations, statuses), HA's
+`area_registry_updated`, the connection watch and the day clock.
 
 **A user action**: the container calls the store, the store applies the change
 optimistically and notifies, the container re-renders, the WS call resolves, and the store
@@ -692,9 +714,13 @@ re-subscribes if the location scope changed, and re-lists.
 
 ## Testing
 
-Component tests follow one pattern: `document.createElement`, set properties, await
-`updateComplete`, query the shadow root by `data-testid`, dispatch real events. Every
-interactive element carries a testid.
+Component tests follow one pattern: mount with `mountComponent` from `src/test.utils.ts`
+(which creates the element, sets its properties and awaits the render), query the shadow root
+by `data-testid` with `q` / `all`, dispatch real events, and `settle` before asserting.
+`componentCss(tag)` reads a component's stylesheets, because jsdom lays nothing out. The
+components that take a `store` (`hv-card-shell`, `hv-full-view`, `hv-organize-dialog`) mount
+through `mountHost`, which builds the store over a mock hass first. Every interactive element
+carries a testid. Use these helpers rather than a per-file copy.
 
 `src/test.utils.ts` provides `makeMockHass()`, an in-memory backend mirroring the WS
 contract, including `items/bulk` with per-op results, a real nested `location/tree` with
