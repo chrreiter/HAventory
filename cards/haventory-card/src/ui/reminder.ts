@@ -1,10 +1,4 @@
-/**
- * Reading a reminder off an item, for every surface that shows one.
- *
- * The detail sheet's fact row and the table's reminder column ask the same two
- * questions — what does this reminder say, and has it come round — so they ask
- * them here rather than each spelling out the date-and-interval rule.
- */
+/** Reading a reminder off an item, for every surface that shows one. */
 
 import { tn } from '../i18n';
 import type { PluralKey } from '../i18n';
@@ -17,11 +11,8 @@ export function hasReminder(item: Item): boolean {
 }
 
 /**
- * True once the reminder's occurrence has arrived.
- *
- * Inclusive of today, unlike `isOverdue` for a due date: a reminder names the
- * day something should be done, so the day itself is when it is asking, not the
- * last day it is not. "Check the smoke detector today" is due today.
+ * True once the occurrence has arrived. Inclusive of today, unlike `isOverdue`:
+ * a reminder names the day something should be done.
  */
 export function isReminderDue(item: Item, now: number = Date.now()): boolean {
   const date = item.reminder_date;
@@ -34,21 +25,12 @@ const UNIT_KEYS = {
   months: 'hv.reminder.every.months',
 } as const satisfies Record<ReminderUnit, PluralKey>;
 
-/** "every 3 months", "every day" — the repeat in the words a household uses. */
+/** "every 3 months", "every day". */
 export function formatInterval(interval: ReminderInterval | null | undefined): string | null {
-  if (!interval) return null;
-  const key = UNIT_KEYS[interval.unit];
-  if (!key) return null;
-  return tn(key, interval.count);
+  return interval ? tn(UNIT_KEYS[interval.unit], interval.count) : null;
 }
 
-/**
- * The whole reminder on one line, or null when there is none.
- *
- * A one-off is its date alone; a series adds the repeat, because the date on
- * its own cannot tell the two apart and the difference is what "Mark done"
- * means — a series moves on, a one-off has nowhere to go.
- */
+/** The whole reminder on one line: the date, plus the repeat for a series. */
 export function reminderSummary(item: Item, now: number = Date.now()): string | null {
   if (!item.reminder_date) return null;
   const repeat = formatInterval(item.reminder_interval);
@@ -56,12 +38,7 @@ export function reminderSummary(item: Item, now: number = Date.now()): string | 
   return repeat ? `${date} · ${repeat}` : date;
 }
 
-/**
- * True when "Mark done" can do anything.
- *
- * The backend refuses a bump on a one-off — it has no next occurrence to move
- * to — so the action is only offered where it would succeed.
- */
+/** True when "Mark done" can do anything: the backend refuses a bump on a one-off. */
 export function canBumpReminder(item: Item): boolean {
   return !!item.reminder_date && !!item.reminder_interval;
 }

@@ -1,17 +1,7 @@
 /**
- * Naming the save shortcut in the language of the keyboard actually in front of
- * the user.
- *
- * The save binding accepts either modifier (`e.metaKey || e.ctrlKey`), so
- * Ctrl+Enter saves on every platform. Only the printed hint varies, and getting
- * it wrong advertises a ⌘ key the keyboard may not have.
- *
- * A dashboard is opened from whatever is to hand, and a card cannot see the
- * hardware — only what the browser reports about the OS it runs on. So the rule
- * is: print ⌘ only where a Command key is positively identified, and fall back to
- * the PC labelling everywhere else, including when the platform is unreadable.
- * Being told Ctrl on a Mac still works (Ctrl+Enter saves there too); being told ⌘
- * on a PC names a key that is not on the keyboard.
+ * Naming the save shortcut. The binding accepts either modifier, so only the
+ * printed hint varies: ⌘ only where a Command key is positively identified,
+ * because Ctrl on a Mac still works and ⌘ on a PC names a missing key.
  */
 
 import { t } from '../i18n';
@@ -27,33 +17,16 @@ export interface KeyboardPlatform {
 /** macOS, and the iPhone/iPad values older Safaris report. */
 const APPLE = /^(mac|iphone|ipad|ipod)/i;
 
-/**
- * True only when the platform is *known* to be an Apple one. Anything else —
- * Windows, Linux, Android, or a browser that reports nothing useful — is false,
- * because Ctrl is the safe answer when we cannot tell.
- *
- * iPadOS 13+ reports `MacIntel`, which is the right answer anyway: an iPad
- * keyboard has a Command key.
- */
+/** True only when the platform is known to be Apple's (iPadOS reports `MacIntel`). */
 export function hasCommandKey(nav: KeyboardPlatform = navigator): boolean {
   const reported = nav.userAgentData?.platform ?? nav.platform;
   if (reported) return APPLE.test(reported);
-  // Every engine still ships a user-agent string, so this is the last resort
-  // rather than a preference.
   return /\b(Macintosh|Mac OS X|iPhone|iPad|iPod)\b/.test(nav.userAgent ?? '');
 }
 
 /**
- * A `keydown` listener that closes a surface on Escape.
- *
- * The key stops here: `preventDefault` keeps the browser from acting on it, and
- * `stopPropagation` keeps whatever is behind the surface from closing too. One
- * Escape dismisses one thing — a popover opened from a form must not take the
- * form with it, and a dialog opened from another must not take both.
- *
- * Only for surfaces where Escape means exactly "close" — anything that has to
- * discriminate (the item editor also handles Ctrl/Cmd+Enter, and asks before
- * discarding a dirty form) writes its own.
+ * A `keydown` listener that closes a surface on Escape and stops the key there,
+ * so one Escape dismisses one thing.
  */
 export function onEscape(close: () => void): (e: KeyboardEvent) => void {
   return (e: KeyboardEvent) => {

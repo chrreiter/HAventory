@@ -1,9 +1,4 @@
-/**
- * Nearest-neighbour suggestion for the tag/category merge flow.
- *
- * Mock 3b pre-fills "Merge into…" with the closest existing tag so the common
- * case — fixing a typo like `batery` → `battery` — is a single tap.
- */
+/** Nearest-neighbour suggestion, so the merge flow can pre-fill `batery` → `battery`. */
 
 /** Levenshtein distance with a single rolling row. */
 export function editDistance(a: string, b: string): number {
@@ -26,11 +21,8 @@ export function editDistance(a: string, b: string): number {
 }
 
 /**
- * The closest candidate to `value`, or null when nothing is close enough.
- *
- * "Close enough" is a distance of at most a third of the longer string (min 1),
- * which catches single-character typos and transpositions without proposing an
- * unrelated tag. `value` itself is never suggested.
+ * The closest candidate other than `value` itself, within a distance of a third
+ * of the longer string (min 1); null when nothing is that close.
  */
 export function closestMatch(value: string, candidates: readonly string[]): string | null {
   const needle = value.trim().toLowerCase();

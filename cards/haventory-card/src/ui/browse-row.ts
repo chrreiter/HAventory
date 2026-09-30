@@ -1,25 +1,10 @@
 import { css } from 'lit';
 
 /**
- * A row you browse by: one location in `hv-location-tree`, one status,
- * category or tag in the full view's sidebar.
- *
- * Pressing either narrows the table to that value, and the two lists sit one
- * under the other in the same column — so they are one control drawn in two
- * shadow roots, which cannot share a rule. The metrics live here rather than
- * being written out on each side, where a row height or a label inset drifts
- * between them.
- *
- * The leading slot is what holds the inset together. The tree puts its twisty
- * in it and reserves it on a leaf; a facet row puts its check in it and
- * reserves it while nothing is picked. A name therefore starts at the same x
- * whatever the row can do and whichever state it is in: 12px of padding, a
- * 20px slot and the 6px gap — where the tree's own top-level entries (All
- * items, No location, an area band) start. A nested location indents from
- * there, which is the one difference that means something.
- *
- * That slot is also the row's height, so there is no number here to keep in
- * step with it.
+ * A row you browse by: a location in `hv-location-tree`, or a status, category
+ * or tag in the full view's sidebar. One control drawn in two shadow roots, so
+ * its metrics live here. The 20px leading slot (twisty or check) is always
+ * reserved, so every name starts at the same x, and it sets the row's height.
  *
  * Usage: `static styles = [tokens, base, browseRow, css\`...\`]`, with
  * `hv-browse-row` on the row, `hv-browse-row-lead` on its first child and
@@ -37,17 +22,14 @@ export const browseRow = css`
     text-align: left;
     font: 400 13.5px var(--hv-font);
     color: var(--hv-text);
-    /* The organize dialog declares this property, so the tree it hosts keeps
-       the same vertical rhythm as the value rows on its other three tabs.
-       Nothing else declares it, so every other host takes the fallback. */
+    /* Only the organize dialog declares this, to match its other tabs' rows. */
     padding: var(--hv-organize-row-pad, 7px) 12px;
     border-radius: var(--hv-radius-input);
   }
   .hv-browse-row:hover {
     background: var(--hv-hover-overlay);
   }
-  /* Picked. The rail on the closing edge is what still reads when a user theme
-     repaints the tint out from under the fill. */
+  /* The rail still reads when a user theme repaints the tint. */
   .hv-browse-row.selected {
     background: var(--hv-primary-tint);
     color: var(--hv-on-primary-tint);
@@ -61,13 +43,10 @@ export const browseRow = css`
     width: 20px;
     height: 20px;
   }
-  /* Held open rather than removed: a row with nothing to put in the slot still
-     starts its name where the rows around it do. */
   .hv-browse-row-lead.placeholder {
     visibility: hidden;
   }
-  /* One line each, elided. A value long enough to wrap would break the run of
-     rows the column is read down. */
+  /* One line each, elided, so the column reads as a run of rows. */
   .hv-browse-row-label {
     flex: 1;
     min-width: 0;
