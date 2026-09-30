@@ -1,10 +1,7 @@
 name: release-please
 
-# Keeps a release PR open and up to date as conventional commits land on main;
-# merging it tags the release, drafts a GitHub Release with generated notes,
-# attaches the zip that HACS installs, and publishes the result. See
-# CONTRIBUTING.md → Releases for the flow and for what each version bump means
-# here.
+# Keeps a release PR open as conventional commits land on main; merging it tags
+# the release, attaches the HACS zip and publishes. See CONTRIBUTING.md → Releases.
 on:
   push:
     branches: [main]
@@ -26,13 +23,10 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # The tag is the one version string release-please writes outside a file,
-      # so it is the one that can disagree with the six it writes inside them.
-      # It has to be checked here rather than from a `push: tags:` workflow:
-      # the tag is pushed with GITHUB_TOKEN, and GitHub does not start new
-      # workflow runs for events that token raises, so such a workflow would
-      # never fire. The file-to-file half of the check runs on the release PR
-      # itself, in the backend job (tests/test_release_version_consistency.py).
+      # The tag is the one version release-please writes outside a file. It is
+      # checked here, not from a `push: tags:` workflow, because GitHub starts no
+      # workflow runs for events raised by GITHUB_TOKEN. The file-to-file half runs
+      # in the backend job (tests/test_release_version_consistency.py).
       - name: Check out the published tag
         if: steps.release.outputs.release_created == 'true'
         uses: actions/checkout@v7
@@ -45,13 +39,9 @@ jobs:
         env:
           TAG: ${{ steps.release.outputs.tag_name }}
 
-      # Everything below builds the one artifact a HACS install reads. With
-      # `zip_release`, HACS takes the asset named in hacs.json and nothing else:
-      # the default branch is hidden, and the card bundle is git-ignored, so a
-      # release without this asset installs an integration whose card never
-      # loads. It is built here, in this job, for the same reason the tag check
-      # is: an `on: release` workflow would never start, because release-please
-      # publishes with GITHUB_TOKEN.
+      # Everything below builds the asset HACS installs: with `zip_release` it reads
+      # only the asset named in hacs.json, and the card bundle is git-ignored. Built
+      # here for the same GITHUB_TOKEN reason as the tag check.
       - name: Set up Node
         if: steps.release.outputs.release_created == 'true'
         uses: actions/setup-node@v7
@@ -67,11 +57,8 @@ jobs:
 
       - name: Package the integration
         if: steps.release.outputs.release_created == 'true'
-        # Zipped from *inside* the integration directory: HACS extracts the
-        # asset straight into `custom_components/haventory/` and strips no
-        # prefix, so one level of extra nesting installs an empty integration
-        # and reports success. `unzip -l` puts the layout in the run log; the
-        # check is what fails the job.
+        # Zipped from inside the integration directory: HACS strips no prefix, so
+        # extra nesting installs an empty integration and reports success.
         run: |
           (cd custom_components/haventory && zip -r ../../haventory.zip . -x '*__pycache__*')
           unzip -l haventory.zip
@@ -79,12 +66,9 @@ jobs:
 
       - name: Attach the asset, then publish the release
         if: steps.release.outputs.release_created == 'true'
-        # release-please creates the release as a draft (`draft` in
-        # release-please-config.json), and HACS skips drafts — so the release
-        # becomes installable only here, once its asset is attached. The tag
-        # exists at this point because `force-tag-creation` makes release-please
-        # push it explicitly; a draft release alone creates no tag, and the
-        # checkout above needs one.
+        # The release is a draft (release-please-config.json) and HACS skips drafts,
+        # so it becomes installable only once the asset is attached. The tag exists
+        # because `force-tag-creation` pushes it; a draft alone creates none.
         run: |
           gh release upload "$TAG" haventory.zip --clobber
           gh release edit "$TAG" --draft=false

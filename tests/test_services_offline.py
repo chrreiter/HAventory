@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import inspect
 import json
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -640,9 +640,11 @@ async def test_the_bump_service_reaches_the_bus() -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_bump_service_keeps_the_series_on_its_own_day() -> None:
+async def test_the_bump_service_keeps_the_series_on_its_own_day(monkeypatch) -> None:
     """One rule, in `Repository.bump_reminder`, so both surfaces answer the same."""
 
+    frozen = datetime(2026, 8, 31, tzinfo=UTC)
+    monkeypatch.setattr(dt_util, "now", lambda *_a, **_k: frozen)
     hass = HomeAssistant()
     repo, item_id, _loc_id = await _seeded(hass)
     await services_mod.service_item_update(

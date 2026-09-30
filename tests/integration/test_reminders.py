@@ -197,7 +197,7 @@ async def test_an_evening_bump_west_of_greenwich_keeps_the_calendar_day(
 
 
 async def test_a_bumped_month_end_series_keeps_its_day_across_a_reload(
-    hass: HomeAssistant, hass_storage: dict, hass_ws_client, setup_entry
+    hass: HomeAssistant, hass_storage: dict, hass_ws_client, freezer, setup_entry
 ) -> None:
     """The whole point of the stored anchor, end to end and through a restart.
 
@@ -208,6 +208,8 @@ async def test_a_bumped_month_end_series_keeps_its_day_across_a_reload(
 
     entry = await setup_entry()
     client = await hass_ws_client(hass)
+    # The bump counts from the later of the occurrence and today.
+    freezer.move_to("2026-08-31T12:00:00+00:00")
 
     await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Meter reading"})
     item_id = (await client.receive_json())["result"]["id"]

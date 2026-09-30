@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 """Render the brand artwork Home Assistant serves, from the card's own mark.
 
-The mark is geometry the card already carries: `HOUSE` + `CRATES` + `HANDLES` in
-`cards/haventory-card/src/ui/brand-icon.ts`, joined into one `d`. Drawing the brand
-images by hand would make a third independent spelling of that geometry — this script
-makes them a rendering of the first one instead, so the artwork cannot drift from the
-sidebar icon without `tests/test_brand_assets.py` failing.
+The mark is the geometry the card already carries (`HOUSE` + `CRATES` + `HANDLES` in
+`cards/haventory-card/src/ui/brand-icon.ts`, joined into one `d`), so the artwork
+cannot drift from the sidebar icon without `tests/test_brand_assets.py` failing.
 
-Everything lands in `custom_components/haventory/brand/`, which is where Home Assistant
-reads a custom integration's own brand images from and serves them at
-`/api/brands/integration/haventory/<file>`. Local images win over the brands CDN, and
-the feature arrived well below this project's minimum Home Assistant version, so every
-supported install shows them. Eight files, the full set that route recognises:
+Everything lands in `custom_components/haventory/brand/`, which Home Assistant serves
+at `/api/brands/integration/haventory/<file>` in preference to the brands CDN. Eight
+files, the full set that route recognises:
 
 - `icon.png` / `icon@2x.png` — the square mark, 256 and 512
 - `logo.png` / `logo@2x.png` — the mark beside the word, 256 and 512 tall
@@ -21,9 +17,8 @@ Run it after any change to the mark:
 
     uv run python scripts/render_brand_assets.py
 
-The rasteriser is written out longhand so regenerating needs no imaging library, and
-the wordmark comes in as outlines (`scripts/brand_wordmark.py`) so it needs no font
-either: `uv sync` installs neither, and this script has to run in that environment.
+The rasteriser is written out longhand and the wordmark comes in as outlines
+(`scripts/brand_wordmark.py`), because `uv sync` installs no imaging library or font.
 """
 
 from __future__ import annotations
@@ -42,24 +37,19 @@ BRAND_ICON_TS = REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "brand-i
 SOCIAL_PREVIEW_HTML = REPO_ROOT / "docs" / "assets" / "social-preview.html"
 BRAND_DIR = REPO_ROOT / "custom_components" / "haventory" / "brand"
 
-# The plain file and its hDPI twin. Brands wants the icon square at 256 and 512, and a
-# logo whose shortest side lands in the same two brackets — so one table sizes both,
-# the icon by its side and the logo by its height.
+# The plain file and its hDPI twin: the icon's side and the logo's height.
 DENSITIES = {"": 256, "@2x": 512}
 
 # Sub-scanlines per output row. Coverage is exact horizontally and sampled
 # vertically, so this alone decides how clean the diagonal roof edges come out.
 SUBSAMPLES = 8
 
-# The lockup, measured in the wordmark's own terms. The mark stands 1.4 cap-heights
-# tall and is centred on the cap band rather than on the whole line, so it reads as
-# level with the word instead of being dragged down by the descender of the "y". The
-# gap is ink to ink, so it survives a change of tracking.
+# The lockup, in the wordmark's terms: the mark is centred on the cap band, not the
+# whole line, so the descender of the "y" does not drag it down. The gap is ink to ink.
 MARK_TO_CAP_HEIGHT = 1.4
 MARK_TO_WORD_GAP = 0.34 * WORDMARK_FONT_SIZE
 
 # How far a flattened curve may sit from the curve, as a fraction of an output pixel.
-# A quarter of one disappears once the sub-scanlines average over it.
 FLATTENING = 0.25
 
 Point = tuple[float, float]
@@ -74,10 +64,8 @@ class Palette:
     text: str
 
 
-# The pale blue is the mark's own colour — what the social preview paints it and what
-# the sidebar gives it on a dark theme; it goes thin against white. The deep blue is
-# the same hue at the weight a white background needs. Each palette's text sits at the
-# opposite end from its background, near-black on light and plain white on dark.
+# The pale blue is the mark's own colour (it goes thin against white); the deep blue
+# is the same hue at the weight a white background needs.
 LIGHT = Palette(prefix="", mark="#1F63C4", text="#16222E")
 DARK_TEXT = "#FFFFFF"
 
@@ -95,11 +83,10 @@ def palettes(social_preview: str) -> tuple[Palette, Palette]:
 
 
 def mark_path_from_typescript(source: str) -> str:
-    """Join the mark's three groups the way `HAVENTORY_MARK_PATH` joins them.
+    """Join the mark's three groups the way the computed `HAVENTORY_MARK_PATH` does.
 
-    `HAVENTORY_MARK_PATH` is computed, so it cannot be read out directly; the groups
-    it is computed from can. The counts are checked, because a pattern that silently
-    matched fewer elements would render artwork missing a crate.
+    The counts are checked: a pattern that matched fewer elements would render a
+    mark missing a crate.
     """
     house = _declared_strings(source, "HOUSE")
     crates = _declared_strings(source, "CRATES")
@@ -120,12 +107,7 @@ def view_box_from_typescript(source: str) -> str:
 
 
 def brand_color_from_social_preview(source: str) -> str:
-    """The one place the mark's own colour is written down: the preview's `fill`.
-
-    The card never names it — `ha-svg-icon` paints the mark in `currentColor` and
-    takes whatever the sidebar theme gives it — so the preview holds the only copy,
-    and the dark-theme artwork follows it rather than starting a second.
-    """
+    """The one place the mark's own colour is written down: the preview's `fill`."""
     match = re.search(r'fill="(#[0-9A-Fa-f]{6})"', source)
     if match is None:
         raise SystemExit("no fill colour found in social-preview.html")
@@ -135,9 +117,8 @@ def brand_color_from_social_preview(source: str) -> str:
 def _declared_strings(source: str, name: str) -> list[str]:
     """Read `const NAME = …;` as its string literals, one entry per top-level comma.
 
-    Scanning for quotes rather than matching a layout keeps this working across a
-    reformat: `'a' + 'b'` concatenates into one entry, an array yields one entry per
-    element, and a trailing comma contributes nothing.
+    Scanning for quotes survives a reformat: `'a' + 'b'` is one entry and a trailing
+    comma adds none.
     """
     match = re.search(rf"^const {name} =(.*?);$", source, re.MULTILINE | re.DOTALL)
     if match is None:
@@ -203,9 +184,8 @@ class Subpath:
 
 _TOKENS = re.compile(r"[A-Za-z]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?")
 
-# Commands neither the mark nor the wordmark uses. Handling them would need cubic and
-# smooth-curve code nothing here has, and skipping one would compare or render a
-# different shape — so an unrecognised command stops the run rather than being ignored.
+# Commands neither the mark nor the wordmark uses; skipping one would render a
+# different shape, so they stop the run.
 _UNSUPPORTED = frozenset("CcSsTt")
 
 
