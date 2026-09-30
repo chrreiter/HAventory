@@ -1,15 +1,11 @@
 """Typed models and validation helpers for HAventory.
 
 ``Item`` and ``Location`` are the persisted shapes; the create/update/filter/sort
-schemas beside them are what a surface hands in. Validation lives here rather
-than at the surfaces, so a WebSocket command, a service call and an import
-document refuse the same value for the same reason — and the refusal text is the
-whole of what a caller gets back, which is why the helpers take the name of the
-field to put in it.
+schemas beside them are what a surface hands in. Validation lives here so a
+WebSocket command, a service call and an import document refuse the same value
+with the same message, and that message names the field.
 
-Free of I/O. The one Home Assistant import is `dt_util`, for the household's own
-calendar day: it reads a module global rather than a `hass`, and every date a
-user reads or writes is measured in that day.
+Free of I/O. `dt_util` is imported only for the household's local calendar day.
 """
 
 from __future__ import annotations
@@ -21,7 +17,16 @@ from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, S
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from functools import partial
-from typing import Any, Final, Literal, NotRequired, TypedDict, get_args, get_type_hints
+from typing import (
+    Any,
+    Final,
+    Literal,
+    NotRequired,
+    TypedDict,
+    TypeGuard,
+    get_args,
+    get_type_hints,
+)
 
 from homeassistant.util import dt as dt_util
 
@@ -36,29 +41,20 @@ from .exceptions import ValidationError
 # Scalar values allowed inside custom_fields.
 ScalarValue = str | int | float | bool
 
-# Stored per-item condition, identified by an immutable slug. Every item carries
-# exactly one; "ok" is the default, so a payload written before the field
-# existed reads as "ok". Not a Literal: the set of slugs is data, seeded with
-# the three below and read from the store, so the functions that check a status
-# take the live set as `known_statuses` rather than closing over this tuple.
+# A status is an immutable slug; "ok" is the default. Not a Literal: the set of
+# slugs is data read from the store, so status checks take the live set as
+# `known_statuses`.
 ItemStatus = str
 ITEM_STATUSES: Final[tuple[ItemStatus, ...]] = ("ok", "missing", "needs_repair")
 DEFAULT_ITEM_STATUS: Final[ItemStatus] = "ok"
 
-# A slug is what items store and what the media/index paths key on, so it is
-# restricted to what reads back identically everywhere: lowercase ASCII, digits
-# and underscores.
 STATUS_SLUG_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 
-# A status colour a household typed rather than picked out of the ten tokens.
-# `#rrggbb` only: it is what `<input type="color">` produces, what every browser
-# normalizes to, and the one form the card can read three channels out of
-# without a second parser.
+# `#rrggbb` only: what `<input type="color">` produces and the card can parse.
 STATUS_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
-# What an item can carry as an attachment. The kind decides which MIME types are
-# accepted and which per-item cap applies — `const.py` holds both — and it scopes
-# ordering: position 0 of an item's pictures is its cover.
+# The kind picks the accepted MIME types and the per-item cap (`const.py`), and
+# scopes ordering: position 0 of an item's pictures is its cover.
 AttachmentKind = Literal["picture", "manual"]
 ATTACHMENT_KINDS: Final[tuple[AttachmentKind, ...]] = ("picture", "manual")
 
@@ -80,13 +76,7 @@ class LocationPath:
     sort_key: str
 
     def to_dict(self) -> dict[str, Any]:
-        """The serialized shape, nested under an item's ``location_path`` and a
-        location's ``path``.
-
-        The lists are copied: every caller receives a payload it is free to edit,
-        and an item's own path must not change because something edited what it
-        was handed.
-        """
+        """The serialized shape. The lists are copies, so a caller may edit them."""
 
         return {
             "id_path": [str(entry) for entry in self.id_path],
@@ -99,15 +89,8 @@ class LocationPath:
     def from_dict(cls, data: object) -> LocationPath:
         """Read back what ``to_dict`` wrote; ``None`` reads as the empty path.
 
-        ``sort_key`` is backfilled from ``display_path`` when the payload
-        carries none: stores written before it was persisted have to sort
-        alongside the ones that were, and it is derived, so recomputing it
-        costs nothing but the read.
-
-        What is refused is a value of the wrong shape — anything present that
-        is not an object, and an ``id_path`` entry that is not a UUID v4. A row
-        carrying one of those is corrupt rather than merely old, and refusing
-        is what lets a load drop it and report it.
+        An absent ``sort_key`` is derived from ``display_path``. A non-object or
+        a non-UUID ``id_path`` entry is refused, so a load reports the row.
         """
 
         if data is None:
@@ -130,16 +113,10 @@ EMPTY_LOCATION_PATH = LocationPath(id_path=[], name_path=[], display_path="", so
 
 
 NAME_MAX_LENGTH = 120
-LOCATION_GUARD_MAX_STEPS = 10_000
-# An attachment title is a caption, not a name, so it gets more room than a
-# location or a status label — a manual is plausibly "Dishwasher manual (EN,
-# model SMS4HVI31E)".
 ATTACHMENT_TITLE_MAX_LENGTH = 200
 
-# Input bounds for the free-text and collection fields, anchored on the 120-char
-# name cap above. The store is one JSON document rewritten in full on every
-# mutation, so an unbounded field is a cost every later write pays; these are set
-# where a household's real entry still fits comfortably.
+# The store is one JSON document rewritten in full on every mutation, so every
+# free-text and collection field is bounded.
 DESCRIPTION_MAX_LENGTH = 4_000
 CATEGORY_MAX_LENGTH = 120
 TAG_MAX_LENGTH = 64
@@ -160,17 +137,13 @@ class Location:
     path: LocationPath = field(default_factory=lambda: EMPTY_LOCATION_PATH)
 
     def to_dict(self) -> dict[str, Any]:
-        """The one serialized shape of a location.
-
-        The store, the export document and the wire all send exactly this — a
-        location has no derived field the way an item has ``effective_area_id``.
-        """
+        """The one serialized shape: store, export document and wire alike."""
 
         return {
             "id": str(self.id),
             "name": self.name,
             "parent_id": str(self.parent_id) if self.parent_id is not None else None,
-            "area_id": str(self.area_id) if self.area_id is not None else None,
+            "area_id": self.area_id,
             "path": self.path.to_dict(),
         }
 
@@ -178,14 +151,8 @@ class Location:
     def from_dict(cls, data: Mapping[str, Any], *, fallback_id: str | None = None) -> Location:
         """Read back what ``to_dict`` wrote, refusing a row no write path wrote.
 
-        ``fallback_id`` is the key the row was stored under, used when the row
-        itself carries no ``id``.
-
-        The name goes through :func:`validate_required_name` rather than
-        ``str()``: a missing key would read as ``""`` and a stored ``null`` as
-        the literal ``"None"``, putting a location in memory that no write path
-        would accept. Raising here is what lets a load drop the row and report
-        it instead.
+        ``fallback_id`` is the key the row was stored under, for a row with no
+        ``id``.
         """
 
         parent_id = data.get("parent_id")
@@ -207,31 +174,21 @@ class Location:
 class StatusDefinition:
     """One entry of the store's ``statuses`` collection.
 
-    The ``slug`` is the immutable identity — it is what every item stores — and
-    the ``label`` is the only part a rename touches, so renaming never rewrites
+    Items store the immutable ``slug``, so renaming the ``label`` never rewrites
     an item. ``order`` is display order alone.
     """
 
     slug: str
     label: str
     order: int = 0
-    # Appearance. The icon is always a token naming a glyph the card bundle
-    # carries, never a path. The colour is a token too by default — the card
-    # paints those against whatever Home Assistant theme is active — but it may
-    # also be a literal `#rrggbb`, which is a household choosing one exact
-    # colour and giving up the theme for that one chip.
+    # A token the card resolves against the active theme, or a literal `#rrggbb`.
     color: str = DEFAULT_STATUS_COLOR
     icon: str = DEFAULT_STATUS_ICON
 
 
 @dataclass
 class AttachmentMeta:
-    """Metadata for one file attached to an item.
-
-    Only metadata is persisted: the bytes live under the media root (see
-    ``media.py``), because the store is one JSON document rewritten in full on
-    every mutation.
-    """
+    """Metadata for one file attached to an item; the bytes live in ``media.py``."""
 
     id: uuid.UUID
     kind: AttachmentKind
@@ -239,32 +196,20 @@ class AttachmentMeta:
     mime: str
     size: int
     uploaded_at: str
-    # What the user chose to call this file. Empty means "show the filename" —
-    # storing a copy of it instead would make the two drift apart with no way to
-    # tell an untitled attachment from one deliberately titled after its file.
+    # Empty means "show the filename".
     title: str = ""
-    # Position within the item's attachments of the same kind. The picture at 0
-    # is the item's cover, so there is no separate flag and no "exactly one
-    # cover" invariant for an import to repair.
+    # Position among the item's attachments of the same kind; picture 0 is the cover.
     order: int = 0
 
 
-# How often a reminder comes round. Calendar units rather than a plain number
-# of days: "every 3 months" is what a household says, and expanding it as 90
-# days would walk the date off the month it belongs to.
+# Calendar units, so "every 3 months" stays on its day of the month.
 REMINDER_UNITS: Final[tuple[str, ...]] = ("days", "weeks", "months")
-# A bound, not a policy: an interval is a small repeating period, and a count
-# this large is a typo or a probe rather than a household's intent.
 REMINDER_COUNT_MAX: Final[int] = 1000
 
 
 @dataclass(frozen=True, slots=True)
 class ReminderInterval:
-    """How far apart a reminder's occurrences fall.
-
-    Frozen: an interval is a value, and sharing one between items must not let
-    an edit to one move the other.
-    """
+    """How far apart a reminder's occurrences fall. Frozen, so items can share one."""
 
     unit: str
     count: int
@@ -281,17 +226,11 @@ class Item:
     status: ItemStatus = DEFAULT_ITEM_STATUS
     checked_out: bool = False
     due_date: str | None = None  # YYYY-MM-DD
-    # When the item is next due for inspection — a forward-looking date, so a
-    # value before today means the inspection is outstanding.
     inspection_date: str | None = None  # YYYY-MM-DD
-    # A reminder is three fields, and two of them are dates on purpose.
-    # `reminder_date` is the next occurrence nobody has marked done — what the
-    # calendar shows first and what a bump advances. `reminder_anchor` is what
-    # the series is measured from, and a bump leaves it alone: month steps are
-    # counted from the anchor, so a series anchored on the 31st returns to the
-    # 31st in every month that has one, however often it is bumped through a
-    # short one. The two are equal until the first bump; neither exists without
-    # the other. Nothing schedules from any of it — see `calendar_projection.py`.
+    # `reminder_date` is the next occurrence nobody has marked done, and what a
+    # bump advances. `reminder_anchor` is what the series is counted from, and a
+    # bump leaves it alone, so a series anchored on the 31st returns to the 31st
+    # in every month that has one. Neither exists without the other.
     reminder_date: str | None = None  # YYYY-MM-DD
     reminder_anchor: str | None = None  # YYYY-MM-DD
     reminder_interval: ReminderInterval | None = None
@@ -300,29 +239,19 @@ class Item:
     category: str | None = None
     low_stock_threshold: int | None = None
     custom_fields: dict[str, ScalarValue] = field(default_factory=dict)
-    # `iso_utc_now` is defined later in this module, so the lambda is required to
-    # defer name resolution to instance-creation time (PLW0108 false positive).
+    # The lambda defers resolving `iso_utc_now`, which is defined further down.
     created_at: str = field(default_factory=lambda: iso_utc_now())  # noqa: PLW0108
     updated_at: str = field(default_factory=lambda: iso_utc_now())  # noqa: PLW0108
     version: int = 1
     location_path: LocationPath = field(default_factory=lambda: EMPTY_LOCATION_PATH)
-    # Deliberately absent from ItemCreate / ItemUpdate: the two attachment
-    # commands own this field, so an ordinary item edit can never rewrite it.
+    # Absent from ItemCreate / ItemUpdate: only the attachment commands write it.
     attachments: list[AttachmentMeta] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
-        """The one serialized shape of an item.
+        """The stored and exported shape.
 
-        This is what the store holds and what the export document carries, byte
-        for byte. The WebSocket and service surfaces send it with
-        ``effective_area_id`` added — resolved from the location tree per
-        request and never stored, which is why it is added at that boundary
-        (``serialization.serialize_item``) rather than here.
-
-        ``location_path`` is derived too, but it *is* stored: the backend
-        recomputes it on every location change and no client can write it, and
-        the store carries the last computed value so a boot has the paths
-        before the tree is walked.
+        The wire adds ``effective_area_id`` in ``serialization.serialize_item``,
+        because it is resolved from the location tree and never stored.
         """
 
         return {
@@ -359,16 +288,13 @@ class Item:
     ) -> Item:
         """Read back what ``to_dict`` wrote, refusing a row no write path wrote.
 
-        ``fallback_id`` is the key the row was stored under, used when the row
-        itself carries no ``id``. ``known_statuses`` has to be the live set:
-        passing the built-ins while the store defines more would rewrite every
-        item on a custom status to the default.
+        ``fallback_id`` is the key the row was stored under, for a row with no
+        ``id``. ``known_statuses`` has to be the live set, or every item on a
+        custom status would be rewritten to the default.
 
-        Absent fields read as the value the build that introduced them writes
-        for an item that has none, so a store written by an older build loads
-        without a migration touching every row. What is *not* tolerated is a
-        malformed value: an unreadable name, id or attachment entry is a corrupt
-        row, and raising is what lets a load drop it and report it.
+        An absent field reads as its default, so an older store loads without a
+        migration. A malformed name, id or attachment entry raises, so a load
+        drops and reports the row.
         """
 
         location_id = data.get("location_id")
@@ -385,8 +311,6 @@ class Item:
             due_date=data.get("due_date"),
             inspection_date=data.get("inspection_date"),
             reminder_date=data.get("reminder_date"),
-            # Equal to the date for any reminder nobody has bumped, which is
-            # what a store written before the anchor existed carries.
             reminder_anchor=load_reminder_anchor(
                 data.get("reminder_anchor"), reminder_date=data.get("reminder_date")
             ),
@@ -400,16 +324,10 @@ class Item:
             category=data.get("category"),
             low_stock_threshold=data.get("low_stock_threshold"),
             custom_fields=dict(data.get("custom_fields", {}) or {}),
-            # Timestamps compare lexicographically for sort and range filters,
-            # so a missing, null or non-canonical one is backfilled rather than
-            # carried: the alternative is a row that sorts arbitrarily.
             created_at=created_at,
             updated_at=_coerce_canonical_ts(data.get("updated_at"), fallback=created_at),
             version=int(data.get("version", 1)),
             location_path=LocationPath.from_dict(data.get("location_path")),
-            # Tolerant of absence and of a non-list value (both read as none),
-            # but not of a malformed *entry*: dropping one would lose the only
-            # reference to a file on disk, which the orphan sweep then deletes.
             attachments=load_attachments(data.get("attachments")),
         )
 
@@ -460,35 +378,24 @@ class ItemFilter(TypedDict, total=False):
     tags_any: list[str]
     tags_all: list[str]
     category: str
-    # Multi-select beside the scalar above. An item has exactly one category, so
-    # a selection can only ever mean OR — see `selected_categories`.
+    # Unioned with `category`: an item has one category, so a selection is OR.
     categories: list[str]
     status: ItemStatus
     checked_out: bool
     low_stock_only: bool
-    # When true, do not filter; instead, prefer low-stock items first in ordering
+    # Orders low-stock items first rather than filtering.
     low_stock_first: bool
-    # When true, only items without a location (location_id is None)
     orphaned_only: bool
-    # When true, only items whose due_date has passed
+    # `*overdue*` excludes today; `*_due_only` includes it. See `_DATE_FILTERS`.
     overdue_only: bool
-    # When true, only items whose due date has come round — today included,
-    # unlike `overdue_only`
     checked_out_due_only: bool
-    # When true, only items whose inspection_date has passed
     inspection_overdue_only: bool
-    # When true, only items whose inspection is being asked for — today
-    # included, unlike `inspection_overdue_only`
     inspection_due_only: bool
-    # When true, only items whose reminder has come round — today included,
-    # like the two `*_due_only` keys above
     reminder_due_only: bool
     location_id: str | None
-    # Multi-select beside the scalar above, unioned the same way — see
-    # `selected_location_ids`. `include_subtree` governs the whole selection.
+    # Unioned with `location_id`; `include_subtree` governs the whole selection.
     location_ids: list[str]
-    # `None` is the way to say "no area filter", as omitting the key is; every
-    # other value has to name an area — see `validate_area_filter`.
+    # `None` means no area filter, as omitting the key does.
     area_id: str | None
     include_subtree: bool
     updated_after: str
@@ -507,113 +414,61 @@ class Sort(TypedDict):
         "quantity",
         "due_date",
         "inspection_date",
-        # The next occurrence a reminder is asking about, not `reminder_anchor`
-        # — the anchor says where the series started, which is not a useful
-        # order to read a list of chores in.
         "reminder_date",
-        # The item's denormalized location path, which is the ordering the
-        # Location column implies. Not an area sort: an area lives on the
-        # location tree and its name in Home Assistant's registry, neither of
-        # which this module can reach.
+        # The denormalized location path.
         "location",
     ]
     order: Literal["asc", "desc"]
 
 
 def parse_uuid4(value: str | uuid.UUID, *, field_name: str = "id") -> uuid.UUID:
-    """Parse a UUID value and ensure it is version 4.
-
-    Accepts an existing uuid.UUID and returns it unchanged.
-    Raises ValidationError when parsing fails or version is not 4.
-    """
+    """Parse a UUID v4 string, or check a ``uuid.UUID``, raising ``ValidationError``."""
 
     UUID_VERSION_V4: Final[int] = 4
-    if isinstance(value, uuid.UUID):
-        if value.version != UUID_VERSION_V4:
-            raise ValidationError(f"{field_name} must be a UUID v4")
-        return value
-    if not isinstance(value, str):
+    if isinstance(value, str):
+        try:
+            value = uuid.UUID(value)
+        except ValueError as exc:
+            raise ValidationError(f"{field_name} must be a UUID v4 string") from exc
+    elif not isinstance(value, uuid.UUID):
         raise ValidationError(f"{field_name} must be a UUID v4 string")
-    try:
-        parsed = uuid.UUID(value)
-    except ValueError as exc:  # pragma: no cover - specific parsing failure
-        raise ValidationError(f"{field_name} must be a UUID v4 string") from exc
-    if parsed.version != UUID_VERSION_V4:
+    if value.version != UUID_VERSION_V4:
         raise ValidationError(f"{field_name} must be a UUID v4")
-    return parsed
+    return value
 
 
 def iso_utc_now() -> str:
-    """Return ISO-8601 UTC timestamp string with 'Z'."""
+    """The current time as the canonical ``YYYY-MM-DDTHH:MM:SSZ``."""
 
-    now = datetime.now(tz=UTC)
-    # No microseconds to keep it compact and stable
-    return now.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(tz=UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def new_uuid4() -> uuid.UUID:
-    """Generate a UUID v4 object."""
-
     return uuid.uuid4()
 
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def normalize_date_yyyy_mm_dd(value: str, *, field_name: str) -> str:
-    """Validate and normalize a YYYY-MM-DD date string.
-
-    ``field_name`` is required because the refusal names it: several fields run
-    through here, and the message is the whole of what a script, an action call
-    or an import document gets back.
-
-    Returns the normalized value or raises ValidationError.
-    """
-
-    if not isinstance(value, str) or not DATE_RE.match(value):
-        raise ValidationError(f"{field_name} must be in 'YYYY-MM-DD' format")
-    try:
-        datetime.strptime(value, "%Y-%m-%d")
-    except ValueError as exc:
-        raise ValidationError(f"{field_name} must be a valid calendar date (YYYY-MM-DD)") from exc
-    return value
-
-
 def normalize_text_for_sort(text: str) -> str:
-    """Return a case-insensitive, accent-folded string for lexicographic sorting."""
+    """Case- and accent-folded, whitespace-collapsed text for sorting and search.
 
-    if not text:
-        return ""
-    nfkd = unicodedata.normalize("NFKD", text)
-    ascii_text = nfkd.encode("ascii", "ignore").decode("ascii")
-    collapsed = " ".join(ascii_text.split())
-    return collapsed.casefold()
-
-
-def normalize_search_text(text: str) -> str:
-    """Normalize text for search matching (lowercase, strip accents).
-
-    Uses NFKD normalization to separate accents from characters, then keeps only ASCII.
-    What ``_item_matches_q`` reads both the query and the item's text through, so
-    "case-insensitive, accent-insensitive" means one thing on both sides of the
-    comparison.
+    The one normalization both sides of a search go through, so
+    "case-insensitive, accent-insensitive" means the same thing on each.
     """
 
     if not text:
         return ""
-    nfkd = unicodedata.normalize("NFKD", text)
-    ascii_text = nfkd.encode("ascii", "ignore").decode("ascii")
-    return ascii_text.casefold().strip()
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    return " ".join(ascii_text.split()).casefold()
 
 
 def normalize_tags(tags: list[str] | None) -> list[str]:
     """Lowercase, trim, and de-duplicate a list of tags, preserving order.
 
-    The tolerant reader, for an import document: it coerces what it is handed
-    rather than refusing it, because a restore must not fail on a row an earlier
-    release wrote. A tag list arriving from a client goes through
-    :func:`validate_tags` or :func:`selected_tags` instead, which refuse a value
-    that is not a list of strings rather than absorbing it.
+    The tolerant reader for an import document. A client's tag list goes
+    through :func:`validate_tags` or :func:`selected_tags`, which refuse a
+    value that is not a list of strings.
     """
 
     if not tags:
@@ -635,18 +490,9 @@ def normalize_tags(tags: list[str] | None) -> list[str]:
 def validate_required_name(value: object) -> str:
     """A name that survives a trim, or a ``ValidationError``. Returns it trimmed.
 
-    The one rule every item and location write path enforces, in one place, so
-    that the *load* path can enforce it too: a stored row whose name is missing,
-    ``null``, not a string, or only whitespace is not something this codebase
-    could have written, and reading it as ``""`` — or, for a ``null``, as the
-    literal ``"None"`` — puts a row in memory that no write path would accept
-    and that the first mutation afterwards makes permanent. An empty name also
-    produces no search-index tokens, and reaches the to-do bridge as a line whose
-    quantity suffix is all there is to read.
-
-    Deliberately **not** the length cap. The load path grandfathers over-cap
-    stored values elsewhere, so refusing one here would reject a store this
-    integration itself wrote.
+    Shared by the write and load paths, so a stored row with a missing, null or
+    blank name is refused rather than read as ``""`` or ``"None"``. Not the
+    length cap, which the load path does not apply.
     """
 
     if not isinstance(value, str) or not value.strip():
@@ -655,11 +501,7 @@ def validate_required_name(value: object) -> str:
 
 
 def validate_write_name(name: object) -> str:
-    """Validate a name a client wrote and return a trimmed value.
-
-    The write path's rule, for an item and a location alike: what the load path
-    requires, plus the length cap the load path deliberately does not apply.
-    """
+    """:func:`validate_required_name` plus the length cap, for a client's write."""
 
     trimmed = validate_required_name(name)
     if len(trimmed) > NAME_MAX_LENGTH:
@@ -675,17 +517,11 @@ def validate_custom_fields(
 ) -> None:
     """Validate custom field keys and values are scalars of allowed types.
 
-    ``field_name`` names the key the *caller* sent in the shape refusal, since
-    a patch arrives under a name of its own. The caps keep naming
-    ``custom_fields``: what they bound is the item's map, not the patch.
+    ``field_name`` is the key the caller sent, named in the shape refusal; the
+    caps name ``custom_fields`` because they bound the item's map.
 
-    ``previous`` is the map the item already carries, and the caps refuse
-    *growth* past it, the way :func:`validate_tags` treats its ``previous``: a
-    key the item already has is not refused for its length, a stored string
-    value may stay over the cap as long as the edit does not lengthen it, and
-    a patch carrying more keys than the cap passes when the item already
-    carried that many. Without ``previous`` (a brand-new item) every cap is
-    absolute.
+    The caps refuse *growth* past ``previous``, the map the item already
+    carries, so an item that predates a cap can still be edited.
     """
 
     if not isinstance(values, dict):
@@ -714,20 +550,10 @@ def validate_custom_fields(
 
 
 def validate_tags(tags: object, *, previous: Collection[str] = ()) -> list[str]:
-    """Normalize an *item's* tag list and enforce the item-side tag caps.
+    """Normalize an item's tag list and enforce the tag caps. ``None`` clears it.
 
-    Every item write crosses here, which is why the shape is checked here too:
-    the command schemas type ``tags`` as ``object``, and :func:`normalize_tags`
-    iterates whatever it is handed, so a string would reach the store as its
-    characters. ``None`` is what clears the list.
-
-    Separate from :func:`selected_tags`, which reads a tag *query*: a filter
-    naming sixty tags is a query, not an item, and is not over any limit.
-
-    ``previous`` is the item's current tag list, and the caps are enforced
-    against what the edit *adds*. An item that predates the caps can therefore
-    still be edited — including by the edit that removes the excess, which an
-    absolute check would refuse along with everything else.
+    The caps apply to what the edit adds beyond ``previous``, the item's current
+    tags, so an item that predates them can still be edited down.
     """
 
     normalized = normalize_string_list(tags, field_name="tags", casefold=True)
@@ -740,25 +566,14 @@ def validate_tags(tags: object, *, previous: Collection[str] = ()) -> list[str]:
     return normalized
 
 
-#: Every key an :class:`ItemFilter` accepts. Derived from the TypedDict so a new
-#: filter key is accepted the moment it is declared there, with no second list
-#: to keep in step.
 ITEM_FILTER_KEYS: Final[frozenset[str]] = frozenset(ItemFilter.__annotations__)
 
 
 def require_string_list(value: object, *, field_name: str) -> list[str]:
-    """Return a list of strings a caller wrote whole, entry for entry.
+    """Return a caller's list of strings unchanged; ``None`` is the empty list.
 
-    A bare string is the mistake worth naming rather than absorbing: iterating
-    one yields characters, so ``categories: "Tools"`` would quietly filter by
-    five single letters instead of by a category, and ``tags: "kitchen"`` would
-    store seven one-letter tags. ``None`` is the empty list — on an item's tags,
-    the value that clears them.
-
-    Nothing is trimmed or de-duplicated here, which is what the two commands
-    naming a whole set as a permutation need: ``status/reorder`` and
-    ``item/attachment/reorder`` refuse a list that names one member twice, and
-    de-duplicating first would let it through.
+    A bare string is refused rather than iterated as its characters. Nothing is
+    trimmed or de-duplicated, so a reorder naming one member twice is refused.
     """
 
     if value is None:
@@ -786,13 +601,7 @@ def normalize_string_list(value: object, *, field_name: str, casefold: bool = Fa
 
 
 def selected_categories(flt: ItemFilter) -> list[str]:
-    """The casefolded categories a filter selects, scalar and list unioned.
-
-    An item carries exactly one category, so the two keys can only mean OR:
-    requiring both would match nothing whenever they name different values —
-    the silent empty result this filter shape exists to avoid. An empty
-    selection does not narrow at all, the way an empty ``tags_any`` does not.
-    """
+    """The casefolded categories a filter selects, scalar and list unioned."""
 
     selection: list[str] = []
     scalar = (flt.get("category") or "").strip().casefold() if "category" in flt else ""
@@ -807,25 +616,13 @@ def selected_categories(flt: ItemFilter) -> list[str]:
 
 
 def selected_tags(flt: ItemFilter, key: Literal["tags_any", "tags_all"]) -> list[str]:
-    """The casefolded tags one of a filter's two tag keys names.
-
-    Same shape rule as :func:`selected_categories`, and for the same reason: a
-    bare string iterates as its characters, so ``tags_any: "kitchen"`` would
-    query seven one-letter tags and quietly answer with nothing. Read through
-    here by the scan and by the index pre-filter alike, so a query cannot be
-    refused by one and absorbed by the other.
-    """
+    """The casefolded tags one of a filter's two tag keys names."""
 
     return normalize_string_list(flt.get(key), field_name=key, casefold=True)
 
 
 def selected_location_ids(flt: ItemFilter) -> list[str]:
-    """The location ids a filter selects, scalar and list unioned.
-
-    Same rule as :func:`selected_categories` — an item sits in one location.
-    ``include_subtree`` is one flag for the whole selection rather than one per
-    entry: an item is kept when it is in, or under, *any* of them.
-    """
+    """The location ids a filter selects, scalar and list unioned."""
 
     selection: list[str] = []
     scalar = flt.get("location_id") if "location_id" in flt else None
@@ -837,11 +634,6 @@ def selected_location_ids(flt: ItemFilter) -> list[str]:
     return selection
 
 
-#: The fields :func:`sort_items` can order by, the two orders it accepts, and the
-#: keys a sort object carries — anything else is a client typo. Read off
-#: :class:`Sort`, the way :data:`ITEM_FILTER_KEYS` is read off
-#: :class:`ItemFilter`, so a field added there is accepted the moment it is
-#: declared, with no second list to keep in step.
 _SORT_HINTS: Final[dict[str, Any]] = get_type_hints(Sort)
 SORT_FIELDS: Final[frozenset[str]] = frozenset(get_args(_SORT_HINTS["field"]))
 SORT_ORDERS: Final[frozenset[str]] = frozenset(get_args(_SORT_HINTS["order"]))
@@ -851,15 +643,9 @@ SORT_KEYS: Final[frozenset[str]] = frozenset(_SORT_HINTS)
 def validate_area_filter(value: object) -> str | None:
     """Return the area an ``area_id`` filter selects, or ``None`` for no filter.
 
-    Shared by ``item/list``'s filter and by a ``haventory/subscribe`` opener, so
-    one value cannot be refused by one door and absorbed by the other. ``None``
-    means "no area filter", the same as omitting the key; anything else has to
-    name an area.
-
-    A blank string and a non-string are refused rather than trimmed away: the
-    area index is the only place a filter's area is applied — the scan behind it
-    carries no area predicate — so a value that names no bucket narrows nothing
-    and answers the whole inventory labelled as one area's.
+    A blank string is refused rather than trimmed away: only the area index
+    applies an area, so a value naming no bucket would answer the whole
+    inventory.
     """
 
     if value is None:
@@ -870,15 +656,10 @@ def validate_area_filter(value: object) -> str | None:
 
 
 def validate_item_filter(flt: object) -> None:
-    """Reject a filter object carrying keys no filter understands.
+    """Reject a filter object carrying unknown keys or an unusable ``area_id``.
 
-    An unknown key is silently dropped by :func:`filter_items`, so a typo'd
-    ``search`` or ``query`` in place of ``q`` returns the *whole* inventory
-    labelled as a filtered result. Naming the offending key is the only way a
-    caller finds that out.
-
-    ``area_id`` is checked on its value too, because it is the one key a scan
-    cannot answer — see :func:`validate_area_filter`.
+    :func:`filter_items` ignores an unknown key, so a typo would otherwise
+    answer the whole inventory as a filtered result.
     """
 
     if flt is None:
@@ -893,11 +674,7 @@ def validate_item_filter(flt: object) -> None:
 
 
 def validate_sort(sort: object) -> None:
-    """Reject a sort object carrying unknown keys, fields or orders.
-
-    Same footgun as :func:`validate_item_filter`: an unknown key leaves the
-    ordering at its default, which reads as "the sort did nothing".
-    """
+    """Reject a sort object carrying unknown keys, fields or orders."""
 
     if sort is None:
         return
@@ -914,19 +691,13 @@ def validate_sort(sort: object) -> None:
 
 
 def validate_due_date_rules(*, checked_out: bool, due_date: str | None) -> str | None:
-    """Validate due_date invariants against checked_out state.
-
-    - due_date is only valid when checked_out is True
-    - If provided, due_date must be YYYY-MM-DD
-
-    Returns normalized due_date or None.
-    """
+    """A due date is only valid on a checked-out item, and must be YYYY-MM-DD."""
 
     if due_date is None:
         return None
     if not checked_out:
         raise ValidationError("due_date is only valid when checked_out is true")
-    return normalize_date_yyyy_mm_dd(due_date, field_name="due_date")
+    return validate_optional_date(due_date, field_name="due_date")
 
 
 def validate_item_status(
@@ -937,19 +708,9 @@ def validate_item_status(
 ) -> ItemStatus:
     """Return ``value`` when it is one of the live statuses, or refuse it.
 
-    Status is non-nullable: an item always has one, so ``None`` is rejected the
-    same as any other unknown value ("ok" is the way to clear a flagged state).
-
-    ``known_statuses`` is an explicit parameter rather than module-level mutable
-    state: the default answers for every caller with no repository to ask, and
-    nothing global needs resetting between tests.
-
-    ``default`` is what a load path passes to read a stored payload tolerantly:
-    a store written before the field existed (or hand-edited into an unknown
-    value) reads as that status rather than failing the whole item. A caller
-    loading a store MUST pass the definitions that store carries — with the
-    built-ins alone, every custom status would be silently rewritten to the
-    default on the first restart after the upgrade that introduced it.
+    Non-nullable: ``None`` is refused like any unknown value. A load path passes
+    ``default`` to read an absent or unknown stored status tolerantly, and must
+    pass the store's own ``known_statuses`` alongside it.
     """
 
     if isinstance(value, str) and value in known_statuses:
@@ -970,16 +731,7 @@ def validate_status_slug(value: object) -> str:
 
 
 def validate_status_color(value: object) -> str:
-    """Validate a status colour: one of the ten tone tokens, or a `#rrggbb` literal.
-
-    A token is resolved by the card against the active Home Assistant theme; a
-    literal is not, and cannot be — it is the household saying "this exact
-    colour, whatever the theme". The card computes the ink for it from the
-    fill's own luminance, so no colour is illegible and none has to be refused.
-
-    Case is folded so one colour has one spelling in the store, which is what
-    lets a chip's colour be compared rather than only rendered.
-    """
+    """One of the tone tokens, or a `#rrggbb` literal stored lowercased."""
 
     if isinstance(value, str):
         if value in STATUS_COLORS:
@@ -1030,9 +782,6 @@ def serialize_status_definition(definition: StatusDefinition) -> dict[str, Any]:
     }
 
 
-# The built-in three, and what each one looks like. `ok` is green because it is
-# the resting state a healthy inventory sits in; the other two are amber because
-# they are chores, not failures.
 _SEED_STATUSES: Final[tuple[tuple[str, str, str, str], ...]] = (
     ("ok", "OK", "green", "check"),
     ("missing", "Missing", "amber", "alert"),
@@ -1041,12 +790,7 @@ _SEED_STATUSES: Final[tuple[tuple[str, str, str, str], ...]] = (
 
 
 def seed_status_definitions() -> dict[str, StatusDefinition]:
-    """The built-in definitions, in display order — the permanent fallback.
-
-    A store or an export document carrying no ``statuses`` section means exactly
-    this set, so every pre-v6 document stays readable without a migration of its
-    own.
-    """
+    """The built-ins, in display order: what an absent ``statuses`` section means."""
 
     return {
         slug: StatusDefinition(slug=slug, label=label, order=order, color=color, icon=icon)
@@ -1057,8 +801,7 @@ def seed_status_definitions() -> dict[str, StatusDefinition]:
 def validate_attachment_meta(value: object) -> AttachmentMeta:
     """Build an :class:`AttachmentMeta` from a stored/incoming mapping.
 
-    The id is a UUID v4 because it is also the file's name under the media root
-    — a value that round-trips through a path is the only kind allowed there.
+    The id is also the file's name under the media root, hence UUID v4 only.
     """
 
     if not isinstance(value, dict):
@@ -1119,11 +862,10 @@ def serialize_attachment_meta(meta: AttachmentMeta) -> dict[str, Any]:
 
 
 def load_attachments(value: object) -> list[AttachmentMeta]:
-    """Read a stored ``attachments`` list, tolerating what predates the field.
+    """Read a stored ``attachments`` list; a missing or non-list value reads as none.
 
-    A missing or non-list value reads as none rather than failing the whole
-    item; a malformed *entry* is the caller's problem, because dropping one
-    silently would lose the only reference to a file on disk.
+    A malformed entry raises rather than being dropped: dropping it would lose
+    the only reference to a file on disk, which the orphan sweep then deletes.
     """
 
     if not isinstance(value, list):
@@ -1132,24 +874,23 @@ def load_attachments(value: object) -> list[AttachmentMeta]:
 
 
 def validate_optional_date(value: str | None, *, field_name: str) -> str | None:
-    """Validate one optional YYYY-MM-DD field, naming it in any refusal.
-
-    Only the shape is checked, because a date in the past means something on
-    every field that runs through here: an inspection date behind today is
-    overdue, and a reminder anchor behind today is still where its series
-    counts from.
-    """
+    """Validate one optional YYYY-MM-DD field, naming it in any refusal."""
 
     if value is None:
         return None
-    return normalize_date_yyyy_mm_dd(value, field_name=field_name)
+    if not isinstance(value, str) or not DATE_RE.match(value):
+        raise ValidationError(f"{field_name} must be in 'YYYY-MM-DD' format")
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValidationError(f"{field_name} must be a valid calendar date (YYYY-MM-DD)") from exc
+    return value
 
 
 def validate_reminder_interval(value: object) -> ReminderInterval | None:
     """Validate `{unit, count}` into a `ReminderInterval`, or none.
 
-    Rejects a zero or negative count outright: an interval of zero occurrences
-    apart has no next occurrence, and expanding it would not terminate.
+    A count below 1 is refused: its occurrences would never advance.
     """
 
     if value is None:
@@ -1157,8 +898,7 @@ def validate_reminder_interval(value: object) -> ReminderInterval | None:
     if isinstance(value, ReminderInterval):
         interval = value
     elif isinstance(value, Mapping):
-        # `count` is carried through unchecked so the guards below can name what
-        # is wrong with it; coercing here would turn "every True days" into 1.
+        # `count` is left unchecked here so the guards below can name it.
         interval = ReminderInterval(unit=str(value.get("unit", "")), count=value.get("count", 0))
     else:
         raise ValidationError("reminder_interval must be an object with 'unit' and 'count'")
@@ -1175,12 +915,7 @@ def validate_reminder_interval(value: object) -> ReminderInterval | None:
 def validate_reminder_rules(
     *, reminder_date: str | None, reminder_interval: object
 ) -> tuple[str | None, ReminderInterval | None]:
-    """Validate the pair, and hold the one rule that binds them.
-
-    An interval with no date has nothing to count from, so it is refused rather
-    than silently stored — an item carrying a recurrence that can never produce
-    an occurrence reads as a reminder that quietly does nothing.
-    """
+    """Validate the pair: an interval with no date has nothing to count from."""
 
     normalized_date = validate_optional_date(reminder_date, field_name="reminder_date")
     interval = validate_reminder_interval(reminder_interval)
@@ -1190,17 +925,9 @@ def validate_reminder_rules(
 
 
 def load_reminder_anchor(value: object, *, reminder_date: str | None) -> str | None:
-    """Read a stored series anchor, falling back to the date it belongs to.
+    """Read a stored series anchor; an absent, unreadable or later one reads as the date.
 
-    Tolerant, the way `load_reminder_interval` is: a store written before the
-    anchor existed carries none, and a reminder that has never been bumped has
-    one equal to its date anyway — so "absent" and "equal" have to reach the
-    same answer.
-
-    An anchor *after* its date describes no series this build can walk (the
-    occurrences would all start beyond the date they are supposed to lead to), so
-    it is read as the date rather than refused. Compared as text, which is what
-    fixed-width ISO dates are for.
+    An anchor after its date describes no series this build can walk.
     """
 
     if reminder_date is None:
@@ -1208,26 +935,19 @@ def load_reminder_anchor(value: object, *, reminder_date: str | None) -> str | N
     if not isinstance(value, str) or not value or value > reminder_date:
         return reminder_date
     try:
-        return normalize_date_yyyy_mm_dd(value, field_name="reminder_anchor")
+        return validate_optional_date(value, field_name="reminder_anchor")
     except ValidationError:
         return reminder_date
 
 
 def serialize_reminder_interval(interval: ReminderInterval | None) -> dict[str, Any] | None:
-    """The stored and wire shape of an interval."""
-
     if interval is None:
         return None
     return {"unit": interval.unit, "count": interval.count}
 
 
 def load_reminder_interval(value: object) -> ReminderInterval | None:
-    """Read a stored interval, treating anything unreadable as none.
-
-    Tolerant on the load path where `validate_reminder_interval` is strict: a
-    row whose interval cannot be read still has an item and an anchor worth
-    keeping, and refusing the store over it would cost more than the recurrence.
-    """
+    """Read a stored interval, treating anything unreadable as none."""
 
     try:
         return validate_reminder_interval(value)
@@ -1240,19 +960,15 @@ def walk_location_chain(
 ) -> Iterator[Location]:
     """Yield the locations from ``start_id`` upwards, the node itself first.
 
-    The one walk up the parent chain. It ends without raising on a parent id no
-    location carries, on an id it has already yielded, and at
-    ``LOCATION_GUARD_MAX_STEPS``: a hand-edited or corrupt store can close a
-    chain into a loop, and the item-index path walks it on every mutation, so
-    the walk has to end by itself rather than throw there.
-
-    A caller that needs the whole chain therefore cannot read a short answer as
-    a complete one — :func:`location_chain_to_root` is that caller's version.
+    Ends without raising on a parent id no location carries and on an id it has
+    already yielded, because a corrupt store can close a chain into a loop and
+    the item index walks it on every mutation. :func:`location_chain_to_root`
+    is the version that refuses a short chain.
     """
 
     cursor: str | None = str(start_id)
     seen: set[str] = set()
-    while cursor is not None and cursor not in seen and len(seen) < LOCATION_GUARD_MAX_STEPS:
+    while cursor is not None and cursor not in seen:
         location = locations_by_id.get(cursor)
         if location is None:
             return
@@ -1264,12 +980,9 @@ def walk_location_chain(
 def location_chain_to_root(
     leaf_id: str | uuid.UUID, *, locations_by_id: Mapping[str, Location]
 ) -> list[Location]:
-    """The chain root→leaf, or a ``ValidationError`` naming what stopped it.
+    """The chain root→leaf, refused when it does not reach a root.
 
-    A chain that does not reach a root is refused rather than shortened,
-    because what is built from it is the denormalized path stored on the node
-    and on every item under it: a partial chain would store a display path
-    missing its leading names.
+    A partial chain would store a display path missing its leading names.
     """
 
     chain = list(walk_location_chain(leaf_id, locations_by_id=locations_by_id))
@@ -1277,9 +990,7 @@ def location_chain_to_root(
         raise ValidationError("location_id must reference an existing location")
     last_parent = chain[-1].parent_id
     if last_parent is not None:
-        if len(chain) >= LOCATION_GUARD_MAX_STEPS or str(last_parent) in {
-            str(node.id) for node in chain
-        }:
+        if str(last_parent) in {str(node.id) for node in chain}:
             raise ValidationError("location graph too deep or cyclic")
         raise ValidationError("location_id must reference an existing location chain")
     chain.reverse()
@@ -1289,25 +1000,20 @@ def location_chain_to_root(
 def build_location_path(location_chain: list[Location]) -> LocationPath:
     """Build a denormalized LocationPath from a chain ordered root->leaf."""
 
-    if not location_chain:
-        return EMPTY_LOCATION_PATH
-    id_path = [loc.id for loc in location_chain]
     name_path = [loc.name for loc in location_chain]
     display = " / ".join(name_path)
-    sort_key = normalize_text_for_sort(display)
     return LocationPath(
-        id_path=id_path, name_path=name_path, display_path=display, sort_key=sort_key
+        id_path=[loc.id for loc in location_chain],
+        name_path=name_path,
+        display_path=display,
+        sort_key=normalize_text_for_sort(display),
     )
 
 
 def build_location_path_from_map(
     leaf_location_id: str | uuid.UUID, *, locations_by_id: Mapping[str, Location]
 ) -> LocationPath:
-    """The denormalized path of one location, given the map it lives in.
-
-    Raises ``ValidationError`` when the leaf id is unknown or the chain above
-    it never reaches a root.
-    """
+    """The path of one location, refused when its chain does not reach a root."""
 
     return build_location_path(
         location_chain_to_root(leaf_location_id, locations_by_id=locations_by_id)
@@ -1315,7 +1021,6 @@ def build_location_path_from_map(
 
 
 def _is_int_not_bool(value: object) -> bool:
-    """True for a real integer. ``bool`` is a subclass of ``int`` — exclude it."""
     return isinstance(value, int) and not isinstance(value, bool)
 
 
@@ -1324,18 +1029,9 @@ def validate_optional_text(
 ) -> None:
     """Ensure an optional free-text field is a string or None, within its cap.
 
-    Non-text values (list/dict/number) would otherwise reach the search-index
-    build and crash mid-way, leaving a partially-indexed item.
-
-    ``previous`` is the value the item already carries, and the cap refuses
-    *growth* past it: a value over the cap but no longer than the stored one is
-    accepted, so an item that predates the cap can still be edited — including
-    by the edit that trims the excess without clearing it in one go.
-
-    No ``max_length`` is the restore mode, and the type check is then the whole
-    rule: an import document is held to what every release has enforced, not to
-    the free-text caps, which bind what an edit may add rather than what a store
-    may hold (``docs/data_shapes.md`` → "Input caps").
+    The cap refuses growth past ``previous``, the stored value, so an item that
+    predates the cap can still be edited. No ``max_length`` is the restore mode:
+    an import is held to the type only (``docs/data_shapes.md`` → "Input caps").
     """
     if value is None:
         return
@@ -1350,16 +1046,7 @@ def validate_optional_text(
 
 
 def validate_quantity(value: object) -> int:
-    """Return the quantity, or refuse the value with the one message there is.
-
-    Public because a caller that holds an unvalidated quantity before it holds
-    an item — `haventory/item/set_quantity` and the `items/bulk` row of the same
-    kind — checks the value first, so a payload that is wrong about both is
-    answered on the value rather than on the id.
-
-    Spelled out rather than through ``_is_int_not_bool`` so the comparison and
-    the return narrow to ``int``.
-    """
+    """Return the quantity, or refuse it. Spelled out so the return narrows to ``int``."""
 
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ValidationError("quantity must be an integer >= 0")
@@ -1367,12 +1054,7 @@ def validate_quantity(value: object) -> int:
 
 
 def validate_low_stock_threshold(value: object) -> int | None:
-    """Return the low-stock threshold, or refuse the value with the one message.
-
-    Nullable where the quantity is not: an item with no threshold is never low
-    on stock. Public, and spelled out, for the reasons :func:`validate_quantity`
-    is.
-    """
+    """Return the low-stock threshold, or refuse it. ``None`` means never low."""
 
     if value is None:
         return None
@@ -1383,13 +1065,8 @@ def validate_low_stock_threshold(value: object) -> int | None:
 
 @dataclass(frozen=True, slots=True)
 class _ItemWrite:
-    """One item write in progress, as the field rules see it.
-
-    ``draft`` is what the write starts from and what the rules fill in: the
-    field defaults on a create, a copy of the stored item on an update. A cap
-    that refuses *growth* reads what the item already carries off that same
-    draft, which on a create is empty — so one rule serves both paths.
-    """
+    """One item write in progress: ``draft`` is the field defaults on a create and
+    a copy of the stored item on an update, and the rules fill it in."""
 
     draft: Item
     payload: Mapping[str, Any]
@@ -1399,29 +1076,16 @@ class _ItemWrite:
 
 
 def _write_name(write: _ItemWrite) -> None:
-    """Required on a create; a null on an update leaves the stored name alone.
-
-    The field is non-nullable, so a null cannot mean "clear it". On an update it
-    means "this write does not name the name" — which is what lets any client
-    hand back a payload carrying every field it knows about and change one of
-    them.
-    """
+    """Required on a create; a null on an update leaves the stored name alone."""
 
     value = write.payload.get("name")
     if value is None and not write.creating:
         return
-    # Type before shape: the command schemas type `name` as `object` so a wrong
-    # type is answered here as `validation_error` rather than by an HA-core
-    # schema rejection, and a `.strip()` on a non-string would leave through
-    # `unknown_error` instead of naming the field.
     write.draft.name = validate_write_name(value)
 
 
 def _write_optional_text(write: _ItemWrite, *, key: str, max_length: int) -> None:
-    """One nullable free-text field, held to its cap against what is stored.
-
-    ``key`` names the payload field and the item's attribute alike.
-    """
+    """One nullable free-text field; ``key`` names the payload field and attribute."""
 
     if key not in write.payload:
         return
@@ -1431,9 +1095,6 @@ def _write_optional_text(write: _ItemWrite, *, key: str, max_length: int) -> Non
 
 
 def _write_quantity(write: _ItemWrite) -> None:
-    # Type before use, for the same reason `name` is checked before `.strip()`:
-    # the command schema types `quantity` as `object`, and arithmetic over a
-    # non-integer routes to `unknown_error` instead of naming the field.
     if "quantity" in write.payload:
         write.draft.quantity = validate_quantity(write.payload["quantity"])
 
@@ -1446,12 +1107,7 @@ def _write_status(write: _ItemWrite) -> None:
 
 
 def _write_checkout(write: _ItemWrite) -> None:
-    """The checkout flag and its due date, holding the pair's rule across both.
-
-    Judged on what the write leaves behind rather than on the keys it names, so
-    sending the item home without clearing the date is refused rather than
-    leaving a due date on an item nobody has out.
-    """
+    """The checkout flag and its due date, judged on what the write leaves behind."""
 
     draft = write.draft
     if "checked_out" in write.payload:
@@ -1469,22 +1125,12 @@ def _write_inspection_date(write: _ItemWrite) -> None:
 
 
 def _write_reminder(write: _ItemWrite) -> None:
-    """Apply either half of the reminder, holding the pair's rule across both.
+    """Apply either half of the reminder, validated against the item's other half.
 
-    A write naming only one of the two is validated against the item's other
-    half, so clearing the date of a recurring reminder is refused rather than
-    leaving an interval with nothing to count from.
-
-    Writing a *different* date re-anchors the series on it: the payloads carry
-    no anchor of their own, deliberately, because a household picking a date is
-    saying where the series starts. Re-sending the date the item already carries
-    says nothing, so it must not move the anchor. A client may legally send a
-    field it did not change — a service call built from a template, a script
-    handing an item back, a WebSocket client that posts every field it holds —
-    and re-anchoring on the key's presence alone would let one of those walk a
-    month-end series off its day, one short month at a time.
-    `Repository.bump_reminder` is the one path that moves the date and keeps the
-    anchor, which is what makes a bumped month-end series stay on its own day.
+    Writing a *different* date re-anchors the series on it. Re-sending the
+    stored date must not: clients legally resend unchanged fields, and that
+    would walk a bumped month-end series off its day.
+    `Repository.bump_reminder` moves the date and keeps the anchor.
     """
 
     payload = write.payload
@@ -1502,19 +1148,11 @@ def _write_reminder(write: _ItemWrite) -> None:
     if "reminder_date" in payload and draft.reminder_date != previous_reminder_date:
         draft.reminder_anchor = draft.reminder_date
     elif draft.reminder_date is None:
-        # The interval was cleared alongside a date that was already absent, or
-        # the pair rule left nothing behind. An anchor without a date names a
-        # series with no next occurrence.
         draft.reminder_anchor = None
 
 
 def _write_location(write: _ItemWrite) -> None:
-    """Place the item, and keep its denormalized path in step with the tree.
-
-    The path is rebuilt on every write, not only on one that names a location:
-    an item whose stored path predates a rename higher up carries the current
-    one from its next edit onwards.
-    """
+    """Place the item, rebuilding its denormalized path on every write."""
 
     draft = write.draft
     locations_by_id = write.locations_by_id
@@ -1527,12 +1165,12 @@ def _write_location(write: _ItemWrite) -> None:
                 raise ValidationError("location_id must reference an existing location")
         draft.location_id = location_id
 
-    if draft.location_id is not None and locations_by_id:
+    if draft.location_id is None:
+        draft.location_path = EMPTY_LOCATION_PATH
+    elif locations_by_id:
         draft.location_path = build_location_path_from_map(
             draft.location_id, locations_by_id=locations_by_id
         )
-    elif draft.location_id is None:
-        draft.location_path = EMPTY_LOCATION_PATH
 
 
 def _write_tags(write: _ItemWrite) -> None:
@@ -1548,39 +1186,33 @@ def _write_low_stock_threshold(write: _ItemWrite) -> None:
 
 
 def _write_custom_fields(write: _ItemWrite) -> None:
-    """Patch the map by key — a create names it whole, an update by halves.
+    """Patch the map by key: a create names it whole, an update by set and unset.
 
-    The key cap bounds the item, not the patch: a two-key patch onto an item
-    already at the limit is what would otherwise walk past it. Judged on the
-    result of the whole write, and only when the write grew the map — so an item
-    that predates the cap can still be edited down.
+    The key cap bounds the resulting map, and only when the write grew it.
     """
 
     draft = write.draft
     set_key = "custom_fields" if write.creating else "custom_fields_set"
     to_set = write.payload.get(set_key)
-    to_unset = require_string_list(
-        write.payload.get("custom_fields_unset"), field_name="custom_fields_unset"
+    to_unset = set(
+        require_string_list(
+            write.payload.get("custom_fields_unset"), field_name="custom_fields_unset"
+        )
     )
     before = len(draft.custom_fields)
     if to_set is not None:
         validate_custom_fields(to_set, previous=draft.custom_fields, field_name=set_key)
         draft.custom_fields = {**draft.custom_fields, **to_set}
     if to_unset:
-        draft.custom_fields = {
-            k: v for k, v in draft.custom_fields.items() if k not in set(to_unset)
-        }
+        draft.custom_fields = {k: v for k, v in draft.custom_fields.items() if k not in to_unset}
     after = len(draft.custom_fields)
     if after > CUSTOM_FIELDS_MAX_KEYS and after > before:
         raise ValidationError(f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys")
 
 
-#: Every item field a client writes, and the rule that writes it. A create and
-#: an update walk this one table in this one order, so a field's type, cap and
-#: binding to its neighbours is written once and refuses the same value with the
-#: same message whichever command carried it. A rule leaves the draft as it
-#: stands when the write names none of its keys, which is what lets the one walk
-#: serve a full create and a one-field patch.
+#: Every item field a client writes, and its rule. A create and an update walk
+#: this one table in this order; a rule leaves the draft alone when the write
+#: names none of its keys.
 _ITEM_FIELD_RULES: Final[tuple[Callable[[_ItemWrite], None], ...]] = (
     _write_name,
     partial(_write_optional_text, key="description", max_length=DESCRIPTION_MAX_LENGTH),
@@ -1603,28 +1235,13 @@ def create_item_from_create(
     locations_by_id: dict[str, Location] | None = None,
     known_statuses: Collection[str] = ITEM_STATUSES,
 ) -> Item:
-    """Create a validated Item from an ItemCreate payload.
-
-    ``locations_by_id`` is the map ``location_id`` is checked against and the
-    denormalized path is built from; ``known_statuses`` is the live status set.
-    """
+    """Create a validated Item; ``locations_by_id`` resolves ``location_id``."""
 
     created_ts = iso_utc_now()
-    # The draft carries the field defaults, and a rule the payload does not
-    # reach leaves them where they are — so "the value the item already has" is
-    # empty here and every cap is absolute. `name` is the one field with no
-    # usable default, and its rule refuses a payload that omits it.
     draft = Item(id=new_uuid4(), name="", created_at=created_ts, updated_at=created_ts)
-    write = _ItemWrite(
-        draft=draft,
-        payload=payload,
-        creating=True,
-        locations_by_id=locations_by_id,
-        known_statuses=known_statuses,
-    )
+    write = _ItemWrite(draft, payload, True, locations_by_id, known_statuses)
     for rule in _ITEM_FIELD_RULES:
         rule(write)
-
     return draft
 
 
@@ -1637,77 +1254,45 @@ def apply_item_update(
 ) -> Item:
     """Apply an update payload to an Item and return a new updated instance."""
 
-    new_item = replace(item)  # shallow copy
-    write = _ItemWrite(
-        draft=new_item,
-        payload=update,
-        creating=False,
-        locations_by_id=locations_by_id,
-        known_statuses=known_statuses,
-    )
+    new_item = replace(item)
+    write = _ItemWrite(new_item, update, False, locations_by_id, known_statuses)
     for rule in _ITEM_FIELD_RULES:
         rule(write)
-
-    # Ensure updated_at is strictly monotonic to avoid equality within same second
     new_item.updated_at = monotonic_timestamp_after(item.updated_at)
     new_item.version = item.version + 1
     return new_item
 
 
-#: Length of the canonical "YYYY-MM-DDTHH:MM:SSZ" timestamp format. Canonical
-#: timestamps are fixed-width, so lexicographic comparison IS chronological
-#: comparison — sorting and range filters rely on this.
+#: Canonical timestamps are fixed-width, so lexicographic order is chronological
+#: order. Sorting and range filters rely on it.
 _CANONICAL_TS_LENGTH = 20
 
 
 def monotonic_timestamp_after(previous_ts: str) -> str:
-    """Return a UTC ISO-8601 'Z' timestamp strictly after previous_ts.
-
-    The clock is read here, and read at second resolution: a reading that is not
-    past the previous timestamp is bumped by one second so the two never compare
-    equal.
-    """
+    """The current canonical timestamp, bumped to one second past ``previous_ts``."""
 
     now_ts = iso_utc_now()
-    # Fast path: canonical fixed-width timestamps compare lexicographically,
-    # so the common case (time moved on) needs no parsing at all.
-    if _looks_canonical_utc(previous_ts) and now_ts > previous_ts:
+    if now_ts > previous_ts or not is_canonical_utc_timestamp(previous_ts):
         return now_ts
-
-    now_dt = datetime.now(tz=UTC).replace(microsecond=0)
-    try:
-        prev_dt = _parse_iso8601_utc(previous_ts, field_name="previous_ts")
-    except ValidationError:
-        # If previous_ts is malformed, fall back to current time
-        prev_dt = now_dt - timedelta(seconds=1)
-    if now_dt <= prev_dt:
-        now_dt = prev_dt + timedelta(seconds=1)
-    return now_dt.isoformat().replace("+00:00", "Z")
+    bumped = datetime.fromisoformat(previous_ts) + timedelta(seconds=1)
+    return bumped.isoformat().replace("+00:00", "Z")
 
 
-def _looks_canonical_utc(ts: str) -> bool:
-    """Cheap positional shape check for the canonical YYYY-MM-DDTHH:MM:SSZ form."""
-    return (
-        len(ts) == _CANONICAL_TS_LENGTH
-        and ts[4] == "-"
-        and ts[7] == "-"
-        and ts[10] == "T"
-        and ts[13] == ":"
-        and ts[16] == ":"
-        and ts[19] == "Z"
-    )
-
-
-def is_canonical_utc_timestamp(ts: object) -> bool:
+def is_canonical_utc_timestamp(ts: object) -> TypeGuard[str]:
     """Return True when ``ts`` is exactly the canonical YYYY-MM-DDTHH:MM:SSZ form.
 
-    The positional separator checks matter: ``datetime.fromisoformat`` alone
-    would also accept e.g. a space date/time separator, ISO week dates, or
-    basic-format times, which would then compare lexicographically wrong
-    against canonical timestamps.
+    The separators are checked by position: ``datetime.fromisoformat`` alone
+    accepts forms that would compare wrong against canonical timestamps.
     """
 
-    if not isinstance(ts, str) or not _looks_canonical_utc(ts):
+    if not (
+        isinstance(ts, str)
+        and len(ts) == _CANONICAL_TS_LENGTH
+        and ts[4] == ts[7] == "-"
+        and ts[10] == "T"
+        and ts[13] == ts[16] == ":"
+        and ts[19] == "Z"
+    ):
         return False
     try:
         datetime.fromisoformat(ts)
@@ -1717,45 +1302,19 @@ def is_canonical_utc_timestamp(ts: object) -> bool:
 
 
 def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
-    """Return a canonical UTC timestamp, backfilling non-canonical input.
+    """``value`` when canonical, else ``fallback`` when canonical, else now."""
 
-    Item timestamps compare lexicographically for sort and range filters, so on
-    load any missing / null / corrupt value is replaced with a canonical one
-    (the fallback when it is itself canonical, otherwise the current time).
-    """
-
-    if isinstance(value, str) and is_canonical_utc_timestamp(value):
+    if is_canonical_utc_timestamp(value):
         return value
-    if fallback is not None and is_canonical_utc_timestamp(fallback):
+    if is_canonical_utc_timestamp(fallback):
         return fallback
     return iso_utc_now()
 
 
-def _parse_iso8601_utc(ts: str, *, field_name: str) -> datetime:
-    """Parse a UTC ISO-8601 with trailing 'Z' into datetime.
+def _item_matches_q(item: Item, query_words: Sequence[str]) -> bool:
+    """Every query word appears somewhere in the item's searchable text."""
 
-    Only the canonical fixed-width YYYY-MM-DDTHH:MM:SSZ form is accepted.
-    Raises ValidationError on bad format.
-    """
-
-    if not is_canonical_utc_timestamp(ts):
-        raise ValidationError(f"{field_name} must be an ISO-8601 UTC timestamp with 'Z'")
-    return datetime.fromisoformat(ts)
-
-
-def _item_matches_q(item: Item, q: str) -> bool:
-    """Match query string against item fields using multi-word AND logic."""
-    if not q:
-        return True
-
-    # Normalize query (casefold + NFKD accent-stripping): split into words
-    query_words = normalize_search_text(q).split()
-    if not query_words:
-        return True
-
-    # Every query word must appear somewhere in the item's combined
-    # searchable text (name, description, category, path, tags).
-    searchable_text = normalize_search_text(
+    text = normalize_text_for_sort(
         " ".join(
             [
                 item.name or "",
@@ -1766,31 +1325,19 @@ def _item_matches_q(item: Item, q: str) -> bool:
             ]
         )
     )
-
-    for word in query_words:
-        if word not in searchable_text:
-            return False
-
-    return True
+    return all(word in text for word in query_words)
 
 
 def item_is_low_stock(item: Item) -> bool:
-    """Return True when the item's quantity is at or below its threshold."""
     thr = item.low_stock_threshold
-    if thr is None:
-        return False
-    return item.quantity <= thr
+    return thr is not None and item.quantity <= thr
 
 
 def today_local_date() -> str:
-    """Today's date as YYYY-MM-DD in the instance's time zone.
+    """Today as YYYY-MM-DD in Home Assistant's configured time zone.
 
-    One day for the whole household: the calendar entity, the reminder bump,
-    the card's chips and these predicates all measure against the day Home
-    Assistant is configured for, so a row and a count cannot disagree for the
-    hours a UTC day and a local one differ by. `dt_util.now()` reads
-    `DEFAULT_TIME_ZONE`, which Home Assistant sets from its own configuration,
-    so this needs no `hass` handle.
+    Every date count and chip measures against this one day. `dt_util.now()`
+    reads the zone Home Assistant configured, so no `hass` is needed.
     """
     return dt_util.now().date().isoformat()
 
@@ -1798,12 +1345,8 @@ def today_local_date() -> str:
 def _date_passed(item: Item, field: str, today: str, *, inclusive: bool) -> bool:
     """Whether the item's ``field`` date has come round by ``today``.
 
-    The one test behind the five named below, which are its five (field,
-    inclusive) pairs. An item carrying no date on that field is never counted.
-    Both sides are YYYY-MM-DD, which compares correctly as text. An empty
-    ``today`` reads the instance's current local date, and reads it only for an
-    item that has a date to compare — callers walking many items fill it in
-    once rather than paying for the clock per item.
+    An item with no date on that field never counts. An empty ``today`` reads
+    the clock, and only for an item that has a date.
     """
 
     value: str | None = getattr(item, field)
@@ -1814,72 +1357,27 @@ def _date_passed(item: Item, field: str, today: str, *, inclusive: bool) -> bool
 
 
 def item_is_overdue(item: Item, *, today: str = "") -> bool:
-    """Return True when the item's due date has passed.
-
-    A due date only exists while an item is checked out (see
-    ``validate_due_date_rules``), so this needs no separate checked-out test.
-    """
-
     return _date_passed(item, "due_date", today, inclusive=False)
 
 
 def item_is_due(item: Item, *, today: str = "") -> bool:
-    """Return True once the item is due back.
-
-    Inclusive of today, unlike ``item_is_overdue``: a due date names the day the
-    item is owed back, so that day is when it is being asked for rather than the
-    last day it is not. The two answers differ by exactly the items due today,
-    and every overdue item is also due — the same relation
-    ``item_inspection_is_due`` has to ``item_inspection_is_overdue``.
-    """
-
     return _date_passed(item, "due_date", today, inclusive=True)
 
 
 def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
-    """Return True when the item is past the date it was next due for inspection.
-
-    Independent of the check-out state: an inspection is a fact about the item,
-    not about a borrowing, so this walks any item that carries a date.
-    """
-
     return _date_passed(item, "inspection_date", today, inclusive=False)
 
 
 def item_inspection_is_due(item: Item, *, today: str = "") -> bool:
-    """Return True once the item's inspection is being asked for.
-
-    Inclusive of today, like ``item_reminder_is_due`` and unlike
-    ``item_inspection_is_overdue``: an inspection date names the day the item is
-    next due to be inspected, so that day is when it is being asked for rather
-    than the last day it is not. The two answers therefore differ by exactly the
-    items whose date is today, and every overdue item is also due.
-    """
-
     return _date_passed(item, "inspection_date", today, inclusive=True)
 
 
 def item_reminder_is_due(item: Item, *, today: str = "") -> bool:
-    """Return True once the item's reminder has come round.
-
-    Inclusive of today, unlike the two overdue tests above: a reminder names the
-    day something should be done, so that day is when it is asking rather than
-    the last day it is not. A one-off counts the same as a series — both are a
-    date the household said to be reminded on.
-    """
-
     return _date_passed(item, "reminder_date", today, inclusive=True)
 
 
 def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
-    """The selected location ids as UUIDs, dropping any that will not parse.
-
-    An unparsable id contributes nothing rather than raising, so a selection of
-    only bad ids matches nothing — which is what a single bad id among good ones
-    does too. The parse belongs here rather than in the per-item predicate: the
-    selection is constant for a whole query, and rebuilding the same UUID once
-    per candidate is measurable on an inventory of any size.
-    """
+    """The selected location ids as UUIDs, dropping any that will not parse."""
 
     parsed: list[uuid.UUID] = []
     for raw in location_ids:
@@ -1893,25 +1391,17 @@ def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
 def _item_matches_locations(
     item: Item, needles: Sequence[uuid.UUID], include_subtree: bool
 ) -> bool:
-    """True when the item sits in — or under — any of the selected locations.
-
-    An empty selection keeps nothing, which is what a selection of only
-    unparsable ids amounts to: the filter names locations, and none of them is
-    this item's.
-    """
+    """True when the item sits in, or with ``include_subtree`` under, a selected location."""
 
     if not item.location_id:
         return False
-    for needle in needles:
-        if item.location_id == needle:
-            return True
-        if include_subtree and item.location_path.id_path and needle in item.location_path.id_path:
-            return True
-    return False
+    return any(
+        item.location_id == needle or (include_subtree and needle in item.location_path.id_path)
+        for needle in needles
+    )
 
 
-#: The filter keys these two tables read, spelled out so a table entry is
-#: checked against ``ItemFilter`` rather than against a plain string.
+#: Spelled out so a table entry is checked against the ``ItemFilter`` keys.
 DateFilterKey = Literal[
     "overdue_only",
     "checked_out_due_only",
@@ -1921,10 +1411,7 @@ DateFilterKey = Literal[
 ]
 TimestampBoundKey = Literal["updated_after", "created_after", "updated_before", "created_before"]
 
-#: The five date filters, each with the item field it reads and whether today
-#: itself counts. A ``*_due_only`` key counts it because a due date names the
-#: day something is being asked for; an ``*overdue*`` key does not, so a pair
-#: over one field differs by exactly the items dated today.
+#: Each date filter, the field it reads, and whether today itself counts.
 _DATE_FILTERS: Final[tuple[tuple[DateFilterKey, str, bool], ...]] = (
     ("overdue_only", "due_date", False),
     ("checked_out_due_only", "due_date", True),
@@ -1933,9 +1420,7 @@ _DATE_FILTERS: Final[tuple[tuple[DateFilterKey, str, bool], ...]] = (
     ("reminder_due_only", "reminder_date", True),
 )
 
-#: The four timestamp bounds, each with the item field it reads and which side
-#: of the bound the item must fall on. Read in this order, which is the order a
-#: filter carrying more than one malformed bound is refused in.
+#: Each timestamp bound, the field it reads, and whether an item must fall after it.
 _TIMESTAMP_BOUNDS: Final[tuple[tuple[TimestampBoundKey, str, bool], ...]] = (
     ("updated_after", "updated_at", True),
     ("created_after", "created_at", True),
@@ -1944,62 +1429,18 @@ _TIMESTAMP_BOUNDS: Final[tuple[tuple[TimestampBoundKey, str, bool], ...]] = (
 )
 
 
-def _date_predicate(field: str, today: str, *, inclusive: bool) -> Callable[[Item], bool]:
-    """One date filter, bound to the field and the day it measures against."""
-
-    def passes(item: Item) -> bool:
-        return _date_passed(item, field, today, inclusive=inclusive)
-
-    return passes
+def _beyond_bound(item: Item, *, field: str, bound: str, after: bool) -> bool:
+    value: str = getattr(item, field)
+    return value > bound if after else value < bound
 
 
-def _bound_predicate(field: str, bound: str, *, after: bool) -> Callable[[Item], bool]:
-    """One timestamp filter, bound to the field and the bound it compares to.
-
-    Canonical fixed-width 'Z' timestamps compare lexicographically, so an item
-    costs no parsing here — only the bound itself was parsed, once, to refuse a
-    malformed one.
-    """
-
-    def passes(item: Item) -> bool:
-        value: str = getattr(item, field)
-        return value > bound if after else value < bound
-
-    return passes
-
-
-def _timestamp_predicates(flt: ItemFilter) -> list[Callable[[Item], bool]]:
-    """The timestamp filters a filter carries, refusing a malformed bound.
-
-    A bound the filter names as null is no filter at all; one it names as empty
-    is not a timestamp to parse but is still compared against, so
-    ``updated_before: ""`` keeps every item out and ``updated_after: ""`` lets
-    every item through.
-    """
-
-    predicates: list[Callable[[Item], bool]] = []
-    for key, attr, after in _TIMESTAMP_BOUNDS:
-        bound = flt.get(key)
-        if bound is None:
-            continue
-        if bound:
-            _parse_iso8601_utc(bound, field_name=key)
-        predicates.append(_bound_predicate(attr, bound, after=after))
-    return predicates
-
-
-def _filter_predicates(
+def _filter_predicates(  # noqa: PLR0912 - one branch per filter key
     flt: ItemFilter, *, known_statuses: Collection[str]
 ) -> list[Callable[[Item], bool]]:
     """The tests a filter asks for, one per key it carries.
 
-    Built once for the whole query, so a key the filter leaves out costs an item
-    nothing, and what a key needs parsed — the status, the location ids, the
-    timestamp bounds, the day — is parsed here rather than against every
-    candidate. A malformed value is refused here too, in the order the keys are
-    read below, so a filter that cannot be honoured raises before any item is
-    walked. ``q`` is appended last because it is the only test that normalizes
-    text: the cheap ones drop what they can before it runs.
+    Built once per query, so each key is parsed once and a malformed value
+    raises before any item is walked. ``q`` goes last as the costliest test.
     """
 
     predicates: list[Callable[[Item], bool]] = []
@@ -2028,23 +1469,30 @@ def _filter_predicates(
 
     dated = [(attr, inclusive) for key, attr, inclusive in _DATE_FILTERS if flt.get(key)]
     if dated:
-        # One clock read for the whole query, and only when a date filter is on.
         today = today_local_date()
         predicates.extend(
-            _date_predicate(attr, today, inclusive=inclusive) for attr, inclusive in dated
+            partial(_date_passed, field=attr, today=today, inclusive=inclusive)
+            for attr, inclusive in dated
         )
 
     location_ids = selected_location_ids(flt)
     if location_ids:
-        # Parsed once for the whole query rather than once per candidate item.
         needles = _parse_location_selection(location_ids)
         include_subtree = bool(flt.get("include_subtree"))
         predicates.append(lambda item: _item_matches_locations(item, needles, include_subtree))
 
-    predicates.extend(_timestamp_predicates(flt))
+    # An empty bound is compared rather than parsed: `updated_before: ""` keeps nothing.
+    for key, attr, after in _TIMESTAMP_BOUNDS:
+        bound = flt.get(key)
+        if bound is None:
+            continue
+        if bound and not is_canonical_utc_timestamp(bound):
+            raise ValidationError(f"{key} must be an ISO-8601 UTC timestamp with 'Z'")
+        predicates.append(partial(_beyond_bound, field=attr, bound=bound, after=after))
 
-    if q:
-        predicates.append(lambda item: _item_matches_q(item, q))
+    query_words = normalize_text_for_sort(q).split()
+    if query_words:
+        predicates.append(partial(_item_matches_q, query_words=query_words))
     return predicates
 
 
@@ -2054,41 +1502,22 @@ def filter_items(
     *,
     known_statuses: Collection[str] = ITEM_STATUSES,
 ) -> list[Item]:
-    """Keep the items every key of ``flt`` accepts; each key is one test.
-
-    The tests are built once by :func:`_filter_predicates` — one per key the
-    filter carries and none for the keys it does not — and an item stops at the
-    first one it fails. What each key means is on :class:`ItemFilter`.
-    """
+    """Keep the items every key of ``flt`` accepts; see :class:`ItemFilter`."""
 
     if not flt:
         return list(items)
-
     predicates = _filter_predicates(flt, known_statuses=known_statuses)
-    if not predicates:
-        # A filter carrying only presentation hints, such as low_stock_first.
-        return list(items)
     return [item for item in items if all(passes(item) for passes in predicates)]
 
 
-#: What an item with no location sorts under in ascending order.
-#: A location path's sort key is built from location *names*, so a printable
-#: sentinel like ``date_sort_key``'s ``"~"`` would be outranked by any name
-#: beginning with an accented or non-Latin letter — "Éclairage" folds to a
-#: character well above ``~``. The highest code point cannot be outranked.
+#: What an unlocated item sorts under ascending. A location sort key is built
+#: from names, and an accented or non-Latin name can fold above any printable
+#: sentinel; the highest code point cannot be outranked.
 UNLOCATED_SORT_KEY: Final[str] = "\U0010ffff"
 
 
 def location_sort_key(path: LocationPath, order: str) -> str:
-    """Return a scalar sort key for an item's denormalized location path.
-
-    Items with no location sort last in BOTH orders — the rule
-    :func:`date_sort_key` applies to undated items. Their stored key is the
-    empty string, which a plain sort would float to the top of an ascending
-    list, so ascending substitutes the sentinel above and descending keeps the
-    empty string, which a reversed sort places last. The repository's cursor
-    pagination reads the same key, so page boundaries agree with this ordering.
-    """
+    """Sort key for a location path; unlocated items sort last in both orders."""
 
     if not path.sort_key:
         return UNLOCATED_SORT_KEY if order == "asc" else ""
@@ -2096,64 +1525,40 @@ def location_sort_key(path: LocationPath, order: str) -> str:
 
 
 def date_sort_key(value: str | None, order: str) -> str:
-    """Return a scalar sort key for a nullable YYYY-MM-DD field.
-
-    Items without a date sort last in BOTH orders: in ascending order null maps
-    to "~" (after any digit), in descending order to "" (smallest value, which
-    a reversed sort places last). The same key is used by the repository's
-    cursor pagination so page boundaries stay consistent with this ordering.
-    """
+    """Sort key for a nullable date; undated items sort last in both orders."""
 
     if value is None:
         return "~" if order == "asc" else ""
     return value
 
 
+DEFAULT_SORT: Final[Sort] = Sort(field="updated_at", order="desc")
+
+
+def sort_value(item: Item, sort: Sort) -> str | int:
+    """The key an item sorts under, shared by ``sort_items`` and the cursors."""
+
+    field, order = sort.get("field"), sort.get("order")
+    if field == "name":
+        return normalize_text_for_sort(item.name)
+    if field == "quantity":
+        return int(item.quantity)
+    if field in ("due_date", "inspection_date", "reminder_date"):
+        return date_sort_key(getattr(item, field), order)
+    if field == "location":
+        return location_sort_key(item.location_path, order)
+    return item.created_at if field == "created_at" else item.updated_at
+
+
 def sort_items(items: Iterable[Item], sort: Sort | None = None) -> list[Item]:
-    """Sort items by the requested field and order.
+    """Sort by ``sort`` (default updated_at desc), ties broken by id ascending.
 
-    Defaults to updated_at desc with id asc tie-break.
-    name sorting is case-insensitive using normalize_text_for_sort.
-    due_date / inspection_date place undated items last in both orders, and
-    location does the same for items filed nowhere.
-
-    Orders, it does not validate: :func:`validate_sort` refuses an unknown field
-    or order at the WebSocket boundary, which is where a client's typo has to be
-    named. A field this does not know falls to the default ordering.
+    Does not validate: :func:`validate_sort` refuses an unknown field at the
+    boundary, and one reaching here sorts as updated_at.
     """
 
-    result = list(items)
-    if not result:
-        return result
-
+    result = sorted(items, key=lambda x: str(x.id))
     if sort is None:
-        # Default: updated_at desc, id asc tie-break. Canonical fixed-width
-        # 'Z' timestamps sort lexicographically — no parsing needed.
-        result.sort(key=lambda x: str(x.id))
-        result.sort(key=lambda x: x.updated_at, reverse=True)
-        return result
-
-    field = sort.get("field")
-    order = sort.get("order")
-    reverse = order == "desc"
-    # Stable sort: primary key, then id asc tie-break
-    result.sort(key=lambda x: str(x.id))
-
-    if field == "name":
-        result.sort(key=lambda x: normalize_text_for_sort(x.name), reverse=reverse)
-    elif field == "quantity":
-        result.sort(key=lambda x: int(x.quantity), reverse=reverse)
-    elif field == "due_date":
-        result.sort(key=lambda x: date_sort_key(x.due_date, order), reverse=reverse)
-    elif field == "inspection_date":
-        result.sort(key=lambda x: date_sort_key(x.inspection_date, order), reverse=reverse)
-    elif field == "reminder_date":
-        result.sort(key=lambda x: date_sort_key(x.reminder_date, order), reverse=reverse)
-    elif field == "location":
-        result.sort(key=lambda x: location_sort_key(x.location_path, order), reverse=reverse)
-    elif field == "created_at":
-        result.sort(key=lambda x: x.created_at, reverse=reverse)
-    else:  # updated_at
-        result.sort(key=lambda x: x.updated_at, reverse=reverse)
-
+        sort = DEFAULT_SORT
+    result.sort(key=lambda x: sort_value(x, sort), reverse=sort.get("order") == "desc")
     return result

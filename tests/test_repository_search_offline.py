@@ -215,7 +215,7 @@ def test_multi_word_query_ands_across_fields_and_the_path() -> None:
 def test_a_query_that_normalizes_away_narrows_nothing() -> None:
     """A query that ASCII folding empties matches every item.
 
-    ``normalize_search_text`` keeps only what NFKD can render as ASCII, so a
+    ``normalize_text_for_sort`` keeps only what NFKD can render as ASCII, so a
     query written in a script without word boundaries — Japanese here — reduces
     to no words at all, and a filter with no words to test excludes nobody.
     """
