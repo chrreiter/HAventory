@@ -8,6 +8,7 @@ import { ref } from 'lit/directives/ref.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, tagLabel } from '../ui/chip';
 import { Modal, modalChrome } from '../ui/modal';
+import { searchBox } from '../ui/filter-chrome';
 import { LocationPicker } from '../ui/location-picker';
 import { Picker } from '../ui/picker';
 import { icon } from '../ui/icons';
@@ -99,6 +100,7 @@ export class HVOrganizeDialog extends LitElement {
     chip,
     modalChrome,
     idRow,
+    searchBox,
     css`
       :host {
         /* Every row's vertical padding, inherited into the hosted
@@ -176,24 +178,12 @@ export class HVOrganizeDialog extends LitElement {
         gap: 10px;
         padding: 14px 20px 10px;
       }
-      .search {
-        flex: 1;
-        min-width: 0;
-        display: flex;
-        align-items: center;
-        gap: 8px;
+      .hv-search {
         background: var(--hv-input-bg);
-        border-radius: var(--hv-radius-chip);
         padding: 9px 14px;
         color: var(--hv-text-secondary);
       }
-      .search input {
-        flex: 1;
-        min-width: 0;
-        border: none;
-        background: none;
-        outline: none;
-        font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
+      .hv-search input {
         color: var(--hv-text);
       }
       .toolbar-count {
@@ -206,7 +196,7 @@ export class HVOrganizeDialog extends LitElement {
       :host([mobile]) .toolbar {
         flex-wrap: wrap;
       }
-      :host([mobile]) .search {
+      :host([mobile]) .hv-search {
         flex-basis: 100%;
       }
       :host([mobile]) .toolbar-count {
@@ -806,7 +796,7 @@ export class HVOrganizeDialog extends LitElement {
   }) {
     return html`<div class="toolbar">
       ${opts.search
-        ? html`<label class="search">
+        ? html`<label class="hv-search">
             ${icon('magnify', 17)}
             <span class="hv-sr-only">${opts.search.label}</span>
             <input

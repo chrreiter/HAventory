@@ -303,7 +303,6 @@ export class HVItemEditor extends LitElement {
       label.hv-label {
         display: block;
       }
-      .hv-input,
       .field-button {
         box-sizing: border-box;
         width: 100%;
@@ -314,6 +313,10 @@ export class HVItemEditor extends LitElement {
         padding: 9px 11px;
         font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
         color: var(--hv-text);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-align: left;
       }
       :host([mobile]) .hv-input,
       :host([mobile]) .field-button {
@@ -332,12 +335,6 @@ export class HVItemEditor extends LitElement {
         min-height: 44px;
         line-height: 1.5;
         resize: vertical;
-      }
-      .field-button {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        text-align: left;
       }
       .field-button .value {
         flex: 1;
