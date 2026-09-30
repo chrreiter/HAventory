@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-# Bootstrap the HAventory dev environment (Linux/bash).
-#   - syncs the Python dev environment with uv (creates .venv from
-#     pyproject.toml + uv.lock, installs the `dev` dependency group)
-#   - installs frontend deps with npm ci --no-audit --no-fund
-#   - installs pre-commit hooks (unless --ci)
+# Bootstrap the dev environment: uv sync, card deps, pre-commit hooks (unless --ci).
 source "$(dirname "$0")/common.sh"
 
 CI=0
