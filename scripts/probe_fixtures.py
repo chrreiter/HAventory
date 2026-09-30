@@ -11,16 +11,12 @@ Options:
 Environment variables: none — everything is an argument.
 
 The five frames are what the attachment path has to survive: an oversized
-photographic JPEG, the same frame carrying an EXIF orientation tag, an oversized
-PNG with real transparency, an animated GIF, and a small JPEG that must arrive
-byte for byte. Together they are ~30 MB, which is why they are generated and
-never committed — and generating them is also the only way the orientation tag
-is readable rather than buried in a blob. That case is the one attachment defect
-that looks correct in every automated test and wrong on every phone.
+photographic JPEG, the same frame with an EXIF orientation tag, an oversized PNG
+with real transparency, an animated GIF, and a small JPEG that must arrive byte
+for byte. They total ~30 MB, so they are generated and never committed.
 
-Pillow lives in the non-default ``probes`` dependency group: the integration
-itself does not depend on it and does not want to, so a plain ``uv sync`` must
-not pull it in.
+Pillow lives in the non-default ``probes`` dependency group, so a plain
+``uv sync`` does not pull it in.
 
 Type-checked manually — ``scripts/`` sits outside mypy's ``files``:
   uv run --group probes mypy scripts/probe_fixtures.py
@@ -49,14 +45,12 @@ except ImportError:  # pragma: no cover - the group is opt-in
 EXIF_ORIENTATION_TAG = 0x0112
 EXIF_ORIENTATION_ROTATE_90_CW = 6
 
-# Grain strength for the synthetic frames. High enough that JPEG and PNG cannot
-# compress the result away: a fixture that lands under the card's 2 MiB
-# re-encode threshold would silently stop testing the re-encode.
+# High enough that JPEG and PNG cannot compress the frame under the card's 2 MiB
+# re-encode threshold.
 GRAIN_SIGMA = 64.0
 GRAIN_WEIGHT = 0.55
 
-# Longest edge of the two oversized frames. Both are past the card's 2048 cap,
-# so a probe can tell a real downscale from a file that was passed through.
+# Both oversized frames are past the card's 2048 cap.
 LARGE_PHOTO_SIZE = (4032, 3024)
 LARGE_PNG_SIZE = (2400, 1800)
 SMALL_PHOTO_SIZE = (800, 600)
@@ -82,11 +76,7 @@ FIXTURES: tuple[Fixture, ...] = (
 
 
 def _photographic(size: tuple[int, int]) -> Image.Image:
-    """A frame with camera-like entropy: smooth gradients under fine grain.
-
-    Flat colour would compress to nothing, and a file small enough to skip the
-    card's re-encode tests the opposite of what it was generated for.
-    """
+    """A frame with camera-like entropy: smooth gradients under fine grain."""
 
     bands = []
     for gradient in (
@@ -108,9 +98,7 @@ def _write_large_photo(target: Path) -> None:
 def _write_large_photo_with_orientation(target: Path, source: Path) -> None:
     """The same frame, tagged the way a phone tags a portrait shot.
 
-    The tag is set here rather than copied from a real photo so the value is
-    readable: a viewer that honours it shows 3024x4032, and anything that
-    re-encodes without applying it first stores the picture on its side.
+    Anything that re-encodes without applying the tag stores the picture on its side.
     """
 
     with Image.open(source) as frame:

@@ -1,21 +1,14 @@
 #!/usr/bin/env python3
 """Assert every version string in the repository agrees — and matches the tag.
 
-Seven files carry the release version, and release-please rewrites each of them
-through a different mechanism: the `python` release type handles
-``pyproject.toml``, ``extra-files`` JSON entries handle the integration
-manifest, the card's ``package.json`` and its ``package-lock.json``, a generic
-annotation handles ``const.py``, a TOML jsonpath handles ``uv.lock``, and the
-manifest file is release-please's own bookkeeping. Any one of them can silently
-stop being rewritten — a moved line drops a generic annotation, a renamed key
-orphans a jsonpath, and a jsonpath that matches nothing is a no-op rather than
-an error — and the failure mode is a release that ships mismatched versions
-rather than a failure.
+Seven files carry the release version and release-please rewrites each through a
+different mechanism. A moved line or a renamed key silently stops one being
+rewritten (a jsonpath that matches nothing is a no-op), and the result is a
+release that ships mismatched versions.
 
 Run with no arguments to check the files against each other. Pass ``--tag`` (or
-set ``GITHUB_REF_NAME`` on a tag build) to also require the git tag to name the
-same version, which is what closes the loop between the tag and what the
-integration reports at runtime.
+set ``GITHUB_REF_NAME`` on a tag build) to also require the tag to name the same
+version.
 """
 
 from __future__ import annotations
@@ -41,12 +34,7 @@ def _pyproject_version() -> str:
 
 
 def _uv_lock_version() -> str:
-    """The version recorded for the project's own entry in the lockfile.
-
-    uv writes ``pyproject``'s version into this entry, so a lockfile left behind
-    at the previous release does not merely disagree — the next ``uv`` command
-    rewrites it and dirties the working tree.
-    """
+    """The version recorded for the project's own entry in the lockfile."""
     with (REPO_ROOT / "uv.lock").open("rb") as handle:
         packages = tomllib.load(handle)["package"]
     for package in packages:
@@ -56,14 +44,9 @@ def _uv_lock_version() -> str:
 
 
 def _package_lock_version() -> str:
-    """The version the card's lockfile records — in both of the places it does.
+    """The version the card's lockfile records, which npm writes twice.
 
-    npm writes the root package's version twice: once at the top level and again
-    under the ``""`` key in ``packages``. It takes one ``extra-files`` entry per
-    copy, so rewriting only one is a live failure mode, and the copy left behind
-    does not merely disagree — the next ``npm install`` rewrites it to match
-    ``package.json`` and dirties the working tree, exactly like a stale
-    ``uv.lock``.
+    It takes one ``extra-files`` entry per copy: the top level and ``packages[""]``.
     """
     path = "cards/haventory-card/package-lock.json"
     data = json.loads((REPO_ROOT / path).read_text(encoding="utf-8"))
