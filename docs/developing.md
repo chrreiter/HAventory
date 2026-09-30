@@ -183,9 +183,11 @@ when the run fails.
 docstring states its own constraints; this is the map.
 
 **A write, end to end.** A WebSocket command (`ws.py`) or a `haventory.*` service
-(`services.py`) validates its frame against its own schema, then calls the one function in
-`ops.py` for that write. The op runs the repository call and returns what the write earns.
-The caller then persists, announces and answers, always in that order:
+(`services.py`) validates its frame against its own schema. A write both surfaces make then
+runs the one function in `ops.py` for it, which makes the repository call and returns what
+the write earns; a write only the WebSocket makes (attachments, statuses, reminder set and
+clear, subtree moves) calls the repository from its handler. Either way the caller then
+persists, announces and answers, always in that order:
 
 1. **Persist.** `repository.py` holds the inventory in memory with its indexes. Every write
    is awaited through one persist path, serialized by one lock, and a failure reaches the
@@ -227,8 +229,9 @@ created.
 ### Changing the WebSocket API
 
 1. Add or change the command in `ws.py`: its schema, its handler under `@ws_guard`, and its
-   entry in `HANDLERS`. A write both surfaces make goes in `ops.py`, and in `services.py`
-   plus `services.yaml` and `strings.json` if it is a service too.
+   entry in `HANDLERS`. A write both surfaces make goes in `ops.py`; a service also needs its
+   entry in `services.py`, `services.yaml`, `strings.json` and every
+   `translations/<tag>.json`.
 2. Update [`backend_api_contract.md`](backend_api_contract.md) and
    [`data_shapes.md`](data_shapes.md) in the same pull request.
    `tests/test_docs_contract_offline.py` checks the lists in the contract that name code.
