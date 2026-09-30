@@ -26,10 +26,6 @@ export type OverflowMenuEntry =
   | { divider: true }
   | { caption: string };
 
-function isItem(entry: OverflowMenuEntry): entry is OverflowMenuItem {
-  return 'id' in entry;
-}
-
 /** The sides of the trigger's rect that the placement reads. */
 export interface MenuAnchorRect {
   top: number;
@@ -62,12 +58,9 @@ export function placeMenu(
 }
 
 /**
- * The ⋮ menu for the card and full-view headers, and for each list row.
- *
- * Self-contained: it renders its own trigger and a popover placed from the
- * trigger's rect. HA's
- * `ha-button-menu`/`mwc-list-item` are not used because they only exist inside
- * the HA frontend — see the note in ui/icons.ts.
+ * The ⋮ menu for the card and full-view headers, and for each list row. It
+ * renders its own trigger and popover because HA's `ha-button-menu` only
+ * exists inside the HA frontend.
  */
 @customElement('hv-overflow-menu')
 export class HVOverflowMenu extends LitElement {
@@ -88,13 +81,9 @@ export class HVOverflowMenu extends LitElement {
         background: var(--hv-primary-tint);
         color: var(--hv-on-primary-tint);
       }
-      /* Placed against the viewport, not the trigger's box: a popup anchored
-         inside the row is clipped by the nearest scrolling ancestor, and the
-         list's row scroller shrinks below this menu's height whenever few rows
-         match — with one row, neither opening direction can fit inside it.
-         Fixed positioning is outside every ancestor's clip; placeMenu()
-         supplies the coordinates from the trigger's rect, and they follow the
-         trigger while an ancestor scrolls or the window resizes. */
+      /* Fixed, not anchored in the row: the list's row scroller clips a popup
+         and can be shorter than this menu when few rows match. placeMenu()
+         supplies the coordinates from the trigger's rect. */
       .menu {
         position: fixed;
         top: var(--hv-menu-top, 0);
@@ -169,25 +158,12 @@ export class HVOverflowMenu extends LitElement {
         color: var(--hv-text-tertiary);
       }
 
-      /* A trigger-anchored 250px dropdown is a desktop shape: at phone width it
-         covers most of the list it is acting on, and the rest of the card
-         answers exactly this need with a bottom sheet. The menu becomes one
-         here — the inset overrides the measured coordinates.
-
-         A media query rather than the card's mobile flag: the panel is
-         position: fixed, so it is placed against the viewport and the
-         viewport is what decides whether there is room — and it keeps the
-         component free of a mobile property that all three of its callers
-         would have to thread through.
-
-         The width is NARROW_QUERY from ui/responsive.ts, which CSS cannot
-         read; a test pins the two spellings together. Every overlay the card
-         hosts flips at that one width, so a viewport never shows a sheet menu
-         over a centred dialog. */
-      /* The dropdown form needs no scrim; only the sheet dims the page. */
       .scrim {
         display: none;
       }
+      /* At phone width the menu becomes a bottom sheet; the inset overrides the
+         measured coordinates. The width is NARROW_QUERY from ui/responsive.ts,
+         which CSS cannot read, so every fixed overlay flips at the same width. */
       @media (max-width: 700px) {
         .menu {
           inset: auto 0 0 0;
@@ -198,21 +174,10 @@ export class HVOverflowMenu extends LitElement {
           padding: 8px 0 max(8px, env(safe-area-inset-bottom));
           animation: rise var(--hv-motion-sheet) var(--hv-ease-out);
         }
-        /*
-         * Dims the page behind the sheet.
-         *
-         * A sibling with its own z-index, not a ::before on the menu: the menu
-         * carries a z-index and so establishes a stacking context, and inside
-         * one the element's background paints first and a negative-z-index
-         * child paints next — above that background, below the content. A wash
-         * there lands on the menu's own surface instead of behind it.
-         *
-         * pointer-events: none is what keeps the menu closable: it closes on any
-         * outside pointerdown, and that check asks whether the event's composed
-         * path includes this element — a scrim that swallowed the tap would be
-         * inside the path and would stop the menu closing when you tapped away
-         * from it.
-         */
+        /* A sibling, not a ::before on the menu: the menu's z-index makes a
+           stacking context, so a pseudo-element wash would paint over its own
+           surface. pointer-events: none keeps an outside tap outside this
+           element's composed path, which is what closes the menu. */
         .scrim {
           display: block;
           position: fixed;
@@ -260,12 +225,9 @@ export class HVOverflowMenu extends LitElement {
   };
 
   /**
-   * Ancestors holding a scroll listener while the menu is open. A scroll moves
-   * the trigger while a fixed menu stays where it was painted, and scroll
-   * events are composed: false — a scroller inside another component's shadow
-   * root never reaches a window listener. Only an ancestor's scrolling can
-   * move the trigger, so listening on each composed ancestor directly covers
-   * every scroller that matters; ancestors that never scroll never fire.
+   * Ancestors holding a scroll listener while the menu is open. Scroll events
+   * are not composed, so a scroller inside another shadow root never reaches a
+   * window listener; each composed ancestor is listened to directly.
    */
   private _reflowTargets: EventTarget[] = [];
 
@@ -378,7 +340,6 @@ export class HVOverflowMenu extends LitElement {
             ${this.entries.map((entry) => {
               if ('divider' in entry) return html`<div class="divider" role="separator"></div>`;
               if ('caption' in entry) return html`<div class="caption">${entry.caption}</div>`;
-              if (!isItem(entry)) return null;
               return html`<button
                 class="entry"
                 role="menuitem"
@@ -389,12 +350,8 @@ export class HVOverflowMenu extends LitElement {
               >
                 ${entry.glyph ? html`<span class="glyph">${icon(entry.glyph, 18)}</span>` : null}
                 <span class="labels">
-                  ${entry.label}${entry.sub ? html`<span class="sub">${entry.sub}</span>` : null}${
-                    // Beside the label this had one line to share with it inside a
-                    // 250px menu, so "Locations · Tags · Categories" ran straight
-                    // over "Organize…". It is the same kind of hint as `sub`.
-                    entry.meta ? html`<span class="meta">${entry.meta}</span>` : null
-                  }
+                  ${entry.label}${entry.sub ? html`<span class="sub">${entry.sub}</span>` : null}
+                  ${entry.meta ? html`<span class="meta">${entry.meta}</span>` : null}
                 </span>
                 ${entry.badge ? html`<span class="badge">${entry.badge}</span>` : null}
               </button>`;

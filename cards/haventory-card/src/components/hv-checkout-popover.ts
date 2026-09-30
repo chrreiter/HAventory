@@ -14,23 +14,12 @@ import type { Item } from '../store/types';
 const DEFAULT_OFFSET = 7;
 
 /**
- * Check-out with an optional due date.
+ * Check-out with an optional due date. It invites a date with a default
+ * rather than demanding one, and keeps "No due date" as a first-class path.
  *
- * The WS API takes `due_date` as optional, but the date is what makes overdue
- * highlighting mean anything. So this invites one with a sensible default
- * instead of demanding it, and keeps "No due date" as a first-class path rather
- * than a cancel.
- *
- * Where it draws and how big its controls are are two separate questions, and a
- * caller answers them independently. `inline` makes it a step inside the body of
- * the surface that opened it — no scrim, no placement of its own — which only a
- * surface that has a body to hold it can ask for. `touch` grows the controls to
- * thumb size, which any caller on a narrow surface needs, including the ones
- * that draw it as a centred dialog. Left as one flag, the second was only
- * available to callers that could take the first.
- *
- * With neither, it anchors to the control that opened it; with `touch` alone it
- * is a centred dialog with finger-sized controls.
+ * `inline` draws it as a step inside the caller's body (no scrim, no placement)
+ * and `touch` sizes its controls for a finger; the two are independent. With
+ * neither it anchors to the control that opened it, or centres without one.
  */
 @customElement('hv-checkout-popover')
 export class HVCheckoutPopover extends LitElement {
@@ -46,11 +35,8 @@ export class HVCheckoutPopover extends LitElement {
         position: fixed;
         inset: 0;
       }
-      /* Anchored, this layer exists only to catch the click that dismisses, and
-         a popover hanging off the control that opened it dims nothing. With no
-         anchor it is a centred dialog instead — asked by a bar that has no
-         control to hang from, about a whole selection — so it dims like the
-         confirm it stands beside, at the same strength. */
+      /* Anchored, the scrim only catches the dismissing click. Centred, it dims
+         like the confirm dialog it stands beside. */
       .scrim.dim {
         background: rgba(0, 0, 0, 0.35);
       }
@@ -69,7 +55,6 @@ export class HVCheckoutPopover extends LitElement {
         position: static;
         width: auto;
         border: 1px solid var(--hv-primary);
-        border-radius: var(--hv-radius-panel);
         box-shadow: none;
         background: var(--hv-surface-raised);
       }
@@ -90,9 +75,6 @@ export class HVCheckoutPopover extends LitElement {
         display: grid;
         gap: 8px;
       }
-      /* The shape is ui/day-offsets; a thumb's worth of height on top of it is
-         this popover's, and the editor that draws the same chips grows them by
-         its own amount. */
       :host([touch]) .offset {
         min-height: 40px;
         padding: 0 15px;
@@ -129,10 +111,8 @@ export class HVCheckoutPopover extends LitElement {
         border-color: var(--hv-divider);
         color: var(--hv-text-tertiary);
       }
-      /* Three buttons never fit across 300px once the confirm label carries a
-         date: every one of them wrapped onto three lines. The escape hatch
-         takes a row of its own and the pair that ends the dialog keeps the
-         bottom one. */
+      /* Three buttons do not fit across 300px once the confirm label carries a
+         date, so the no-date button takes a row of its own. */
       .actions {
         display: flex;
         align-items: center;
@@ -149,7 +129,6 @@ export class HVCheckoutPopover extends LitElement {
       :host([touch]) .actions {
         display: grid;
         gap: 9px;
-        padding: 0 12px 14px;
       }
       .actions .spacer {
         margin-left: auto;
@@ -190,11 +169,7 @@ export class HVCheckoutPopover extends LitElement {
    * an item that is already out.
    */
   @property({ type: String }) mode: 'check-out' | 'set-due-date' = 'check-out';
-  /**
-   * Name to head the dialog with when there is no saved item behind it — the
-   * editor can check out an item it is still in the middle of creating, which
-   * has no id and no row yet.
-   */
+  /** Heading name when there is no saved item, as for an item still being created. */
   @property({ type: String }) itemName = '';
 
   @state() private _due: string | null = null;
@@ -202,7 +177,6 @@ export class HVCheckoutPopover extends LitElement {
   /** The +X days field is showing, and owns the date instead of a preset. */
   @state() private _customOpen = false;
   @state() private _customDays = DEFAULT_CUSTOM_DAYS;
-
 
   /** Opening a surface must put focus in it, or Escape never reaches it. */
   private _dialogFocus = new DialogFocus();
@@ -242,14 +216,10 @@ export class HVCheckoutPopover extends LitElement {
     if (!this.anchor) return 'top: 20dvh; left: 50%; transform: translateX(-50%);';
     const width = 300;
     const gap = 6;
-    const viewportWidth = typeof window === 'undefined' ? width : window.innerWidth;
-    const viewportHeight = typeof window === 'undefined' ? 800 : window.innerHeight;
-    const left = Math.max(8, Math.min(this.anchor.left, viewportWidth - width - 8));
-
-    // Roughly what the card measures with the offsets, the date row and three
-    // actions. Hang it above the anchor when that much room is not left below:
-    // opened from a control far down a long form, a below-only popover runs off
-    // the bottom of the screen.
+    const viewportHeight = window.innerHeight;
+    const left = Math.max(8, Math.min(this.anchor.left, window.innerWidth - width - 8));
+    // Roughly the card's height; it hangs above the anchor when that much room
+    // is not left below.
     const height = 300;
     const below = viewportHeight - this.anchor.bottom - gap;
     const above = this.anchor.top - gap;
@@ -264,6 +234,7 @@ export class HVCheckoutPopover extends LitElement {
     if (!this.open || !subject) return null;
     const z = this._zBase || 9998;
     const settingOnly = this.mode === 'set-due-date';
+    const action = settingOnly ? t('hv.action.set') : t('hv.action.checkOut');
 
     const card = html`
       <div
@@ -340,13 +311,8 @@ export class HVCheckoutPopover extends LitElement {
             @click=${() => this._commit(this._due)}
           >
             ${this._due
-              ? t('hv.checkout.confirmWithDate', {
-                  action: settingOnly ? t('hv.action.set') : t('hv.action.checkOut'),
-                  date: formatDate(this._due),
-                })
-              : settingOnly
-                ? t('hv.action.set')
-                : t('hv.action.checkOut')}
+              ? t('hv.checkout.confirmWithDate', { action, date: formatDate(this._due) })
+              : action}
           </button>
         </div>
       </div>
