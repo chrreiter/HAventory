@@ -29,6 +29,7 @@ import type {
 } from './types';
 import { WSClient } from './ws';
 import { DEFAULT_SORT } from './sort';
+import { onDayChange } from '../ui/day-clock';
 import { normalizeQuickFilters } from '../ui/quick-filters';
 import { sortLocationTree } from './location-tree';
 
@@ -292,6 +293,7 @@ export class Store {
   private areaRegistryAttempt = 0;
   private connectionReadyUnsub: Unsubscribe | null = null;
   private connectionLostUnsub: Unsubscribe | null = null;
+  private dayChangeUnsub: Unsubscribe | null = null;
   /** True once `dispose` ran, so a load still in flight wires nothing. */
   private disposed = false;
   /** Last untouched `distinct_values` result, so drafts can be re-merged. */
@@ -362,8 +364,18 @@ export class Store {
         this.subscribeTopics();
         this.watchAreaRegistry();
         this.watchConnectionGaps();
+        this.watchDayChange();
       }
     }
+  }
+
+  /**
+   * Re-read the counts when the browser's day turns over. The backend's midnight
+   * broadcast is the primary path; this catches a device that slept through it.
+   */
+  private watchDayChange() {
+    this.dayChangeUnsub?.();
+    this.dayChangeUnsub = onDayChange(() => void this.refreshStats().catch(() => undefined));
   }
 
   /**
@@ -544,11 +556,13 @@ export class Store {
     this.locationsUnsub?.();
     this.statusesUnsub?.();
     this.areaRegistryUnsub?.();
-    // Held by HA's connection, which outlives every card on the dashboard.
+    // Held by HA's connection and the module-level day clock, which outlive every card.
     this.connectionReadyUnsub?.();
     this.connectionLostUnsub?.();
+    this.dayChangeUnsub?.();
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
     this.areaRegistryUnsub = this.connectionReadyUnsub = this.connectionLostUnsub = null;
+    this.dayChangeUnsub = null;
     this.latestSubscribeRound.invalidate();
     this.latestAreaWatch.invalidate();
     this.connectionLostGrace.cancel();
