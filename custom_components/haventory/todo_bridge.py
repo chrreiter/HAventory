@@ -60,10 +60,9 @@ def summary_for(name: str, quantity: int, threshold: int) -> str:
     return f"{name} {MULTIPLICATION_SIGN}{max(threshold - quantity, 1)}"
 
 
-def configured_entity_id(entry: ConfigEntry) -> str:
-    """The list this entry mirrors onto, or `""` when the bridge is off."""
+def clean_todo_entity_id(value: Any) -> str:
+    """The chosen list as an entity id, or `""` for off (a cleared selector sends none)."""
 
-    value = entry.options.get(CONF_TODO_ENTITY_ID, DEFAULT_TODO_ENTITY_ID)
     return value.strip() if isinstance(value, str) else DEFAULT_TODO_ENTITY_ID
 
 
@@ -73,7 +72,7 @@ def apply_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     runtime = find_runtime(hass)
     if runtime is None:
         return
-    runtime.todo.entity_id = configured_entity_id(entry)
+    runtime.todo.entity_id = clean_todo_entity_id(entry.options.get(CONF_TODO_ENTITY_ID))
 
 
 async def async_setup(hass: HomeAssistant, entry: ConfigEntry) -> None:

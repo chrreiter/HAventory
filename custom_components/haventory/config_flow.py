@@ -24,11 +24,10 @@ from .const import (
     DEFAULT_CARD_TITLE,
     DEFAULT_QUICK_FILTERS,
     DEFAULT_SIDEBAR_PANEL_ENABLED,
-    DEFAULT_TODO_ENTITY_ID,
     DOMAIN,
     QUICK_FILTER_KEYS,
 )
-from .todo_bridge import TODO_DOMAIN, TODO_FEATURE_DELETE_ITEM_NAME
+from .todo_bridge import TODO_DOMAIN, TODO_FEATURE_DELETE_ITEM_NAME, clean_todo_entity_id
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry, ConfigFlowResult
@@ -56,16 +55,6 @@ def clean_quick_filters(value: Any) -> list[str]:
         return list(DEFAULT_QUICK_FILTERS)
     chosen = {entry for entry in value if isinstance(entry, str)}
     return [key for key in QUICK_FILTER_KEYS if key in chosen]
-
-
-def clean_todo_entity_id(value: Any) -> str:
-    """Normalize the chosen shopping list to an entity id, or `""` for off.
-
-    A cleared entity selector submits no value at all, which also means off.
-    """
-    if not isinstance(value, str):
-        return DEFAULT_TODO_ENTITY_ID
-    return value.strip()
 
 
 def _todo_schema(current: dict[str, Any]) -> vol.Schema:

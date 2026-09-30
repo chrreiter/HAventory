@@ -37,13 +37,13 @@ from . import media as media_mod
 from . import services as services_mod
 from . import todo_bridge as todo_mod
 from . import ws as ws_mod
+from .config_flow import clean_card_title, clean_quick_filters
 from .const import (
     CONF_ALLOW_LOSSY_LOAD,
     CONF_CARD_TITLE,
     CONF_QUICK_FILTERS,
     CONF_SIDEBAR_PANEL_ENABLED,
     CORRUPT_BACKUP_STORAGE_KEY,
-    DEFAULT_CARD_TITLE,
     DEFAULT_SIDEBAR_PANEL_ENABLED,
     DOMAIN,
     INTEGRATION_VERSION,
@@ -54,7 +54,6 @@ from .const import (
     PANEL_ICON,
     PANEL_URL_PATH,
     PLATFORMS,
-    QUICK_FILTER_KEYS,
     REPAIR_ISSUE_IDS,
 )
 from .exceptions import CorruptSchemaVersionError, SchemaDowngradeError, StorageError
@@ -114,7 +113,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
     entry.runtime_data = HAventoryRuntime(
         store=store,
         repository=repository,
-        card_title=_resolve_card_title(entry),
+        card_title=clean_card_title(entry.options.get(CONF_CARD_TITLE)),
         quick_filters=_resolve_quick_filters(entry),
     )
 
@@ -302,32 +301,17 @@ async def _async_sweep_orphaned_media(hass: HomeAssistant, repository: Repositor
         )
 
 
-def _resolve_card_title(entry: ConfigEntry) -> str:
-    """Read the configured card title; an unset or blank one is the default."""
-    title = entry.options.get(CONF_CARD_TITLE)
-    if isinstance(title, str) and title.strip():
-        return title.strip()
-    return DEFAULT_CARD_TITLE
-
-
 def _resolve_quick_filters(entry: ConfigEntry) -> list[str] | None:
-    """Read the configured quick-filter pills, or `None` when none was chosen.
-
-    `None` leaves the choice to the dashboard, while `[]` means no pills
-    anywhere. Names this build does not know are dropped.
-    """
+    """The configured pills, or `None` when none was chosen: the dashboard decides."""
     chosen = entry.options.get(CONF_QUICK_FILTERS)
-    if not isinstance(chosen, list):
-        return None
-    known = {entry_name for entry_name in chosen if isinstance(entry_name, str)}
-    return [key for key in QUICK_FILTER_KEYS if key in known]
+    return clean_quick_filters(chosen) if isinstance(chosen, list) else None
 
 
 async def _async_options_updated(hass: HomeAssistant, entry: HAventoryConfigEntry) -> None:
     """Apply changed options: card title, pills, sidebar panel, shopping list."""
     runtime = find_runtime(hass)
     if runtime is not None:
-        runtime.card_title = _resolve_card_title(entry)
+        runtime.card_title = clean_card_title(entry.options.get(CONF_CARD_TITLE))
         runtime.quick_filters = _resolve_quick_filters(entry)
     # Covers the toggle and a renamed card alike: the sidebar entry carries the
     # card title, and re-registering is how a changed one reaches the sidebar.
@@ -578,7 +562,7 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
         )
         return
 
-    title = _resolve_card_title(entry)
+    title = clean_card_title(entry.options.get(CONF_CARD_TITLE))
     # The exact string both card loaders receive, or the element is defined twice.
     url = _card_url()
     wanted = (title, url)
