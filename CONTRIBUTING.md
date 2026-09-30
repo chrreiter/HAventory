@@ -22,7 +22,7 @@ reporting route and says what to expect from a one-maintainer project.
 ## Development setup
 
 Prerequisites: [uv](https://docs.astral.sh/uv/), Node 22.13+ (or 24 LTS), git. The target is
-**Home Assistant 2026.6.0+**, which means **Python 3.14** and **Node 22.13+/24**.
+**Home Assistant 2026.7.0+**, which means **Python 3.14** and **Node 22.13+/24**.
 
 The development toolchain is **Linux/bash only**. The scripts, the test scaffolding and CI
 all assume it, and nothing here is tested on a Windows host. On Windows, develop inside WSL2.

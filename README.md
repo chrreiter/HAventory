@@ -11,7 +11,7 @@ check? HAventory answers those on the same screen as everything else in the hous
 
 It is a custom integration plus a Lovelace card. Everything is stored locally in Home
 Assistant and pushed live to every open screen. No account, no cloud, no external service.
-Minimum Home Assistant **2026.6.0**.
+Minimum Home Assistant **2026.7.0**.
 
 ![The HAventory full view: a location tree beside a sortable table of items](https://raw.githubusercontent.com/chrreiter/HAventory/main/docs/assets/screenshots/full-view.png)
 
@@ -57,7 +57,7 @@ button above opens your own Home Assistant and does steps 1 and 2 for you.
 5. Reload the browser page once, so a tab that was already open picks up the card. A normal
    reload is enough.
 
-Minimum Home Assistant version: **2026.6.0**, the oldest release that runs HAventory and has
+Minimum Home Assistant version: **2026.7.0**, the oldest release that runs HAventory and has
 no known unpatched high or critical security advisory. HACS installs released versions only.
 
 More on setup, the card's options, YAML-mode dashboards, updating and removing:
