@@ -941,18 +941,19 @@ export class HVFullView extends LitElement {
   /** Build the batch for an action over the current selection. */
   private _opsFor(detail: BulkRunDetail, items: Item[]): { label: string; ops: BulkOperation[] } {
     const tags = detail.tags ?? [];
+    const version = (i: Item) => ({ expected_version: i.version });
     // add_tags/remove_tags are additive server-side, so they do not clobber a
     // concurrent edit the way a whole-array update would.
     const table: Record<BulkAction, [TranslationKey, (i: Item) => BulkOperation]> = {
       move: [
         'hv.bulk.label.move',
-        (i) => makeBulkOp('item_move', { item_id: i.id, location_id: detail.locationId ?? null, expected_version: i.version }),
+        (i) => makeBulkOp('item_move', { item_id: i.id, location_id: detail.locationId ?? null, ...version(i) }),
       ],
       'add-tags': ['hv.bulk.label.addTags', (i) => makeBulkOp('item_add_tags', { item_id: i.id, tags })],
       'remove-tags': ['hv.bulk.label.removeTags', (i) => makeBulkOp('item_remove_tags', { item_id: i.id, tags })],
       'set-category': [
         'hv.bulk.label.setCategory',
-        (i) => makeBulkOp('item_update', { item_id: i.id, category: detail.category ?? null, expected_version: i.version }),
+        (i) => makeBulkOp('item_update', { item_id: i.id, category: detail.category ?? null, ...version(i) }),
       ],
       'adjust-qty': [
         'hv.bulk.label.adjustQty',
@@ -963,10 +964,7 @@ export class HVFullView extends LitElement {
         (i) => makeBulkOp('item_check_out', { item_id: i.id, due_date: detail.dueDate ?? null }),
       ],
       'check-in': ['hv.bulk.label.checkIn', (i) => makeBulkOp('item_check_in', { item_id: i.id })],
-      delete: [
-        'hv.bulk.label.delete',
-        (i) => makeBulkOp('item_delete', { item_id: i.id, expected_version: i.version }),
-      ],
+      delete: ['hv.bulk.label.delete', (i) => makeBulkOp('item_delete', { item_id: i.id, ...version(i) })],
     };
     const [label, op] = table[detail.action];
     return { label: t(label), ops: items.map(op) };
@@ -1006,7 +1004,8 @@ export class HVFullView extends LitElement {
 
     this._bulkProgress = null;
     if (!outcome) return;
-    this._bulkResult = { label: batch.label, succeeded: Math.max(0, ran - outcome.failed.length), failed: outcome.failed };
+    const { failed } = outcome;
+    this._bulkResult = { label: batch.label, succeeded: Math.max(0, ran - failed.length), failed };
     // Narrow the selection to what still needs attention.
     this.store?.setSelected(outcome.failed.map((f) => f.itemId).filter((id): id is string => !!id));
   }
