@@ -27,18 +27,19 @@ floor is a judgment call with a security half: `CONTRIBUTING.md` → "Developmen
 ### Backend: `custom_components/haventory/`
 Each module documents its own traps. This is the map to which file to open.
 
-- `__init__.py`: setup and teardown, runtime wiring, the three persist helpers, Lovelace
-  resource registration, and the sidebar panel (`panel_custom` at `/haventory`).
+- `__init__.py`: setup and teardown, runtime wiring, Lovelace resource registration, and
+  the sidebar panel (`panel_custom` at `/haventory`).
 - `runtime.py`: `HAventoryRuntime`, plus the two lookups whose difference decides whether
   teardown works at all, `loaded_runtime` against `find_runtime`.
 - `models.py`: `Item` / `Location`, the create/update/filter/sort schemas, and the validation
-  every surface refuses through, so one value is refused for one reason everywhere.
+  every surface refuses through, so one value is refused for one reason everywhere. Search
+  and sort normalize text here.
   `SORT_FIELDS` is read off `Sort`. Free of I/O.
 - `serialization.py`: one serializer per entity, shared by the WebSocket API and the
   services so the two surfaces cannot answer with different shapes.
-- `repository.py`: the in-memory indexed source of truth, and the search normalization.
-- `storage.py`: HA `Store`, schema versioning, serialized writes, and the refusal to read a
-  store a newer schema wrote. `migrations.py` is forward-only and **idempotent**.
+- `repository.py`: the in-memory indexed source of truth.
+- `storage.py`: HA `Store`, schema versioning, serialized writes, the persist helpers, and
+  the refusal to read a store a newer schema wrote. `migrations.py` is forward-only and **idempotent**.
 - `ws.py`: the primary API surface: CRUD, the four subscription topics, and `ws_guard`.
 - `subscriptions.py`: the subscription registry and the fan-out that writes events on the
   wire. `events.py` holds one announce function per topic and is the only module that calls

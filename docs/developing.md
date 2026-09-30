@@ -69,7 +69,10 @@ against real HA APIs that the stubs cannot see. It is opt-in, below.
 
 Timings are measured against a live Home Assistant with the `test-haventory` skill's
 `stress.py`. A budget asserted inside the offline suite would only measure the machine it
-ran on.
+ran on. Every write re-serializes the whole store, so a create's cost follows the store's
+size. The reference curve, one editor at a time: about 2.5 ms on an empty store, 9.5 ms at
+1 000 items, 17 ms at 2 000 and 43 ms at 5 000, with occasional 230–280 ms save spikes above
+about 3 000. A batch or an import writes once.
 
 ### In-process HA integration tests (opt-in)
 
