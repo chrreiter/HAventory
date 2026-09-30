@@ -6,33 +6,20 @@ import { t } from '../i18n';
 import type { TranslationKey } from '../i18n';
 import { ICONS, icon } from './icons';
 import type { IconName } from './icons';
+import { luminanceOf } from './theme';
 
 /**
- * One vocabulary for the item status wherever a surface names it — filter
- * chips, row badges, the editor's select — so a slug never renders with two
- * different labels.
- *
- * A household defines its own statuses, so the labels, colours and glyphs come
- * from `haventory/config` rather than from constants here. Every function below
- * therefore takes the definitions the store holds. What stays local is the
- * fallback: the built-in three, which is what an absent `statuses` section has
- * meant since schema v6 and what a backend too old to report them still means.
- *
- * One label does not come from the store as stored: a built-in nobody has
- * renamed is printed in the reader's language. `displayLabel` holds that rule,
- * and every surface reaches it through `statusLabel` or `renderStatusChip`.
+ * One vocabulary for the item status wherever a surface names it. A household
+ * defines its own statuses, so every function takes the store's definitions,
+ * falling back to the built-in three until `haventory/config` answers.
  */
 
 /** What an item carries when nothing set its status. */
 export const DEFAULT_STATUS = 'ok';
 
 /**
- * The built-in vocabulary, matching what the backend seeds. Used until
- * `haventory/config` answers — after that the store's copy wins, including for
- * these three, because a household may have renamed or recoloured them — and
- * its labels stay in use afterwards as the English `displayLabel` measures a
- * rename against. `tests/test_frontend_registration.py` holds the three to the
- * backend's own seed, which neither side can read.
+ * The backend's seed, held to it by `tests/test_frontend_registration.py`. Its
+ * labels are also the English `displayLabel` measures a rename against.
  */
 export const BUILT_IN_STATUSES: readonly StatusDefinition[] = [
   { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
@@ -53,13 +40,9 @@ const SEEDED_LABELS: ReadonlyMap<string, string> = new Map(
 );
 
 /**
- * Every colour a status may take: five hues, each in a light and a strong form.
- * Ordered hue-major so the two intensities of a hue stay adjacent: the picker
- * lays the swatches out as a wrapping row, and a neighbouring pair reads as one
- * hue at two strengths wherever the line happens to break. Pinned to the
- * backend's `STATUS_COLORS` by `tests/test_frontend_registration.py` — the
- * backend refuses a value outside its own list, and neither side can see the
- * other.
+ * Every colour a status may take, hue-major so a hue's two strengths stay
+ * adjacent in the picker. Pinned to the backend's `STATUS_COLORS` by
+ * `tests/test_frontend_registration.py`.
  */
 export const STATUS_COLORS: readonly StatusColor[] = [
   'neutral',
@@ -95,7 +78,7 @@ export function statusList(
   return defs && defs.length > 0 ? defs : BUILT_IN_STATUSES;
 }
 
-/** An item's status; absent (older backend payloads) reads as the default. */
+/** An item's status; absent reads as the default. */
 export function itemStatus(item: Pick<Item, 'status'>): string {
   return item.status ?? DEFAULT_STATUS;
 }
@@ -108,23 +91,9 @@ function definitionOf(
 }
 
 /**
- * What a definition reads as on screen, which is not always what it stores.
- *
- * A status a household created is that household's own words, in whatever
- * language it typed them, and prints exactly as stored. The three the backend
- * seeds are nobody's words: while one still carries the English the seed wrote,
- * the card prints the reader's word for it, so two members of one household
- * reading different languages each see their own — the same rule Home Assistant
- * applies to an entity state. The first rename makes the label a choice
- * somebody took, and from then on it prints as stored in every language.
- *
- * The store never sees any of this. A translated chip is a display, not a
- * rename: nothing here is ever written back, so an export stays language-
- * neutral and a French household gets French chips the day that dictionary
- * ships.
- *
- * Exported for the one surface that needs the two apart — the organize dialog
- * edits the stored label and shows this beside it.
+ * What a definition reads as on screen. A built-in still carrying its seeded
+ * English prints in the reader's language; any other label, renamed built-ins
+ * included, prints as stored. Display only: nothing is written back.
  */
 export function displayLabel(def: StatusDefinition): string {
   const key = BUILT_IN_LABEL_KEYS.get(def.slug);
@@ -132,13 +101,7 @@ export function displayLabel(def: StatusDefinition): string {
   return t(key);
 }
 
-/**
- * Display label for a slug.
- *
- * Falls back to the slug itself rather than rendering nothing: an item can
- * carry a status this card has not been told about — an import defines one, or
- * another client created one since `haventory/config` was last read.
- */
+/** Display label for a slug, or the slug itself for a status the card has not been told about. */
 export function statusLabel(
   slug: string,
   defs: readonly StatusDefinition[] | null | undefined,
@@ -148,21 +111,9 @@ export function statusLabel(
 }
 
 /**
- * How many items carry a slug, or `null` when the payload cannot say.
- *
- * One reading for every surface that prices a status — the sidebar facet, the
- * filter chips, the organize tab — because three surfaces deriving the same
- * number three ways is three chances to disagree with the backend.
- *
- * `status_counts` prices every *defined* slug, `ok` included, so a slug absent
- * from a map that arrived names a status nothing defines: the card's
- * vocabulary and its counts are momentarily out of step, and `null` (no tally)
- * is the honest reading rather than a `0` that looks measured. A backend too
- * old to send the map still prices the two flagged built-ins in their own
- * fields; no other slug is knowable there.
- *
- * `null` means "no number to show", never "zero" — a caller that wants a zero
- * instead says so at its own call site.
+ * How many items carry a slug, for every surface that prices a status. `null`
+ * means no number to show, never zero: a slug the map lacks is one the counts
+ * do not define yet. Without the map, only the two flagged built-ins are known.
  */
 export function statusCount(
   counts: StatsCounts | null | undefined,
@@ -183,45 +134,18 @@ export function isHexColor(value: string | null | undefined): boolean {
   return typeof value === 'string' && HEX_COLOR_RE.test(value);
 }
 
-/** One channel of a hex colour, linearized as WCAG defines it. */
-function channelLuminance(byte: number): number {
-  const c = byte / 255;
-  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
-}
-
 /**
- * The ink that reads on an arbitrary fill: whichever of black and white has the
- * greater WCAG contrast against it.
- *
- * The only colour maths in the card, and deliberately the only place any of it
- * happens — every other foreground is a token paired with its fill by hand. A
- * pair, not a spectrum: the fill is a household's free choice, so the ink has
- * to be derived from the fill alone, and the two extremes are what a derivation
- * can reach for.
- *
- * No colour needs refusing because of it. The worst possible fill is the one
- * where both ratios meet, at 4.58:1 — above the 4.5:1 the ten tokens were
- * picked to clear — so every hex a household can enter is legible.
+ * Black or white, whichever has the greater WCAG contrast on a `#rrggbb` fill.
+ * The worst case is 4.58:1, so every hex a household can enter is legible.
  */
 export function inkOn(hex: string): string {
-  const value = Number.parseInt(hex.slice(1), 16);
-  const luminance =
-    0.2126 * channelLuminance((value >> 16) & 0xff) +
-    0.7152 * channelLuminance((value >> 8) & 0xff) +
-    0.0722 * channelLuminance(value & 0xff);
+  const luminance = luminanceOf(hex) ?? 0;
   const onBlack = (luminance + 0.05) / 0.05;
   const onWhite = 1.05 / (luminance + 0.05);
   return onBlack >= onWhite ? '#000000' : '#ffffff';
 }
 
-/**
- * The inline declaration that paints a chip in a literal colour.
- *
- * Custom properties rather than `background`/`color` directly, because that is
- * what `.hv-status-chip` reads: a tone class sets the same two, so a token and
- * a literal arrive by one route and a hover or a border mixed from them keeps
- * working either way.
- */
+/** A literal colour as the same two custom properties a tone class sets. */
 export function hexToneStyle(hex: string): string {
   return `--hv-status-bg:${hex};--hv-status-fg:${inkOn(hex)}`;
 }
@@ -235,16 +159,8 @@ export interface StatusTone {
 }
 
 /**
- * How to paint a slug: exactly one of a tone class and an inline declaration.
- *
- * A token becomes `tone-amber-strong` — stored as `amber_strong`, kebab-cased
- * because that is how `chip.ts` spells its selectors — and resolves against the
- * active Home Assistant theme. A `#rrggbb` literal cannot resolve against
- * anything, so it arrives as the fill itself plus the ink derived from it, and
- * that one chip looks the same in every theme.
- *
- * Both halves have to reach the element: a caller that keeps the class and
- * drops the style paints a literal-coloured status as a plain neutral chip.
+ * How to paint a slug: a kebab-cased `tone-*` class for a token, or an inline
+ * style for a `#rrggbb` literal. A caller must apply both halves.
  */
 export function statusTone(
   slug: string,
@@ -255,24 +171,12 @@ export function statusTone(
   return { toneClass: `tone-${color.replace(/_/g, '-')}`, toneStyle: undefined };
 }
 
-/**
- * A stored icon name narrowed to one this bundle carries, or null.
- *
- * `IconName` is a compile-time set and a stored icon is just a string — an
- * import or a newer backend can name a glyph this bundle has never heard of —
- * so anything read back from a definition has to pass through here before it
- * can be rendered.
- */
+/** A stored icon name narrowed to one this bundle carries, or null. */
 export function knownIcon(name: string | null | undefined): IconName | null {
   return name != null && name in ICONS ? (name as IconName) : null;
 }
 
-/**
- * The glyph for a slug, or null when it names one this bundle does not carry.
- *
- * Null renders no glyph, which is the right outcome: the chip still carries its
- * label and its colour.
- */
+/** The glyph for a slug, or null, which renders the chip without one. */
 export function statusIconName(
   slug: string,
   defs: readonly StatusDefinition[] | null | undefined,
@@ -281,17 +185,8 @@ export function statusIconName(
 }
 
 /**
- * A slug from a label: lowercase, ASCII letters/digits/underscores, and never
- * one the vocabulary already carries.
- *
- * The user never types this — a household should not have to think about the
- * identifier — but it is what `services.yaml` and an export document carry, so
- * the editor shows it beside the label for anyone writing an automation.
- *
- * The numeric suffix is a backstop against the backend refusing a slug already
- * taken, not the answer to a duplicate label: two statuses named the same thing
- * are indistinguishable in every chip on the card, so the editor warns about
- * that separately rather than leaving this walk to resolve it silently.
+ * A slug from a label: lowercase ASCII letters, digits and underscores, with a
+ * numeric suffix when the vocabulary already carries it.
  */
 export function slugFromLabel(
   label: string,
@@ -300,8 +195,7 @@ export function slugFromLabel(
   const base =
     label
       .normalize('NFKD')
-      // The combining marks NFKD just split off; stripping them is what turns
-      // "Ausgeliehen" with an umlaut into ASCII rather than into underscores.
+      // Strip the combining marks NFKD split off, so "ä" becomes "a".
       .replace(/[̀-ͯ]/g, '')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '_')
@@ -316,17 +210,8 @@ export function slugFromLabel(
 }
 
 /**
- * The status mark, wherever the card shows one — a table cell, a row badge, a
- * detail sheet. One renderer so the colour, the glyph and the label cannot
- * drift apart between surfaces, the same reason `renderAreaChip` exists.
- *
- * The glyph is decorative: it repeats what the label already says, and a status
- * whose icon this bundle does not carry simply renders without one.
- *
- * The label is wrapped rather than left as a bare text node so it can elide:
- * the chip is an inline-flex box, and a cell's own `text-overflow` cannot reach
- * inside one — a household label longer than its column hard-cut mid-word. The
- * rule lives in `ui/chip.ts`, so every surface that chips a status inherits it.
+ * The status mark wherever the card shows one. The glyph is decorative; the
+ * label has its own element so `ui/chip` can elide it.
  */
 export function renderStatusChip(
   slug: string,
