@@ -10,17 +10,9 @@ import type { Item } from '../store/types';
 import { nextZBase } from '../utils/zindex';
 
 /**
- * An item's photos at full size, with the arrows, the counter and Escape.
- *
- * The only way to see a photo at a useful size, so every surface that shows a
- * thumbnail can open it: the phone's detail sheet and the edit form on each of
- * its three hosts.
- *
- * The host says which photo to open at and nulls that back on `close`; where
- * the index goes after that is this component's own business. Focus returns to
- * whatever opened it, and `onOpenerGone` is the host's answer for the case where
- * that control has been taken out of the document — which is exactly what a
- * photo removed from under the lightbox does.
+ * An item's photos at full size, with the arrows, the counter and Escape. The
+ * host sets the index to open at and nulls it on `close`. Focus returns to the
+ * opener, or to `onOpenerGone` once that control has left the document.
  */
 @customElement('hv-lightbox')
 export class HVLightbox extends LitElement {
@@ -36,15 +28,9 @@ export class HVLightbox extends LitElement {
         inset: 0;
         display: grid;
         place-items: center;
-        /* Opaque rather than a scrim: a photo is what the surface is for, and
-           whatever is behind it competes at any transparency. */
         background: #000;
-        /* Every control here floats on the photo, so its own backing is the
-           only contrast it is guaranteed. The worst case is a white frame,
-           where this resolves to #6B6B6B — 5.3:1 under the white ink, enough
-           for the counter, which is 13px text and therefore wants 4.5:1 rather
-           than the 3:1 the chevrons would settle for. One value for all three,
-           set by the strictest thing sitting on it. */
+        /* The controls' own backing: over a white photo it still gives the
+           13px counter 4.5:1 under white ink. */
         --hv-lightbox-scrim: rgba(0, 0, 0, 0.58);
       }
       .lightbox img {
@@ -52,9 +38,7 @@ export class HVLightbox extends LitElement {
         max-height: 100vh;
         object-fit: contain;
       }
-      /* A photo whose file the backend no longer has. White ink like every
-         other control here: the frame behind it is the opaque black above, not
-         a themed surface. */
+      /* White ink on the opaque black frame, not a themed surface. */
       .lightbox .missing {
         display: grid;
         place-items: center;
@@ -76,8 +60,6 @@ export class HVLightbox extends LitElement {
         background: var(--hv-lightbox-scrim);
         color: #fff;
       }
-      /* Both controls sit on the photo, which is any colour at all — hence the
-         scrim behind them rather than bare white glyphs. */
       .lightbox .nav {
         position: absolute;
         top: 50%;
@@ -115,15 +97,9 @@ export class HVLightbox extends LitElement {
   @property({ attribute: false }) item: Item | null = null;
   /** Signing, for the attachment URLs. */
   @property({ attribute: false }) media: MediaBindings | null = null;
-  /**
-   * Which picture to open at, or null for closed. Set it to open; the `close`
-   * event is the host's cue to set it back to null.
-   */
+  /** Which picture to open at, or null for closed; `close` is the cue to null it. */
   @property({ type: Number }) index: number | null = null;
-  /**
-   * Where focus belongs when the control that opened this is no longer in the
-   * document. Only the host knows what is still on screen around it.
-   */
+  /** Where focus belongs when the opener has left the document. */
   @property({ attribute: false }) onOpenerGone: (() => void) | null = null;
 
   /** The picture actually shown, which the arrows move and `index` seeds. */
@@ -141,10 +117,7 @@ export class HVLightbox extends LitElement {
       this._at = this.index;
     }
     if (this._at === null) return;
-    // The strip survives a same-item refresh, and one of those refreshes is a
-    // photo being removed from under this. An index past the end renders
-    // nothing while still counting as open, which strands focus on a panel that
-    // is no longer there.
+    // A photo removed from under this must not leave an index past the end.
     const count = pictures(this.item?.attachments).length;
     this._at = count === 0 ? null : Math.min(this._at, count - 1);
   }
@@ -156,8 +129,7 @@ export class HVLightbox extends LitElement {
       () => this.renderRoot.querySelector<HTMLElement>('[data-testid="lightbox"]'),
       () => this.onOpenerGone?.(),
     );
-    // One place announces the close, whether the user asked for it or the last
-    // photo went away underneath.
+    // Announced here whether the user closed it or the last photo went away.
     if (!open && this.index !== null) {
       this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
     }
@@ -167,6 +139,7 @@ export class HVLightbox extends LitElement {
     this._at = null;
   };
 
+  /** Wraps at the ends, so no arrow disables itself under the finger and drops focus. */
   private _step(delta: number, count: number) {
     if (this._at === null) return;
     this._at = (this._at + delta + count) % count;
@@ -179,17 +152,10 @@ export class HVLightbox extends LitElement {
     const shots = pictures(item.attachments);
     const shot = shots[index];
     if (!shot) return null;
-    // A URL that is not signed yet leaves the frame empty for a moment; it does
-    // not take the surface down. Every arrow press moves to a photo this
-    // component has not shown before, and an overlay that unmounted while the
-    // signature was in flight would flash the page underneath, drop focus on
-    // `<body>` — taking Escape with it — and come back a stranger.
+    // An unsigned URL leaves the frame empty for a moment rather than
+    // unmounting the overlay, which would drop focus and Escape with it.
     const src = this._urls.get(item.id, shot.id, attachmentNameToken(shot));
-    // The tiles that open this refuse to open a picture whose file is gone, so
-    // what is left for here is the file that goes away while the photo is on
-    // screen. Answered from the failure rather than probed for, because every
-    // arrow press would otherwise ask the backend about a photo it is about to
-    // draw perfectly well.
+    // Answered from a load failure rather than probed on every arrow press.
     const missing = this._pictures.state(item.id, shot.id) === 'missing';
 
     const many = shots.length > 1;
@@ -209,8 +175,7 @@ export class HVLightbox extends LitElement {
       style="z-index: ${this._zBase ?? 9998};"
       @keydown=${(e: KeyboardEvent) => {
         if (e.key === 'Escape') {
-          // Stopped here, or the surface under it takes the same Escape and
-          // closes the whole item rather than the photo on top of it.
+          // Stopped, or the surface underneath closes too.
           e.preventDefault();
           e.stopPropagation();
           this._close();

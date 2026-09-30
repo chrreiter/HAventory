@@ -7,15 +7,9 @@ import { icon } from '../ui/icons';
 import './hv-banner';
 
 /**
- * In-app confirmation dialog for destructive actions. The design is explicit
- * about this: destructive actions get a
- * styled dialog that can carry a warning strip ("6 of them are checked out"),
- * which a browser confirm cannot express.
- *
- * Presentational and self-contained: the caller opens it, supplies the copy, and
- * listens for `confirm` / `cancel`. The caret lands on the accepting button so
- * Enter completes and Escape aborts, and goes back to whatever raised the
- * question once it is answered — the question is asked over work in progress.
+ * In-app confirmation dialog, which unlike a browser confirm can carry a
+ * warning strip. The caller supplies the copy and listens for `confirm` /
+ * `cancel`. Focus lands on the accepting button and returns to the opener.
  */
 @customElement('hv-confirm')
 export class HVConfirm extends LitElement {
@@ -59,12 +53,7 @@ export class HVConfirm extends LitElement {
   @property({ type: String }) warning: string | null = null;
   @property({ type: String }) confirmLabel = t('hv.action.confirm');
   @property({ type: Boolean }) destructive = false;
-  /**
-   * The host's answer when focus cannot go back to what raised the question —
-   * the opener the confirmed action removed, or a hover-revealed control the
-   * browser is no longer drawing. Called only when focus would otherwise be
-   * stranded on `<body>`.
-   */
+  /** Where focus goes when the opener is gone and it would otherwise land on `<body>`. */
   @property({ attribute: false }) onOpenerGone: (() => void) | null = null;
 
   private _modal = new Modal(this, {
