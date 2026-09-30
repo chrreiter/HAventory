@@ -1,30 +1,16 @@
-/**
- * Typed frontend models and WS shapes for HAventory.
- *
- * These mirror the backend WebSocket contract in custom_components/haventory/ws.py.
- */
+/** Frontend models and WS shapes, mirroring the contract in custom_components/haventory/ws.py. */
 
 import type { QuickFilterKey } from '../ui/quick-filters';
 
 export type ScalarValue = string | number | boolean;
 
 /**
- * Stored per-item condition: the slug of one status definition. Non-nullable on
- * the backend — every item has exactly one, `ok` being the default and the way a
- * flagged state clears.
- *
- * Not a union of the built-in three: a household defines its own statuses, so
- * the set is data the backend reports, not something this file can enumerate.
+ * The slug of one status definition; `ok` is the default and how a flagged state
+ * clears. A string, not a union: a household defines its own statuses.
  */
 export type ItemStatus = string;
 
-/**
- * One entry of the backend's status vocabulary: an immutable `slug` (what items
- * store) and an editable `label` (what a surface shows). Renaming a status
- * touches only the label, so no item is ever rewritten.
- *
- * A tone: five hues, each in a light and a strong form.
- */
+/** A status tone: five hues, each in a light and a strong form. */
 export type StatusColor =
   | 'neutral'
   | 'neutral_strong'
@@ -38,32 +24,26 @@ export type StatusColor =
   | 'red_strong';
 
 /**
- * What a status is painted in: one of the ten tones, or a `#rrggbb` literal a
- * household entered. Widened to `string` rather than a template-literal type
- * because the backend validates the spelling and the card must render whatever
- * came back — including a token from a newer backend, which falls back to the
- * neutral chip rather than failing to type-check a stored value.
+ * One of the ten tones or a `#rrggbb` literal. Widened to `string` because the
+ * backend validates the spelling and an unknown token renders as the neutral chip.
  */
 export type StatusColorValue = StatusColor | string;
 
+/** A status: an immutable `slug` (what items store) and an editable `label`. */
 export interface StatusDefinition {
   slug: string;
   label: string;
   order: number;
-  /** Optional: a backend older than the appearance fields does not send them. */
   color?: StatusColorValue;
   /** One of the glyph names in `ui/icons.ts`. */
   icon?: string;
 }
 
-/** What an item can carry. Only `picture` has a card surface today. */
 export type AttachmentKind = 'picture' | 'manual';
 
 /**
- * Metadata for one file attached to an item. The bytes live on the server and
- * are fetched from the authenticated media view, never embedded here — and a
- * JSON export carries this metadata without them, so a reference can outlive
- * the file it names.
+ * Metadata for one attached file. The bytes come from the authenticated media
+ * view; an export carries only this, so a reference can outlive its file.
  */
 export interface Attachment {
   id: string;
@@ -106,20 +86,15 @@ export interface Item {
   name: string;
   description: string | null;
   quantity: number;
-  /** Optional because older backends do not send it; absent reads as `ok`. */
+  /** Absent reads as `ok`. */
   status?: ItemStatus;
   checked_out: boolean;
   due_date: string | null;
   inspection_date: string | null;
   /**
-   * Optional because a backend older than schema v8 does not send them; absent
-   * reads as no reminder. `reminder_date` alone is a one-off; with an interval
-   * it is the next occurrence of a series the calendar expands on read.
-   *
-   * `reminder_anchor` is what that series is measured from, and only the
-   * backend writes it — the editor sends a date, and the backend anchors the
-   * series on it. Read-only here, and absent from `ItemCreate` / `ItemUpdate`
-   * for that reason.
+   * `reminder_date` alone is a one-off; with an interval it is the next
+   * occurrence of a series. `reminder_anchor` is what the series is measured
+   * from and only the backend writes it, so it is absent from the write shapes.
    */
   reminder_date?: string | null;
   reminder_anchor?: string | null;
@@ -134,11 +109,7 @@ export interface Item {
   version: number;
   effective_area_id?: string | null;
   location_path: LocationPath;
-  /**
-   * Optional because older backends do not send it; absent reads as none.
-   * Written only by the two attachment commands — an ordinary item save never
-   * carries it.
-   */
+  /** Written only by the attachment commands, never by an item save. */
   attachments?: Attachment[];
 }
 
@@ -183,46 +154,22 @@ export interface ItemFilter {
   tags_any?: string[];
   tags_all?: string[];
   category?: string;
-  /**
-   * Multi-select beside `category`, unioned with it — an item has exactly one
-   * category, so a selection can only mean OR. An empty list does not narrow.
-   */
+  /** Unioned with `category`; an empty list does not narrow. */
   categories?: string[];
-  /** Exact match against one status; unknown values are `validation_error`. */
   status?: ItemStatus;
   checked_out?: boolean;
   low_stock_only?: boolean;
   low_stock_first?: boolean;
   orphaned_only?: boolean;
-  /** Only items whose `due_date` is strictly before today (UTC). */
+  /** `overdue_only` / `inspection_overdue_only`: the date is before today (UTC). */
   overdue_only?: boolean;
-  /**
-   * Only items whose `due_date` is on or before today (UTC) — `overdue_only`'s
-   * population plus the items due back today.
-   */
+  /** The `*_due_only` keys: the date is on or before today (UTC). */
   checked_out_due_only?: boolean;
-  /**
-   * Only items whose `inspection_date` is strictly before today (UTC) — i.e.
-   * the next inspection is already missed. Independent of check-out state.
-   */
   inspection_overdue_only?: boolean;
-  /**
-   * Only items whose `inspection_date` is on or before today (UTC) —
-   * `inspection_overdue_only`'s population plus the items due today.
-   * Independent of check-out state.
-   */
   inspection_due_only?: boolean;
-  /**
-   * Only items whose `reminder_date` is on or before today (UTC). Today counts,
-   * like the two `*_due_only` keys above: a reminder names the day it is asking
-   * about, so an item reminding today is one the household still has to act on.
-   */
   reminder_due_only?: boolean;
   location_id?: string | null;
-  /**
-   * Multi-select beside `location_id`, unioned with it. `include_subtree` is
-   * one flag for the whole selection, not one per entry.
-   */
+  /** Unioned with `location_id`; `include_subtree` applies to the whole selection. */
   location_ids?: string[];
   area_id?: string;
   include_subtree?: boolean;
@@ -261,47 +208,17 @@ export interface StatsCounts {
   low_stock_count: number;
   checked_out_count: number;
   /**
-   * Items whose `due_date` has passed. Derived from the calendar rather than
-   * stored state, so it can change with no event to announce it; optional
-   * because older backends do not send it.
+   * The date-derived counts can change with no event to announce them. `*_overdue`
+   * counts dates before today; `*_due` counts include today.
    */
   overdue_count?: number;
-  /**
-   * Items that are due back, counted inclusive of today — so `overdue_count`
-   * plus the items due back today, never smaller than it. Calendar-derived and
-   * optional for the same reason as `overdue_count`.
-   */
   checked_out_due_count?: number;
-  /**
-   * Items past the date they were next due for inspection, across the whole
-   * inventory. Calendar-derived like `overdue_count`, and optional for the
-   * same reason: an older backend does not send it.
-   */
   inspection_overdue_count?: number;
-  /**
-   * Items whose inspection is being asked for, counted inclusive of today — so
-   * `inspection_overdue_count` plus the items due today, never smaller than it.
-   * Calendar-derived and optional for the same reason as the counts above.
-   */
   inspection_due_count?: number;
-  /**
-   * Items whose reminder has come round, across the whole inventory.
-   * Calendar-derived like the two above and optional for the same reason, but
-   * counted inclusive of today: a reminder names the day it is asking about.
-   */
   reminder_due_count?: number;
-  /**
-   * Items whose stored `status` is `missing` / `needs_repair`. Stored state,
-   * not calendar-derived — every mutation that moves them emits fresh counts.
-   * Optional because an older backend does not send them.
-   */
   missing_count?: number;
   needs_repair_count?: number;
-  /**
-   * Every defined status slug to its item count, including `ok` — which the
-   * backend's index deliberately does not bucket but still counts. Additive to
-   * the two keys above rather than a replacement for them.
-   */
+  /** Every defined status slug to its item count, `ok` included. */
   status_counts?: Record<string, number>;
   locations_total: number;
   /** Items without a location (location_id == null). */
@@ -322,11 +239,7 @@ export interface AreasListResult {
 export interface DistinctValue {
   value: string;
   count: number;
-  /**
-   * How many of this value's items the request's filter keeps. Present only
-   * when the request carried a filter, so `undefined` means "unpriced" rather
-   * than "nothing matches" — a backend older than this never sends it.
-   */
+  /** Present only when the request carried a filter; `undefined` is not zero. */
   matching_count?: number;
 }
 
@@ -345,16 +258,12 @@ export interface VersionInfo {
 }
 
 /**
- * Attachment limits and routes, as `haventory/config` reports them.
- *
- * Reported so the picker can refuse an oversized or wrong-typed file before it
- * is sent — never so the backend can trust that it did. Every one of these is
- * re-checked server-side, against the file's own bytes.
+ * Attachment limits from `haventory/config`, so the picker can refuse a file
+ * early. The backend re-checks every one against the file's own bytes.
  */
 export interface MediaConfig {
   picture_mime_types: string[];
   max_pictures_per_item: number;
-  /** Accepted document types. Absent on a backend that predates manuals. */
   manual_mime_types?: string[];
   max_manuals_per_item?: number;
   max_attachment_bytes: number;
@@ -365,37 +274,25 @@ export interface IntegrationConfig {
   /** Heading set in the integration's options flow. */
   card_title: string;
   /**
-   * Which quick-filter pills the integration offers, or `null` when it has no
-   * opinion — which is also what an older backend's silence reads as. `null`
-   * and `[]` are different answers: no opinion leaves the choice to the
-   * dashboard's own `quick_filters:`, an empty list is a choice of no pills.
+   * `null` (no opinion) leaves the choice to the dashboard's `quick_filters:`;
+   * `[]` is a choice of no pills.
    */
   quick_filters?: string[] | null;
-  /** The status vocabulary. Optional: an older backend does not send it. */
   statuses?: StatusDefinition[];
-  /** Attachment caps and the media route. Optional for the same reason. */
   media?: MediaConfig;
 }
 
-/**
- * A node of haventory/location/tree. Unlike the flat `location/list`, tree nodes
- * carry the per-location counts the sidebar and organize dialog display.
- */
+/** A node of haventory/location/tree, with the per-location item counts. */
 export interface LocationTreeNode {
   id: string;
   name: string;
   parent_id: string | null;
   area_id: string | null;
   path: LocationPath;
-  /** Items filed directly on this location. */
   direct_item_count: number;
-  /** Items on this location or any descendant (always >= direct_item_count). */
+  /** Items on this location or any descendant. */
   subtree_item_count: number;
-  /**
-   * The two counts above restricted to what an active filter keeps. Present
-   * only when `location/tree` was asked with a filter, so `undefined` means
-   * "nothing was asked" rather than "nothing matches".
-   */
+  /** The two counts above under a filter; present only when one was sent. */
   matching_direct_count?: number;
   matching_subtree_count?: number;
   children: LocationTreeNode[];
@@ -403,10 +300,7 @@ export interface LocationTreeNode {
 
 // ---------- Bulk operations (haventory/items/bulk) ----------
 
-/**
- * Operation kinds the batch endpoint dispatches. Note there is deliberately no
- * `item_create` — the backend does not support creation in a batch.
- */
+/** The batch endpoint has no `item_create`. */
 export type BulkOpKind =
   | 'item_update'
   | 'item_delete'
@@ -472,35 +366,23 @@ export interface ExportDocument {
   locations: unknown[];
 }
 
-/** A single structured validation problem in an import document. */
 export interface ImportError {
   path: string;
   message: string;
 }
 
 /**
- * A non-blocking finding about an otherwise valid import document.
- *
- * Warnings never affect `valid` and never reach `import/execute` — the preview
- * tells, the entity id still decides. `code` discriminates the kind:
- * `name_collision` is an incoming entity about to be created under a name a
- * stored entity of a *different* id already answers to, which import duplicates
- * rather than merges.
+ * A finding that never affects `valid`. `name_collision`: an incoming entity
+ * takes a name a stored entity of a different id has, so import duplicates it.
  */
 export interface ImportWarning {
   code: 'name_collision' | string;
   path: string;
   message: string;
   name?: string;
-  /**
-   * Every stored entity the name collides with, not just one. A location tree
-   * repeats leaf names ("Shelf A", "Drawer 1"), so a hand-rebuilt tree collides
-   * several deep on the same name at once.
-   */
   existing_ids?: string[];
 }
 
-/** Per-type classification counts in an import preview. */
 export interface ImportBucketCounts {
   total: number;
   add: number;
@@ -509,7 +391,6 @@ export interface ImportBucketCounts {
   unchanged: number;
 }
 
-/** Per-type lists of entity ids by classification. */
 export interface ImportBuckets {
   add: string[];
   update: string[];
@@ -521,7 +402,6 @@ export interface ImportBuckets {
 export interface ImportPreview {
   valid: boolean;
   errors: ImportError[];
-  /** Optional so a preview from a backend that predates warnings still type-checks. */
   warnings?: ImportWarning[];
   policy: ImportPolicy;
   document: {
@@ -533,13 +413,7 @@ export interface ImportPreview {
   items: ImportBuckets;
   locations: ImportBuckets;
   counts: { items?: ImportBucketCounts; locations?: ImportBucketCounts };
-  /**
-   * How many attachment references the imported dataset would hold, and how
-   * many of them name a file this install does not have. An export carries
-   * attachment metadata and not bytes, so importing one onto another machine
-   * leaves dangling references — a caveat, not an error. Optional, like
-   * `warnings`, so a preview from a backend that predates it still type-checks.
-   */
+  /** Attachment references the import would hold, and how many name no file here. */
   attachments?: { referenced: number; missing: number };
 }
 
@@ -555,28 +429,18 @@ export interface ImportSummary {
 // WS subscription event payloads
 export interface BaseEventPayload {
   domain: 'haventory';
-  // The four topics `haventory/subscribe` accepts. Only three have a payload
-  // shape below: a `statuses` event is a signal to re-read the vocabulary, not
-  // a patch to apply, so the store never narrows one.
+  // A `statuses` event only signals a re-read, so it has no payload shape below.
   topic: 'items' | 'locations' | 'stats' | 'statuses';
   action: string;
   ts: string;
 }
 
-/**
- * Sent on every open subscription, whatever its topic, when the config entry
- * serving it tears down — an unload, a disable, a removal, or the first half of
- * a reload. Carries no payload: it says the subscription has stopped, not that
- * anything in the inventory changed.
- */
+/** Sent on every open subscription when the config entry serving it tears down. */
 export type TeardownAction = 'unavailable';
 
 export interface ItemsEventPayload extends BaseEventPayload {
   topic: 'items';
-  // `item` is present for per-item actions and absent whenever the dataset
-  // moved wholesale — the `reloaded` signal after an import, and an `updated`
-  // signal after a status delete reassigned every item carrying the slug.
-  // Absence is a refetch signal: there is nothing to merge.
+  // Absent when the dataset moved wholesale, which is a refetch signal.
   item?: Item;
   action:
   | 'created'
@@ -606,46 +470,29 @@ export type AnyEventPayload = ItemsEventPayload | LocationsEventPayload | StatsE
 
 export type Unsubscribe = () => void;
 
-/**
- * The `hass` object, as much of it as this card uses.
- *
- * Defined in `ha-contract`, with every other thing the card asks of Home
- * Assistant, and re-exported here because this is where the shapes it carries
- * are declared.
- */
 export type { HassLike } from '../ha-contract';
 
-/** How a tag selection is combined: any of them, or all of them. */
 export type TagMatchMode = 'any' | 'all';
 
 export interface StoreFilters {
   q: string;
   areaId: string | null;
-  /**
-   * The locations the list is narrowed to, unioned. Empty means every
-   * location; `includeSubtree` governs the whole selection at once.
-   */
+  /** Unioned; empty means every location. `includeSubtree` covers the whole selection. */
   locationIds: string[];
   includeSubtree: boolean;
   checkedOutOnly: boolean;
-  /** Presentation hint, not a filter: re-sorts low-stock items to the front. */
+  /** A sort hint, not a filter: low-stock items first. */
   lowStockFirst: boolean;
   orphansOnly: boolean;
-  /** A real filter, independent of `lowStockFirst` — both are separately clearable. */
   lowStockOnly: boolean;
-  /** Only items past their due date. */
+  /** Due date before today. */
   overdueOnly: boolean;
-  /**
-   * Only items whose inspection is being asked for. Today counts, unlike
-   * `overdueOnly`: an inspection date names the day the item is next due to be
-   * inspected, so that day is when it is being asked for.
-   */
+  /** Inspection / reminder date on or before today. */
   inspectionDueOnly: boolean;
-  /** Only items whose reminder has come round — today counts, like the one above. */
   reminderDueOnly: boolean;
-  /** Only items with this stored status; null means any. */
+  /** null means any. */
   status: ItemStatus | null;
-  /** The categories the list is narrowed to, unioned. Empty means every category. */
+  /** Unioned; empty means every category. */
   categories: string[];
   tags: string[];
   tagsMode: TagMatchMode;
@@ -655,89 +502,54 @@ export interface StoreFilters {
   /** ISO-8601 instants; the backend compares strictly less-than. */
   updatedBefore: string | null;
   createdBefore: string | null;
-  sort: Sort; // default: { field: 'updated_at', order: 'desc' }
+  sort: Sort;
 }
 
 /**
- * Conditions that make the card quietly untrustworthy, so it can say so.
- *
- * Subscription events carry no sequence number, so a card that misses one
- * cannot detect the gap on its own. The contract's stated recovery is that the
- * client re-lists on demand — hence the explicit Refresh action these flags
- * drive.
+ * Conditions that make the card quietly untrustworthy. Events carry no sequence
+ * number, so a missed one is undetectable and the recovery is an explicit re-list.
  */
 export interface DegradedState {
   /** The socket closed and stayed closed, or calls keep failing before they reach a server. */
   connectionLost: boolean;
   /** True while reloading after an import replaced the dataset. */
   reloading: boolean;
-  /** Whether the topic subscriptions are up, being re-opened, or given up on. */
   liveUpdates: LiveUpdateState;
-  /** Why live updates are not `live`; null while they are. */
+  /** null while live. */
   liveUpdatesReason: LiveUpdatePause | null;
   /** Epoch ms of the next automatic re-subscribe, when one is scheduled. */
   nextLiveRetryAt: number | null;
 }
 
-/**
- * State of the three topic subscriptions.
- *
- * `retrying` means a refused subscribe is being re-attempted on a bounded
- * backoff; `paused` means the budget is spent, so only an explicit refresh
- * brings live updates back.
- */
+/** `retrying`: a refused subscribe is on a bounded backoff. `paused`: only a refresh resumes. */
 export type LiveUpdateState = 'live' | 'retrying' | 'paused';
 
-/**
- * What stopped live updates.
- *
- * `unavailable`: no config entry owns the data — HAventory is reloading, or has
- * been disabled or removed — so every command is being refused too.
- */
+/** `unavailable`: no config entry owns the data, so every command is refused too. */
 export type LiveUpdatePause = 'unavailable';
 
 export interface StoreState {
   items: Item[];
   cursor: string | null;
-  /** Items matching the active filter across all pages (not just the loaded page). */
+  /** Items matching the active filter across all pages. */
   total: number | null;
-  /** True until the first list resolves — drives skeleton rows. */
+  /** True until the first list resolves. */
   loading: boolean;
   filters: StoreFilters;
   selection: Set<string>;
   errorQueue: ErrorEntry[];
   areasCache: AreasListResult | null;
   locationTreeCache: LocationTreeNode[] | null;
-  /**
-   * Items matching the active filter ignoring its location dimension — the
-   * denominator-free half of the sidebar's "4 / 37". Null when no filter is on.
-   */
+  /** Items matching the active filter ignoring its locations; null when no filter is on. */
   locationMatchTotal: number | null;
-  // Optional flat locations cache to enrich UI (e.g., show area per node in selectors)
   locationsFlatCache: Location[] | null;
   statsCounts: StatsCounts | null;
   versionInfo: VersionInfo | null;
-  /** Heading configured in the integration, or null until it has been read. */
   cardTitle: string | null;
-  /**
-   * Quick-filter pills chosen in the integration's options flow, or null when
-   * it has none — the state a fresh install, an older backend and a store that
-   * has not answered yet all share. A dashboard's own `quick_filters:` outranks
-   * it; the sidebar panel has no dashboard config, so this is all it reads.
-   */
+  /** The integration's pills; a dashboard's own `quick_filters:` outranks it. */
   quickFilters: QuickFilterKey[] | null;
-  /**
-   * Attachment caps and the media route, or null until `haventory/config` has
-   * answered — or permanently, against a backend too old to report them.
-   */
   mediaConfig: MediaConfig | null;
-  /**
-   * The status vocabulary, or null until `haventory/config` has answered — or
-   * permanently, against a backend too old to report it. `ui/status` falls back
-   * to the built-in three either way.
-   */
+  /** null until read; `ui/status` falls back to the built-in three. */
   statuses: StatusDefinition[] | null;
-  // Distinct categories/tags with counts, sourcing category/tag autocomplete.
   distinctValuesCache: DistinctValues | null;
   connected: { items: boolean; stats: boolean };
   degraded: DegradedState;
