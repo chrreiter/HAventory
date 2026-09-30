@@ -2,8 +2,7 @@
 # Redeploy the HAventory integration + built card into a running Home Assistant
 # Docker container, restart HA, and (optionally) initialise the config entry.
 #
-# This is a manual dev-loop helper for a hand-managed HA container. For a
-# reproducible environment prefer .devcontainer/ (VS Code / Codespaces).
+# A manual dev-loop helper for a hand-managed HA container.
 #
 # Usage:
 #   scripts/reload_addon.sh --container NAME [options]
@@ -49,7 +48,6 @@ if ! docker ps -a --format '{{.Names}}' | grep -qx "$CONTAINER"; then
   exit 1
 fi
 
-# Detect the HA config directory inside the container.
 remote_cfg="$(docker exec "$CONTAINER" sh -lc \
   'if [ -d /config ]; then echo /config; elif [ -d /workspaces/home-assistant_core/config ]; then echo /workspaces/home-assistant_core/config; else echo /config; fi' \
   2>/dev/null | tr -d '\r')"
@@ -64,9 +62,7 @@ if [ "$CLEAN" -eq 1 ]; then
   docker exec "$CONTAINER" sh -lc "find '$target_root' -type d -name __pycache__ -prune -exec rm -rf {} +" >/dev/null 2>&1 || true
 fi
 
-# Build the card first: it lands in custom_components/haventory/www/ and rides
-# along with the component copy below. Building afterwards would deploy the
-# previous build.
+# Build before copying: the bundle lands in custom_components/haventory/www/.
 if command -v npm >/dev/null 2>&1; then
   info 'Building frontend card (npm ci --no-audit --no-fund && npm run build)...'
   (cd "$CARD_DIR" && npm ci --no-audit --no-fund >/dev/null && npm run build --silent >/dev/null) \
@@ -77,7 +73,6 @@ info 'Copying integration (incl. the card bundle) into container...'
 docker cp "$local_component" "$CONTAINER:$target_root" >/dev/null
 ok "Copied to $target_root"
 
-# Deploy config.
 if [ "$USE_DEV_CONFIG" -eq 1 ]; then
   src_config="$REPO_ROOT/dev/ha_config_for_dev.yaml"
 else

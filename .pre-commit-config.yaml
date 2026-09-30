@@ -14,37 +14,24 @@ repos:
     hooks:
       - id: codespell
         args:
-          # "batery" is deliberate: it is the typo'd tag the organize dialog's
-          # merge suggestion is tested against. "afterall" is vitest's teardown
-          # hook `afterAll`, which the tracker names. "socio-economic" is the
-          # Contributor Covenant's spelling, and CODE_OF_CONDUCT.md quotes that
-          # document verbatim so it stays checkable against the original.
-          # "statics" is the plural of a class's `static` members, which is what
-          # Home Assistant reads a card's picker interface off. "crate" is one of
-          # the three boxes the mark draws, named that in the icon geometry and in
-          # everything that reads it. "categorie" is deliberate too: it is the
-          # near-miss filter key `distinct_values` is asked to refuse by name.
+          # "batery" and "categorie" are typos the tests feed in on purpose.
+          # "afterall" is vitest's `afterAll`; "socio-economic" is the Contributor
+          # Covenant's spelling, quoted verbatim; "statics" is a card class's
+          # `static` members; "crate" is one of the mark's three boxes.
           - --ignore-words-list=hass,batery,afterall,socio-economic,statics,crate,categorie
         exclude: |
           (?x)^(
             custom_components/haventory/www/|
             cards/haventory-card/package-lock\.json|
-            # A dictionary for a language other than English is not English
-            # prose, and every word in it is a false positive — "ist", "sie",
-            # "oder" and "alle" are all real English typos and all ordinary
-            # German. The English originals they are written against stay in
-            # scope: `strings.json` and `i18n/en.ts` are still read.
+            # Non-English dictionaries are all false positives ("ist", "sie",
+            # "oder"); the English originals stay in scope.
             custom_components/haventory/translations/(?!en\.json)|
             cards/haventory-card/src/i18n/(?!en\.ts)
           )
         additional_dependencies: ["tomli"]
-  # The card's half of the gate, run from the card package because that is where
-  # its node_modules and config live. `pass_filenames: false` because both tools
-  # take the package, not a file list; `language: system` because the hooks run
-  # the npm binaries this checkout already installed rather than an environment
-  # pre-commit builds. Vitest deliberately stays out: a full card suite on every
-  # commit is what makes people reach for `--no-verify`, and CI plus
-  # `scripts/ci_local.sh` already run it.
+  # The card's half of the gate: both tools take the package rather than a file
+  # list, and run the npm binaries already installed. Vitest stays out because a
+  # full card suite on every commit invites `--no-verify`.
   - repo: local
     hooks:
       - id: card-eslint
@@ -63,9 +50,7 @@ repos:
     rev: v4.6.0
     hooks:
       - id: check-yaml
-        # Syntax only. `dev/ha_config_for_dev.yaml` uses Home Assistant's `!include`
-        # tag, which a generic loader has no constructor for and rejects as a parse
-        # error rather than as bad YAML.
+        # `dev/ha_config_for_dev.yaml` uses Home Assistant's `!include` tag, which a generic loader rejects.
         args: [--unsafe]
       - id: end-of-file-fixer
         exclude: |

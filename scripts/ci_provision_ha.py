@@ -1,27 +1,19 @@
 r"""Onboard a blank Home Assistant and put the HAventory card on a dashboard.
 
-For the scheduled card smoke, which boots
-``ghcr.io/home-assistant/home-assistant:{stable,beta}`` in the CI runner and then
-needs everything a browser harness normally gets from a dev instance somebody set
-up by hand: an owner account, a long-lived token, and a dashboard view holding a
-``custom:haventory-card``.
+For the scheduled card smoke, which boots a stock Home Assistant image in the CI
+runner and needs an owner account, a long-lived token and a dashboard view holding
+a ``custom:haventory-card``. Onboarding is REST and the rest is the WebSocket API.
+The config entry is left to ``scripts/ws_init_haventory.py``, which runs afterwards
+with the token printed here.
 
-None of it needs a browser. Onboarding is plain REST — create the owner, trade
-the returned code for a token, tick the three remaining steps — and the rest is
-the WebSocket API. The one thing this script does **not** do is create the config
-entry: ``scripts/ws_init_haventory.py`` already answers that flow from its own
-schema, so it runs afterwards with the token printed here.
-
-Writes ``HA_TOKEN=<token>`` to the file named by ``GITHUB_OUTPUT`` when that is
-set, and prints the token on stdout otherwise. Everything else goes to stderr, so
-the token is the only thing a caller has to parse.
+Writes ``token`` and ``card-path`` to the file named by ``GITHUB_OUTPUT`` when that
+is set, and prints the token on stdout otherwise. Everything else goes to stderr.
 
 Usage:
   uv run python scripts/ci_provision_ha.py --base-url http://localhost:8123
 
-Deliberately for a **blank** instance: onboarding answers once and refuses
-afterwards, so pointing this at an instance somebody uses would fail rather than
-change it.
+For a **blank** instance only: onboarding refuses after the first answer, so an
+instance in use fails rather than changes.
 """
 
 from __future__ import annotations
@@ -44,10 +36,8 @@ CLIENT_ID_SUFFIX = "/"
 OWNER_USERNAME = "ci"
 OWNER_NAME = "CI Runner"
 
-# The dashboard the smoke drives. A plain masonry view, never `type: panel`: the
-# card picks its layout from its own rendered width, and the smoke asserts on
-# `hv-list-row` — the narrow branch, which is what a normal column produces and a
-# panel view does not.
+# A plain masonry view, never `type: panel`: the smoke asserts on `hv-list-row`,
+# the card's narrow layout, which a panel view does not produce.
 DASHBOARD_URL_PATH = "haventory-smoke"
 CARD_VIEW_PATH = "cards"
 
@@ -65,11 +55,7 @@ def log(message: str) -> None:
 
 
 async def wait_for_http(session: aiohttp.ClientSession, base_url: str) -> None:
-    """Block until Home Assistant answers, or give up with what it last said.
-
-    A cold container takes a minute or two to reach this point, and the port is
-    open well before the app behind it is.
-    """
+    """Block until Home Assistant answers, or give up with what it last said."""
     deadline = time.monotonic() + BOOT_TIMEOUT_S
     last = "no response yet"
     while time.monotonic() < deadline:
@@ -98,14 +84,11 @@ async def _post_json(
 async def onboard(session: aiohttp.ClientSession, base_url: str) -> str:
     """Walk Home Assistant's onboarding steps, returning an access token.
 
-    The first step is what mints the owner; the code it hands back is traded for
-    a bearer at the token endpoint, and the three remaining steps only flip their
-    own done-flags — but an instance with any of them outstanding shows the
-    onboarding screen instead of a dashboard, so all of them are answered.
+    The first step mints the owner and the code it returns is traded for a bearer.
+    The other three only flip done-flags, but any outstanding one shows the
+    onboarding screen instead of a dashboard.
     """
     client_id = base_url + CLIENT_ID_SUFFIX
-    # The account lives as long as the container does and nobody ever signs in to
-    # it, but a fresh secret costs one call and leaves nothing quotable behind.
     password = secrets.token_urlsafe(24)
 
     created = await _post_json(
@@ -195,12 +178,7 @@ async def mint_long_lived_token(client: WSClient) -> str:
 
 
 async def create_dashboard(client: WSClient) -> str:
-    """A dashboard holding one HAventory card, and the path the smoke is pointed at.
-
-    Storage-mode dashboards are two commands: register the dashboard, then save a
-    config into it. The view carries nothing else — an empty column is what the
-    card's narrow branch renders in.
-    """
+    """A dashboard holding one HAventory card, and the path the smoke is pointed at."""
     await client.call(
         {
             "type": "lovelace/dashboards/create",
