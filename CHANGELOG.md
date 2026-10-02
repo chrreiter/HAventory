@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.9.4](https://github.com/chrreiter/HAventory/compare/v0.9.3...v0.9.4) (2026-09-30)
+
+
+### Bug Fixes
+
+* **card:** speak the area twisty's label in the card's language ([#762](https://github.com/chrreiter/HAventory/issues/762)) ([fd117b2](https://github.com/chrreiter/HAventory/commit/fd117b262c4919bbfbfdbd728f176a86a3b3a47c))
+* raise the Home Assistant floor to 2026.7.0 ([#759](https://github.com/chrreiter/HAventory/issues/759)) ([076914e](https://github.com/chrreiter/HAventory/commit/076914e27ec24b1133f05bb15c3d2d4511d6f453))
+
+
+### Documentation
+
+* rework the contributor docs and check the API contract against the code ([#758](https://github.com/chrreiter/HAventory/issues/758)) ([9730a98](https://github.com/chrreiter/HAventory/commit/9730a986fe6f0d01ad5b78b9a35b6e8e8b803e98))
+* rework the README and the user guides for people running HAventory ([#745](https://github.com/chrreiter/HAventory/issues/745)) ([d1baf6b](https://github.com/chrreiter/HAventory/commit/d1baf6bec9932da62dcde474d4058ef2a63f70bd))
+
 ## [0.9.3](https://github.com/chrreiter/HAventory/compare/v0.9.2...v0.9.3) (2026-09-05)
 
 
