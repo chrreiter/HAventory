@@ -5,8 +5,8 @@
 # Every image is named on a `FROM` line, the only place Dependabot's docker
 # updater reads a tag; tests/test_repo_hardening_offline.py refuses a
 # `COPY --from=` that names an image instead of a stage.
-FROM ghcr.io/astral-sh/uv:0.12.21 AS uv
-FROM ghcr.io/alexxit/go2rtc:1.9.14 AS go2rtc
+FROM ghcr.io/astral-sh/uv:0.13.6 AS uv
+FROM ghcr.io/alexxit/go2rtc:1.9.15 AS go2rtc
 
 FROM mcr.microsoft.com/devcontainers/base:bookworm
 
