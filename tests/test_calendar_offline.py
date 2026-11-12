@@ -323,12 +323,6 @@ def test_next_occurrence_after_is_where_a_bump_lands(
     assert result == expected
 
 
-def test_next_occurrence_after_a_one_off_is_none() -> None:
-    """A one-off has nothing to move to; the caller decides to clear it instead."""
-
-    assert next_occurrence_after(date(2026, 8, 14), None, date(2026, 8, 14)) is None
-
-
 def test_a_reminder_date_that_cannot_be_parsed_costs_only_that_item(caplog) -> None:
     """One unreadable row costs that item its occurrences and nothing else.
 

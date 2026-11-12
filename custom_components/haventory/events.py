@@ -55,15 +55,7 @@ def async_track_day_rollover(hass: HomeAssistant) -> Callable[[], None]:
 
     @callback
     def _rollover(_now: datetime) -> None:
-        try:
-            broadcast_counts(hass)
-        except Exception:
-            # An exception escaping into the tracker can take the next day's
-            # tick with it, leaving the counts stale until a restart.
-            LOGGER.exception(
-                "Failed to broadcast the counts at the day rollover",
-                extra={"domain": DOMAIN, "op": "day_rollover"},
-            )
+        broadcast_counts(hass)
 
     return async_track_time_change(hass, _rollover, hour=0, minute=0, second=0)
 

@@ -683,8 +683,7 @@ def validate_sort(sort: object) -> None:
     unknown = sorted(str(key) for key in sort if key not in SORT_KEYS)
     if unknown:
         raise ValidationError(f"unknown sort key(s): {', '.join(unknown)}")
-    field_value = sort.get("field")
-    if field_value not in SORT_FIELDS:
+    if sort.get("field") not in SORT_FIELDS:
         raise ValidationError(f"sort.field must be one of: {', '.join(sorted(SORT_FIELDS))}")
     if sort.get("order") not in SORT_ORDERS:
         raise ValidationError("sort.order must be 'asc' or 'desc'")
