@@ -156,8 +156,8 @@ which release an issue is staged for, and there is no second tracker. The releas
 matters is the first public one (public repository, HACS custom repository, default-store
 submission), and it is **`1.0.0`** ([#278](https://github.com/chrreiter/HAventory/issues/278)),
 cut once the owner has run `0.9.x` on the household's own inventory and is satisfied with
-it. Until then the `0.9.x` patches carry what that use turns up, and
-[#236](https://github.com/chrreiter/HAventory/issues/236) is the tracker.
+it. Until then the `0.9.x` patches carry what that use turns up, each filed as its own
+issue.
 
 **Features are frozen until that release.** A user-facing change is a fix to something the
 household ran into: it is filed with the bug template and lands as `fix:`, never `feat:`.
