@@ -14,6 +14,7 @@ it is asserted here beside the workflow that depends on it.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -102,3 +103,20 @@ def test_the_integration_ships_the_icon_the_brands_check_looks_for() -> None:
 
     assert hacs["content_in_root"] is False
     assert (INTEGRATION_DIR / "brand" / BRAND_ASSET).is_file()
+
+
+def test_the_manifest_names_categories_hassfest_and_hacs_accept() -> None:
+    """One to three unique categories, and no parent beside its own subcategory.
+
+    Those are the shape rules both validators apply. Whether each name is a known
+    one is theirs to say: the list lives in Home Assistant core and moves with it,
+    and the CI ``validation`` job reads it there.
+    """
+    manifest = json.loads((INTEGRATION_DIR / "manifest.json").read_text(encoding="utf-8"))
+    categories = manifest["categories"]
+
+    assert 1 <= len(categories) <= 3  # noqa: PLR2004
+    assert len(set(categories)) == len(categories)
+    for category in categories:
+        assert re.fullmatch(r"[a-z0-9_]+(\.[a-z0-9_]+)?", category), category
+        assert category.partition(".")[0] not in categories or "." not in category, category
