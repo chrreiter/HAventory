@@ -20,8 +20,8 @@ Minimum Home Assistant **2026.7.0**.
 - **Locations as deep as your house.** Home Assistant stops at floor and area. HAventory
   files a thing in *Garage › Shelving unit › Top box*. Link the top of a tree to a Home
   Assistant area and everything inside it belongs to that area.
-- **Search and filters.** Search ignores case and accents. Filter by location, area,
-  category, tags, status, low stock, check-outs and dates.
+- **Search and filters.** Search ignores case and accents, in any script. Filter by
+  location, area, category, tags, status, low stock, check-outs and dates.
 - **Check-outs** with a due date, marked overdue once the date passes.
 - **Photos and PDF manuals** on the item, with a *Take photo* tile on a phone.
 - **Quantities and low stock.** Give an item a threshold and HAventory can write it onto

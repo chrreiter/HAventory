@@ -17,6 +17,7 @@ from custom_components.haventory.models import (
     build_location_path,
     create_item_from_create,
     filter_items,
+    normalize_text_for_sort,
     sort_items,
     validate_area_filter,
     validate_item_filter,
@@ -765,6 +766,60 @@ def test_unlocated_items_stay_last_behind_a_non_latin_location_name() -> None:
 
     asc = sort_items([loose, filed], Sort(field="location", order="asc"))
     assert [x.name for x in asc] == ["Filed", "Loose"]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("", ""),
+        ("  Garage \t Shelf  ", "garage shelf"),
+        ("Éclairage", "eclairage"),
+        ("E\u0301clairage", "eclairage"),
+        ("Søren", "soren"),
+        ("Łódź", "lodz"),
+        ("Straße", "strasse"),
+        ("Œuvre Ærø", "oeuvre aero"),
+        ("İstanbul", "istanbul"),
+        ("Гараж", "гараж"),
+        ("Ёлка", "елка"),
+        ("ΑΘΗΝΑ", "αθηνα"),
+        ("電池ケース", "電池ケース"),
+        ("한글", "한글"),
+        ("5 \u3391", "5 khz"),
+        # Fullwidth letters, an ideographic space and a fullwidth digit.
+        ("\uff2b\uff29\uff34\u3000\uff11", "kit 1"),
+    ],
+)
+def test_normalize_keeps_letters_and_drops_only_marks(text: str, expected: str) -> None:
+    assert normalize_text_for_sort(text) == expected
+
+
+def test_a_non_latin_location_sorts_among_the_others_and_ahead_of_unlocated() -> None:
+    """Its key is not empty, so `location_sort_key` does not read it as "no location"."""
+
+    cyrillic = _make_location(str(uuid.uuid4()), "Гараж", None)
+    cyrillic.path = build_location_path([cyrillic])
+    latin = _make_location(str(uuid.uuid4()), "Attic", None)
+    latin.path = build_location_path([latin])
+    assert cyrillic.path.sort_key == "гараж"
+
+    items = [
+        create_item_from_create({"name": "Loose"}),
+        _located("In garage", [cyrillic]),
+        _located("In attic", [latin]),
+    ]
+
+    asc = sort_items(items, Sort(field="location", order="asc"))
+    assert [x.name for x in asc] == ["In attic", "In garage", "Loose"]
+    desc = sort_items(items, Sort(field="location", order="desc"))
+    assert [x.name for x in desc] == ["In garage", "In attic", "Loose"]
+
+
+def test_non_latin_names_sort_by_their_own_letters() -> None:
+    items = [create_item_from_create({"name": name}) for name in ("Яблоко", "арбуз", "Банан")]
+
+    ordered = sort_items(items, Sort(field="name", order="asc"))
+    assert [x.name for x in ordered] == ["арбуз", "Банан", "Яблоко"]
 
 
 def test_location_joins_the_sort_vocabulary() -> None:
