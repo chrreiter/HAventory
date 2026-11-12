@@ -89,8 +89,10 @@ class LocationPath:
     def from_dict(cls, data: object) -> LocationPath:
         """Read back what ``to_dict`` wrote; ``None`` reads as the empty path.
 
-        An absent ``sort_key`` is derived from ``display_path``. A non-object or
-        a non-UUID ``id_path`` entry is refused, so a load reports the row.
+        ``sort_key`` is derived from ``display_path`` and the stored copy is
+        not read, so a key written under another normalization cannot outlive
+        the load. A non-object or a non-UUID ``id_path`` entry is refused, so a
+        load reports the row.
         """
 
         if data is None:
@@ -105,7 +107,7 @@ class LocationPath:
             ],
             name_path=list(data.get("name_path") or []),
             display_path=display,
-            sort_key=str(data.get("sort_key", "")) or normalize_text_for_sort(display),
+            sort_key=normalize_text_for_sort(display),
         )
 
 
@@ -450,17 +452,43 @@ def new_uuid4() -> uuid.UUID:
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
+#: Latin letters Unicode gives no decomposition, folded to the letters a
+#: keyboard without them types instead. ``casefold`` already turns "ß" into "ss".
+_LATIN_FOLDS: Final = str.maketrans(
+    {
+        "ø": "o",
+        "ł": "l",
+        "đ": "d",
+        "ð": "d",
+        "ħ": "h",
+        "\u0131": "i",  # dotless i
+        "þ": "th",
+        "æ": "ae",
+        "œ": "oe",
+    }
+)
+
+
 def normalize_text_for_sort(text: str) -> str:
     """Case- and accent-folded, whitespace-collapsed text for sorting and search.
 
     The one normalization both sides of a search go through, so
     "case-insensitive, accent-insensitive" means the same thing on each.
+    Only combining marks are dropped: a letter of any script stays, so a
+    Cyrillic or CJK query still has words to match with.
     """
 
     if not text:
         return ""
-    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
-    return " ".join(ascii_text.split()).casefold()
+    if not text.isascii():
+        # Folded before the split because the fold can itself emit a mark
+        # ("İ" becomes "i" plus a combining dot), and once more on return
+        # because a compatibility form can decompose into capitals.
+        decomposed = unicodedata.normalize("NFKD", text.casefold().translate(_LATIN_FOLDS))
+        stripped = "".join(char for char in decomposed if not unicodedata.combining(char))
+        # Recomposed so Hangul is matched and sorted by syllable, not by jamo.
+        text = unicodedata.normalize("NFC", stripped)
+    return " ".join(text.split()).casefold()
 
 
 def normalize_tags(tags: list[str] | None) -> list[str]:

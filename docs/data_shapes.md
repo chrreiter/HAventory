@@ -237,7 +237,11 @@ keeps.
 
 - `q?: string`: case- and accent-insensitive substring match, mid-word included. Every word
   of the query must appear in one of name, description, category, tags or the location
-  display path.
+  display path. The fold works in every script: only combining marks are dropped, so `é`
+  matches `e` and `й` matches `и`, while Cyrillic, Greek, Arabic, Hebrew and CJK text is
+  matched on its own letters. The Latin letters that carry no separable mark are folded by
+  name: `ø`→`o`, `ł`→`l`, `đ`/`ð`→`d`, `ħ`→`h`, `ı`→`i`, `þ`→`th`, `æ`→`ae`, `œ`→`oe`,
+  `ß`→`ss`.
 - `tags_any?: string[]`, `tags_all?: string[]`
 - `category?: string`, `categories?: string[]` (one selection; see the multi-select rule)
 - `status?: <status slug>` (exact match; an undefined slug is `validation_error`)
@@ -288,8 +292,10 @@ well-formed id that no location resolves to is an empty answer, not a refusal.
 - `due_date`, `inspection_date` and `reminder_date` put items without the date last in both
   orders; ties break by id ascending. `reminder_date` orders on the next occurrence, not on
   the anchor.
-- `location` orders on the item's `location_path.sort_key`. **Items with no location sort
-  last in both orders.** An item's area comes from its tree's root, so a list sorted by path
+- `name` and `location` order on the same fold `q` uses, compared by code point, so
+  scripts group together and Latin sorts ahead of the others. `location` reads the item's
+  `location_path.sort_key`, which is derived from `display_path` and rebuilt whenever the
+  store is loaded. **Items with no location sort last in both orders.** An item's area comes from its tree's root, so a list sorted by path
   groups by root and therefore by area.
 - There is **no area sort**. An area's name lives in Home Assistant's registry, which the
   repository cannot reach, and sorting on `area_id` would keep a renamed area under its old

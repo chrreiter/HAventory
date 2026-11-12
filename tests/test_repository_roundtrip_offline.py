@@ -1,7 +1,7 @@
 """Offline tests for what must survive an export_state/load_state round trip.
 
-- LocationPath.sort_key, which is derived rather than typed and so has to be
-  rebuilt for a payload that carries none.
+- LocationPath.sort_key, which is derived rather than typed and so is rebuilt
+  on load, whatever key the payload carries or lacks.
 - Cursor pagination returns an empty page when everything after the cursor was
   deleted between pages, rather than falling back to the first one.
 - Status definitions, against the two traps that would silently lose them: the
@@ -65,6 +65,29 @@ def test_legacy_store_without_sort_key_is_backfilled_on_load() -> None:
     assert expected
     assert reloaded.get_location(shelf.id).path.sort_key == expected
     assert reloaded.get_item(item.id).location_path.sort_key == expected
+
+
+def test_a_stored_sort_key_from_another_normalization_is_replaced_on_load() -> None:
+    """The stored key is not trusted: an empty or mangled one does not survive."""
+
+    repo = Repository()
+    garage = repo.create_location(name="Гараж")
+    shelf = repo.create_location(name="Søren's shelf", parent_id=garage.id)
+    item = repo.create_item(ItemCreate(name="Hammer", quantity=1, location_id=str(shelf.id)))
+
+    payload = repo.export_state()
+    # What an ASCII-only normalizer wrote for these two names.
+    payload["locations"][str(garage.id)]["path"]["sort_key"] = ""
+    payload["locations"][str(shelf.id)]["path"]["sort_key"] = "/ sren's shelf"
+    payload["items"][str(item.id)]["location_path"]["sort_key"] = "/ sren's shelf"
+
+    reloaded = Repository.from_state(payload)
+
+    assert reloaded.get_location(garage.id).path.sort_key == "гараж"
+    assert reloaded.get_location(shelf.id).path.sort_key == "гараж / soren's shelf"
+    assert reloaded.get_item(item.id).location_path.sort_key == "гараж / soren's shelf"
+    # The next save writes the corrected keys back.
+    assert reloaded.export_state() == repo.export_state()
 
 
 def test_cursor_returns_empty_page_when_tail_deleted() -> None:

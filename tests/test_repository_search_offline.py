@@ -212,16 +212,64 @@ def test_multi_word_query_ands_across_fields_and_the_path() -> None:
     assert results == []
 
 
-def test_a_query_that_normalizes_away_narrows_nothing() -> None:
-    """A query that ASCII folding empties matches every item.
-
-    ``normalize_text_for_sort`` keeps only what NFKD can render as ASCII, so a
-    query written in a script without word boundaries — Japanese here — reduces
-    to no words at all, and a filter with no words to test excludes nobody.
-    """
+def test_a_query_in_a_script_without_ascii_forms_narrows() -> None:
+    """Japanese has no ASCII rendering and no spaces; the query still has a word."""
     repo = Repository()
     battery = repo.create_item({"name": "電池ケース"})
-    hammer = repo.create_item({"name": "Hammer"})
+    repo.create_item({"name": "Hammer"})
 
     results = repo.list_items(flt={"q": "電池"})["items"]
-    assert {x.id for x in results} == {battery.id, hammer.id}
+    assert [x.id for x in results] == [battery.id]
+
+    assert repo.list_items(flt={"q": "工具"})["items"] == []
+
+
+def test_a_cyrillic_query_narrows_and_ignores_case() -> None:
+    repo = Repository()
+    cable = repo.create_item({"name": "Кабель HDMI", "tags": ["Электрика"]})
+    repo.create_item({"name": "Молоток"})
+    repo.create_item({"name": "Hammer"})
+
+    for query in ("кабель", "КАБЕЛЬ", "абел", "электрика hdmi"):
+        results = repo.list_items(flt={"q": query})["items"]
+        assert [x.id for x in results] == [cable.id], query
+
+    assert repo.list_items(flt={"q": "кабель молоток"})["items"] == []
+
+
+def test_a_non_latin_location_name_is_searchable() -> None:
+    repo = Repository()
+    garage = repo.create_location(name="Гараж")
+    drill = repo.create_item({"name": "Drill", "location_id": str(garage.id)})
+    repo.create_item({"name": "Hammer"})
+
+    results = repo.list_items(flt={"q": "гараж"})["items"]
+    assert [x.id for x in results] == [drill.id]
+
+
+def test_latin_letters_without_a_decomposition_match_their_plain_spelling() -> None:
+    """These letters carry no combining mark to strip, so they are folded by name."""
+    repo = Repository()
+    soren = repo.create_item({"name": "Søren's lamp"})
+    lodz = repo.create_item({"name": "Łódź map"})
+    street = repo.create_item({"name": "Straße sign"})
+
+    for query, expected in (
+        ("soren", soren),
+        ("SØREN", soren),
+        ("lodz", lodz),
+        ("łódź", lodz),
+        ("strasse", street),
+        ("straße", street),
+    ):
+        results = repo.list_items(flt={"q": query})["items"]
+        assert [x.id for x in results] == [expected.id], query
+
+
+def test_a_query_of_nothing_but_marks_and_spaces_narrows_nothing() -> None:
+    """With no word left to test, the filter excludes nobody."""
+    repo = Repository()
+    repo.create_item({"name": "Кабель"})
+    repo.create_item({"name": "Hammer"})
+
+    assert len(repo.list_items(flt={"q": " \u0301 "})["items"]) == 2
