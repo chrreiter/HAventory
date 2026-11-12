@@ -48,6 +48,38 @@ describe('Store', () => {
     expect(listCalls).toBe(2);
   });
 
+  it('leaves a changed row on a page not yet loaded where it is', async () => {
+    const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}`, name: `Item ${i}` }));
+    const hass = makeMockHass({ items });
+    const store = new Store(hass, fast);
+    await store.init();
+    expect(store.state.value.items).toHaveLength(50);
+    expect(store.state.value.total).toBe(60);
+
+    hass.__emit('items', 'quantity_changed', { item: { ...items[55], quantity: 9 } });
+
+    expect(store.state.value.items).toHaveLength(50);
+    expect(store.state.value.total).toBe(60);
+
+    // A creation is a new row whatever is loaded.
+    hass.__emit('items', 'created', { item: makeItem({ id: 'new', name: 'New' }) });
+    expect(store.state.value.items[0].id).toBe('new');
+    expect(store.state.value.total).toBe(61);
+  });
+
+  it('re-reads the list after a reconnect, since the events in between are gone', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'Spanner' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    // Another browser renames the item while this socket is down.
+    hass.__setItems([makeItem({ id: '1', name: 'Wrench' })]);
+    hass.__reconnect();
+    await flush(3);
+
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['Wrench']);
+  });
+
   it('updates statsCounts live from a stats counts event', async () => {
     const hass = makeMockHass({ items: [] });
     const store = new Store(hass, fast);
