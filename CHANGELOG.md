@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.9.4](https://github.com/chrreiter/HAventory/compare/v0.9.3...v0.9.4) (2026-11-12)
+
+
+### Bug Fixes
+
+* **card:** empty the search box when the search is cleared elsewhere ([#797](https://github.com/chrreiter/HAventory/issues/797)) ([4e19019](https://github.com/chrreiter/HAventory/commit/4e1901934825a637568f500a69a7a1a7d80defcb)), closes [#782](https://github.com/chrreiter/HAventory/issues/782)
+* **card:** keep the list true across reconnects, refused refreshes and unloaded rows ([#789](https://github.com/chrreiter/HAventory/issues/789)) ([c36f2c6](https://github.com/chrreiter/HAventory/commit/c36f2c6a33aeabab81c755c6585a93d35e4e3911))
+* **card:** speak the area twisty's label in the card's language ([#762](https://github.com/chrreiter/HAventory/issues/762)) ([fd117b2](https://github.com/chrreiter/HAventory/commit/fd117b262c4919bbfbfdbd728f176a86a3b3a47c))
+* give a moved root's area up to the tree it joins ([#788](https://github.com/chrreiter/HAventory/issues/788)) ([8ba6950](https://github.com/chrreiter/HAventory/commit/8ba695052ed0fbb8419a814b8bc9c3f92b39a4e5))
+* hold the location services to Home Assistant's area registry ([#787](https://github.com/chrreiter/HAventory/issues/787)) ([318ea43](https://github.com/chrreiter/HAventory/commit/318ea43b2b7c595a3ee7274188ed4633d6bd71e6))
+* keep non-Latin text in search and sort normalization ([#801](https://github.com/chrreiter/HAventory/issues/801)) ([2de07ee](https://github.com/chrreiter/HAventory/commit/2de07ee9348f5419c951a8f1d1bda862b61397e9)), closes [#784](https://github.com/chrreiter/HAventory/issues/784)
+* keep the files of items the corrupt-store repair dropped ([#796](https://github.com/chrreiter/HAventory/issues/796)) ([ae3f8d4](https://github.com/chrreiter/HAventory/commit/ae3f8d464d7dc93d59b467b995f2c8c4c4451b13)), closes [#783](https://github.com/chrreiter/HAventory/issues/783)
+* raise the Home Assistant floor to 2026.7.0 ([#759](https://github.com/chrreiter/HAventory/issues/759)) ([076914e](https://github.com/chrreiter/HAventory/commit/076914e27ec24b1133f05bb15c3d2d4511d6f453))
+
+
+### Documentation
+
+* drop the pointer to the closed release tracker ([#799](https://github.com/chrreiter/HAventory/issues/799)) ([c10a0c2](https://github.com/chrreiter/HAventory/commit/c10a0c226509b684d632c3361571247581682cd5))
+* rework the contributor docs and check the API contract against the code ([#758](https://github.com/chrreiter/HAventory/issues/758)) ([9730a98](https://github.com/chrreiter/HAventory/commit/9730a986fe6f0d01ad5b78b9a35b6e8e8b803e98))
+* rework the README and the user guides for people running HAventory ([#745](https://github.com/chrreiter/HAventory/issues/745)) ([d1baf6b](https://github.com/chrreiter/HAventory/commit/d1baf6bec9932da62dcde474d4058ef2a63f70bd))
+
 ## [0.9.3](https://github.com/chrreiter/HAventory/compare/v0.9.2...v0.9.3) (2026-09-05)
 
 
