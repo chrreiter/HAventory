@@ -1109,6 +1109,9 @@ class Repository:
 
         if area_change_requested:
             self._propagate_area_to_root(key, parsed_area)
+        elif parent_changed and target_parent_id is not None and loc.area_id is not None:
+            # A root that stops being one gives its area up to the tree it joins.
+            self._propagate_area_to_root(key, self.effective_area_id(str(target_parent_id)))
 
         LOGGER.debug(
             "Location updated",
