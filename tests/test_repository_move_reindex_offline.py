@@ -181,6 +181,23 @@ def test_effective_area_rebuckets_on_subtree_move() -> None:
     assert repo.get_item(item.id).version == item.version
 
 
+def test_a_root_moved_under_another_tree_takes_that_trees_area() -> None:
+    """The area lives on the root, so a root that stops being one gives its own up."""
+
+    repo = Repository()
+    garage = repo.create_location(name="Garage", area_id="area-garage")
+    attic = repo.create_location(name="Attic", area_id="area-attic")
+    repo.create_item(ItemCreate(name="Hammer", quantity=1, location_id=str(garage.id)))
+
+    moved = repo.update_location(garage.id, new_parent_id=attic.id)
+
+    assert moved.area_id is None
+    assert repo.effective_area_id(str(garage.id)) == "area-attic"
+    assert repo.list_items(flt=ItemFilter(area_id="area-garage"))["items"] == []
+    res = repo.list_items(flt=ItemFilter(area_id="area-attic"))
+    assert [i.name for i in res["items"]] == ["Hammer"]
+
+
 def test_an_area_only_edit_rebuilds_no_path_and_no_subtree_index() -> None:
     """A path is built from the name and the parent link; the index from the link.
 

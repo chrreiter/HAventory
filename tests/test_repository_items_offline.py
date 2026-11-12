@@ -300,8 +300,8 @@ def test_prefilter_by_area_and_and_logic_with_location() -> None:
     repo = Repository()
     area_a = uuid.uuid4()
     area_b = uuid.uuid4()
-    l1 = repo.create_location(name="L1", area_id=area_a)
-    l2 = repo.create_location(name="L2", area_id=area_b)
+    l1 = repo.create_location(name="L1", area_id=str(area_a))
+    l2 = repo.create_location(name="L2", area_id=str(area_b))
 
     i1 = repo.create_item(ItemCreate(name="X", location_id=str(l1.id)))
     i2 = repo.create_item(ItemCreate(name="Y", location_id=str(l2.id)))

@@ -28,6 +28,7 @@ from custom_components.haventory.exceptions import (
 from custom_components.haventory.models import AttachmentMeta, iso_utc_now, new_uuid4
 from custom_components.haventory.repository import Repository
 from homeassistant.core import HomeAssistant, SupportsResponse
+from homeassistant.helpers import area_registry as ar
 from homeassistant.util import dt as dt_util
 
 from runtime_helpers import install_runtime, repo_of, runtime_of
@@ -80,6 +81,28 @@ async def test_item_update_refuses_a_bad_inspection_date_by_its_own_name() -> No
 
     assert str(refusal.value) == "inspection_date must be a valid calendar date (YYYY-MM-DD)"
     assert repo.get_item(item_id).inspection_date is None
+
+
+@pytest.mark.asyncio
+async def test_location_services_refuse_an_area_home_assistant_does_not_have() -> None:
+    """The services hold `area_id` to the registry, as the WebSocket commands do."""
+
+    hass = HomeAssistant()
+    repo = Repository()
+    install_runtime(hass, repository=repo)
+    ar.async_get(hass)._add("garage", "Garage")  # type: ignore[attr-defined]
+
+    with pytest.raises(ValidationError, match="unknown area_id"):
+        await services_mod.service_location_create(hass, {"name": "Shed", "area_id": "garag"})
+    assert list(repo.iter_locations()) == []
+
+    created = await services_mod.service_location_create(
+        hass, {"name": "Shed", "area_id": "garage"}
+    )
+    loc_id = created["location"]["id"]
+    with pytest.raises(ValidationError, match="unknown area_id"):
+        await services_mod.service_location_update(hass, {"location_id": loc_id, "area_id": "x"})
+    assert repo.get_location(loc_id).area_id == "garage"
 
 
 @pytest.mark.asyncio

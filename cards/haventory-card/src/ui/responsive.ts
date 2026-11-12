@@ -82,12 +82,7 @@ export class ResponsiveController implements ReactiveController {
 
   hostConnected(): void {
     if (typeof ResizeObserver === 'undefined') return;
-    this.observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const box = entry.contentRect ?? entry.target.getBoundingClientRect();
-      this.setWidth(box.width);
-    });
+    this.observer = new ResizeObserver(([entry]) => this.setWidth(entry.contentRect.width));
     this.observer.observe(this.host);
   }
 

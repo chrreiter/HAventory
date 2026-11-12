@@ -6,7 +6,7 @@ multi-ecosystem-groups:
   # updaters must move them in one pull request. Majors arrive individually.
   python-dev:
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     update-types: ["minor", "patch"]
 
 updates:
@@ -14,7 +14,7 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
       actions:
         patterns: ["*"]
@@ -23,7 +23,7 @@ updates:
   - package-ecosystem: "npm"
     directory: "/cards/haventory-card"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     cooldown:
       default-days: 3
     ignore:
@@ -89,7 +89,7 @@ updates:
   - package-ecosystem: "docker"
     directory: "/.devcontainer"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     groups:
       devcontainer-images:
         patterns: ["*"]
@@ -98,13 +98,13 @@ updates:
   - package-ecosystem: "devcontainers"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
 
   # Integration test harness (pip): `requirements-integration.txt` at the root.
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
     cooldown:
       default-days: 3
     exclude-paths:
