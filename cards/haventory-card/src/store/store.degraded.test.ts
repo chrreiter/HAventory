@@ -196,6 +196,18 @@ describe('subscribeRetryDelayMs', () => {
     expect(store.state.value.degraded.connectionLost).toBe(false);
   });
 
+  it('re-subscribes on a refresh even when the re-read is refused', async () => {
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+    const subscribesBefore = hass.__subscribeCalls.length;
+
+    hass.__failNext(1, { code: 'storage_error', message: 'disk' });
+    await expect(store.refreshAll()).rejects.toBeDefined();
+
+    expect(hass.__subscribeCalls.length).toBeGreaterThan(subscribesBefore);
+  });
+
   it('does not count the taxonomy catch-all toward an outage', async () => {
     // `unknown_error` is the backend's own answer to a command it could not
     // carry out. It travelled the socket to get here, so it proves the transport

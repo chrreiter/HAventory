@@ -105,13 +105,9 @@ def next_event(
     )
 
 
-def next_occurrence_after(
-    anchor: date, interval: ReminderInterval | None, after: date
-) -> date | None:
-    """Where a reminder lands once it has been done; none for a one-off."""
+def next_occurrence_after(anchor: date, interval: ReminderInterval, after: date) -> date:
+    """Where a recurring reminder lands once it has been done."""
 
-    if interval is None:
-        return None
     return _occurrence(anchor, interval, _first_step_after(anchor, interval, after))
 
 
