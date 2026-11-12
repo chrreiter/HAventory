@@ -26,10 +26,9 @@ Run every Python tool through uv (`uv run <tool>`) so it uses the locked environ
 ## Tooling
 
 - **uv** owns the Python environment and the lockfile. Dev dependencies are the
-  `[dependency-groups]` in `pyproject.toml`. `requirements-dev.txt` is a pip-installable
-  export for environments without uv: regenerate it with
-  `bash scripts/export_dev_requirements.sh` rather than editing it, because
-  `tests/test_toolchain_pins.py` fails while it disagrees with the lock.
+  `[dependency-groups]` in `pyproject.toml`, resolved once in `uv.lock`, and nothing else
+  in the repository copies their versions. Where a pip requirements file is wanted, derive
+  it at the point of use: `uv export --only-group dev --no-hashes --no-emit-project`.
 - **Ruff** lints and formats. The `dev` group pins it exactly, and the hook in
   `.pre-commit-config.yaml` must name the same version (`tests/test_toolchain_pins.py`),
   because two ruff releases can format the same file differently.
@@ -327,7 +326,6 @@ Everything under `scripts/` is Linux/bash, and the Python helpers assume a UTF-8
 |---|---|
 | `setup.sh` | the bootstrap under [Setup](#setup-linuxbash); `--ci` skips the pre-commit hooks |
 | `ci_local.sh` | the whole gate in one run, with coverage |
-| `export_dev_requirements.sh` | regenerates `requirements-dev.txt` from `uv.lock` |
 | `test_integration.sh` | provisions `.venv-integration` and runs the in-process suite |
 | `reload_addon.sh` | deploys the working tree into a running Home Assistant dev container |
 | `smoke_online.sh` | the online WebSocket smoke; purges the store first when `HA_CONTAINER` is set |

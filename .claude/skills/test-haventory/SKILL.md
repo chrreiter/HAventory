@@ -14,10 +14,10 @@ All paths are relative to the repo root and every command below is **Linux/bash*
 the only development host the repo supports; CI runs `ubuntu-latest`, and on Windows the
 supported path is WSL2 (`CONTRIBUTING.md`). A handful of notes are tagged
 **[Windows/Git Bash]**: they are workarounds for driving a Windows host's Docker and
-filesystem through Git Bash instead, and nothing else here depends on them. Plain `uv run`
-works against the project `.venv`; the `--no-project` form below is still correct and is
-what to fall back to if the venv is ever unusable, but it is no longer required. The
-canonical clean-Linux/CI spelling of the gate is in `CONTRIBUTING.md` → "The gate".
+filesystem through Git Bash instead, and nothing else here depends on them. Every Python
+command runs through `uv run`, which syncs the project `.venv` from `uv.lock` first. If
+that venv is ever unusable, add `--isolated` to build a throwaway one from the same lock.
+The canonical clean-Linux/CI spelling of the gate is in `CONTRIBUTING.md` → "The gate".
 
 ## Prerequisites
 
@@ -34,26 +34,24 @@ canonical clean-Linux/CI spelling of the gate is in `CONTRIBUTING.md` → "The g
 
 ## The commit gate (offline: run before every commit)
 
-Both halves must be green. This is the `--no-project` spelling; the plain one, and why each
-command is in the gate, are in `CONTRIBUTING.md`. Backend, from the repo root:
+Both halves must be green. Why each command is in the gate is in `CONTRIBUTING.md`.
+Backend, from the repo root:
 
 ```bash
-# `--with-requirements` installs the `uv export` of the dev group, pins and all.
-# Naming packages one `--with` at a time here is how a test-only import went
-# missing and how a version literal for ruff drifted from the pin CI runs.
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run --no-project --python 3.14 \
-  --with-requirements requirements-dev.txt python -m pytest -q
+# The tools come from the locked `dev` group. Naming packages one `--with` at a
+# time here is how a test-only import went missing and how a version literal for
+# ruff drifted from the pin CI runs.
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -q
 # → 1361 passed, 25 skipped
 
-uv run --no-project --python 3.14 --with-requirements requirements-dev.txt \
-  ruff check custom_components tests
+uv run ruff check custom_components tests
 # → All checks passed!
 
 # CI fails on formatting alone; `ruff check` does not cover it.
-uv run --no-project --python 3.14 --with-requirements requirements-dev.txt ruff format --check .
+uv run ruff format --check .
 # → 184 files already formatted
 
-uv run --no-project --python 3.14 --with-requirements requirements-dev.txt mypy
+uv run mypy
 # → Success: no issues found in 25 source files
 ```
 
@@ -189,8 +187,7 @@ Non-destructive WS client tests against the running instance, from the repo root
 
 ```bash
 set -a; source .env; set +a
-RUN_ONLINE=1 uv run --no-project --python 3.14 --with-requirements requirements-dev.txt \
-  python -m pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
+RUN_ONLINE=1 uv run python -m pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
 # → 8 passed, 13 skipped (the skips need the destructive/area gates)
 ```
 

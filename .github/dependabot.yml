@@ -51,13 +51,6 @@ updates:
     patterns: ["*"]
     cooldown:
       default-days: 3
-    exclude-paths:
-      # `requirements-dev.txt` is `uv export` written down, not a manifest: bumping
-      # its pins directly resolves nothing against `uv.lock`.
-      # scripts/export_dev_requirements.sh rewrites it from the lock, and
-      # tests/test_toolchain_pins.py fails while the two disagree. Security
-      # advisories can still open a pull request.
-      - "requirements-dev.txt"
     ignore:
       # `requirements-integration.txt` pins HA to the floor `hacs.json` declares and
       # the frontend wheel to that release's own manifest
@@ -108,10 +101,9 @@ updates:
     cooldown:
       default-days: 3
     exclude-paths:
-      # The two files the `uv` block owns: a pip edit would leave `uv.lock`
-      # behind. Security advisories in either can still open a pull request here.
+      # The `uv` block owns this one: a pip edit would leave `uv.lock` behind.
+      # Security advisories can still open a pull request here.
       - "pyproject.toml"
-      - "requirements-dev.txt"
     ignore:
       # The same two pins as the `uv` block above.
       - dependency-name: "homeassistant"
