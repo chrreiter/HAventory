@@ -293,7 +293,9 @@ Assistant contact surface, the phone breakpoints and the known gaps) is
   (`.github/labels.yml`), CODEOWNERS review requests, and the issue and PR templates.
 - **Brand assets** in `custom_components/haventory/brand/` are what Home Assistant shows
   for the integration, served at `/api/brands/integration/haventory/<file>`; a custom
-  integration's own images win over the brands CDN. Regenerate them with
+  integration's own images win over the brands CDN. `icon.png` there is also what the HACS
+  `brands` check reads, so CI runs the HACS action with no `ignore:` and
+  `tests/test_hacs_validation.py` keeps it that way. Regenerate them with
   `uv run python scripts/render_brand_assets.py` rather than editing them;
   `tests/test_brand_assets.py` fails when artwork and mark drift apart.
 - **The social preview** is `docs/assets/social-preview.png`, rendered from the `.html`

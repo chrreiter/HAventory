@@ -166,7 +166,8 @@ jobs:
       - name: Hassfest
         uses: home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361  # master (untagged upstream)
       - name: HACS validation
+        # No `ignore:`. The default store wants every check green, and the brands
+        # check is met by `custom_components/haventory/brand/icon.png`.
         uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa  # main (untagged upstream)
         with:
           category: integration
-          ignore: brands
