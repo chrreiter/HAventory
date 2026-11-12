@@ -140,6 +140,34 @@ async def async_backup_store(
     return True
 
 
+async def async_backup_item_ids(
+    hass: HomeAssistant, *, backup_key: str = CORRUPT_BACKUP_STORAGE_KEY
+) -> frozenset[str]:
+    """Every item id the corrupt-store backup holds a row for, readable or not.
+
+    Read raw for the reason the copy was taken raw: the rows that matter here
+    are the ones this build refused. Both the row's key and its own ``id`` count,
+    since either can be what names the item's attachment directory. A backup
+    that cannot be read at all raises, so a caller holding files for it can tell
+    "no backup" from "a backup it could not read".
+    """
+
+    backup: Store[dict[str, Any]] = Store(hass, DomainStore.HA_STORE_VERSION, backup_key)
+    raw = await backup.async_load()
+    if not isinstance(raw, dict):
+        return frozenset()
+    rows = raw.get("items")
+    if not isinstance(rows, dict):
+        return frozenset()
+    ids = {str(key) for key in rows}
+    ids.update(
+        row["id"]
+        for row in rows.values()
+        if isinstance(row, dict) and isinstance(row.get("id"), str)
+    )
+    return frozenset(ids)
+
+
 class DomainStore:
     """Schema-aware wrapper around Home Assistant's Store, one per config entry."""
 

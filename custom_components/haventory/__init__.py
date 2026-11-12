@@ -64,6 +64,7 @@ from .storage import (
     CURRENT_SCHEMA_VERSION,
     STORAGE_KEY,
     DomainStore,
+    async_backup_item_ids,
     async_persist_immediate,
 )
 from .subscriptions import notify_backend_unavailable
@@ -285,6 +286,13 @@ async def _async_sweep_orphaned_media(hass: HomeAssistant, repository: Repositor
 
     At setup, the one moment the metadata is complete and nothing is mid-write.
     A failure costs disk, not data, so it never stops the entry from loading.
+
+    The corrupt-store repair loads without the rows it could not read and then
+    rewrites the store clean, so from that boot on nothing here names their
+    files. For as long as its backup exists, the files of every item the backup
+    holds and the store does not are kept, so restoring the backup brings the
+    pictures and manuals back with the items. A backup that cannot be read
+    raises, which skips the sweep rather than guessing.
     """
     try:
         if repository.get_counts()["items_total"] == 0:
@@ -292,7 +300,18 @@ async def _async_sweep_orphaned_media(hass: HomeAssistant, repository: Repositor
             # files are the only copy left; sweeping would take the whole root.
             await media_mod.async_report_unswept(hass)
             return
-        await media_mod.async_sweep_orphans(hass, repository.iter_attachments())
+        held = await async_backup_item_ids(hass) - repository.item_ids()
+        if held:
+            LOGGER.info(
+                "Keeping the attachment files of items only the corrupt-store backup holds",
+                extra={
+                    "domain": DOMAIN,
+                    "op": "attachment_sweep",
+                    "held_items": len(held),
+                    "backup_key": CORRUPT_BACKUP_STORAGE_KEY,
+                },
+            )
+        await media_mod.async_sweep_orphans(hass, repository.iter_attachments(), held_item_ids=held)
     except Exception:
         LOGGER.warning(
             "Could not sweep orphaned attachment files",

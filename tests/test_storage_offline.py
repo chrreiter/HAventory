@@ -23,6 +23,7 @@ from custom_components.haventory.storage import (
     CURRENT_SCHEMA_VERSION,
     STORE_COLLECTIONS,
     DomainStore,
+    async_backup_item_ids,
     async_backup_store,
 )
 from homeassistant.core import HomeAssistant
@@ -632,3 +633,39 @@ async def test_the_backup_reports_that_there_was_nothing_to_copy() -> None:
     hass = HomeAssistant()
 
     assert await async_backup_store(hass, source_key="test_backup_absent") is False
+
+
+@pytest.mark.asyncio
+async def test_the_backup_names_every_item_it_holds_a_row_for() -> None:
+    """The unreadable rows are the point: their files are what the sweep must leave."""
+
+    hass = HomeAssistant()
+    backup_key = "test_backup_item_ids"
+    await HAStore(hass, 1, backup_key).async_save(
+        {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "locations": {"loc": {"id": "loc", "name": "Shed"}},
+            "items": {
+                "not-a-uuid": {"id": "not-a-uuid", "name": "Broken"},
+                "keyed": {"id": "named-inside", "name": "Moved"},
+                "no-body": None,
+            },
+        }
+    )
+
+    ids = await async_backup_item_ids(hass, backup_key=backup_key)
+
+    assert ids == {"not-a-uuid", "keyed", "named-inside", "no-body"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stored", [None, {"items": ["not", "a", "mapping"]}, ["not a dict"]])
+async def test_no_backup_or_one_without_item_rows_names_nothing(stored: object) -> None:
+    hass = HomeAssistant()
+    backup_key = "test_backup_item_ids_absent"
+    if stored is None:
+        await HAStore(hass, 1, backup_key).async_remove()
+    else:
+        await HAStore(hass, 1, backup_key).async_save(stored)
+
+    assert await async_backup_item_ids(hass, backup_key=backup_key) == frozenset()

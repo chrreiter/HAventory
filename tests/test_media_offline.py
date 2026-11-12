@@ -309,6 +309,26 @@ async def test_the_sweep_deletes_an_unreferenced_file_and_keeps_a_referenced_one
 
 
 @pytest.mark.asyncio
+async def test_the_sweep_leaves_a_held_item_directory_whole() -> None:
+    """A held item's files stay although no metadata names them; others still go."""
+
+    hass = HomeAssistant()
+    root = media.media_root(hass)
+    held = root / "11111111-1111-4111-8111-111111111111" / "drill.png"
+    swept = root / "22222222-2222-4222-8222-222222222222" / "saw.png"
+    for path in (held, swept):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(PNG_BYTES)
+
+    removed = await media.async_sweep_orphans(
+        hass, [], held_item_ids=["11111111-1111-4111-8111-111111111111"]
+    )
+
+    assert removed == (str(swept.resolve()),)
+    assert held.is_file()
+
+
+@pytest.mark.asyncio
 async def test_the_sweep_refuses_a_path_resolving_outside_the_media_root(
     tmp_path: Path,
 ) -> None:

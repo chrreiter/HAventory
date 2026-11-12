@@ -331,11 +331,14 @@ def _delete_blocking(root: Path, targets: Iterable[Path]) -> None:
     _prune_emptied_blocking(root, emptied)
 
 
-def _sweep_blocking(root: Path, referenced: frozenset[str]) -> list[str]:
+def _sweep_blocking(
+    root: Path, referenced: frozenset[str], held_dirs: frozenset[str] = frozenset()
+) -> list[str]:
     """Delete every file under ``root`` no metadata claims. Blocks — executor only.
 
     Only files resolving inside ``root``: ``rglob`` follows a symlinked
-    directory. A directory the sweep itself emptied goes too; one that was
+    directory. A file directly inside one of ``held_dirs`` stays whatever the
+    metadata says. A directory the sweep itself emptied goes too; one that was
     already empty is left alone.
     """
 
@@ -355,7 +358,7 @@ def _sweep_blocking(root: Path, referenced: frozenset[str]) -> list[str]:
                 extra={"domain": DOMAIN, "op": "attachment_sweep", "path": str(candidate)},
             )
             continue
-        if str(resolved) in referenced:
+        if str(resolved) in referenced or str(resolved.parent) in held_dirs:
             continue
         try:
             resolved.unlink()
@@ -472,13 +475,21 @@ async def async_delete_item_files(hass: HomeAssistant, items: Iterable[Mapping[s
 
 
 async def async_sweep_orphans(
-    hass: HomeAssistant, pairs: Iterable[tuple[str, AttachmentMeta]]
+    hass: HomeAssistant,
+    pairs: Iterable[tuple[str, AttachmentMeta]],
+    *,
+    held_item_ids: Iterable[str] = (),
 ) -> tuple[str, ...]:
-    """Remove media files no metadata references, and what that empties."""
+    """Remove media files no metadata references, and what that empties.
+
+    The directories of ``held_item_ids`` are left whole: files that belong to
+    items the store does not hold right now but a backup can bring back.
+    """
 
     root = media_root(hass)
     keep = referenced_paths(root, pairs)
-    removed = tuple(await hass.async_add_executor_job(_sweep_blocking, root, keep))
+    held = frozenset(str((root / item_id).resolve()) for item_id in held_item_ids)
+    removed = tuple(await hass.async_add_executor_job(_sweep_blocking, root, keep, held))
     if removed:
         LOGGER.info(
             "Removed orphaned attachment files",
