@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.util import dt as dt_util
 
 from . import media as media_mod
@@ -201,7 +202,17 @@ def _op_reminder_bump(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     return _item(hass, updated)
 
 
+def _require_known_area(hass: HomeAssistant, area_id: Any) -> None:
+    """Refuse an `area_id` Home Assistant has no area for; areas are HA's."""
+
+    if area_id is None:
+        return
+    if not isinstance(area_id, str) or ar.async_get(hass).async_get_area(area_id) is None:
+        raise ValidationError("unknown area_id")
+
+
 def _op_location_create(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    _require_known_area(hass, payload.get("area_id"))
     loc = _repo(hass).create_location(
         name=payload["name"], parent_id=payload.get("parent_id"), area_id=payload.get("area_id")
     )
@@ -212,6 +223,7 @@ def _op_location_update(hass: HomeAssistant, payload: dict[str, Any]) -> Written
     repo = _repo(hass)
     location_id = payload["location_id"]
     new_parent = payload["new_parent_id"] if "new_parent_id" in payload else UNSET
+    _require_known_area(hass, payload.get("area_id"))
     area_id = payload["area_id"] if "area_id" in payload else UNSET
     before = repo.get_location(location_id)
     location_key = str(before.id)
