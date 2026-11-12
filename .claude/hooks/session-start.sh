@@ -3,7 +3,7 @@
 #
 # Idempotent — safe to re-run when dependencies already exist:
 #   * syncs the backend env from pyproject.toml + uv.lock (`uv sync`), falling
-#     back to venv + requirements-dev.txt only where uv is absent
+#     back to venv + `pip install --group dev` only where uv is absent
 #   * runs `npm ci` in cards/haventory-card only when node_modules is absent
 #   * provisions the separate integration env (.venv-integration), best-effort
 #
@@ -33,9 +33,10 @@ esac
 
 # --- Backend: Python environment + dev dependencies -------------------------
 # `uv sync` is what docs/developing.md → "Setup" bootstraps with — scripts/setup.sh
-# runs it — and the only one that reproduces the locked set: requirements-dev.txt
-# carries its own header saying it is a generated pip fallback for environments
-# without uv, not a second source of truth. The fallback searches for Python 3.14
+# runs it — and the only one that reproduces the locked set. Without uv, pip reads
+# the same `dev` group out of pyproject.toml (PEP 735, pip 25.1+, hence the pip
+# upgrade first) but resolves it afresh: only the exact ruff pin is held, and
+# everything else may come out newer than uv.lock. The fallback searches for Python 3.14
 # first because that is the floor `requires-python` declares, and the source uses
 # PEP 758 unparenthesized `except A, B:`, which does not parse on 3.13 — an older
 # interpreter yields an environment that cannot import the integration at all,
@@ -48,7 +49,7 @@ elif command -v uv >/dev/null 2>&1; then
 elif [ -x .venv/bin/pip ]; then
   log "uv not found; installing backend dev dependencies into the existing .venv"
   .venv/bin/python -m pip install --quiet --upgrade pip
-  .venv/bin/pip install --quiet -r requirements-dev.txt
+  .venv/bin/pip install --quiet --group dev
 else
   PYTHON_BIN=""
   for candidate in python3.14 python3 python; do
@@ -63,7 +64,7 @@ else
     log "uv not found; creating .venv with $PYTHON_BIN"
     "$PYTHON_BIN" -m venv .venv
     .venv/bin/python -m pip install --quiet --upgrade pip
-    .venv/bin/pip install --quiet -r requirements-dev.txt
+    .venv/bin/pip install --quiet --group dev
   fi
 fi
 

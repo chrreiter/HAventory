@@ -85,15 +85,10 @@ COPY_FROM = re.compile(r"^COPY\s+--from=(?P<source>\S+)", re.IGNORECASE | re.MUL
 #: file got simpler.
 MIN_DEVCONTAINER_FROM_LINES = 3
 
-# The root manifests the `uv` block owns, and which the `pip` block therefore has
-# to be scoped off: `requirements-dev.txt` is a `uv export` that says so on line
-# 1, and `pyproject.toml` has a lockfile beside it that a pip edit would not
-# touch.
-UV_OWNED_MANIFESTS = ("pyproject.toml", "requirements-dev.txt")
-
-# The one root file no updater may write: it is derived from `uv.lock`, so an
-# edit to it is a pin nothing resolved.
-GENERATED_FROM_THE_LOCK = ("requirements-dev.txt",)
+# The root manifest the `uv` block owns, and which the `pip` block therefore has
+# to be scoped off: `pyproject.toml` has a lockfile beside it that a pip edit
+# would not touch.
+UV_OWNED_MANIFESTS = ("pyproject.toml",)
 VERSION_UPDATE_TYPES = frozenset(
     {
         "version-update:semver-major",
@@ -464,31 +459,12 @@ def test_develop_clears_no_directory_it_has_not_read_a_pyvenv_cfg_in() -> None:
     )
 
 
-def test_dependabot_leaves_the_generated_export_alone() -> None:
-    """The ``uv`` updater reads ``requirements-dev.txt`` as a manifest; it is an export.
-
-    Read that way, every pin in it is a direct requirement to bump to the newest
-    release — a resolution of its own beside ``uv.lock``, and not the one
-    ``uv sync`` installs. Ten pins had drifted that way. The lock is the only
-    source: ``scripts/export_dev_requirements.sh`` rewrites the file from it and
-    ``tests/test_toolchain_pins.py`` fails while the two disagree.
-    """
-    block = dependabot_block("uv", "/")
-    assert block is not None
-
-    assert still_scanned(block, GENERATED_FROM_THE_LOCK) == [], (
-        "the uv block still scans requirements-dev.txt — add it to exclude-paths"
-    )
-
-
 def test_dependabot_keeps_pip_off_the_manifests_uv_owns() -> None:
-    """The generated export is not a manifest to edit, and never on its own.
+    """``pyproject.toml`` is half of a pair whose other half is ``uv.lock``.
 
-    ``requirements-dev.txt`` is written by ``uv export`` and carries "do not edit
-    by hand" on its first line; ``pyproject.toml`` is half of a pair whose other
-    half is ``uv.lock``. The pip updater parses both anyway, so every dev package
-    the ``uv`` group already carries arrives a second time, in a shape that
-    dirties the tree for whoever runs ``uv`` next.
+    The pip updater parses it anyway, so every dev package the ``uv`` group
+    already carries arrives a second time, in a shape that dirties the tree for
+    whoever runs ``uv`` next.
     """
     block = dependabot_block("pip", "/")
     assert block is not None
@@ -500,14 +476,14 @@ def test_dependabot_keeps_pip_off_the_manifests_uv_owns() -> None:
 def test_an_unscoped_pip_block_is_reported() -> None:
     """The shape the block had while it was opening the duplicates."""
     unscoped: dict[str, Any] = {}
-    literal = {"exclude-paths": ["pyproject.toml", "requirements-dev.txt"]}
-    globbed = {"exclude-paths": ["**/*.toml", "**/requirements-dev.txt"]}
-    partial = {"exclude-paths": ["requirements-dev.txt"]}
+    literal = {"exclude-paths": ["pyproject.toml"]}
+    globbed = {"exclude-paths": ["**/*.toml"]}
+    elsewhere = {"exclude-paths": ["requirements-integration.txt"]}
 
     assert still_scanned(unscoped, UV_OWNED_MANIFESTS) == list(UV_OWNED_MANIFESTS)
     assert still_scanned(literal, UV_OWNED_MANIFESTS) == []
     assert still_scanned(globbed, UV_OWNED_MANIFESTS) == []
-    assert still_scanned(partial, UV_OWNED_MANIFESTS) == ["pyproject.toml"]
+    assert still_scanned(elsewhere, UV_OWNED_MANIFESTS) == ["pyproject.toml"]
 
 
 def test_a_blanket_ignore_is_told_from_a_scoped_one() -> None:
