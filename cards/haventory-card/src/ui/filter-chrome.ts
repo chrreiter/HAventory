@@ -66,9 +66,36 @@ export const sheetHead = css`
   }
 `;
 
-/** The search box's debounced write; the store is read per call, as a host gets it late. */
-export function searchDebounce(getStore: () => Store | undefined): (q: string) => void {
-  return debounce((q: string) => getStore()?.setFilters({ q }), SEARCH_DEBOUNCE_MS);
+/**
+ * The search box's debounced write. A host shows its own draft while this is
+ * `pending`, and the store's `q` the rest of the time: the search can be
+ * cleared from a chip, the filter panel or the other surface, and only the
+ * store sees that. Following it while a write is waiting would put the older
+ * query back under the user's typing.
+ */
+export interface SearchWriter {
+  (q: string): void;
+  readonly pending: boolean;
+}
+
+/** A `SearchWriter`; the store is read per call, as a host gets it late. */
+export function searchDebounce(getStore: () => Store | undefined): SearchWriter {
+  let timer: number | undefined;
+  const write = (q: string) => {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      timer = undefined;
+      getStore()?.setFilters({ q });
+    }, SEARCH_DEBOUNCE_MS);
+  };
+  return Object.defineProperty(write, 'pending', {
+    get: () => timer !== undefined,
+  }) as SearchWriter;
+}
+
+/** What a host's search box shows: its draft while a write waits, else the store's query. */
+export function searchDraftFor(draft: string, q: string | undefined, writer: SearchWriter): string {
+  return writer.pending || q === undefined ? draft : q;
 }
 
 /** Price a staged filter set for its commit button; null leaves the uncounted wording. */

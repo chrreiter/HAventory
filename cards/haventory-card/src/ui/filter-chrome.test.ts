@@ -6,6 +6,7 @@ import {
   renderSearch,
   renderStagedFooter,
   searchDebounce,
+  searchDraftFor,
 } from './filter-chrome';
 import { defaultFilters } from '../store/store';
 import type { Store } from '../store/store';
@@ -48,6 +49,29 @@ describe('searchDebounce', () => {
       // ...and one write, of the last thing typed, on the next one.
       await vi.advanceTimersByTimeAsync(1);
       expect(patches).toEqual([{ q: 'glue' }]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // What a host reads to decide whether its draft or the store's query shows.
+  it('is pending from the first keystroke until its write has gone out', async () => {
+    const { patches, store } = fakeStore();
+    const emit = searchDebounce(() => store);
+    expect(emit.pending).toBe(false);
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      emit('glue');
+      expect(emit.pending).toBe(true);
+      expect(searchDraftFor('glue', '', emit)).toBe('glue');
+
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+      expect(patches).toEqual([{ q: 'glue' }]);
+      expect(emit.pending).toBe(false);
+      expect(searchDraftFor('glue', '', emit)).toBe('');
+      // Before a store is attached there is no query to follow.
+      expect(searchDraftFor('glue', undefined, emit)).toBe('glue');
     } finally {
       vi.useRealTimers();
     }

@@ -12,6 +12,7 @@ import {
   stubViewport,
 } from '../test.utils';
 import { discardPrompt } from '../ui/discard';
+import { SEARCH_DEBOUNCE_MS } from '../ui/filter-chrome';
 import { addDays, toIsoDate } from '../ui/relative-time';
 import type { HVCardShell } from './hv-card-shell';
 import type { Item, Location } from '../store/types';
@@ -46,6 +47,11 @@ async function mountShell(opts: { items?: Item[]; locations?: Location[]; mobile
     items: opts.items ?? [],
     locations: opts.locations ?? [],
   });
+}
+
+function typeInto(input: HTMLInputElement, text: string) {
+  input.value = text;
+  input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
 }
 
 afterEach(() => {
@@ -366,6 +372,53 @@ describe('hv-card-shell: overflow menu', () => {
 });
 
 describe('hv-card-shell: search and filters', () => {
+  // The box held its own draft and nothing wrote the store's query back into
+  // it, so a search cleared by a chip, "Clear all" or the full view left the
+  // old text over an unfiltered list.
+  it('empties the search box when the search is cleared from elsewhere', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Hammer' })] });
+    const input = sr.querySelector('[data-testid="search-input"]') as HTMLInputElement;
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      typeInto(input, 'hammer');
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+      await settle(el);
+      expect(store.state.value.filters.q).toBe('hammer');
+
+      store.clearFilters();
+      await settle(el);
+      expect(input.value).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps what is being typed while its search is still waiting to be sent', async () => {
+    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
+    store.setFilters({ q: 'hammer' });
+    await settle(el);
+    const input = sr.querySelector('[data-testid="search-input"]') as HTMLInputElement;
+    expect(input.value).toBe('hammer');
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      typeInto(input, 'saw');
+      // The old search taken off inside the window: the store says '' now, and
+      // the box still has a write of its own on the way.
+      store.setFilters({ q: '' });
+      await settle(el);
+      expect(input.value).toBe('saw');
+
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+      await settle(el);
+      expect(store.state.value.filters.q).toBe('saw');
+      expect(input.value).toBe('saw');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // The full view and the panel word it this way, and the card searches the same
   // store they do — "matching" claimed a filter that need not be there at all.
   it('offers the whole inventory in the search placeholder, in the full view wording', async () => {

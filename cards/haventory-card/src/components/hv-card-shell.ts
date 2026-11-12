@@ -21,6 +21,7 @@ import {
   renderStagedFooter,
   searchBox,
   searchDebounce,
+  searchDraftFor,
   sheetHead,
 } from '../ui/filter-chrome';
 import { renderStatBadges } from '../ui/stat-badges';
@@ -316,10 +317,8 @@ export class HVCardShell extends LitElement {
     this._filterPanelOpen = readPanelPref();
   }
 
-  protected willUpdate(changed: Map<string, unknown>) {
-    if (changed.has('store') && this.store) {
-      this._searchDraft = this.store.state.value.filters.q;
-    }
+  protected willUpdate() {
+    this._searchDraft = searchDraftFor(this._searchDraft, this.st?.filters.q, this._emitSearch);
     // Reflect the mode so child selectors and :host([mobile]) rules apply. The
     // controller requests an update whenever the mode flips.
     this.toggleAttribute('mobile', this.mobile);

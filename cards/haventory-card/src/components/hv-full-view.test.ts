@@ -1,6 +1,7 @@
 import './hv-full-view';
 import { componentCss, discardAsker, makeItem, mountHost, q, settle, stubViewport } from '../test.utils';
 import { deepActiveElement, deepFocusables } from '../ui/dialog-focus';
+import { SEARCH_DEBOUNCE_MS } from '../ui/filter-chrome';
 import { toIsoDate } from '../ui/relative-time';
 import type { HVFullView } from './hv-full-view';
 import type { Item, Location, StatusDefinition } from '../store/types';
@@ -2902,6 +2903,30 @@ describe('hv-full-view: one tab stop per facet list', () => {
       'sidebar-new-tags',
     ]) {
       expect(q(sr, `[data-testid="${testid}"]`)?.getAttribute('tabindex'), testid).toBe(null);
+    }
+  });
+});
+
+describe('hv-full-view: search box', () => {
+  // It copied the store's query only on opening, so a search cleared while it
+  // was up (a chip, the filter panel's Clear) left the old text in the box.
+  it('empties the search box when the search is cleared while it is open', async () => {
+    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Hammer' })] });
+    const input = q(sr, '[data-testid="full-search"]') as HTMLInputElement;
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      input.value = 'hammer';
+      input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      await vi.advanceTimersByTimeAsync(SEARCH_DEBOUNCE_MS);
+      await settle(el);
+      expect(store.state.value.filters.q).toBe('hammer');
+
+      store.setFilters({ q: '' });
+      await settle(el);
+      expect(input.value).toBe('');
+    } finally {
+      vi.useRealTimers();
     }
   });
 });
