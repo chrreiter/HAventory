@@ -3,7 +3,7 @@
 import { tn } from '../i18n';
 import type { PluralKey } from '../i18n';
 import type { Item, ReminderInterval, ReminderUnit } from '../store/types';
-import { formatDate, toIsoDate } from './relative-time';
+import { formatDate, isDue } from './relative-time';
 
 /** True when the item carries a reminder at all. A date is what makes one. */
 export function hasReminder(item: Item): boolean {
@@ -15,8 +15,7 @@ export function hasReminder(item: Item): boolean {
  * a reminder names the day something should be done.
  */
 export function isReminderDue(item: Item, now: number = Date.now()): boolean {
-  const date = item.reminder_date;
-  return !!date && date <= toIsoDate(now);
+  return isDue(item.reminder_date, now);
 }
 
 const UNIT_KEYS = {
