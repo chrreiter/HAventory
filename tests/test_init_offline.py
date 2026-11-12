@@ -693,6 +693,87 @@ async def test_a_boot_with_no_items_and_no_files_says_nothing(monkeypatch, caplo
     assert _sweep_records(caplog) == []
 
 
+def _restart_of(hass: HomeAssistant) -> HomeAssistant:
+    """A fresh Home Assistant on the same config directory, as a restart is."""
+
+    restarted = HomeAssistant()
+    restarted.config._config_dir = hass.config.config_dir
+    return restarted
+
+
+@pytest.mark.asyncio
+async def test_the_files_of_dropped_items_survive_while_the_backup_exists(monkeypatch) -> None:
+    """Restoring the repair's backup has to bring the pictures back with the items.
+
+    The lossy load rewrites the store without the unreadable rows, so the boot
+    after it reads clean and has no report to go on: only the backup still names
+    those items, and it is what holds their files, on that boot and every later
+    one. A live item's orphan is swept as before.
+    """
+
+    hass = HomeAssistant()
+    key = "test_init_lossy_load_keeps_files"
+    monkeypatch.setattr(haven_init, "STORAGE_KEY", key)
+    payload = _corrupt_payload()
+    readable = Repository()
+    item = readable.create_item(ItemCreate(name="Drill"))
+    payload["items"].update(readable.export_state()["items"])
+    raw_store = HAStore(hass, DomainStore.HA_STORE_VERSION, key)
+    await raw_store.async_save(deepcopy(payload))
+    backup = HAStore(hass, DomainStore.HA_STORE_VERSION, CORRUPT_BACKUP_STORAGE_KEY)
+    await backup.async_save(deepcopy(payload))
+
+    root = media.media_root(hass)
+    dropped_file = root / "not-a-uuid" / "00000000-0000-4000-8000-000000000001.png"
+    live_orphan = root / str(item.id) / "00000000-0000-4000-8000-000000000002.png"
+    for path in (dropped_file, live_orphan):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(PNG_HEAD)
+
+    try:
+        await setup_entry(hass, ConfigEntry(options={CONF_ALLOW_LOSSY_LOAD: True}))
+        assert set((await raw_store.async_load())["items"]) == {str(item.id)}
+        assert dropped_file.is_file()
+        assert not live_orphan.exists()
+
+        # The restart after the repair: the store reads clean now.
+        await setup_entry(_restart_of(hass), ConfigEntry())
+        assert dropped_file.is_file()
+
+        # Once the backup is gone, nothing can bring the item back.
+        await backup.async_remove()
+        await setup_entry(_restart_of(hass), ConfigEntry())
+        assert not dropped_file.exists()
+    finally:
+        await backup.async_remove()
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_backup_skips_the_sweep(monkeypatch) -> None:
+    """Without the backup's ids there is no telling which files it still needs."""
+
+    hass = HomeAssistant()
+    source = Repository()
+    source.create_item(ItemCreate(name="Drill"))
+    payload = {"schema_version": CURRENT_SCHEMA_VERSION, **source.export_state()}
+    stranded = media.media_root(hass) / "not-a-uuid" / "drill.png"
+    stranded.parent.mkdir(parents=True, exist_ok=True)
+    stranded.write_bytes(PNG_HEAD)
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return deepcopy(payload)
+
+    async def _unreadable(hass, **_kwargs):  # type: ignore[no-untyped-def]
+        raise ValueError("the backup file is not JSON")
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+    monkeypatch.setattr(haven_init, "async_backup_item_ids", _unreadable)
+
+    await setup_entry(hass, ConfigEntry())
+
+    assert stranded.is_file()
+
+
 @pytest.mark.asyncio
 async def test_a_boot_with_items_still_sweeps_the_orphans(monkeypatch) -> None:
     """The backstop is unchanged wherever metadata exists to compare files against."""

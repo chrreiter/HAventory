@@ -796,6 +796,11 @@ class Repository:
         ]
         return self._replace_attachments(item_id, rewritten, expected_version=expected_version)
 
+    def item_ids(self) -> frozenset[str]:
+        """The id of every item held, as the media tree names their directories."""
+
+        return frozenset(self._items_by_id)
+
     def iter_attachments(self) -> Iterable[tuple[str, AttachmentMeta]]:
         for item_key, item in self._items_by_id.items():
             for attachment in item.attachments:

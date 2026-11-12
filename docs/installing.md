@@ -170,7 +170,10 @@ stored file is left untouched:
   first edit would make the loss permanent. The message names the first few affected ids.
   In **Repairs**, **Fix** copies the file to `.storage/haventory_store_corrupt_backup` and
   starts with everything it could read. Take that only if you would rather have the
-  readable remainder than repair the file.
+  readable remainder than repair the file. The pictures and manuals of the entries it
+  leaves out are kept for as long as that backup file exists, so restoring it over
+  `.storage/haventory_store` brings them back too. Delete the backup once you no longer
+  need it, and the next restart removes those files.
 
 ## Removing HAventory
 
