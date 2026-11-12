@@ -48,7 +48,6 @@ import type { ColumnKey } from '../store/columns';
 import type {
   DistinctValue,
   Item,
-  Location,
   LocationTreeNode,
   Sort,
   StoreFilters,
@@ -1023,16 +1022,6 @@ export class HVFullView extends LitElement {
         (err as { message?: string })?.message ?? t('hv.editor.locationCreateFailed');
     }
   }
-
-  /**
-   * The editor's way out of an empty location picker: a root location with no
-   * area, handed back so the form can file the item in it.
-   */
-  private _createLocationForEditor = (name: string): Promise<Location> => {
-    const store = this.store;
-    if (!store) return Promise.reject(new Error(t('hv.card.notConnected')));
-    return store.createLocation(name, null, null);
-  };
 
   // ---------- Sections ----------
   /** One collapsible sidebar heading; the chevron and the words are one target. */

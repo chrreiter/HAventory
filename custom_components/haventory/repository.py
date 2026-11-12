@@ -10,7 +10,6 @@ Synchronous and framework-agnostic: the caller persists and announces.
 from __future__ import annotations
 
 import base64
-import binascii
 import copy
 import json
 import uuid
@@ -674,8 +673,6 @@ class Repository:
         anchor = _parse_reminder_date(current.reminder_anchor or current.reminder_date, "anchor")
         occurrence = _parse_reminder_date(current.reminder_date, "date")
         following = next_occurrence_after(anchor, current.reminder_interval, max(occurrence, today))
-        if following is None:  # pragma: no cover - an interval is present above
-            raise ValidationError("this reminder has no next occurrence")
 
         updated = self.update_item(
             key,
@@ -1026,9 +1023,7 @@ class Repository:
         parent = parse_uuid4(parent_id, field_name="parent_id") if parent_id is not None else None
         if parent is not None and str(parent) not in self._locations_by_id:
             raise ValidationError("parent_id must reference an existing location")
-        parsed_area = str(area_id).strip() if area_id is not None else None
-        if parsed_area == "":
-            raise ValidationError("area_id must be a non-empty string or null")
+        parsed_area, _ = self._parse_area_change(area_id, None)
         lineage = (
             location_chain_to_root(parent, locations_by_id=self._locations_by_id)
             if parent is not None
@@ -1159,7 +1154,7 @@ class Repository:
             return None
         try:
             obj = json.loads(base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8"))
-        except ValueError, binascii.Error:
+        except ValueError:
             return None
         return obj if isinstance(obj, dict) else None
 

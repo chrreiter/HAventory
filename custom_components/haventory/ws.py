@@ -31,7 +31,6 @@ from . import media as media_mod
 from .const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
-    DEFAULT_CARD_TITLE,
     DOMAIN,
     INTEGRATION_VERSION,
     MAX_ATTACHMENT_BYTES,
@@ -299,13 +298,11 @@ async def ws_config(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     it; the backend enforces them regardless.
     """
     runtime = loaded_runtime(hass)
-    title = runtime.card_title
-    pills = runtime.quick_filters
     result = {
-        "card_title": title if isinstance(title, str) and title else DEFAULT_CARD_TITLE,
+        "card_title": runtime.card_title,
         # `null` leaves the choice to the dashboard's own `quick_filters:`; an
         # empty list is an explicit choice of no pills. The two never collapse.
-        "quick_filters": list(pills) if isinstance(pills, list) else None,
+        "quick_filters": runtime.quick_filters,
         "statuses": [serialize_status_definition(d) for d in _repo(hass).list_statuses()],
         "media": {
             "picture_mime_types": list(ATTACHMENT_PICTURE_MIME_TYPES),
