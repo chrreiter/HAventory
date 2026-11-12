@@ -75,17 +75,11 @@ class HaventoryCountSensor(SensorEntity):
             # The instance's local midnight, not UTC's: the counts compare
             # against the local day.
             self.async_on_remove(
-                async_track_time_change(
-                    self.hass, self._handle_time_change, hour=0, minute=0, second=0
-                )
+                async_track_time_change(self.hass, self._handle_update, hour=0, minute=0, second=0)
             )
 
     @callback
-    def _handle_update(self) -> None:
-        self.async_write_ha_state()
-
-    @callback
-    def _handle_time_change(self, _now: Any) -> None:
+    def _handle_update(self, *_now: Any) -> None:
         self.async_write_ha_state()
 
     @property

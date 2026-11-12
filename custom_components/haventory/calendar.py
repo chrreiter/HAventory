@@ -66,15 +66,11 @@ class HaventoryCalendar(CalendarEntity):
         )
         # Local midnight, not UTC: the stored dates are the household's days.
         self.async_on_remove(
-            async_track_time_change(self.hass, self._handle_time_change, hour=0, minute=0, second=0)
+            async_track_time_change(self.hass, self._handle_update, hour=0, minute=0, second=0)
         )
 
     @callback
-    def _handle_update(self) -> None:
-        self.async_write_ha_state()
-
-    @callback
-    def _handle_time_change(self, _now: datetime) -> None:
+    def _handle_update(self, *_now: datetime) -> None:
         self.async_write_ha_state()
 
     @property

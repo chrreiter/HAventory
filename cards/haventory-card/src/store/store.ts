@@ -390,6 +390,8 @@ export class Store {
       this.connectionLostGrace.cancel();
       this.noteSuccess();
       this.scheduleAreasRefresh();
+      // The events fired while the socket was down went nowhere.
+      void this.reloadAll().catch(() => undefined);
     });
     this.connectionLostUnsub = this.ws.onConnectionLost(() => this.startConnectionLostGrace());
   }
@@ -599,7 +601,10 @@ export class Store {
       case 'checked_out':
       case 'checked_in':
       case 'quantity_changed': {
-        if (idx >= 0) items[idx] = item; else items.unshift(item);
+        // A change to a row on a page not yet loaded is not a new row: it
+        // arrives with its page, in its place.
+        if (idx >= 0) items[idx] = item;
+        else if (evt.action === 'created' || this.state.value.cursor === null) items.unshift(item);
         this.forgetRemoved(item.id);
         break;
       }
@@ -658,7 +663,7 @@ export class Store {
 
   private onLocationsEvent(evt: AnyEventPayload) {
     if (evt.topic !== 'locations') return;
-    void Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
+    void Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]).catch(() => undefined);
     // Moving or renaming a location rewrites every `location_path` in its subtree.
     if (evt.action === 'reloaded' || evt.action === 'moved' || evt.action === 'renamed') {
       void this.listItems(true);
@@ -1029,8 +1034,9 @@ export class Store {
     this.consecutiveTransportFailures = 0;
     this.connectionLostGrace.cancel();
     this.setDegraded({ ...NO_DEGRADATION });
-    await this.reloadAll();
+    // First, so a refused re-read still leaves the subscriptions retrying.
     this.subscribeTopics();
+    await this.reloadAll();
   }
 
   // ---------- Optimistic writes ----------

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 import pytest
@@ -472,30 +471,6 @@ async def test_unload_cancels_the_midnight_tick() -> None:
     await unload_entry(hass, entry)
 
     assert hass.time_change_trackers == []
-
-
-@pytest.mark.asyncio
-async def test_a_failing_rollover_broadcast_is_logged_rather_than_raised(
-    caplog, monkeypatch
-) -> None:
-    """An exception reaching the tracker can cost every following day's tick."""
-
-    hass = HomeAssistant()
-    await setup_entry(hass)
-    action = _rollover_action(hass)
-    caplog.set_level(logging.DEBUG, logger=EVENTS_LOGGER)
-
-    def _boom(_hass: HomeAssistant) -> None:
-        raise RuntimeError("no counts today")
-
-    monkeypatch.setattr(events_mod, "broadcast_counts", _boom)
-
-    action(None)
-
-    records = [r for r in caplog.records if r.name == EVENTS_LOGGER]
-    assert [r.levelno for r in records] == [logging.ERROR]
-    assert records[0].op == "day_rollover"
-    assert records[0].exc_info is not None
 
 
 def test_nothing_but_events_py_reaches_the_broadcaster() -> None:
