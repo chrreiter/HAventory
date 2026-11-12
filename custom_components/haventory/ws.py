@@ -31,7 +31,6 @@ from . import media as media_mod
 from .const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
-    DEFAULT_CARD_TITLE,
     DOMAIN,
     INTEGRATION_VERSION,
     MAX_ATTACHMENT_BYTES,
@@ -299,13 +298,11 @@ async def ws_config(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     it; the backend enforces them regardless.
     """
     runtime = loaded_runtime(hass)
-    title = runtime.card_title
-    pills = runtime.quick_filters
     result = {
-        "card_title": title if isinstance(title, str) and title else DEFAULT_CARD_TITLE,
+        "card_title": runtime.card_title,
         # `null` leaves the choice to the dashboard's own `quick_filters:`; an
         # empty list is an explicit choice of no pills. The two never collapse.
-        "quick_filters": list(pills) if isinstance(pills, list) else None,
+        "quick_filters": runtime.quick_filters,
         "statuses": [serialize_status_definition(d) for d in _repo(hass).list_statuses()],
         "media": {
             "picture_mime_types": list(ATTACHMENT_PICTURE_MIME_TYPES),
@@ -862,15 +859,6 @@ async def ws_item_list(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
 
 
-def _require_known_area(hass: HomeAssistant, area_id: Any) -> None:
-    """Refuse an `area_id` Home Assistant has no area for; areas are HA's."""
-
-    if area_id is None:
-        return
-    if ar.async_get(hass).async_get_area(cast("str", area_id)) is None:
-        raise ValidationError("unknown area_id")
-
-
 @_command(
     "haventory/location/create",
     {
@@ -881,7 +869,6 @@ def _require_known_area(hass: HomeAssistant, area_id: Any) -> None:
     ("name", "parent_id"),
 )
 async def ws_location_create(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
-    _require_known_area(hass, msg.get("area_id"))
     await _mutate(hass, conn, msg, "location_create")
 
 
@@ -902,7 +889,6 @@ async def ws_location_get(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     ("location_id", "new_parent_id", "name"),
 )
 async def ws_location_update(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
-    _require_known_area(hass, msg.get("area_id"))
     await _mutate(hass, conn, msg, "location_update")
 
 
