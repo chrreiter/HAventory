@@ -36,6 +36,7 @@ import {
   renderStagedFooter,
   searchBox,
   searchDebounce,
+  searchDraftFor,
   sheetHead,
 } from '../ui/filter-chrome';
 import { renderStatBadges } from '../ui/stat-badges';
@@ -799,10 +800,10 @@ export class HVFullView extends LitElement {
 
   protected willUpdate(changed: Map<string, unknown>) {
     this._workspace.syncPinnedItem();
+    this._searchDraft = searchDraftFor(this._searchDraft, this.st?.filters.q, this._emitSearch);
     if (changed.has('open')) {
       if (this.open) {
         this._zBase = nextZBase();
-        this._searchDraft = this.st?.filters.q ?? '';
         this._prevFocus = (document.activeElement as HTMLElement) ?? null;
         this._selecting = this.startSelecting;
       } else {
