@@ -114,6 +114,7 @@ module = [
   "haventory.serialization",
   "haventory.storage",
   "haventory.subscriptions",
+  "haventory.text",
   "haventory.ws",
 ]
 disallow_any_generics = true

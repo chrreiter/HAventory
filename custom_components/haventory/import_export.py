@@ -49,7 +49,6 @@ from .models import (
     is_canonical_utc_timestamp,
     iso_utc_now,
     normalize_tags,
-    normalize_text_for_sort,
     parse_uuid4,
     seed_status_definitions,
     serialize_status_definition,
@@ -65,6 +64,7 @@ from .models import (
     validate_write_name,
 )
 from .repository import Repository
+from .text import normalize_text_for_sort
 
 # The document envelope's version, independent of the storage ``schema_version``.
 EXPORT_VERSION: int = 1

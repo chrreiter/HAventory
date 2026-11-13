@@ -11,7 +11,6 @@ Free of I/O. `dt_util` is imported only for the household's local calendar day.
 from __future__ import annotations
 
 import re
-import unicodedata
 import uuid
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -37,6 +36,7 @@ from .const import (
     STATUS_ICONS,
 )
 from .exceptions import ValidationError
+from .text import normalize_text_for_sort
 
 # Scalar values allowed inside custom_fields.
 ScalarValue = str | int | float | bool
@@ -462,45 +462,6 @@ def new_uuid4() -> uuid.UUID:
 
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-
-
-#: Latin letters Unicode gives no decomposition, folded to the letters a
-#: keyboard without them types instead. ``casefold`` already turns "ß" into "ss".
-_LATIN_FOLDS: Final = str.maketrans(
-    {
-        "ø": "o",
-        "ł": "l",
-        "đ": "d",
-        "ð": "d",
-        "ħ": "h",
-        "\u0131": "i",  # dotless i
-        "þ": "th",
-        "æ": "ae",
-        "œ": "oe",
-    }
-)
-
-
-def normalize_text_for_sort(text: str) -> str:
-    """Case- and accent-folded, whitespace-collapsed text for sorting and search.
-
-    The one normalization both sides of a search go through, so
-    "case-insensitive, accent-insensitive" means the same thing on each.
-    Only combining marks are dropped: a letter of any script stays, so a
-    Cyrillic or CJK query still has words to match with.
-    """
-
-    if not text:
-        return ""
-    if not text.isascii():
-        # Folded before the split because the fold can itself emit a mark
-        # ("İ" becomes "i" plus a combining dot), and once more on return
-        # because a compatibility form can decompose into capitals.
-        decomposed = unicodedata.normalize("NFKD", text.casefold().translate(_LATIN_FOLDS))
-        stripped = "".join(char for char in decomposed if not unicodedata.combining(char))
-        # Recomposed so Hangul is matched and sorted by syllable, not by jamo.
-        text = unicodedata.normalize("NFC", stripped)
-    return " ".join(text.split()).casefold()
 
 
 def normalize_tags(tags: list[str] | None) -> list[str]:

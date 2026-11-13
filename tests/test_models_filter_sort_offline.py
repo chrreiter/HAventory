@@ -17,12 +17,12 @@ from custom_components.haventory.models import (
     build_location_path,
     create_item_from_create,
     filter_items,
-    normalize_text_for_sort,
     sort_items,
     validate_area_filter,
     validate_item_filter,
     validate_sort,
 )
+from custom_components.haventory.text import normalize_text_for_sort
 
 from date_helpers import day_offset
 
