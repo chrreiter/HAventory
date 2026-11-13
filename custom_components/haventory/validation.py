@@ -47,11 +47,12 @@ CUSTOM_FIELD_VALUE_MAX_LENGTH = 1_000
 REMINDER_UNITS: Final[tuple[str, ...]] = ("days", "weeks", "months")
 REMINDER_COUNT_MAX: Final[int] = 1000
 
+_UUID_V4: Final[int] = 4
+
 
 def parse_uuid4(value: object, *, field_name: str = "id") -> uuid.UUID:
     """Parse a UUID v4 string, or check a ``uuid.UUID``, raising ``ValidationError``."""
 
-    UUID_VERSION_V4: Final[int] = 4
     if isinstance(value, str):
         try:
             value = uuid.UUID(value)
@@ -67,7 +68,7 @@ def parse_uuid4(value: object, *, field_name: str = "id") -> uuid.UUID:
             key="invalid_uuid",
             placeholders={"field": field_name},
         )
-    if value.version != UUID_VERSION_V4:
+    if value.version != _UUID_V4:
         raise ValidationError(
             f"{field_name} must be a UUID v4",
             key="invalid_uuid",
