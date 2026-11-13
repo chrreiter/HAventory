@@ -2,7 +2,7 @@ import './hv-location-tree';
 import type { HVLocationTree } from './hv-location-tree';
 import type { LocationTreeNode } from '../store/types';
 import { setLanguage } from '../i18n';
-import { mountComponent, q } from '../test.utils';
+import { defined, mountComponent, q } from '../test.utils';
 
 function node(
   id: string,
@@ -113,7 +113,7 @@ describe('hv-location-tree: the shared browse row', () => {
   // no twisty at all — but a name that started further left on those rows would
   // put three insets in one column.
   it('holds the slot open on a row with no twisty to put in it', async () => {
-    const el = await mount({ nodes: [{ ...tree[0], children: [] }], showAll: true });
+    const el = await mount({ nodes: [{ ...defined(tree[0], 'tree node 0'), children: [] }], showAll: true });
     const leadless = [...(el.shadowRoot?.querySelectorAll('.hv-browse-row') ?? [])].filter(
       (r) => !r.querySelector('.hv-browse-row-lead.placeholder') && !r.querySelector('button.twisty'),
     );
@@ -187,8 +187,8 @@ describe('hv-location-tree: counts and decorations', () => {
 // are, which is the one question a location sidebar exists to answer.
 describe('hv-location-tree: counts under a filter', () => {
   const matched: LocationTreeNode[] = [
-    { ...tree[0], matching_direct_count: 0, matching_subtree_count: 4 },
-    { ...tree[1], matching_direct_count: 2, matching_subtree_count: 2 },
+    { ...defined(tree[0], 'tree node 0'), matching_direct_count: 0, matching_subtree_count: 4 },
+    { ...defined(tree[1], 'tree node 1'), matching_direct_count: 2, matching_subtree_count: 2 },
   ];
 
   it('reads "matching / total" on every row once the backend sends both', async () => {
@@ -421,7 +421,7 @@ describe('hv-location-tree: area grouping', () => {
   // could not be written into a selector as it stands.
   it('names the roots each band discloses, collapsed or expanded', async () => {
     const el = await mountAreas();
-    const head = () => heads(el)[0];
+    const head = () => defined(heads(el)[0], 'first area head');
     const id = head().getAttribute('aria-controls') as string;
     expect(id).toBeTruthy();
     expect(head().getAttribute('aria-expanded')).toBe('true');
@@ -442,8 +442,8 @@ describe('hv-location-tree: area grouping', () => {
 
   it('marks an area with the chip every surface uses, not as a path segment', async () => {
     const el = await mountAreas();
-    expect(heads(el)[0].querySelector('.hv-area-chip')).toBeTruthy();
-    expect(heads(el)[0].querySelector('[data-icon="home"]')).toBeTruthy();
+    expect(heads(el)[0]?.querySelector('.hv-area-chip')).toBeTruthy();
+    expect(heads(el)[0]?.querySelector('[data-icon="home"]')).toBeTruthy();
   });
 
   // The band's name is the thing that shortens when it outgrows the column —
@@ -452,7 +452,7 @@ describe('hv-location-tree: area grouping', () => {
   // gives back, the way the sidebar's category and tag rows do it.
   it('keeps the full area name reachable when the band has to shorten it', async () => {
     const el = await mountAreas({
-      areas: [{ id: 'area-kitchen', name: 'Ground Floor Utility Room' }, AREAS[1]],
+      areas: [{ id: 'area-kitchen', name: 'Ground Floor Utility Room' }, defined(AREAS[1], 'second area')],
     });
     const kitchen = heads(el).find((h) => h.dataset.area === 'area-kitchen');
     const holder = kitchen?.querySelector('.area-name');
@@ -495,8 +495,10 @@ describe('hv-location-tree: area grouping', () => {
     const fired: string[] = [];
     el.addEventListener('select', () => fired.push('select'));
     el.addEventListener('select-area', () => fired.push('select-area'));
-    heads(el)[0].querySelector<HTMLElement>('[data-testid="tree-area-select"]')?.click();
-    heads(el)[0].click();
+    defined(heads(el)[0], 'area head 0')
+      .querySelector<HTMLElement>('[data-testid="tree-area-select"]')
+      ?.click();
+    defined(heads(el)[0], 'area head 0').click();
     expect(fired).toEqual([]);
   });
 
@@ -509,7 +511,11 @@ describe('hv-location-tree: area grouping', () => {
       fired.push('select-area');
       areaId = (e as CustomEvent).detail.areaId;
     });
-    (heads(el)[1].querySelector('[data-testid="tree-area-select"]') as HTMLButtonElement).click();
+    (
+      defined(heads(el)[1], 'area head 1').querySelector(
+        '[data-testid="tree-area-select"]',
+      ) as HTMLButtonElement
+    ).click();
     expect(fired).toEqual(['select-area']);
     expect(areaId).toBe('area-kitchen');
   });
@@ -521,7 +527,7 @@ describe('hv-location-tree: area grouping', () => {
     const el = await mountAreas({ areas: empty, areaSelectable: true, showEmptyAreas: true });
     expect(headNames(el)).toEqual(['Area: Cellar', 'Area: Garage', 'Area: Kitchen', 'No area']);
 
-    const cellar = heads(el)[0];
+    const cellar = defined(heads(el)[0], 'cellar head');
     // Nothing under it to disclose: no twisty, and no container to point at.
     expect(cellar.querySelector('[data-testid="tree-area-twisty"]')).toBeNull();
     expect(cellar.getAttribute('aria-expanded')).toBeNull();
@@ -552,7 +558,7 @@ describe('hv-location-tree: area grouping', () => {
     el.addEventListener('select-area', () => {
       fired += 1;
     });
-    const tail = heads(el)[2];
+    const tail = defined(heads(el)[2], 'tail head');
     tail.querySelector<HTMLElement>('[data-testid="tree-area-select"]')?.click();
     tail.click();
     expect(fired).toBe(0);
@@ -560,17 +566,17 @@ describe('hv-location-tree: area grouping', () => {
 
   it('marks the area the list is filtered to, and yields to a picked location', async () => {
     const el = await mountAreas({ areaSelectable: true, selectedAreaId: 'area-kitchen' });
-    expect(heads(el)[1].classList.contains('selected')).toBe(true);
+    expect(heads(el)[1]?.classList.contains('selected')).toBe(true);
 
     el.selectedId = 'bench';
     await el.updateComplete;
-    expect(heads(el)[1].classList.contains('selected')).toBe(false);
+    expect(heads(el)[1]?.classList.contains('selected')).toBe(false);
   });
 
   it('totals its members on the header, matching half included', async () => {
     const el = await mountAreas({ showCounts: true });
     const headCount = (i: number) =>
-      heads(el)[i].querySelector('[data-testid="tree-area-count"]')?.textContent?.trim();
+      defined(heads(el)[i], 'area head').querySelector('[data-testid="tree-area-count"]')?.textContent?.trim();
     expect(headCount(1)).toBe('9');
 
     el.nodes = areaTree.map((n) => ({ ...n, matching_subtree_count: n.id === 'fridge' ? 4 : 1 }));
@@ -617,15 +623,15 @@ describe('hv-location-tree: area grouping', () => {
 
   it('tells assistive tech the header is a level above its members', async () => {
     const el = await mountAreas();
-    expect(heads(el)[0].getAttribute('role')).toBe('treeitem');
-    expect(heads(el)[0].getAttribute('aria-expanded')).toBe('true');
-    expect(heads(el)[0].getAttribute('aria-level')).toBe('1');
-    expect(rows(el)[0].getAttribute('aria-level')).toBe('2');
+    expect(heads(el)[0]?.getAttribute('role')).toBe('treeitem');
+    expect(heads(el)[0]?.getAttribute('aria-expanded')).toBe('true');
+    expect(heads(el)[0]?.getAttribute('aria-level')).toBe('1');
+    expect(rows(el)[0]?.getAttribute('aria-level')).toBe('2');
   });
 
   it('leaves an ungrouped tree at the top level for assistive tech', async () => {
     const el = await mount();
-    expect(rows(el)[0].getAttribute('aria-level')).toBe('1');
+    expect(rows(el)[0]?.getAttribute('aria-level')).toBe('1');
   });
 });
 
@@ -659,8 +665,8 @@ describe('hv-location-tree: manage mode', () => {
 
   it('marks the row so the touch sizing has something to hang on', async () => {
     const el = await mount({ manage: true, mobile: true });
-    expect(rows(el)[0].className).toContain('manage');
-    expect(rows(el)[0].className).toContain('touch');
+    expect(rows(el)[0]?.className).toContain('manage');
+    expect(rows(el)[0]?.className).toContain('touch');
     expect(q(el, '[data-testid="tree-more"]')).toBeTruthy();
   });
 });
@@ -833,7 +839,7 @@ describe('hv-location-tree: one tab stop', () => {
   it('leaves exactly one node focusable, whatever is open', async () => {
     const el = await mount();
     expect(stops(el)).toHaveLength(1);
-    expect(stops(el)[0].dataset.id).toBe('garage');
+    expect(stops(el)[0]?.dataset.id).toBe('garage');
 
     (q(el, '[data-testid="tree-twisty"]') as HTMLButtonElement).click();
     await el.updateComplete;
@@ -917,7 +923,7 @@ describe('hv-location-tree: one tab stop', () => {
 
   it('starts the stop on the selected row rather than the first', async () => {
     const el = await mount({ selectedId: 'kitchen' });
-    expect(stops(el)[0].dataset.id).toBe('kitchen');
+    expect(stops(el)[0]?.dataset.id).toBe('kitchen');
   });
 
   it('gives an empty tree its create button, so the tree is never a hole', async () => {

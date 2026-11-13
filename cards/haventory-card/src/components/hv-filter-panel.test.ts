@@ -856,7 +856,7 @@ describe('hv-filter-panel: footer and staging', () => {
     await el.updateComplete;
 
     expect(applied).toEqual([]);
-    expect(staged[0].categories).toEqual(['Hardware']);
+    expect(staged[0]?.categories).toEqual(['Hardware']);
     expect(el.working.categories).toEqual(['Hardware']);
   });
 
@@ -868,7 +868,7 @@ describe('hv-filter-panel: footer and staging', () => {
     (q(el, '[data-value="Tools"]') as HTMLButtonElement).click();
     await el.updateComplete;
     el.apply();
-    expect(applies[0].categories).toEqual(['Tools']);
+    expect(applies[0]?.categories).toEqual(['Tools']);
 
     (q(el, '[data-value="Tools"]') as HTMLButtonElement).click();
     await el.updateComplete;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { tokens } from './tokens';
 import { STATUS_COLORS, hexToneStyle, inkOn } from './status';
+import { defined } from '../test.utils';
 
 /**
  * Every status tone has to stay readable, in both themes.
@@ -26,7 +27,7 @@ function declarations(): Map<string, string> {
   const out = new Map<string, string>();
   // Strip comments first: they quote token names and hex values freely.
   for (const m of source.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
-    out.set(m[1], m[2].trim());
+    out.set(defined(m[1], 'token name'), defined(m[2], 'token value').trim());
   }
   return out;
 }
@@ -34,13 +35,16 @@ function declarations(): Map<string, string> {
 function parseColor(text: string): Rgba {
   const hex = text.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
   if (hex) {
-    const h = hex[1].length === 3 ? [...hex[1]].map((c) => c + c).join('') : hex[1];
+    const digits = defined(hex[1], 'hex digits');
+    const h = digits.length === 3 ? [...digits].map((c) => c + c).join('') : digits;
     return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), 1];
   }
   const rgba = text.match(/^rgba?\(([^)]+)\)$/i);
   if (rgba) {
-    const n = rgba[1].split(',').map((p) => Number(p.trim()));
-    return [n[0], n[1], n[2], n[3] ?? 1];
+    const n = defined(rgba[1], 'rgba arguments')
+      .split(',')
+      .map((p) => Number(p.trim()));
+    return [defined(n[0], 'red'), defined(n[1], 'green'), defined(n[2], 'blue'), n[3] ?? 1];
   }
   throw new Error(`cannot parse colour: ${text}`);
 }
@@ -58,8 +62,8 @@ function resolveValue(value: string, theme: 'light' | 'dark', decls: Map<string,
 
   const lightDark = text.match(/^light-dark\(([\s\S]+)\)$/);
   if (lightDark) {
-    const [light, dark] = splitTop(lightDark[1]);
-    return resolveValue(theme === 'light' ? light : dark, theme, decls, seen + 1);
+    const [light, dark] = splitTop(defined(lightDark[1], 'light-dark arguments'));
+    return resolveValue(defined(theme === 'light' ? light : dark, 'theme value'), theme, decls, seen + 1);
   }
 
   const variable = text.match(/^var\(\s*(--[\w-]+)\s*(?:,([\s\S]+))?\)$/);
@@ -67,7 +71,7 @@ function resolveValue(value: string, theme: 'light' | 'dark', decls: Map<string,
     // The fallback is what ships: an HA theme may or may not set the outer one,
     // and the fallback is the value this card guarantees.
     if (variable[2] !== undefined) return resolveValue(variable[2], theme, decls, seen + 1);
-    return resolve(variable[1], theme, decls, seen + 1);
+    return resolve(defined(variable[1], 'variable name'), theme, decls, seen + 1);
   }
 
   return parseColor(text);
@@ -90,10 +94,11 @@ function splitTop(text: string): string[] {
   return parts.map((p) => p.trim());
 }
 
-const over = (fg: Rgba, bg: Rgb): Rgb =>
-  fg[3] >= 1
-    ? [fg[0], fg[1], fg[2]]
-    : ([0, 1, 2].map((i) => Math.round(fg[i] * fg[3] + bg[i] * (1 - fg[3]))) as Rgb);
+const over = (fg: Rgba, bg: Rgb): Rgb => {
+  if (fg[3] >= 1) return [fg[0], fg[1], fg[2]];
+  const mix = (f: number, b: number) => Math.round(f * fg[3] + b * (1 - fg[3]));
+  return [mix(fg[0], bg[0]), mix(fg[1], bg[1]), mix(fg[2], bg[2])];
+};
 
 const channel = (v: number) => {
   const c = v / 255;
@@ -113,15 +118,13 @@ const WHITE_D65 = [0.95047, 1.0, 1.08883] as const;
 
 function lab([r, g, b]: Rgb): [number, number, number] {
   const [lr, lg, lb] = [channel(r), channel(g), channel(b)];
-  const xyz = [
-    0.4124 * lr + 0.3576 * lg + 0.1805 * lb,
-    0.2126 * lr + 0.7152 * lg + 0.0722 * lb,
-    0.0193 * lr + 0.1192 * lg + 0.9505 * lb,
-  ];
-  const [fx, fy, fz] = xyz.map((v, i) => {
-    const t = v / WHITE_D65[i];
+  const f = (v: number, white: number) => {
+    const t = v / white;
     return t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
-  });
+  };
+  const fx = f(0.4124 * lr + 0.3576 * lg + 0.1805 * lb, WHITE_D65[0]);
+  const fy = f(0.2126 * lr + 0.7152 * lg + 0.0722 * lb, WHITE_D65[1]);
+  const fz = f(0.0193 * lr + 0.1192 * lg + 0.9505 * lb, WHITE_D65[2]);
   return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
 }
 
@@ -133,7 +136,8 @@ function deltaE(a: Rgb, b: Rgb): number {
 }
 const luminance = ([r, g, b]: Rgb) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 const contrast = (a: Rgb, b: Rgb) => {
-  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  const [la, lb] = [luminance(a), luminance(b)];
+  const [hi, lo] = [Math.max(la, lb), Math.min(la, lb)];
   return (hi + 0.05) / (lo + 0.05);
 };
 

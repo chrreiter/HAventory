@@ -359,6 +359,6 @@ describe('Store', () => {
     expect(store.state.value.items.map((i) => i.name)).toEqual(['Deep', 'Shallow', 'Elsewhere', 'Loose']);
 
     const sent = hass.__messages.filter((m) => m.type === 'haventory/item/list');
-    expect(sent[sent.length - 1].sort).toEqual({ field: 'location', order: 'desc' });
+    expect(sent[sent.length - 1]?.sort).toEqual({ field: 'location', order: 'desc' });
   });
 });

@@ -66,7 +66,7 @@ describe('Store', () => {
 
     // A creation is a new row whatever is loaded.
     hass.__emit('items', 'created', { item: makeItem({ id: 'new', name: 'New' }) });
-    expect(store.state.value.items[0].id).toBe('new');
+    expect(store.state.value.items[0]?.id).toBe('new');
     expect(store.state.value.total).toBe(61);
   });
 

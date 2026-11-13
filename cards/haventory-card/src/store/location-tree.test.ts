@@ -1,5 +1,6 @@
 import { countLocations, groupRootsByArea, locationMatches, sortLocationTree } from './location-tree';
 import type { LocationTreeNode } from './types';
+import { defined } from '../test.utils';
 
 function node(name: string, children: LocationTreeNode[] = []): LocationTreeNode {
   return {
@@ -28,8 +29,11 @@ describe('sortLocationTree', () => {
     const sorted = sortLocationTree([
       node('Garage', [node('Shelf B'), node('Shelf A', [node('Bin 2'), node('Bin 1')])]),
     ]);
-    expect(names(sorted[0].children)).toEqual(['Shelf A', 'Shelf B']);
-    expect(names(sorted[0].children[0].children)).toEqual(['Bin 1', 'Bin 2']);
+    expect(names(defined(sorted[0], 'first root').children)).toEqual(['Shelf A', 'Shelf B']);
+    expect(names(defined(defined(sorted[0], 'first root').children[0], 'first child').children)).toEqual([
+      'Bin 1',
+      'Bin 2',
+    ]);
   });
 
   it('compares case-insensitively and keeps digits in human order', () => {
@@ -130,7 +134,7 @@ describe('groupRootsByArea', () => {
       [inArea('Attic', null), inArea('Fridge', 'area-kitchen'), inArea('Shed', null)],
       AREAS,
     );
-    expect(names(grouped.areaGroups[0].roots)).toEqual(['Fridge']);
+    expect(names(defined(grouped.areaGroups[0], 'first area group').roots)).toEqual(['Fridge']);
     expect(names(grouped.ungrouped)).toEqual(['Attic', 'Shed']);
   });
 

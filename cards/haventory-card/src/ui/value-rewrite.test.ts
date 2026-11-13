@@ -14,23 +14,23 @@ describe('rewriteOps: tags', () => {
     const ops = rewriteOps('tag', items, 'batery', 'battery');
 
     expect(ops).toHaveLength(1);
-    expect(ops[0].kind).toBe('item_update');
-    expect(ops[0].payload).toMatchObject({ item_id: '1', tags: ['aa', 'battery'], expected_version: 3 });
+    expect(ops[0]?.kind).toBe('item_update');
+    expect(ops[0]?.payload).toMatchObject({ item_id: '1', tags: ['aa', 'battery'], expected_version: 3 });
   });
 
   it('deduplicates when merging into a tag the item already has', () => {
     const items = [makeItem({ id: '1', tags: ['batery', 'battery'] })];
-    expect(rewriteOps('tag', items, 'batery', 'battery')[0].payload.tags).toEqual(['battery']);
+    expect(rewriteOps('tag', items, 'batery', 'battery')[0]?.payload.tags).toEqual(['battery']);
   });
 
   it('drops the tag entirely when the target is null', () => {
     const items = [makeItem({ id: '1', tags: ['metric', 'm4'] })];
-    expect(rewriteOps('tag', items, 'metric', null)[0].payload.tags).toEqual(['m4']);
+    expect(rewriteOps('tag', items, 'metric', null)[0]?.payload.tags).toEqual(['m4']);
   });
 
   it('lowercases the new value, matching how the backend stores it', () => {
     const items = [makeItem({ id: '1', tags: ['old'] })];
-    expect(rewriteOps('tag', items, 'old', '  NEW  ')[0].payload.tags).toEqual(['new']);
+    expect(rewriteOps('tag', items, 'old', '  NEW  ')[0]?.payload.tags).toEqual(['new']);
   });
 
   it('skips an item that does not carry the tag', () => {
@@ -54,12 +54,12 @@ describe('rewriteOps: categories', () => {
   it('renames a category and sends the expected version', () => {
     const items = [makeItem({ id: '1', category: 'Tool', version: 7 })];
     const ops = rewriteOps('category', items, 'Tool', 'Tools');
-    expect(ops[0].payload).toMatchObject({ item_id: '1', category: 'Tools', expected_version: 7 });
+    expect(ops[0]?.payload).toMatchObject({ item_id: '1', category: 'Tools', expected_version: 7 });
   });
 
   it('clears the category when the target is null', () => {
     const items = [makeItem({ id: '1', category: 'Tools' })];
-    expect(rewriteOps('category', items, 'Tools', null)[0].payload.category).toBe(null);
+    expect(rewriteOps('category', items, 'Tools', null)[0]?.payload.category).toBe(null);
   });
 
   it('skips an item already holding the target value', () => {

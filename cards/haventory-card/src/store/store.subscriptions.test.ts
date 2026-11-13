@@ -23,7 +23,7 @@ describe('Store', () => {
     };
 
     // Unfiltered, the subscription asks for every area.
-    expect(itemsSubscribe().area_id).toBe(null);
+    expect(itemsSubscribe()?.area_id).toBe(null);
     const roundOne = hass.__subscribeCalls.length;
 
     store.setFilters({ areaId: 'kitchen' });
@@ -32,7 +32,7 @@ describe('Store', () => {
     // A fresh round of all four topics, and the items one now names the area —
     // without it the card would keep receiving every other area's events.
     expect(hass.__subscribeCalls.length).toBe(roundOne * 2);
-    expect(itemsSubscribe().area_id).toBe('kitchen');
+    expect(itemsSubscribe()?.area_id).toBe('kitchen');
 
     // A filter the backend applies to the page rather than to the subscription
     // leaves the sockets alone.
@@ -58,7 +58,7 @@ describe('Store', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(hass.__subscribeCalls.length).toBe(roundOne * 2);
-    expect(itemsSubscribe().location_ids).toEqual(['garage', 'kitchen']);
+    expect(itemsSubscribe()?.location_ids).toEqual(['garage', 'kitchen']);
 
     // Re-picking the same set changes no scope, so the sockets stay up.
     store.setFilters({ locationIds: ['garage', 'kitchen'] });
@@ -68,7 +68,7 @@ describe('Store', () => {
     // Clearing the selection re-opens on every location.
     store.setFilters({ locationIds: [] });
     await new Promise((r) => setTimeout(r, 0));
-    expect(itemsSubscribe().location_ids).toEqual([]);
+    expect(itemsSubscribe()?.location_ids).toEqual([]);
   });
 });
 
@@ -87,7 +87,7 @@ describe('Store: subscription lifecycle', () => {
 
     const matching = store.state.value.items.filter((i) => i.id === '1');
     expect(matching).toHaveLength(1);
-    expect(matching[0].quantity).toBe(9);
+    expect(matching[0]?.quantity).toBe(9);
   });
 
   it('stops applying live events once disposed', async () => {
@@ -102,7 +102,7 @@ describe('Store: subscription lifecycle', () => {
     expect(store.state.value.connected).toEqual({ items: false, stats: false });
 
     hass.__emit('items', 'updated', { item: makeItem({ id: '1', quantity: 42, version: 2 }) });
-    expect(store.state.value.items[0].quantity).toBe(5);
+    expect(store.state.value.items[0]?.quantity).toBe(5);
   });
 
   // Navigating away while the card is still loading is the tightest version of
@@ -133,13 +133,13 @@ describe('Store: HA area registry watch', () => {
       const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
       const store = new Store(hass, fast);
       await store.init();
-      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+      expect(store.state.value.areasCache?.areas[0]?.name).toBe('Kitchen');
 
       hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
       hass.__emitHaEvent(AREA_EVENT, { action: 'update', area_id: 'kitchen' });
       await vi.advanceTimersByTimeAsync(300);
 
-      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+      expect(store.state.value.areasCache?.areas[0]?.name).toBe('Scullery');
     } finally {
       vi.useRealTimers();
     }
@@ -181,7 +181,7 @@ describe('Store: HA area registry watch', () => {
       // Both halves: the pending refetch is cancelled, and a later event finds
       // nobody listening.
       expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(0);
-      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+      expect(store.state.value.areasCache?.areas[0]?.name).toBe('Kitchen');
     } finally {
       vi.useRealTimers();
     }
@@ -204,7 +204,7 @@ describe('Store: HA area registry watch', () => {
 
     // No throw, no degraded state: the card keeps the areas it fetched, which
     // is everything it had before it listened at all.
-    expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+    expect(store.state.value.areasCache?.areas[0]?.name).toBe('Kitchen');
     expect(store.state.value.connected).toEqual({ items: true, stats: true });
   });
 
@@ -252,7 +252,7 @@ describe('Store: HA area registry watch', () => {
       hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
       hass.__emitHaEvent(AREA_EVENT, { action: 'update', area_id: 'kitchen' });
       await vi.advanceTimersByTimeAsync(300);
-      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+      expect(store.state.value.areasCache?.areas[0]?.name).toBe('Scullery');
     } finally {
       vi.useRealTimers();
     }
@@ -271,7 +271,7 @@ describe('Store: HA area registry watch', () => {
       hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
       await vi.advanceTimersByTimeAsync(500);
 
-      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+      expect(store.state.value.areasCache?.areas[0]?.name).toBe('Scullery');
     } finally {
       vi.useRealTimers();
     }
@@ -290,12 +290,12 @@ describe('Store: HA area registry watch', () => {
       // The registry moves while the socket is down: no event is delivered.
       hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
       await vi.advanceTimersByTimeAsync(1000);
-      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+      expect(store.state.value.areasCache?.areas[0]?.name).toBe('Kitchen');
 
       hass.__reconnect();
       await vi.advanceTimersByTimeAsync(300);
 
-      expect(store.state.value.areasCache?.areas[0].name).toBe('Scullery');
+      expect(store.state.value.areasCache?.areas[0]?.name).toBe('Scullery');
     } finally {
       vi.useRealTimers();
     }
@@ -354,7 +354,7 @@ describe('Store: HA area registry watch', () => {
     const store = new Store(bare, backoff);
 
     await store.init();
-    expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+    expect(store.state.value.areasCache?.areas[0]?.name).toBe('Kitchen');
     expect(() => store.dispose()).not.toThrow();
   });
 
@@ -377,7 +377,7 @@ describe('Store: HA area registry watch', () => {
       // raises no banner and queues no error for the user to dismiss.
       expect(store.state.value.errorQueue).toEqual([]);
       expect(store.state.value.degraded.liveUpdates).toBe('live');
-      expect(store.state.value.areasCache?.areas[0].name).toBe('Kitchen');
+      expect(store.state.value.areasCache?.areas[0]?.name).toBe('Kitchen');
     } finally {
       vi.useRealTimers();
     }

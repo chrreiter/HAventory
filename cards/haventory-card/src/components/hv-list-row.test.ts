@@ -538,9 +538,9 @@ describe('hv-list-row: the phone line’s pieces', () => {
       'row-area',
       'row-tail',
     ]);
-    expect(pieces[0].textContent).toBe('Overdue · due Jan 2, 2000');
-    expect(pieces[1].querySelector('[data-testid="area-chip"]')?.textContent).toContain('Garage');
-    expect(pieces[2].textContent).toBe('… › Small Bin · Tools');
+    expect(pieces[0]?.textContent).toBe('Overdue · due Jan 2, 2000');
+    expect(pieces[1]?.querySelector('[data-testid="area-chip"]')?.textContent).toContain('Garage');
+    expect(pieces[2]?.textContent).toBe('… › Small Bin · Tools');
     expect(secondary?.textContent).toContain('Overdue · due Jan 2, 2000 · ');
   });
 

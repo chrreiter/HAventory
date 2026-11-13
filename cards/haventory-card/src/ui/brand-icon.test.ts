@@ -6,6 +6,7 @@ import {
   HAVENTORY_PANEL_ICON,
   registerBrandIcon,
 } from './brand-icon';
+import { defined } from '../test.utils';
 
 afterEach(() => {
   delete window.customIcons;
@@ -32,14 +33,14 @@ describe('the HAventory icon set', () => {
   it('lists its glyph for the icon picker', async () => {
     registerBrandIcon();
 
-    const set = window.customIcons![HAVENTORY_ICONSET];
+    const set = defined(window.customIcons?.[HAVENTORY_ICONSET], 'brand icon set');
     await expect(set.getIconList?.()).resolves.toEqual([{ name: HAVENTORY_ICON_NAME }]);
   });
 
   it('resolves an unknown name rather than rejecting', async () => {
     registerBrandIcon();
 
-    const set = window.customIcons![HAVENTORY_ICONSET];
+    const set = defined(window.customIcons?.[HAVENTORY_ICONSET], 'brand icon set');
     await expect(set.getIcon('nonesuch')).resolves.toHaveProperty('path', HAVENTORY_MARK_PATH);
   });
 

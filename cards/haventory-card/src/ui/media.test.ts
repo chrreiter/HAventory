@@ -431,7 +431,7 @@ describe('MediaUrls', () => {
 
     expect(urls.presence('item-1', 'att-1')).toBe('missing');
     // One byte asked for, not the whole file: this is a liveness check.
-    expect(probe.mock.calls[0][1]).toMatchObject({ headers: { Range: 'bytes=0-0' } });
+    expect(probe.mock.calls[0]?.[1]).toMatchObject({ headers: { Range: 'bytes=0-0' } });
   });
 
   it('probes each reference once and does not re-ask on every render', async () => {

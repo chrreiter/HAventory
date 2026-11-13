@@ -1,7 +1,7 @@
 import './haventory-card-editor';
 import type { HAventoryCardEditor, HAventoryCardConfig } from './haventory-card-editor';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
-import { mountComponent } from './test.utils';
+import { mountComponent, defined } from './test.utils';
 
 async function mount(config: HAventoryCardConfig) {
   const { el } = await mountComponent<
@@ -95,6 +95,6 @@ describe('haventory-card-editor', () => {
     edit(titleOf(el), '   ');
 
     expect(seen[0]).toEqual({ type: 'custom:haventory-card' });
-    expect('title' in seen[0]).toBe(false);
+    expect('title' in defined(seen[0], 'first config')).toBe(false);
   });
 });

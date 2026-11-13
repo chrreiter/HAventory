@@ -11,6 +11,7 @@ import {
   mountComponent,
   q,
   settle as settleEl,
+  defined,
   stubClipboard,
 } from '../test.utils';
 import type { ClipboardStub } from '../test.utils';
@@ -907,7 +908,7 @@ describe('hv-detail-sheet: pictures', () => {
     const el = await mount({ id: 'i-1', name: 'Drill', attachments: shots() }, { media: makeMediaBindings() });
     await settle(el);
 
-    all(el, '[data-testid="sheet-photo-open"]')[1].click();
+    defined(all(el, '[data-testid="sheet-photo-open"]')[1], 'photo opener 1').click();
     await settle(el);
 
     const panel = lightbox(el);
@@ -919,7 +920,7 @@ describe('hv-detail-sheet: pictures', () => {
     const el = await mount({ id: 'i-1', name: 'Drill', attachments: shots() }, { media: makeMediaBindings() });
     await settle(el);
 
-    const opener = all(el, '[data-testid="sheet-photo-open"]')[0];
+    const opener = defined(all(el, '[data-testid="sheet-photo-open"]')[0], 'photo opener 0');
     opener.focus();
     opener.click();
     await settle(el);
@@ -939,7 +940,7 @@ describe('hv-detail-sheet: pictures', () => {
     await settle(el);
     const seen = captured(el, ['cancel']);
 
-    all(el, '[data-testid="sheet-photo-open"]')[0].click();
+    defined(all(el, '[data-testid="sheet-photo-open"]')[0], 'photo opener 0').click();
     await settle(el);
     lightbox(el)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await settle(el);
@@ -951,7 +952,7 @@ describe('hv-detail-sheet: pictures', () => {
     const el = await mount({ id: 'i-1', attachments: shots() }, { media: makeMediaBindings() });
     await settle(el);
 
-    all(el, '[data-testid="sheet-photo-open"]')[0].click();
+    defined(all(el, '[data-testid="sheet-photo-open"]')[0], 'photo opener 0').click();
     await settle(el);
     lightbox(el, '[data-testid="lightbox-close"]')?.click();
     await settle(el);
@@ -962,7 +963,7 @@ describe('hv-detail-sheet: pictures', () => {
   it('drops the lightbox when the sheet moves to another item', async () => {
     const el = await mount({ id: 'i-1', attachments: shots() }, { media: makeMediaBindings() });
     await settle(el);
-    all(el, '[data-testid="sheet-photo-open"]')[0].click();
+    defined(all(el, '[data-testid="sheet-photo-open"]')[0], 'photo opener 0').click();
     await settle(el);
 
     el.item = makeItem({ id: 'i-2' });
@@ -979,7 +980,7 @@ describe('hv-detail-sheet: pictures', () => {
       { media: makeMediaBindings() },
     );
     await settle(el);
-    all(el, '[data-testid="sheet-photo-open"]')[1].click();
+    defined(all(el, '[data-testid="sheet-photo-open"]')[1], 'photo opener 1').click();
     await settle(el);
 
     el.item = makeItem({ id: 'i-1', name: 'Drill', version: 4, attachments: shots() });
@@ -999,7 +1000,7 @@ describe('hv-detail-sheet: pictures', () => {
       { media: makeMediaBindings() },
     );
     await settle(el);
-    all(el, '[data-testid="sheet-photo-open"]')[1].click();
+    defined(all(el, '[data-testid="sheet-photo-open"]')[1], 'photo opener 1').click();
     await settle(el);
 
     el.item = makeItem({
@@ -1022,7 +1023,7 @@ describe('hv-detail-sheet: pictures', () => {
       { media: makeMediaBindings() },
     );
     await settle(el);
-    all(el, '[data-testid="sheet-photo-open"]')[0].click();
+    defined(all(el, '[data-testid="sheet-photo-open"]')[0], 'photo opener 0').click();
     await settle(el);
 
     el.item = makeItem({ id: 'i-1', name: 'Drill', version: 4, attachments: [] });
@@ -1041,7 +1042,7 @@ describe('hv-detail-sheet: pictures', () => {
       { media: makeMediaBindings() },
     );
     await settle(el);
-    const opener = all(el, '[data-testid="sheet-photo-open"]')[0];
+    const opener = defined(all(el, '[data-testid="sheet-photo-open"]')[0], 'photo opener 0');
     opener.focus();
     opener.click();
     await settle(el);
@@ -1071,7 +1072,7 @@ describe('hv-detail-sheet: lightbox navigation', () => {
   async function opened(index: number, attachments = shots()) {
     const el = await mount({ id: 'i-1', name: 'Drill', attachments }, { media: makeMediaBindings() });
     await settle(el);
-    all(el, '[data-testid="sheet-photo-open"]')[index].click();
+    defined(all(el, '[data-testid="sheet-photo-open"]')[index], 'photo opener index').click();
     await settle(el);
     return el;
   }
@@ -1092,7 +1093,7 @@ describe('hv-detail-sheet: lightbox navigation', () => {
   it('still closes on Escape with the navigation on screen', async () => {
     const el = await mount({ id: 'i-1', name: 'Drill', attachments: shots() }, { media: makeMediaBindings() });
     await settle(el);
-    const opener = all(el, '[data-testid="sheet-photo-open"]')[1];
+    const opener = defined(all(el, '[data-testid="sheet-photo-open"]')[1], 'photo opener 1');
     opener.focus();
     opener.click();
     await settle(el);
@@ -1185,7 +1186,7 @@ describe('hv-detail-sheet: documents', () => {
 
     const titles = all(el, '[data-testid="sheet-document-title"]').map((n) => n.textContent?.trim());
     expect(titles).toEqual(['Dishwasher manual (EN)', 'warranty.pdf']);
-    expect(all(el, '[data-testid="sheet-document"]')[0].textContent).toContain('2.4 MB');
+    expect(all(el, '[data-testid="sheet-document"]')[0]?.textContent).toContain('2.4 MB');
   });
 
   // The title falls back to the filename, so an untitled document printed the
@@ -1222,7 +1223,7 @@ describe('hv-detail-sheet: documents', () => {
     // Versioned by the served name, so a retitle cannot be answered from the
     // browser's cache with the filename the document carried before it.
     expect(open.getAttribute('href')).toBe(
-      `/api/haventory/media/i-1/m-1?${MEDIA_NAME_TOKEN_PARAM}=${attachmentNameToken(docs()[0])}&authSig=test`,
+      `/api/haventory/media/i-1/m-1?${MEDIA_NAME_TOKEN_PARAM}=${attachmentNameToken(defined(docs()[0], 'first document'))}&authSig=test`,
     );
     expect(open.getAttribute('target')).toBe('_blank');
     expect(open.getAttribute('rel')).toContain('noopener');
@@ -1236,7 +1237,7 @@ describe('hv-detail-sheet: documents', () => {
     expect(all(el, '[data-testid="sheet-document-missing"]')).toHaveLength(2);
     expect(q(el, '[data-testid="sheet-document-open"]')).toBeNull();
     // The row still names the document: it is a record of what was attached.
-    expect(all(el, '[data-testid="sheet-document-title"]')[0].textContent).toContain('Dishwasher manual (EN)');
+    expect(all(el, '[data-testid="sheet-document-title"]')[0]?.textContent).toContain('Dishwasher manual (EN)');
   });
 
   it('keeps the link when the probe cannot reach the backend at all', async () => {

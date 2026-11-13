@@ -232,7 +232,7 @@ describe('haventory-panel: host-owned surfaces', () => {
 
       expect(scopes, id).toEqual([scope]);
       expect(downloads, id).toHaveLength(1);
-      expect(downloads[0].filename, id).toMatch(/^haventory-export-.*\.json$/);
+      expect(downloads[0]?.filename, id).toMatch(/^haventory-export-.*\.json$/);
       document.body.innerHTML = '';
     }
   });

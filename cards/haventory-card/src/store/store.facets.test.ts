@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Store } from './store';
-import { makeMockHass, makeItem } from '../test.utils';
+import { makeMockHass, makeItem, defined } from '../test.utils';
 
 /**
  * The facet lists and the per-location counts beside them: what the card asks
@@ -114,7 +114,7 @@ describe('Store', () => {
 
     const sent = hass.__messages.filter((m) => m.type === 'haventory/distinct_values');
     expect(sent).toHaveLength(1);
-    expect(sent[0].filter).toBeUndefined();
+    expect(sent[0]?.filter).toBeUndefined();
     // No key at all rather than a matching_count equal to count: the two say
     // different things, and only one of them is a report.
     expect(store.state.value.distinctValuesCache?.categories).toEqual([{ value: 'Tools', count: 1 }]);
@@ -136,7 +136,7 @@ describe('Store', () => {
     await vi.waitUntil(() => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length > 1);
 
     const sent = hass.__messages.filter((m) => m.type === 'haventory/distinct_values');
-    const filter = sent[sent.length - 1].filter as Record<string, unknown>;
+    const filter = defined(sent[sent.length - 1], 'last request').filter as Record<string, unknown>;
     expect(filter.checked_out).toBe(true);
     expect(filter.category).toBeUndefined();
     expect(filter.tags_any).toBeUndefined();
@@ -171,7 +171,7 @@ describe('Store', () => {
     ]);
 
     const sent = hass.__messages.filter((m) => m.type === 'haventory/distinct_values');
-    expect(sent[sent.length - 1].filter).toBeDefined();
+    expect(sent[sent.length - 1]?.filter).toBeDefined();
   });
 
   // The same asymmetry the other way round: a lone location filter must not
@@ -195,7 +195,7 @@ describe('Store', () => {
     store.setFilters({ locationIds: ['garage'] });
     await vi.waitUntil(() => store.state.value.locationTreeCache?.[0]?.matching_subtree_count !== undefined);
 
-    expect(store.state.value.locationTreeCache?.[0].matching_subtree_count).toBe(1);
+    expect(store.state.value.locationTreeCache?.[0]?.matching_subtree_count).toBe(1);
     expect(store.state.value.locationMatchTotal).toBe(1);
   });
 

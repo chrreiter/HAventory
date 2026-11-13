@@ -1,6 +1,6 @@
 import { setLanguage } from '../i18n';
 import './hv-organize-dialog';
-import { all, componentCss, makeItem, mountHost, q, settle, stubClipboard } from '../test.utils';
+import { all, componentCss, defined, makeItem, mountHost, q, settle, stubClipboard } from '../test.utils';
 import type { ClipboardStub } from '../test.utils';
 import { HVOrganizeDialog } from './hv-organize-dialog';
 import type { OrganizeTab } from './hv-organize-dialog';
@@ -351,10 +351,11 @@ describe('hv-organize-dialog: locations', () => {
     const { el, sr } = await mount({ items, locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
 
-    for (const [action, picker, id] of [
+    for (const [action, picker, holderId] of [
       ['tree-edit', 'location-parent', 'location-parent-tree-holder'],
       ['tree-merge', 'merge-target', 'merge-target-tree-holder'],
     ]) {
+      const id = defined(holderId, 'holder id');
       (
         tree.shadowRoot?.querySelector(`[data-testid="${action}"][data-id="garage"]`) as HTMLButtonElement
       ).click();
@@ -451,8 +452,8 @@ describe('hv-organize-dialog: locations', () => {
       await settle(el);
 
       expect(calls).toHaveLength(1);
-      expect(calls[0].changes.name).toBe('Shelf B');
-      expect('newParentId' in calls[0].changes).toBe(false);
+      expect(calls[0]?.changes.name).toBe('Shelf B');
+      expect('newParentId' in defined(calls[0], 'first call').changes).toBe(false);
     });
 
     it('moves the subtree when a different parent is picked', async () => {
@@ -462,7 +463,7 @@ describe('hv-organize-dialog: locations', () => {
       (q(sr, '[data-testid="location-save"]') as HTMLButtonElement).click();
       await settle(el);
 
-      expect(calls[0].changes.newParentId).toBe('attic');
+      expect(calls[0]?.changes.newParentId).toBe('attic');
     });
 
     it('sends an explicit null when the location is moved to the top level', async () => {
@@ -472,7 +473,7 @@ describe('hv-organize-dialog: locations', () => {
       (q(sr, '[data-testid="location-save"]') as HTMLButtonElement).click();
       await settle(el);
 
-      expect(calls[0].changes.newParentId).toBeNull();
+      expect(calls[0]?.changes.newParentId).toBeNull();
     });
   });
 
@@ -533,8 +534,8 @@ describe('hv-organize-dialog: locations', () => {
       (q(sr, '[data-testid="location-save"]') as HTMLButtonElement).click();
       await settle(el);
 
-      expect(calls[0].changes.newParentId).toBeNull();
-      expect(calls[0].changes.areaId).toBe('area-kitchen');
+      expect(calls[0]?.changes.newParentId).toBeNull();
+      expect(calls[0]?.changes.areaId).toBe('area-kitchen');
     });
 
     it('calls the row that clears the parent what it does in a parent picker', async () => {
@@ -1042,7 +1043,7 @@ describe('hv-organize-dialog: tags and categories', () => {
     const realBulk = store['ws'].bulk.bind(store['ws']);
     store['ws'].bulk = async (ops) => {
       const res = await realBulk(ops);
-      const first = ops[0];
+      const first = defined(ops[0], 'first op');
       res.results[first.op_id] = { success: false, error: { code: 'conflict', message: 'version conflict' } };
       return res;
     };
@@ -1313,9 +1314,9 @@ describe('hv-organize-dialog: statuses', () => {
     const { sr } = await mount({ tab: 'statuses' });
 
     const rows = all(sr, '[data-testid="status-row"]');
-    expect((rows[0].querySelector('[data-testid="status-up"]') as HTMLButtonElement).disabled).toBe(true);
+    expect((rows[0]?.querySelector('[data-testid="status-up"]') as HTMLButtonElement).disabled).toBe(true);
     expect(
-      (rows[rows.length - 1].querySelector('[data-testid="status-down"]') as HTMLButtonElement).disabled,
+      (rows[rows.length - 1]?.querySelector('[data-testid="status-down"]') as HTMLButtonElement).disabled,
     ).toBe(true);
   });
 
@@ -1408,9 +1409,9 @@ describe('hv-organize-dialog: statuses', () => {
 
     const deleted = hass.__messages.filter((m) => m.type === 'haventory/status/delete');
     expect(deleted).toHaveLength(1);
-    expect(deleted[0].slug).toBe('missing');
+    expect(deleted[0]?.slug).toBe('missing');
     // No reassign target travels with a status nothing carries.
-    expect(deleted[0].reassign_to ?? null).toBe(null);
+    expect(deleted[0]?.reassign_to ?? null).toBe(null);
   });
 
   it('backs out of an unused status delete', async () => {
@@ -1719,7 +1720,7 @@ describe('hv-organize-dialog: disclosures come into view', () => {
     // 'nearest' scrolls no further than it must, so a disclosure already on
     // screen does not move; no `behavior`, so there is no motion to gate on a
     // reduced-motion preference.
-    expect(scrolls[0].options).toEqual({ block: 'nearest' });
+    expect(scrolls[0]?.options).toEqual({ block: 'nearest' });
     // A guard announces itself through role="alert" and takes no focus.
     expect(q(sr, '[data-testid="status-guard"]')?.contains(sr.activeElement)).toBe(false);
   });
@@ -1805,7 +1806,7 @@ describe('hv-organize-dialog: disclosures come into view', () => {
     const editor = q(sr, '[data-testid="value-editor"]') as HTMLElement;
     expect(editor.dataset.mode).toBe('merge');
     expect(scrolls).toHaveLength(2);
-    expect(scrolls[1].el).toBe(editor);
+    expect(scrolls[1]?.el).toBe(editor);
     expect(sr.activeElement).toBe(q(sr, '[data-testid="value-target"]'));
   });
 
@@ -1820,7 +1821,7 @@ describe('hv-organize-dialog: disclosures come into view', () => {
     await settle(el);
 
     expect(scrolls).toHaveLength(2);
-    expect(scrolls[1].el).toBe(q(sr, '[data-testid="location-editor"]'));
+    expect(scrolls[1]?.el).toBe(q(sr, '[data-testid="location-editor"]'));
   });
 
   // Re-opening the dialog is DialogFocus's moment: it puts focus on the panel,
@@ -1853,7 +1854,7 @@ describe('hv-organize-dialog: disclosures come into view', () => {
     await settle(el);
 
     expect(scrolled()).toEqual([q(sr, '[data-testid="location-sheet"]')]);
-    expect(scrolls[0].options).toEqual({ block: 'nearest' });
+    expect(scrolls[0]?.options).toEqual({ block: 'nearest' });
     // A menu of what the row can do, not a form: it claims no field, so the
     // caret stays where the tap left it.
     expect(q(sr, '[data-testid="location-sheet"]')?.contains(sr.activeElement)).toBe(false);
@@ -1883,7 +1884,7 @@ describe('hv-organize-dialog: disclosures come into view', () => {
 
     expect(q(sr, '[data-testid="location-sheet"]')).toBe(null);
     expect(scrolls).toHaveLength(2);
-    expect(scrolls[1].el).toBe(q(sr, '[data-testid="location-editor"]'));
+    expect(scrolls[1]?.el).toBe(q(sr, '[data-testid="location-editor"]'));
     expect(sr.activeElement).toBe(q(sr, '[data-testid="location-name"]'));
   });
 });
