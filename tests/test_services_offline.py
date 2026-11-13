@@ -17,6 +17,7 @@ import voluptuous as vol
 import yaml
 from custom_components.haventory import events as events_mod
 from custom_components.haventory import media as media_mod
+from custom_components.haventory import ops as ops_mod
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import EVENT_ITEM_CHANGED
 from custom_components.haventory.exceptions import (
@@ -254,7 +255,7 @@ async def test_repository_exceptions_are_logged(monkeypatch, caplog) -> None:
     async def _persist(_hass):  # type: ignore[no-untyped-def]
         raise StorageError("persist failed")
 
-    monkeypatch.setattr(services_mod, "async_persist_repo", _persist)
+    monkeypatch.setattr(ops_mod, "async_persist_repo", _persist)
     with pytest.raises(StorageError):
         await services_mod.service_location_create(hass, {"name": "Root"})
     assert any(getattr(r, "op", None) == "location_create" for r in caplog.records)
@@ -545,7 +546,7 @@ async def test_a_failed_persist_answers_nothing(monkeypatch) -> None:
     async def _persist(_hass):  # type: ignore[no-untyped-def]
         raise StorageError("persist failed")
 
-    monkeypatch.setattr(services_mod, "async_persist_repo", _persist)
+    monkeypatch.setattr(ops_mod, "async_persist_repo", _persist)
     with pytest.raises(StorageError):
         await services_mod.service_item_create(hass, {"name": "Widget"})
 
@@ -752,7 +753,7 @@ async def test_item_delete_service_frees_nothing_when_the_save_fails(monkeypatch
         raise StorageError("disk full")
 
     monkeypatch.setattr(media_mod, "async_delete_attachments", _spy_delete)
-    monkeypatch.setattr(services_mod, "async_persist_repo", _persist)
+    monkeypatch.setattr(ops_mod, "async_persist_repo", _persist)
 
     with pytest.raises(StorageError):
         await services_mod.service_item_delete(hass, {"item_id": str(item.id)})

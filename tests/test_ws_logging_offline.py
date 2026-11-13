@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 import voluptuous as vol
+from custom_components.haventory import ops as ops_mod
 from custom_components.haventory import services as services_mod
 from custom_components.haventory.exceptions import NotLoadedError, StorageError
 from custom_components.haventory.ws import setup as ws_setup
@@ -408,7 +409,7 @@ async def test_service_storage_error_logs_error_with_traceback(caplog, monkeypat
     async def _raise(*_args: Any, **_kwargs: Any) -> None:
         raise StorageError("failed to persist repository")
 
-    monkeypatch.setattr(services_mod, "async_persist_repo", _raise)
+    monkeypatch.setattr(ops_mod, "async_persist_repo", _raise)
     caplog.set_level(logging.DEBUG, logger=SERVICES_LOGGER)
 
     with pytest.raises(StorageError):
