@@ -62,6 +62,7 @@ scripts/typecheck.sh           # mypy against the real Home Assistant at the dec
 
 # Frontend (in cards/haventory-card)
 npm audit --audit-level=moderate
+npx prettier --check .       # `npm run format` writes the fix
 npx eslint .
 npm run typecheck
 npx vitest run

@@ -17,7 +17,7 @@ Closes #
 <!-- Both gates must be green. Paste the commands you ran and their results. -->
 
 - [ ] Backend: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q`, `uv run ruff check .`, `uv run ruff format --check .`, `scripts/typecheck.sh`
-- [ ] Frontend (`cards/haventory-card`): `npm audit --audit-level=moderate`, `npx eslint .`, `npm run typecheck`, `npx vitest run`, `npm run build`. The gate in full is `CONTRIBUTING.md` → "The gate".
+- [ ] Frontend (`cards/haventory-card`): `npm audit --audit-level=moderate`, `npx prettier --check .`, `npx eslint .`, `npm run typecheck`, `npx vitest run`, `npm run build`. The gate in full is `CONTRIBUTING.md` → "The gate".
 
 ## Checklist
 

@@ -60,6 +60,7 @@ Frontend, from `cards/haventory-card`:
 
 ```bash
 npm ci            # first run, or if node_modules is partial (missing rolldown binding)
+npx prettier --check . # → All matched files use Prettier code style!
 npm run lint      # eslint  → clean
 npm run typecheck # tsc --noEmit → clean
 npm test          # vitest  → 2044 passed across 79 files

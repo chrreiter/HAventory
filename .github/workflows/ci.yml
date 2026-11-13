@@ -130,6 +130,8 @@ jobs:
         # step is the only place a vulnerable dev dependency surfaces; moderate
         # because a moderate one would be dismissed there too.
         run: npm audit --audit-level=moderate
+      - name: Format
+        run: npx prettier --check .
       - name: Lint
         run: npx eslint .
       - name: Types (tsc --noEmit)
