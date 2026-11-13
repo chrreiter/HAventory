@@ -101,6 +101,21 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     ha_exceptions = types.ModuleType("homeassistant.exceptions")
 
     class HomeAssistantError(Exception):  # type: ignore[override]
+        # HA's signature: the translation fields are keyword-only, and an
+        # explicit message stays `str(exc)` beside them.
+        def __init__(
+            self,
+            *args,
+            translation_domain=None,
+            translation_key=None,
+            translation_placeholders=None,
+        ) -> None:
+            super().__init__(*args)
+            self.translation_domain = translation_domain
+            self.translation_key = translation_key
+            self.translation_placeholders = translation_placeholders
+
+    class ServiceValidationError(HomeAssistantError):  # type: ignore[override]
         pass
 
     class ConfigEntryNotReady(HomeAssistantError):  # type: ignore[override]
@@ -110,6 +125,7 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         pass
 
     ha_exceptions.HomeAssistantError = HomeAssistantError
+    ha_exceptions.ServiceValidationError = ServiceValidationError
     ha_exceptions.ConfigEntryNotReady = ConfigEntryNotReady
     ha_exceptions.ConfigEntryError = ConfigEntryError
     sys.modules["homeassistant.exceptions"] = ha_exceptions

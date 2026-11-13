@@ -98,7 +98,7 @@ def _repo(hass: HomeAssistant) -> Repository:
 def _payload_item_id(payload: dict[str, Any]) -> str:
     value = payload.get("item_id")
     if not isinstance(value, str) or not value:
-        raise ValidationError("item_id must be a non-empty string")
+        raise ValidationError("item_id must be a non-empty string", key="item_id_required")
     return value
 
 
@@ -317,7 +317,7 @@ def _require_known_area(hass: HomeAssistant, area_id: Any) -> None:
     if area_id is None:
         return
     if not isinstance(area_id, str) or ar.async_get(hass).async_get_area(area_id) is None:
-        raise ValidationError("unknown area_id")
+        raise ValidationError("unknown area_id", key="area_not_found")
 
 
 def _op_location_create(hass: HomeAssistant, payload: dict[str, Any]) -> Written:

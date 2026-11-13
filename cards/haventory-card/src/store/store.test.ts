@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { BULK_CHUNK_SIZE, Store, makeBulkOp } from './store';
 import { makeMockHass, makeItem } from '../test.utils';
+import { setLanguage } from '../i18n';
 import type { Location, StoreState } from './types';
 
 /**
@@ -256,6 +257,27 @@ describe('Store', () => {
     const errorId = store.state.value.errorQueue[0].id;
     store.dismissError(errorId);
     expect(store.state.value.errorQueue.length).toBe(0);
+  });
+
+  it('queues a keyed refusal in the language in force', async () => {
+    setLanguage('de');
+    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+    const store = new Store(hass, fast);
+    await store.init();
+    hass.callWS = async <T,>(): Promise<T> => {
+      throw {
+        code: 'not_found',
+        message: 'item not found',
+        translation_domain: 'haventory',
+        translation_key: 'item_not_found',
+      };
+    };
+
+    await store.updateItem('1', { name: 'New' }).catch(() => undefined);
+
+    expect(store.state.value.errorQueue[0].message).toBe(
+      'Diesen Gegenstand gibt es nicht mehr. Vielleicht hat ihn jemand gelöscht.',
+    );
   });
 
   it('refreshes single item from backend', async () => {

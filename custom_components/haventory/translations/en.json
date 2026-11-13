@@ -420,5 +420,151 @@
         }
       }
     }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "HAventory is not loaded right now. Wait for it to finish starting, or enable the integration again."
+    },
+    "item_not_found": {
+      "message": "This item no longer exists. Someone may have deleted it."
+    },
+    "version_conflict": {
+      "message": "This item was changed in the meantime (expected version {expected}, now {actual}). Load it again and repeat the change."
+    },
+    "location_not_found": {
+      "message": "This location no longer exists. Someone may have deleted it."
+    },
+    "parent_not_found": {
+      "message": "The parent location no longer exists."
+    },
+    "location_under_itself": {
+      "message": "A location cannot be moved under itself."
+    },
+    "location_under_descendant": {
+      "message": "A location cannot be moved under one of its own sub-locations."
+    },
+    "location_has_children": {
+      "message": "This location still has sub-locations. Move or delete them first."
+    },
+    "location_has_items": {
+      "message": "This location still contains items. Move or delete them first."
+    },
+    "area_blank": {
+      "message": "The area must not be empty. Leave it out or set it to null to clear it."
+    },
+    "area_not_found": {
+      "message": "Home Assistant has no area with this ID."
+    },
+    "item_id_required": {
+      "message": "An item ID is required."
+    },
+    "invalid_uuid": {
+      "message": "{field} is not a valid ID."
+    },
+    "name_required": {
+      "message": "A name is required."
+    },
+    "name_too_long": {
+      "message": "The name can be at most {max} characters long."
+    },
+    "text_too_long": {
+      "message": "{field} can be at most {max} characters long."
+    },
+    "quantity_negative": {
+      "message": "The quantity cannot be negative."
+    },
+    "low_stock_threshold_negative": {
+      "message": "The low-stock threshold cannot be negative."
+    },
+    "tag_too_long": {
+      "message": "A tag can be at most {max} characters long."
+    },
+    "tags_too_many": {
+      "message": "An item can have at most {max} tags."
+    },
+    "custom_fields_too_many": {
+      "message": "An item can have at most {max} custom fields."
+    },
+    "custom_field_key_blank": {
+      "message": "A custom field needs a name."
+    },
+    "custom_field_key_too_long": {
+      "message": "A custom field name can be at most {max} characters long."
+    },
+    "custom_field_value_too_long": {
+      "message": "A custom field value can be at most {max} characters long."
+    },
+    "date_format": {
+      "message": "{field} must be a date written as YYYY-MM-DD."
+    },
+    "date_invalid": {
+      "message": "{field} is not a real calendar date."
+    },
+    "due_date_not_checked_out": {
+      "message": "A due date can only be set on an item that is checked out."
+    },
+    "status_unknown": {
+      "message": "This status does not exist. Available: {statuses}."
+    },
+    "status_label_required": {
+      "message": "A status needs a label."
+    },
+    "status_label_too_long": {
+      "message": "A status label can be at most {max} characters long."
+    },
+    "status_exists": {
+      "message": "A status “{slug}” already exists."
+    },
+    "status_not_found": {
+      "message": "The status “{slug}” no longer exists."
+    },
+    "status_in_use": {
+      "message": "The status “{slug}” is still used by items ({count}). Choose a status to move them to first."
+    },
+    "status_order_stale": {
+      "message": "The list of statuses changed in the meantime. Reload and sort again."
+    },
+    "reminder_missing": {
+      "message": "This item has no reminder."
+    },
+    "reminder_without_interval": {
+      "message": "A one-time reminder has no next date. Clear it instead."
+    },
+    "reminder_unit_invalid": {
+      "message": "The reminder interval unit must be one of: {units}."
+    },
+    "reminder_count_too_small": {
+      "message": "The reminder interval must be at least 1."
+    },
+    "reminder_count_too_large": {
+      "message": "The reminder interval can be at most {max}."
+    },
+    "reminder_interval_without_date": {
+      "message": "A repeating reminder needs a start date."
+    },
+    "attachment_too_large": {
+      "message": "The file is too large ({size} bytes; the limit is {max} bytes)."
+    },
+    "attachment_empty": {
+      "message": "The file is empty."
+    },
+    "attachment_type": {
+      "message": "This file type is not accepted here. Accepted: {types}."
+    },
+    "attachment_limit": {
+      "message": "This item already has the maximum of {max} attachments of this kind."
+    },
+    "attachment_not_found": {
+      "message": "This attachment no longer exists. Someone may have removed it."
+    },
+    "attachment_order_stale": {
+      "message": "The attachments changed in the meantime. Reload and sort again."
+    },
+    "upload_not_found": {
+      "message": "The uploaded file is gone. Upload it again."
+    },
+    "import_document_invalid": {
+      "message": "The import file is not valid. The list below names each problem."
+    }
   }
 }

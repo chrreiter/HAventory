@@ -431,11 +431,23 @@ def parse_uuid4(value: str | uuid.UUID, *, field_name: str = "id") -> uuid.UUID:
         try:
             value = uuid.UUID(value)
         except ValueError as exc:
-            raise ValidationError(f"{field_name} must be a UUID v4 string") from exc
+            raise ValidationError(
+                f"{field_name} must be a UUID v4 string",
+                key="invalid_uuid",
+                placeholders={"field": field_name},
+            ) from exc
     elif not isinstance(value, uuid.UUID):
-        raise ValidationError(f"{field_name} must be a UUID v4 string")
+        raise ValidationError(
+            f"{field_name} must be a UUID v4 string",
+            key="invalid_uuid",
+            placeholders={"field": field_name},
+        )
     if value.version != UUID_VERSION_V4:
-        raise ValidationError(f"{field_name} must be a UUID v4")
+        raise ValidationError(
+            f"{field_name} must be a UUID v4",
+            key="invalid_uuid",
+            placeholders={"field": field_name},
+        )
     return value
 
 
@@ -524,7 +536,9 @@ def validate_required_name(value: object) -> str:
     """
 
     if not isinstance(value, str) or not value.strip():
-        raise ValidationError("name is required and must be a non-empty string")
+        raise ValidationError(
+            "name is required and must be a non-empty string", key="name_required"
+        )
     return value.strip()
 
 
@@ -533,7 +547,11 @@ def validate_write_name(name: object) -> str:
 
     trimmed = validate_required_name(name)
     if len(trimmed) > NAME_MAX_LENGTH:
-        raise ValidationError(f"name must be at most {NAME_MAX_LENGTH} characters")
+        raise ValidationError(
+            f"name must be at most {NAME_MAX_LENGTH} characters",
+            key="name_too_long",
+            placeholders={"max": NAME_MAX_LENGTH},
+        )
     return trimmed
 
 
@@ -556,13 +574,21 @@ def validate_custom_fields(
         raise ValidationError(f"{field_name} must be a mapping of string keys to scalars")
     prev = previous or {}
     if len(values) > CUSTOM_FIELDS_MAX_KEYS and len(values) > len(prev):
-        raise ValidationError(f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys")
+        raise ValidationError(
+            f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys",
+            key="custom_fields_too_many",
+            placeholders={"max": CUSTOM_FIELDS_MAX_KEYS},
+        )
     for key, value in values.items():
         if not isinstance(key, str) or not key:
-            raise ValidationError("custom_fields keys must be non-empty strings")
+            raise ValidationError(
+                "custom_fields keys must be non-empty strings", key="custom_field_key_blank"
+            )
         if len(key) > CUSTOM_FIELD_KEY_MAX_LENGTH and key not in prev:
             raise ValidationError(
-                f"custom_fields keys must be at most {CUSTOM_FIELD_KEY_MAX_LENGTH} characters"
+                f"custom_fields keys must be at most {CUSTOM_FIELD_KEY_MAX_LENGTH} characters",
+                key="custom_field_key_too_long",
+                placeholders={"max": CUSTOM_FIELD_KEY_MAX_LENGTH},
             )
         if not isinstance(value, str | int | float | bool):
             raise ValidationError(
@@ -573,7 +599,9 @@ def validate_custom_fields(
             if not isinstance(prev_value, str) or len(value) > len(prev_value):
                 raise ValidationError(
                     f"custom_fields values must be at most "
-                    f"{CUSTOM_FIELD_VALUE_MAX_LENGTH} characters"
+                    f"{CUSTOM_FIELD_VALUE_MAX_LENGTH} characters",
+                    key="custom_field_value_too_long",
+                    placeholders={"max": CUSTOM_FIELD_VALUE_MAX_LENGTH},
                 )
 
 
@@ -588,9 +616,17 @@ def validate_tags(tags: object, *, previous: Collection[str] = ()) -> list[str]:
     previous_tags = set(previous)
     for tag in normalized:
         if tag not in previous_tags and len(tag) > TAG_MAX_LENGTH:
-            raise ValidationError(f"each tag must be at most {TAG_MAX_LENGTH} characters")
+            raise ValidationError(
+                f"each tag must be at most {TAG_MAX_LENGTH} characters",
+                key="tag_too_long",
+                placeholders={"max": TAG_MAX_LENGTH},
+            )
     if len(normalized) > TAGS_MAX_COUNT and len(normalized) > len(previous_tags):
-        raise ValidationError(f"tags must have at most {TAGS_MAX_COUNT} entries")
+        raise ValidationError(
+            f"tags must have at most {TAGS_MAX_COUNT} entries",
+            key="tags_too_many",
+            placeholders={"max": TAGS_MAX_COUNT},
+        )
     return normalized
 
 
@@ -723,7 +759,9 @@ def validate_due_date_rules(*, checked_out: bool, due_date: str | None) -> str |
     if due_date is None:
         return None
     if not checked_out:
-        raise ValidationError("due_date is only valid when checked_out is true")
+        raise ValidationError(
+            "due_date is only valid when checked_out is true", key="due_date_not_checked_out"
+        )
     return validate_optional_date(due_date, field_name="due_date")
 
 
@@ -744,7 +782,11 @@ def validate_item_status(
         return value
     if default is not None:
         return default
-    raise ValidationError(f"status must be one of: {', '.join(sorted(known_statuses))}")
+    raise ValidationError(
+        f"status must be one of: {', '.join(sorted(known_statuses))}",
+        key="status_unknown",
+        placeholders={"statuses": ", ".join(sorted(known_statuses))},
+    )
 
 
 def validate_status_slug(value: object) -> str:
@@ -778,9 +820,16 @@ def validate_status_definition(value: object) -> StatusDefinition:
     slug = validate_status_slug(value.get("slug"))
     label = value.get("label")
     if not isinstance(label, str) or not label.strip():
-        raise ValidationError("status label is required and must be a non-empty string")
+        raise ValidationError(
+            "status label is required and must be a non-empty string",
+            key="status_label_required",
+        )
     if len(label.strip()) > NAME_MAX_LENGTH:
-        raise ValidationError("status label must be at most 120 characters")
+        raise ValidationError(
+            "status label must be at most 120 characters",
+            key="status_label_too_long",
+            placeholders={"max": NAME_MAX_LENGTH},
+        )
     order = value.get("order", 0)
     if not _is_int_not_bool(order):
         raise ValidationError("status order must be an integer")
@@ -906,11 +955,19 @@ def validate_optional_date(value: str | None, *, field_name: str) -> str | None:
     if value is None:
         return None
     if not isinstance(value, str) or not DATE_RE.match(value):
-        raise ValidationError(f"{field_name} must be in 'YYYY-MM-DD' format")
+        raise ValidationError(
+            f"{field_name} must be in 'YYYY-MM-DD' format",
+            key="date_format",
+            placeholders={"field": field_name},
+        )
     try:
         datetime.strptime(value, "%Y-%m-%d")
     except ValueError as exc:
-        raise ValidationError(f"{field_name} must be a valid calendar date (YYYY-MM-DD)") from exc
+        raise ValidationError(
+            f"{field_name} must be a valid calendar date (YYYY-MM-DD)",
+            key="date_invalid",
+            placeholders={"field": field_name},
+        ) from exc
     return value
 
 
@@ -931,11 +988,21 @@ def validate_reminder_interval(value: object) -> ReminderInterval | None:
         raise ValidationError("reminder_interval must be an object with 'unit' and 'count'")
 
     if interval.unit not in REMINDER_UNITS:
-        raise ValidationError(f"reminder_interval.unit must be one of {', '.join(REMINDER_UNITS)}")
+        raise ValidationError(
+            f"reminder_interval.unit must be one of {', '.join(REMINDER_UNITS)}",
+            key="reminder_unit_invalid",
+            placeholders={"units": ", ".join(REMINDER_UNITS)},
+        )
     if not _is_int_not_bool(interval.count) or interval.count < 1:
-        raise ValidationError("reminder_interval.count must be an integer >= 1")
+        raise ValidationError(
+            "reminder_interval.count must be an integer >= 1", key="reminder_count_too_small"
+        )
     if interval.count > REMINDER_COUNT_MAX:
-        raise ValidationError(f"reminder_interval.count must be <= {REMINDER_COUNT_MAX}")
+        raise ValidationError(
+            f"reminder_interval.count must be <= {REMINDER_COUNT_MAX}",
+            key="reminder_count_too_large",
+            placeholders={"max": REMINDER_COUNT_MAX},
+        )
     return ReminderInterval(unit=interval.unit, count=int(interval.count))
 
 
@@ -947,7 +1014,10 @@ def validate_reminder_rules(
     normalized_date = validate_optional_date(reminder_date, field_name="reminder_date")
     interval = validate_reminder_interval(reminder_interval)
     if interval is not None and normalized_date is None:
-        raise ValidationError("reminder_interval requires a reminder_date to count from")
+        raise ValidationError(
+            "reminder_interval requires a reminder_date to count from",
+            key="reminder_interval_without_date",
+        )
     return normalized_date, interval
 
 
@@ -1069,14 +1139,18 @@ def validate_optional_text(
         and len(value) > max_length
         and (previous is None or len(value) > len(previous))
     ):
-        raise ValidationError(f"{field_name} must be at most {max_length} characters")
+        raise ValidationError(
+            f"{field_name} must be at most {max_length} characters",
+            key="text_too_long",
+            placeholders={"field": field_name, "max": max_length},
+        )
 
 
 def validate_quantity(value: object) -> int:
     """Return the quantity, or refuse it. Spelled out so the return narrows to ``int``."""
 
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise ValidationError("quantity must be an integer >= 0")
+        raise ValidationError("quantity must be an integer >= 0", key="quantity_negative")
     return value
 
 
@@ -1086,7 +1160,10 @@ def validate_low_stock_threshold(value: object) -> int | None:
     if value is None:
         return None
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-        raise ValidationError("low_stock_threshold must be an integer >= 0 or null")
+        raise ValidationError(
+            "low_stock_threshold must be an integer >= 0 or null",
+            key="low_stock_threshold_negative",
+        )
     return value
 
 
@@ -1189,7 +1266,9 @@ def _write_location(write: _ItemWrite) -> None:
         if raw is not None:
             location_id = parse_uuid4(raw, field_name="location_id")
             if locations_by_id is None or str(location_id) not in locations_by_id:
-                raise ValidationError("location_id must reference an existing location")
+                raise ValidationError(
+                    "location_id must reference an existing location", key="location_not_found"
+                )
         draft.location_id = location_id
 
     if draft.location_id is None:
@@ -1234,7 +1313,11 @@ def _write_custom_fields(write: _ItemWrite) -> None:
         draft.custom_fields = {k: v for k, v in draft.custom_fields.items() if k not in to_unset}
     after = len(draft.custom_fields)
     if after > CUSTOM_FIELDS_MAX_KEYS and after > before:
-        raise ValidationError(f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys")
+        raise ValidationError(
+            f"custom_fields must have at most {CUSTOM_FIELDS_MAX_KEYS} keys",
+            key="custom_fields_too_many",
+            placeholders={"max": CUSTOM_FIELDS_MAX_KEYS},
+        )
 
 
 #: Every item field a client writes, and its rule. A create and an update walk

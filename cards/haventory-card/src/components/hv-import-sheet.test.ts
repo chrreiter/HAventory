@@ -397,6 +397,28 @@ describe('hv-import-sheet: invalid document', () => {
     expect(rows[2].textContent).toContain('creates a cycle');
   });
 
+  it('words a row the backend keyed in the language in force, and keeps the rest as sent', async () => {
+    setLanguage('de');
+    const keyed = preview({
+      valid: false,
+      counts: {},
+      errors: [
+        {
+          path: 'items[0].quantity',
+          message: 'quantity must be an integer >= 0',
+          translation_domain: 'haventory',
+          translation_key: 'quantity_negative',
+        },
+        { path: 'statuses[1].icon', message: 'status icon must be one of: …' },
+      ],
+    });
+    const el = await mount({ preview: keyed });
+
+    const rows = all(el, '[data-testid="import-error-row"]');
+    expect(rows[0].textContent).toContain('Die Menge darf nicht negativ sein.');
+    expect(rows[1].textContent).toContain('status icon must be one of');
+  });
+
   it('has no import action at all in this state', async () => {
     const el = await mount({ preview: invalid });
     expect(q(el, '[data-testid="import-execute"]')).toBe(null);

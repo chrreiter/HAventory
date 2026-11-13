@@ -38,7 +38,7 @@ from collections.abc import Callable, Collection
 from typing import Any, Literal
 
 from .const import INTEGRATION_VERSION
-from .exceptions import ValidationError
+from .exceptions import ValidationError, translation_fields
 from .migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
 from .models import (
     DEFAULT_ITEM_STATUS,
@@ -132,12 +132,12 @@ def build_export_document(
     }
 
 
-def _err(path: str, message: str) -> dict[str, str]:
+def _err(path: str, message: str) -> dict[str, Any]:
     return {"path": path, "message": message}
 
 
 def _collect[T](
-    errors: list[dict[str, str]],
+    errors: list[dict[str, Any]],
     path: str,
     validator: Callable[..., T],
     /,
@@ -153,7 +153,8 @@ def _collect[T](
     try:
         return validator(*args, **kwargs)
     except ValidationError as exc:
-        errors.append(_err(path, str(exc)))
+        # The key travels with the row, so a client can word it in its own language.
+        errors.append({**_err(path, str(exc)), **translation_fields(exc)})
         return None
 
 
@@ -172,7 +173,7 @@ def _entity_array(value: Any) -> list[dict[str, Any]] | None:
 
 
 def _parse_status_section(
-    doc: dict[str, Any], errors: list[dict[str, str]]
+    doc: dict[str, Any], errors: list[dict[str, Any]]
 ) -> dict[str, dict[str, Any]]:
     """Read the document's ``statuses`` section; an absent one means the built-ins."""
 
@@ -206,7 +207,7 @@ def _parse_envelope(
     ``items``/``locations`` are ``None`` when the envelope is unusable.
     """
 
-    errors: list[dict[str, str]] = []
+    errors: list[dict[str, Any]] = []
     if not isinstance(doc, dict):
         return None, None, [_err("document", "document must be a JSON object")]
 
@@ -257,7 +258,7 @@ def _parse_envelope(
     return items, locations, errors
 
 
-def _validate_uuid4(value: Any, path: str, errors: list[dict[str, str]]) -> str | None:
+def _validate_uuid4(value: Any, path: str, errors: list[dict[str, Any]]) -> str | None:
     if not isinstance(value, str) or not value:
         errors.append(_err(path, "must be a non-empty UUID v4 string"))
         return None
@@ -267,7 +268,7 @@ def _validate_uuid4(value: Any, path: str, errors: list[dict[str, str]]) -> str 
 
 
 def _validate_location_doc(
-    idx: int, doc: dict[str, Any], errors: list[dict[str, str]]
+    idx: int, doc: dict[str, Any], errors: list[dict[str, Any]]
 ) -> str | None:
     base = f"locations[{idx}]"
     lid = _validate_uuid4(doc.get("id"), f"{base}.id", errors)
@@ -280,7 +281,7 @@ def _validate_location_doc(
 
 
 def _validate_item_status_doc(
-    base: str, doc: dict[str, Any], errors: list[dict[str, str]], known: Collection[str]
+    base: str, doc: dict[str, Any], errors: list[dict[str, Any]], known: Collection[str]
 ) -> None:
     """Reject a present status the document does not define; an absent one is the default."""
 
@@ -288,7 +289,7 @@ def _validate_item_status_doc(
         errors.append(_err(f"{base}.status", f"status must be one of: {', '.join(sorted(known))}"))
 
 
-def _validate_attachments_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
+def _validate_attachments_doc(base: str, doc: dict[str, Any], errors: list[dict[str, Any]]) -> None:
     """Validate every attachment entry, naming the one that fails."""
 
     raw = doc.get("attachments", [])
@@ -299,7 +300,7 @@ def _validate_attachments_doc(base: str, doc: dict[str, Any], errors: list[dict[
         _collect(errors, f"{base}.attachments[{idx}]", validate_attachment_meta, entry)
 
 
-def _validate_tags_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
+def _validate_tags_doc(base: str, doc: dict[str, Any], errors: list[dict[str, Any]]) -> None:
     """Report a tag list that is not an array of strings; the caps do not apply."""
 
     tags = doc.get("tags", [])
@@ -308,7 +309,7 @@ def _validate_tags_doc(base: str, doc: dict[str, Any], errors: list[dict[str, st
 
 
 def _validate_custom_fields_doc(
-    base: str, doc: dict[str, Any], errors: list[dict[str, str]]
+    base: str, doc: dict[str, Any], errors: list[dict[str, Any]]
 ) -> None:
     """Report every custom-field key or value of the wrong shape; the caps do not apply."""
 
@@ -326,7 +327,7 @@ def _validate_custom_fields_doc(
 
 
 def _validate_item_doc(
-    idx: int, doc: dict[str, Any], errors: list[dict[str, str]], known_statuses: Collection[str]
+    idx: int, doc: dict[str, Any], errors: list[dict[str, Any]], known_statuses: Collection[str]
 ) -> str | None:
     base = f"items[{idx}]"
     iid = _validate_uuid4(doc.get("id"), f"{base}.id", errors)
@@ -379,7 +380,7 @@ def _validate_item_doc(
     return iid
 
 
-def _validate_reminder_doc(base: str, doc: dict[str, Any], errors: list[dict[str, str]]) -> None:
+def _validate_reminder_doc(base: str, doc: dict[str, Any], errors: list[dict[str, Any]]) -> None:
     """Hold an imported reminder to the rules every write path enforces.
 
     Strict where the loader is tolerant: a misspelled unit would otherwise load
@@ -496,7 +497,7 @@ def _merge_item(existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str,
 def _recompute_paths(
     items: dict[str, dict[str, Any]],
     locations: dict[str, dict[str, Any]],
-    errors: list[dict[str, str]],
+    errors: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
     """Recompute every denormalized path into a storage-shaped payload.
 
@@ -872,7 +873,7 @@ def _plan_entities(  # noqa: PLR0913 - cohesive planning parameters
             target[eid] = merge(dict(existing[eid]), dict(inc))
 
 
-def _check_duplicate_ids(ids: list[str], label: str, errors: list[dict[str, str]]) -> None:
+def _check_duplicate_ids(ids: list[str], label: str, errors: list[dict[str, Any]]) -> None:
     seen: set[str] = set()
     for eid in ids:
         if not eid:

@@ -161,7 +161,9 @@ class Repository:
 
         slug = validate_status_slug(doc.get("slug"))
         if slug in self._statuses_by_slug:
-            raise ValidationError(f"status '{slug}' already exists")
+            raise ValidationError(
+                f"status '{slug}' already exists", key="status_exists", placeholders={"slug": slug}
+            )
         if "order" not in doc:
             doc = {**doc, "order": len(self._statuses_by_slug)}
         definition = validate_status_definition(doc)
@@ -173,7 +175,9 @@ class Repository:
 
         current = self._statuses_by_slug.get(slug)
         if current is None:
-            raise NotFoundError(f"status '{slug}' not found")
+            raise NotFoundError(
+                f"status '{slug}' not found", key="status_not_found", placeholders={"slug": slug}
+            )
         if "slug" in changes and changes["slug"] != slug:
             raise ValidationError("a status slug cannot be changed; items store it")
         merged = {**serialize_status_definition(current), **changes, "slug": slug}
@@ -186,7 +190,9 @@ class Repository:
 
         slugs = require_string_list(slugs, field_name="slugs")
         if sorted(slugs) != sorted(self._statuses_by_slug):
-            raise ValidationError("reorder must name every status exactly once")
+            raise ValidationError(
+                "reorder must name every status exactly once", key="status_order_stale"
+            )
         for order, slug in enumerate(slugs):
             self._statuses_by_slug[slug] = replace(self._statuses_by_slug[slug], order=order)
         return self.list_statuses()
@@ -205,19 +211,27 @@ class Repository:
             raise ValidationError(f"'{slug}' is the default status and cannot be deleted")
         current = self._statuses_by_slug.get(slug)
         if current is None:
-            raise NotFoundError(f"status '{slug}' not found")
+            raise NotFoundError(
+                f"status '{slug}' not found", key="status_not_found", placeholders={"slug": slug}
+            )
 
         in_use = self.count_items_with_status(slug)
         if in_use and reassign_to is None:
             raise ValidationError(
                 f"status '{slug}' is on {in_use} item(s); "
-                "choose a status to move them to before deleting it"
+                "choose a status to move them to before deleting it",
+                key="status_in_use",
+                placeholders={"slug": slug, "count": in_use},
             )
         if reassign_to is not None:
             if reassign_to == slug:
                 raise ValidationError("cannot reassign a status to itself")
             if reassign_to not in self._statuses_by_slug:
-                raise ValidationError(f"status '{reassign_to}' not found")
+                raise ValidationError(
+                    f"status '{reassign_to}' not found",
+                    key="status_not_found",
+                    placeholders={"slug": reassign_to},
+                )
 
         moved = self._reassign_status(slug, reassign_to) if reassign_to is not None else []
         del self._statuses_by_slug[slug]
@@ -359,7 +373,9 @@ class Repository:
         if isinstance(area_id, str):
             candidate = area_id.strip()
             if not candidate:
-                raise ValidationError("area_id must be a non-empty string or null")
+                raise ValidationError(
+                    "area_id must be a non-empty string or null", key="area_blank"
+                )
             return candidate, candidate != current_area
         raise ValidationError("area_id must be a string or null")
 
@@ -398,11 +414,18 @@ class Repository:
         target_parent_id: uuid.UUID | None,
     ) -> None:
         if target_parent_id is not None and str(target_parent_id) not in self._locations_by_id:
-            raise ValidationError("new_parent_id must reference an existing location")
+            raise ValidationError(
+                "new_parent_id must reference an existing location", key="parent_not_found"
+            )
         if str(target_parent_id) == location_key:
-            raise ValidationError("cannot move a location under itself")
+            raise ValidationError(
+                "cannot move a location under itself", key="location_under_itself"
+            )
         if str(target_parent_id) in self._collect_descendant_ids(location_key):
-            raise ValidationError("cannot move a location under one of its descendants")
+            raise ValidationError(
+                "cannot move a location under one of its descendants",
+                key="location_under_descendant",
+            )
 
     def _add_location(self, loc: Location) -> None:
         self._locations_by_id[str(loc.id)] = loc
@@ -570,7 +593,7 @@ class Repository:
     def get_item(self, item_id: str | uuid.UUID) -> Item:
         item = self._items_by_id.get(str(item_id))
         if item is None:
-            raise NotFoundError("item not found")
+            raise NotFoundError("item not found", key="item_not_found")
         return item
 
     def _item_at_version(self, item_id: str | uuid.UUID, expected_version: int | None) -> Item:
@@ -579,7 +602,9 @@ class Repository:
         current = self.get_item(item_id)
         if expected_version is not None and current.version != expected_version:
             raise ConflictError(
-                f"version conflict: expected {expected_version}, actual {current.version}"
+                f"version conflict: expected {expected_version}, actual {current.version}",
+                key="version_conflict",
+                placeholders={"expected": expected_version, "actual": current.version},
             )
         return current
 
@@ -663,10 +688,11 @@ class Repository:
         key = str(item_id)
         current = self.get_item(key)
         if current.reminder_date is None:
-            raise ValidationError("item has no reminder to bump")
+            raise ValidationError("item has no reminder to bump", key="reminder_missing")
         if current.reminder_interval is None:
             raise ValidationError(
-                "a reminder with no interval has no next occurrence; clear it instead"
+                "a reminder with no interval has no next occurrence; clear it instead",
+                key="reminder_without_interval",
             )
 
         anchor = _parse_reminder_date(current.reminder_anchor or current.reminder_date, "anchor")
@@ -722,7 +748,9 @@ class Repository:
         same_kind = sum(1 for a in current.attachments if a.kind == meta.kind)
         if max_per_kind is not None and same_kind >= max_per_kind:
             raise ValidationError(
-                f"item already has {max_per_kind} attachment(s) of kind '{meta.kind}'"
+                f"item already has {max_per_kind} attachment(s) of kind '{meta.kind}'",
+                key="attachment_limit",
+                placeholders={"max": max_per_kind},
             )
         return self._replace_attachments(
             item_id,
@@ -746,7 +774,7 @@ class Repository:
         wanted = str(attachment_id)
         removed = next((a for a in current.attachments if str(a.id) == wanted), None)
         if removed is None:
-            raise NotFoundError("attachment not found")
+            raise NotFoundError("attachment not found", key="attachment_not_found")
         remaining = [a for a in current.attachments if str(a.id) != wanted]
         updated = self._replace_attachments(item_id, remaining, expected_version=expected_version)
         return updated, removed
@@ -764,7 +792,7 @@ class Repository:
         current = self.get_item(item_id)
         wanted = str(attachment_id)
         if not any(str(a.id) == wanted for a in current.attachments):
-            raise NotFoundError("attachment not found")
+            raise NotFoundError("attachment not found", key="attachment_not_found")
         rewritten = [
             replace(a, title=title.strip()) if str(a.id) == wanted else a
             for a in current.attachments
@@ -786,7 +814,8 @@ class Repository:
         of_kind = {str(a.id) for a in current.attachments if a.kind == kind}
         if sorted(attachment_ids) != sorted(of_kind):
             raise ValidationError(
-                f"reorder must name every attachment of kind '{kind}' exactly once"
+                f"reorder must name every attachment of kind '{kind}' exactly once",
+                key="attachment_order_stale",
             )
         positions = {att_id: order for order, att_id in enumerate(attachment_ids)}
         rewritten = [
@@ -948,7 +977,7 @@ class Repository:
         """Items directly in a location, and in it or any descendant."""
         key = str(location_id)
         if key not in self._locations_by_id:
-            raise NotFoundError("location not found")
+            raise NotFoundError("location not found", key="location_not_found")
         return {
             "direct": len(self._items_by_location_id.get(key, set())),
             "subtree": len(self._items_in_subtree.get(key, set())),
@@ -1026,7 +1055,9 @@ class Repository:
         name = validate_write_name(name)
         parent = parse_uuid4(parent_id, field_name="parent_id") if parent_id is not None else None
         if parent is not None and str(parent) not in self._locations_by_id:
-            raise ValidationError("parent_id must reference an existing location")
+            raise ValidationError(
+                "parent_id must reference an existing location", key="parent_not_found"
+            )
         parsed_area, _ = self._parse_area_change(area_id, None)
         lineage = (
             location_chain_to_root(parent, locations_by_id=self._locations_by_id)
@@ -1053,7 +1084,7 @@ class Repository:
     def get_location(self, location_id: str | uuid.UUID) -> Location:
         loc = self._locations_by_id.get(str(location_id))
         if loc is None:
-            raise NotFoundError("location not found")
+            raise NotFoundError("location not found", key="location_not_found")
         return loc
 
     def iter_locations(self) -> Iterator[Location]:
@@ -1139,9 +1170,13 @@ class Repository:
         key = str(location_id)
         loc = self.get_location(key)
         if self._children_ids_by_parent_id.get(key):
-            raise ValidationError("cannot delete a location that has child locations")
+            raise ValidationError(
+                "cannot delete a location that has child locations", key="location_has_children"
+            )
         if self._items_by_location_id.get(key):
-            raise ValidationError("cannot delete a location that contains items")
+            raise ValidationError(
+                "cannot delete a location that contains items", key="location_has_items"
+            )
 
         self._remove_location(loc)
         LOGGER.debug(

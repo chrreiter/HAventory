@@ -6,6 +6,7 @@ import { activeFilterCount } from './store/store';
 import type { Store } from './store/store';
 import type { ImportPolicy, ImportPreview, ImportSummary } from './store/types';
 import { t, tn } from './i18n';
+import { serverErrorText } from './store/server-error';
 import { discardPrompt } from './ui/discard';
 import type { ConfirmDiscard } from './ui/discard';
 import { ViewportNarrow } from './ui/responsive';
@@ -332,8 +333,7 @@ export class HostSurfaces {
       this.importPreview = (await this.getStore()?.previewImport(document, policy)) ?? null;
     } catch (err) {
       this.importPreview = null;
-      this.importError =
-        (err as { message?: string })?.message ?? t('hv.surfaces.importCheckFailed');
+      this.importError = serverErrorText(err, t('hv.surfaces.importCheckFailed'));
     } finally {
       this.importBusy = false;
       this.host.requestUpdate();
@@ -371,7 +371,7 @@ export class HostSurfaces {
           counts: {},
         };
       } else {
-        this.importError = anyErr?.message ?? t('hv.surfaces.importFailed');
+        this.importError = serverErrorText(err, t('hv.surfaces.importFailed'));
       }
     } finally {
       this.importBusy = false;

@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { serverErrorText } from './server-error';
 import type {
   AnyEventPayload,
   AttachmentKind,
@@ -1280,7 +1281,7 @@ export class Store {
         // to each op in the chunk.
         const error = {
           code: errorCode(err),
-          message: String((err as { message?: unknown } | undefined)?.message ?? t('hv.store.batchFailed')),
+          message: serverErrorText(err, t('hv.store.batchFailed')),
         };
         for (const op of chunk) failed.push({ op, error, itemId: opTargetId(op) });
       }
@@ -1346,9 +1347,7 @@ export class Store {
       id: `${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
       code,
       // A transport rejection carries no text worth showing.
-      message: transport
-        ? t('hv.store.transportError')
-        : String(anyErr?.message ?? t('hv.store.unknownError')),
+      message: transport ? t('hv.store.transportError') : serverErrorText(err, t('hv.store.unknownError')),
       context: (anyErr?.context ?? anyErr?.data ?? undefined) as Record<string, unknown> | undefined,
       kind: code === 'conflict' ? 'conflict' : 'error',
       itemId: details?.itemId,

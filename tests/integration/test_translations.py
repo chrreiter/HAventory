@@ -61,3 +61,13 @@ async def test_a_language_nothing_ships_falls_back_to_english(hass: HomeAssistan
 
     swedish = await _catalog(hass, "sv", "config")
     assert swedish[f"component.{DOMAIN}.config.step.user.data.card_title"] == "Card title"
+
+
+async def test_german_service_refusals_resolve(hass: HomeAssistant) -> None:
+    """The sentence Home Assistant's frontend shows for a refused service call."""
+
+    exceptions = await _catalog(hass, "de", "exceptions")
+    key = f"component.{DOMAIN}.exceptions.location_has_items.message"
+    assert exceptions[key] == (
+        "An diesem Ort befinden sich noch Gegenstände. Verschiebe oder lösche sie zuerst."
+    )

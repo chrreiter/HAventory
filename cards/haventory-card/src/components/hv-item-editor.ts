@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { serverErrorText } from '../store/server-error';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -91,10 +92,9 @@ const removeCopy = (kind: AttachmentKind): { heading: string; message: string } 
         message: t('hv.editor.removePhoto.message'),
       };
 
-/** The message on a rejected command, whatever shape the rejection arrived in. */
+/** The refusal on a rejected command, whatever shape the rejection arrived in. */
 function errorText(err: unknown, fallback = t('hv.editor.upload.failed')): string {
-  const message = (err as { message?: unknown } | null)?.message;
-  return typeof message === 'string' && message ? message : fallback;
+  return serverErrorText(err, fallback);
 }
 
 /**

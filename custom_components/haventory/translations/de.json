@@ -420,5 +420,151 @@
         }
       }
     }
+  },
+  "exceptions": {
+    "not_loaded": {
+      "message": "HAventory ist gerade nicht geladen. Warte, bis es fertig gestartet ist, oder aktiviere die Integration erneut."
+    },
+    "item_not_found": {
+      "message": "Diesen Gegenstand gibt es nicht mehr. Vielleicht hat ihn jemand gelöscht."
+    },
+    "version_conflict": {
+      "message": "Dieser Gegenstand wurde zwischenzeitlich geändert (erwartete Version {expected}, aktuell {actual}). Lade ihn neu und wiederhole die Änderung."
+    },
+    "location_not_found": {
+      "message": "Diesen Ort gibt es nicht mehr. Vielleicht hat ihn jemand gelöscht."
+    },
+    "parent_not_found": {
+      "message": "Den übergeordneten Ort gibt es nicht mehr."
+    },
+    "location_under_itself": {
+      "message": "Ein Ort kann nicht unter sich selbst verschoben werden."
+    },
+    "location_under_descendant": {
+      "message": "Ein Ort kann nicht unter einen seiner eigenen Unterorte verschoben werden."
+    },
+    "location_has_children": {
+      "message": "Dieser Ort hat noch Unterorte. Verschiebe oder lösche sie zuerst."
+    },
+    "location_has_items": {
+      "message": "An diesem Ort befinden sich noch Gegenstände. Verschiebe oder lösche sie zuerst."
+    },
+    "area_blank": {
+      "message": "Der Bereich darf nicht leer sein. Lass ihn weg oder setze ihn auf null, um ihn zu entfernen."
+    },
+    "area_not_found": {
+      "message": "Home Assistant kennt keinen Bereich mit dieser ID."
+    },
+    "item_id_required": {
+      "message": "Eine Gegenstands-ID ist erforderlich."
+    },
+    "invalid_uuid": {
+      "message": "{field} ist keine gültige ID."
+    },
+    "name_required": {
+      "message": "Ein Name ist erforderlich."
+    },
+    "name_too_long": {
+      "message": "Der Name darf höchstens {max} Zeichen lang sein."
+    },
+    "text_too_long": {
+      "message": "{field} darf höchstens {max} Zeichen lang sein."
+    },
+    "quantity_negative": {
+      "message": "Die Menge darf nicht negativ sein."
+    },
+    "low_stock_threshold_negative": {
+      "message": "Die Bestandsschwelle darf nicht negativ sein."
+    },
+    "tag_too_long": {
+      "message": "Ein Label darf höchstens {max} Zeichen lang sein."
+    },
+    "tags_too_many": {
+      "message": "Ein Gegenstand kann höchstens {max} Labels tragen."
+    },
+    "custom_fields_too_many": {
+      "message": "Ein Gegenstand kann höchstens {max} eigene Felder tragen."
+    },
+    "custom_field_key_blank": {
+      "message": "Ein eigenes Feld braucht einen Namen."
+    },
+    "custom_field_key_too_long": {
+      "message": "Der Name eines eigenen Feldes darf höchstens {max} Zeichen lang sein."
+    },
+    "custom_field_value_too_long": {
+      "message": "Der Wert eines eigenen Feldes darf höchstens {max} Zeichen lang sein."
+    },
+    "date_format": {
+      "message": "{field} muss ein Datum im Format JJJJ-MM-TT sein."
+    },
+    "date_invalid": {
+      "message": "{field} ist kein gültiges Kalenderdatum."
+    },
+    "due_date_not_checked_out": {
+      "message": "Ein Rückgabedatum kann nur bei einem ausgeliehenen Gegenstand gesetzt werden."
+    },
+    "status_unknown": {
+      "message": "Diesen Status gibt es nicht. Verfügbar: {statuses}."
+    },
+    "status_label_required": {
+      "message": "Ein Status braucht eine Bezeichnung."
+    },
+    "status_label_too_long": {
+      "message": "Die Bezeichnung eines Status darf höchstens {max} Zeichen lang sein."
+    },
+    "status_exists": {
+      "message": "Einen Status „{slug}“ gibt es schon."
+    },
+    "status_not_found": {
+      "message": "Den Status „{slug}“ gibt es nicht mehr."
+    },
+    "status_in_use": {
+      "message": "Der Status „{slug}“ wird noch von Gegenständen verwendet (Anzahl: {count}). Wähle zuerst einen Status, auf den sie verschoben werden."
+    },
+    "status_order_stale": {
+      "message": "Die Liste der Status hat sich zwischenzeitlich geändert. Lade neu und sortiere erneut."
+    },
+    "reminder_missing": {
+      "message": "Dieser Gegenstand hat keine Erinnerung."
+    },
+    "reminder_without_interval": {
+      "message": "Eine einmalige Erinnerung hat kein nächstes Datum. Entferne sie stattdessen."
+    },
+    "reminder_unit_invalid": {
+      "message": "Die Einheit der Wiederholung muss eine der folgenden sein: {units}."
+    },
+    "reminder_count_too_small": {
+      "message": "Die Wiederholung der Erinnerung muss mindestens 1 sein."
+    },
+    "reminder_count_too_large": {
+      "message": "Die Wiederholung der Erinnerung darf höchstens {max} sein."
+    },
+    "reminder_interval_without_date": {
+      "message": "Eine wiederkehrende Erinnerung braucht ein Startdatum."
+    },
+    "attachment_too_large": {
+      "message": "Die Datei ist zu groß (Größe: {size} Byte, Grenze: {max} Byte)."
+    },
+    "attachment_empty": {
+      "message": "Die Datei ist leer."
+    },
+    "attachment_type": {
+      "message": "Dieser Dateityp wird hier nicht akzeptiert. Akzeptiert: {types}."
+    },
+    "attachment_limit": {
+      "message": "Mehr Anhänge dieser Art sind bei diesem Gegenstand nicht möglich (Höchstzahl: {max})."
+    },
+    "attachment_not_found": {
+      "message": "Diesen Anhang gibt es nicht mehr. Vielleicht hat ihn jemand entfernt."
+    },
+    "attachment_order_stale": {
+      "message": "Die Anhänge haben sich zwischenzeitlich geändert. Lade neu und sortiere erneut."
+    },
+    "upload_not_found": {
+      "message": "Die hochgeladene Datei ist nicht mehr da. Lade sie erneut hoch."
+    },
+    "import_document_invalid": {
+      "message": "Die Importdatei ist nicht gültig. Die Liste darunter nennt jedes Problem."
+    }
   }
 }

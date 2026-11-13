@@ -24,6 +24,17 @@ the `items/bulk` kinds and the `quick_filters` vocabulary.
 - Error `data` carries structured context: `op` and selected request fields such as
   `item_id` or `expected_version`. A request `name` is reported as `item_name`,
   `location_name` or `ctx_name`, because `name` is a reserved log-record key.
+- A refusal a person can meet also names its translation, under the field names Home
+  Assistant's own error envelope uses:
+```json
+{"code": "conflict", "message": "version conflict: expected 3, actual 4", "translation_domain": "haventory", "translation_key": "version_conflict", "translation_placeholders": {"expected": "3", "actual": "4"}}
+```
+  `translation_key` names an entry under `exceptions` in `strings.json`, and every
+  placeholder value is a string. The three fields are absent together on a refusal that
+  names no key, and a client shows `message` then; it does the same for a key it does not
+  know, so a newer backend never puts a raw key on screen. `message` stays English: it is
+  what the log carries. [`data_shapes.md`](data_shapes.md#refusal-translations) says which
+  refusals carry a key.
 - Events arrive in Home Assistant's event wrapper, under the subscription's `id`:
 ```json
 {"id": 100, "type": "event", "event": {"domain": "haventory", "topic": "items", "action": "created", "ts": "2024-01-01T00:00:00.123456+00:00", "item": {"id": "..."}}}
@@ -41,7 +52,8 @@ the `items/bulk` kinds and the `quick_filters` vocabulary.
 
 Every `haventory/*` command runs inside the same guard (`ws_guard`):
 
-- Domain errors carry the exception message plus the `data` context above.
+- Domain errors carry the exception message plus the `data` context above, and the
+  translation fields when the refusal names a key.
 - An unexpected exception answers `unknown_error`. Exception text and tracebacks never
   reach the client; the traceback goes to the server log.
 - A single-item command, the `items/bulk` row naming the same `kind` and the `haventory.*`
@@ -100,6 +112,11 @@ reload. In each of those states:
 - **The next setup restores everything.** Teardown flushes the inventory and setup reads it
   back. Removal keeps the store file too, so re-adding the integration brings the inventory
   with it ([`installing.md`](installing.md#removing-haventory)).
+
+The `haventory.*` services behave the same way. They are registered once from the
+component's `async_setup`, not per entry, so an automation that names one still validates
+in any of these states, and a call refuses with `NotLoadedError` (key `not_loaded`), a
+`ServiceValidationError`, until an entry is loaded again.
 
 A client cannot tell a reload from a removal by code alone. Re-opening the subscriptions on
 a bounded backoff covers both: a reload answers again within seconds, and a removal runs the
@@ -406,7 +423,7 @@ stale. Unless a command says otherwise it answers the updated `<Item>` and emits
   - Supported `kind` values: `item_update`, `item_delete`, `item_move`, `item_adjust_quantity`, `item_set_quantity`, `item_check_out`, `item_check_in`, `item_add_tags`, `item_remove_tags`, `item_update_custom_fields`, `item_set_low_stock_threshold`.
   - Each `payload` is the payload of the single-item command of the same name, `item_id`
     and `expected_version` included.
-  - Result: `{results: { [op_id: string]: {success: true, result: <Item>} | {success: false, error: {code, message, context}} }}`
+  - Result: `{results: { [op_id: string]: {success: true, result: <Item>} | {success: false, error: {code, message, context, translation_domain?, translation_key?, translation_placeholders?}} }}`
   - A failing operation fails only its own row; the rest still run, and the successful ones
     persist in one shared write. Each successful row emits its own `items` event, and the
     batch emits one `stats/counts` if any row succeeded. A failed *write* fails the whole

@@ -324,8 +324,12 @@ export interface BulkOperation {
 /** Per-operation failure. The backend names this key `context`, not `data`. */
 export interface BulkOpError {
   code: string;
+  /** English; what the row shows when the catalog has no `translation_key` for it. */
   message: string;
   context?: Record<string, unknown>;
+  translation_domain?: string;
+  translation_key?: string;
+  translation_placeholders?: Record<string, string>;
 }
 
 export type BulkOpResult = { success: true; result: Item } | { success: false; error: BulkOpError };
@@ -368,7 +372,11 @@ export interface ExportDocument {
 
 export interface ImportError {
   path: string;
+  /** English; the row shows it when the catalog has no `translation_key` for it. */
   message: string;
+  translation_domain?: string;
+  translation_key?: string;
+  translation_placeholders?: Record<string, string>;
 }
 
 /**

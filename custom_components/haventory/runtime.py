@@ -106,10 +106,14 @@ def loaded_runtime(hass: HomeAssistant) -> HAventoryRuntime:
 
     entry = find_entry(hass)
     if entry is None:
-        raise NotLoadedError("no HAventory config entry; add the integration")
+        raise NotLoadedError("no HAventory config entry; add the integration", key="not_loaded")
     if entry.state is not ConfigEntryState.LOADED:
-        raise NotLoadedError("HAventory config entry is not loaded; run integration setup")
+        raise NotLoadedError(
+            "HAventory config entry is not loaded; run integration setup", key="not_loaded"
+        )
     runtime = getattr(entry, "runtime_data", None)
     if not isinstance(runtime, HAventoryRuntime):
-        raise NotLoadedError("HAventory runtime not initialized; run integration setup")
+        raise NotLoadedError(
+            "HAventory runtime not initialized; run integration setup", key="not_loaded"
+        )
     return runtime
