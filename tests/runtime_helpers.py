@@ -37,6 +37,7 @@ from typing import Any
 
 from custom_components.haventory import (
     async_remove_entry,
+    async_setup,
     async_setup_entry,
     async_unload_entry,
 )
@@ -139,6 +140,10 @@ def repo_of(hass: HomeAssistant) -> Repository:
     return runtime_of(hass).repository
 
 
+#: The components `setup_entry` has run `async_setup` for, kept on the `hass` it ran on.
+_SET_UP_COMPONENTS = "__set_up_components__"
+
+
 async def setup_entry(hass: HomeAssistant, entry: Any = None, **kwargs: Any) -> Any:
     """Run the integration's real setup the way Home Assistant runs it.
 
@@ -151,6 +156,11 @@ async def setup_entry(hass: HomeAssistant, entry: Any = None, **kwargs: Any) -> 
 
     if entry is None:
         entry = ConfigEntry(**kwargs)
+    # Home Assistant runs the component's `async_setup` once, before its first entry.
+    components = hass.data.setdefault(_SET_UP_COMPONENTS, set())
+    if DOMAIN not in components:
+        assert await async_setup(hass, {}) is True
+        components.add(DOMAIN)
     entry.state = ConfigEntryState.SETUP_IN_PROGRESS
     hass.config_entries.add(entry)
     ok = await async_setup_entry(hass, entry)

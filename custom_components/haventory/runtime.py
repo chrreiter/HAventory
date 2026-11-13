@@ -98,8 +98,10 @@ def find_runtime(hass: HomeAssistant) -> HAventoryRuntime | None:
 def loaded_runtime(hass: HomeAssistant) -> HAventoryRuntime:
     """The runtime of a `LOADED` entry, or `NotLoadedError`.
 
-    Home Assistant cannot unregister a WebSocket command or a service, so this
-    refusal is what makes them answer `storage_error` once the entry is gone.
+    Home Assistant cannot unregister a WebSocket command, and the services stay
+    registered from `async_setup` so an automation naming one still validates,
+    so this refusal is what makes both answer `storage_error` while no entry is
+    loaded.
     """
 
     entry = find_entry(hass)

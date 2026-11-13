@@ -89,8 +89,9 @@ Op = Callable[[HomeAssistant, dict[str, Any]], Written]
 
 
 def _repo(hass: HomeAssistant) -> Repository:
-    # Neither a command nor a service can be unregistered, so this lookup is
-    # what makes both refuse once the entry is not loaded.
+    # A WebSocket command cannot be unregistered and the services are kept
+    # registered on purpose, so this lookup is what makes both refuse while the
+    # entry is not loaded.
     return loaded_runtime(hass).repository
 
 

@@ -101,6 +101,18 @@ _CORRUPT_SAMPLE_IDS = 3
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
+async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
+    """Register the `haventory.*` services, once per Home Assistant run.
+
+    Here rather than per entry so an automation that names a service still
+    validates while the entry is unloaded or failed; each handler refuses
+    through `loaded_runtime` until an entry is loaded again.
+    """
+
+    services_mod.setup(hass)
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) -> bool:
     """Set up HAventory from a config entry."""
     # First, so a retired bundle is gone before the card directory is served.
@@ -138,7 +150,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
     # After the update listener above, which an options change has to reach.
     await todo_mod.async_setup(hass, entry)
 
-    services_mod.setup(hass)
     ws_mod.setup(hass)
 
     await hass.config_entries.async_forward_entry_setups(entry, list(PLATFORMS))
