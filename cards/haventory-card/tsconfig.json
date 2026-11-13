@@ -19,5 +19,5 @@
     "checkJs": false,
     "types": ["vitest/globals", "node"]
   },
-  "include": ["src", "vite.config.ts", "eslint.config.js", "e2e"]
+  "include": ["src", "vite.config.ts", "eslint.config.js", "eslint-plugins.d.ts", "e2e"]
 }
