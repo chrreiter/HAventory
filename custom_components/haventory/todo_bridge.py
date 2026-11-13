@@ -14,7 +14,7 @@ a to-do list that refuses is a warning, never a rollback.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -32,6 +32,9 @@ from .const import (
 )
 from .logs import context_logger
 from .runtime import HAventoryRuntime, find_runtime
+
+if TYPE_CHECKING:
+    from homeassistant.core import Event
 
 LOGGER = context_logger(__name__)
 
@@ -87,7 +90,7 @@ async def async_setup(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     # Both events, because neither covers the other: an edit that leaves an item
     # low fires only `item_changed`, and the bulk path fires only `low_stock`.
-    async def _on_inventory_event(_event: Any) -> None:
+    async def _on_inventory_event(_event: Event) -> None:
         await async_reconcile(hass)
 
     for event_type in (EVENT_ITEM_CHANGED, EVENT_LOW_STOCK):
@@ -108,7 +111,7 @@ async def async_setup(hass: HomeAssistant, entry: ConfigEntry) -> None:
             remove_started()
             remove_started = None
 
-    async def _on_started(_event: Any) -> None:
+    async def _on_started(_event: Event) -> None:
         _stop_waiting_for_start()
         await async_reconcile(hass)
 

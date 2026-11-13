@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import functools
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
@@ -42,9 +42,7 @@ def open_subscriptions(
     runtime = find_runtime(hass)
     if runtime is None:
         return {}
-    return cast(
-        "dict[websocket_api.ActiveConnection, dict[int, Subscription]]", runtime.subscriptions
-    )
+    return runtime.subscriptions
 
 
 def register_subscription(
@@ -75,20 +73,24 @@ def unregister_subscription(
     return removed
 
 
-def _cleanup_subscriptions_for_conn(hass: HomeAssistant, conn: object) -> None:
-    open_subscriptions(hass).pop(cast("websocket_api.ActiveConnection", conn), None)
+def _cleanup_subscriptions_for_conn(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection
+) -> None:
+    open_subscriptions(hass).pop(conn, None)
 
 
-def _drop_subscription(hass: HomeAssistant, conn: object, sub_id: int) -> None:
+def _drop_subscription(
+    hass: HomeAssistant, conn: websocket_api.ActiveConnection, sub_id: int
+) -> None:
     """Remove one subscription; safe to call repeatedly and after cleanup."""
 
     subs_all = open_subscriptions(hass)
-    subs_for_conn = subs_all.get(cast("websocket_api.ActiveConnection", conn))
+    subs_for_conn = subs_all.get(conn)
     if subs_for_conn is None:
         return
     subs_for_conn.pop(sub_id, None)
     if not subs_for_conn:
-        subs_all.pop(cast("websocket_api.ActiveConnection", conn), None)
+        subs_all.pop(conn, None)
 
 
 def _register_close_listener(hass: HomeAssistant, conn: websocket_api.ActiveConnection) -> None:

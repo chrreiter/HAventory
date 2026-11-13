@@ -44,6 +44,7 @@ from .models import (
     DEFAULT_ITEM_STATUS,
     EMPTY_LOCATION_PATH,
     ITEM_STATUSES,
+    ItemFilter,
     Location,
     build_location_path_from_map,
     is_canonical_utc_timestamp,
@@ -100,7 +101,7 @@ _LOCATION_SOURCE_FIELDS: tuple[str, ...] = ("name", "parent_id", "area_id")
 def build_export_document(
     repo: Repository,
     *,
-    item_filter: dict[str, Any] | None = None,
+    item_filter: ItemFilter | None = None,
     schema_version: int,
 ) -> dict[str, Any]:
     """Build a versioned export document from ``repo``.
@@ -110,7 +111,7 @@ def build_export_document(
     """
 
     locations_by_id = {str(loc.id): loc for loc in repo.iter_locations()}
-    page = repo.list_items(flt=item_filter, limit=None)  # type: ignore[arg-type]
+    page = repo.list_items(flt=item_filter, limit=None)
     items = sorted(page["items"], key=lambda it: str(it.id))
     if item_filter is None:
         location_ids = set(locations_by_id)

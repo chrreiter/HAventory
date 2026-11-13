@@ -28,6 +28,7 @@ from .exceptions import NotLoadedError
 from .repository import Repository
 
 if TYPE_CHECKING:
+    from homeassistant.components.websocket_api import ActiveConnection
     from homeassistant.helpers.storage import Store
 
     # Imported for typing only: `storage.py` reads the runtime, so a module-scope
@@ -72,14 +73,13 @@ class HAventoryRuntime:
     # write's failed save is being undone. Taken before `persist_lock`, never
     # while holding it.
     write_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    subscriptions: dict[Any, dict[int, Subscription]] = field(default_factory=dict)
+    subscriptions: dict[ActiveConnection, dict[int, Subscription]] = field(default_factory=dict)
     # Which items were low when the last mutation was announced. Seeded at setup
     # so a restart re-announces nothing, and diffed after every mutation.
     low_stock_ids: frozenset[str] = frozenset()
     todo: TodoBridgeState = field(default_factory=TodoBridgeState)
 
 
-# A `type` statement is evaluated lazily, so a non-generic stub `ConfigEntry` works too.
 type HAventoryConfigEntry = ConfigEntry[HAventoryRuntime]
 
 
@@ -96,6 +96,8 @@ def find_runtime(hass: HomeAssistant) -> HAventoryRuntime | None:
     entry = find_entry(hass)
     if entry is None:
         return None
+    # Home Assistant deletes `runtime_data` once an unload returns, so plain
+    # attribute access raises on an entry that was ever unloaded.
     runtime = getattr(entry, "runtime_data", None)
     return runtime if isinstance(runtime, HAventoryRuntime) else None
 

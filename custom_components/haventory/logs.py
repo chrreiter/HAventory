@@ -48,7 +48,7 @@ def render_context(context: Mapping[str, Any]) -> str:
     return " ".join(f"{key}={_render_value(value)}" for key, value in fields)
 
 
-class ContextLogger(logging.LoggerAdapter):  # type: ignore[type-arg]
+class ContextLogger(logging.LoggerAdapter[logging.Logger]):
     """A logger whose `extra=` context is also written into the message."""
 
     def log(self, level: int, msg: Any, *args: Any, **kwargs: Any) -> None:
