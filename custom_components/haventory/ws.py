@@ -141,9 +141,8 @@ def ws_guard(
                 ctx = _context_from_msg(op, msg, context_fields)
                 LOGGER.exception("Unexpected error in WS handler", extra={**ctx})
                 error = {"code": "unknown_error", "message": UNEXPECTED_ERROR_MESSAGE}
-            conn.send_message(_error_envelope(msg.get("id", 0), error, ctx))
+            conn.send_message(_error_envelope(msg["id"], error, ctx))
 
-        wrapper._haventory_ws_guard = True  # type: ignore[attr-defined]  # read by a test
         return wrapper
 
     return decorator
@@ -262,13 +261,13 @@ async def _mutate(
     if payload is None:
         payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
     written = await ops.commit(hass, name, payload)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), _answer(written)))
+    conn.send_message(websocket_api.result_message(msg["id"], _answer(written)))
 
 
 @_command("haventory/ping", {vol.Optional("echo"): object})
 async def ws_ping(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     result = {"echo": msg.get("echo"), "ts": datetime.now(UTC).isoformat()}
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 def _schema_version(hass: HomeAssistant) -> int:
@@ -278,7 +277,7 @@ def _schema_version(hass: HomeAssistant) -> int:
 @_command("haventory/version")
 async def ws_version(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     result = {"integration_version": INTEGRATION_VERSION, "schema_version": _schema_version(hass)}
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 @_command("haventory/config")
@@ -303,12 +302,12 @@ async def ws_config(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
             "max_attachment_bytes": MAX_ATTACHMENT_BYTES,
         },
     }
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 @_command("haventory/stats")
 async def ws_stats(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), _repo(hass).get_counts()))
+    conn.send_message(websocket_api.result_message(msg["id"], _repo(hass).get_counts()))
 
 
 @_command("haventory/distinct_values", {vol.Optional("filter"): object})
@@ -318,7 +317,7 @@ async def ws_distinct_values(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> Non
     item_filter = msg.get("filter")
     validate_item_filter(item_filter)
     result = _repo(hass).get_distinct_field_values(item_filter)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 @_command("haventory/health")
@@ -326,7 +325,7 @@ async def ws_health(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     # `healthy` and `issues` are constant (an index disagreeing with its data is
     # a bug the test suite catches), but clients read them.
     result = {"healthy": True, "issues": [], "counts": _repo(hass).get_counts()}
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 @_command(
@@ -360,16 +359,16 @@ async def ws_subscribe(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
         sub["include_subtree"] = bool(msg.get("include_subtree"))
     if "inspection_overdue_only" in msg:
         sub["inspection_overdue_only"] = bool(msg.get("inspection_overdue_only"))
-    register_subscription(hass, conn, int(msg.get("id", 0)), sub)
+    register_subscription(hass, conn, msg["id"], sub)
     LOGGER.debug(
         "Subscribed",
         extra={
             "op": "subscribe",
-            "subscription_id": msg.get("id", 0),
+            "subscription_id": msg["id"],
             "topic": topic,
         },
     )
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
+    conn.send_message(websocket_api.result_message(msg["id"], None))
 
 
 @_command("haventory/unsubscribe", {vol.Required("subscription"): object}, ("subscription",))
@@ -390,7 +389,7 @@ async def ws_unsubscribe(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
             "removed": removed,
         },
     )
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
+    conn.send_message(websocket_api.result_message(msg["id"], None))
 
 
 @_command(
@@ -420,7 +419,7 @@ async def ws_item_create(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
 @_command("haventory/item/get", {vol.Required("item_id"): object}, ("item_id",))
 async def ws_item_get(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     item = _repo(hass).get_item(msg["item_id"])
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialize_item(hass, item)))
+    conn.send_message(websocket_api.result_message(msg["id"], serialize_item(hass, item)))
 
 
 @_command(
@@ -763,7 +762,7 @@ async def ws_items_bulk(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
                 "failed": len(operations) - successful,
             },
         )
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), {"results": results}))
+    conn.send_message(websocket_api.result_message(msg["id"], {"results": results}))
 
 
 @_command(
@@ -793,7 +792,7 @@ async def ws_item_list(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
         "next_cursor": page.get("next_cursor"),
         "total": page["total"],
     }
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 @_command(
@@ -812,7 +811,7 @@ async def ws_location_create(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> Non
 @_command("haventory/location/get", {vol.Required("location_id"): object}, ("location_id",))
 async def ws_location_get(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     loc = _repo(hass).get_location(msg["location_id"])
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialize_location(loc)))
+    conn.send_message(websocket_api.result_message(msg["id"], serialize_location(loc)))
 
 
 @_command(
@@ -837,7 +836,7 @@ async def ws_location_delete(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> Non
 @_command("haventory/location/list")
 async def ws_location_list(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     data = [serialize_location(loc) for loc in _repo(hass).iter_locations()]
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), data))
+    conn.send_message(websocket_api.result_message(msg["id"], data))
 
 
 @_command("haventory/location/tree", {vol.Optional("filter"): object})
@@ -880,7 +879,7 @@ async def ws_location_tree(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
         return node
 
     tree = [build_node(root) for root in sorted(repo.children_of(None))]
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), tree))
+    conn.send_message(websocket_api.result_message(msg["id"], tree))
 
 
 @_command(
@@ -895,7 +894,7 @@ async def ws_location_move_subtree(hass: HomeAssistant, conn: _Conn, msg: _Msg) 
 @_command("haventory/status/list")
 async def ws_status_list(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     data = [serialize_status_definition(d) for d in _repo(hass).list_statuses()]
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), data))
+    conn.send_message(websocket_api.result_message(msg["id"], data))
 
 
 @_command(
@@ -951,7 +950,7 @@ async def ws_status_delete(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
 @_command("haventory/areas/list")
 async def ws_areas_list(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     areas = [{"id": a.id, "name": a.name} for a in ar.async_get(hass).async_list_areas()]
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), {"areas": areas}))
+    conn.send_message(websocket_api.result_message(msg["id"], {"areas": areas}))
 
 
 @_command("haventory/export", {vol.Optional("filter"): object})
@@ -961,7 +960,7 @@ async def ws_export(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     document = import_export.build_export_document(
         _repo(hass), item_filter=item_filter, schema_version=_schema_version(hass)
     )
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), document))
+    conn.send_message(websocket_api.result_message(msg["id"], document))
 
 
 async def _count_missing_attachments(hass: HomeAssistant, target: dict[str, Any]) -> dict[str, int]:
@@ -1014,7 +1013,7 @@ async def ws_import_preview(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None
     )
     if target is not None:
         report["attachments"] = await _count_missing_attachments(hass, target)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), report))
+    conn.send_message(websocket_api.result_message(msg["id"], report))
 
 
 @_command("haventory/import/execute", _IMPORT_FIELDS)
@@ -1033,7 +1032,7 @@ async def ws_import_execute(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None
         refusal = ValidationError("import document is invalid", key="import_document_invalid")
         error = {"code": "validation_error", "message": str(refusal), **translation_fields(refusal)}
         conn.send_message(
-            _error_envelope(msg.get("id", 0), error, {"op": "import_execute", "errors": errors})
+            _error_envelope(msg["id"], error, {"op": "import_execute", "errors": errors})
         )
         return
 
@@ -1056,7 +1055,7 @@ async def ws_import_execute(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None
             "locations_total": summary["locations"]["total"],
         },
     )
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), summary))
+    conn.send_message(websocket_api.result_message(msg["id"], summary))
 
 
 # Home Assistant keys its command registry by type, so registering these again
