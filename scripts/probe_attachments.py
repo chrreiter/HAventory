@@ -39,7 +39,8 @@ browser's own canvas produces is the browser smoke's business; what survives the
 trip to disk is this file's.
 
 Type-checked manually — `scripts/` sits outside mypy's `files`:
-  uv run --group probes mypy scripts/probe_attachments.py
+  MYPYPATH=scripts uv run --group probes mypy --python-executable .venv/bin/python \
+    scripts/probe_attachments.py
 
 Exit codes: 0 all probes passed, 1 a probe failed, 2 missing configuration,
 3 the instance stopped answering.

@@ -530,7 +530,7 @@ def _cache_control(request: Any) -> str:
     return "private, no-store"
 
 
-class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
+class HaventoryMediaView(HomeAssistantView):
     """Serve one attachment, to an authenticated Home Assistant user.
 
     Not `/local` and not `/haventory_static`: both are served without

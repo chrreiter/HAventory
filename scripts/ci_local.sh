@@ -10,8 +10,7 @@ ruff_run check .
 info 'Backend: ruff format --check...'
 ruff_run format --check .
 
-info 'Backend: mypy...'
-mypy_run
+"$REPO_ROOT/scripts/typecheck.sh"
 
 info 'Backend: offline tests with coverage...'
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest_run -q -p pytest_cov \

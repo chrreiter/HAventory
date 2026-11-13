@@ -12,19 +12,15 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
+from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
-
-try:
-    from homeassistant.components.file_upload import process_uploaded_file
-except ImportError:  # pragma: no cover - offline harness without the component
-    process_uploaded_file = None
 
 from . import import_export, ops
 from . import media as media_mod
@@ -67,11 +63,14 @@ from .subscriptions import register_subscription, unregister_subscription
 
 if TYPE_CHECKING:
     from homeassistant.components.websocket_api import ActiveConnection as _Conn
+    from homeassistant.components.websocket_api import (
+        AsyncWebSocketCommandHandler,
+        WebSocketCommandHandler,
+    )
 
 LOGGER = context_logger(__name__)
 
 _Msg = dict[str, Any]
-_WSHandler = Callable[[HomeAssistant, "_Conn", _Msg], Awaitable[Any]]
 _DOMAIN_ERRORS = (ValidationError, NotFoundError, ConflictError, StorageError)
 
 # Sent when a non-domain exception escapes a handler; the details stay in the log.
@@ -117,7 +116,9 @@ def _context_from_msg(op: str, msg: _Msg, fields: tuple[str, ...]) -> dict[str, 
     return {"op": op, **{(name_key if f == "name" else f): msg[f] for f in fields if f in msg}}
 
 
-def ws_guard(op: str, context_fields: tuple[str, ...] = ()) -> Callable[[_WSHandler], _WSHandler]:
+def ws_guard(
+    op: str, context_fields: tuple[str, ...] = ()
+) -> Callable[[AsyncWebSocketCommandHandler], AsyncWebSocketCommandHandler]:
     """Map a handler's exceptions to the contract's error envelope.
 
     Every command refuses once no loaded entry owns the data: Home Assistant
@@ -126,12 +127,13 @@ def ws_guard(op: str, context_fields: tuple[str, ...] = ()) -> Callable[[_WSHand
     `unknown_error` with a generic message and its traceback in the log.
     """
 
-    def decorator(func: _WSHandler) -> _WSHandler:
+    def decorator(func: AsyncWebSocketCommandHandler) -> AsyncWebSocketCommandHandler:
         @functools.wraps(func)
-        async def wrapper(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> Any:
+        async def wrapper(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
             try:
                 loaded_runtime(hass)
-                return await func(hass, conn, msg)
+                await func(hass, conn, msg)
+                return
             except _DOMAIN_ERRORS as exc:
                 ctx = _context_from_msg(op, msg, context_fields)
                 error = _log_rejection(exc, ctx)
@@ -139,12 +141,9 @@ def ws_guard(op: str, context_fields: tuple[str, ...] = ()) -> Callable[[_WSHand
                 ctx = _context_from_msg(op, msg, context_fields)
                 LOGGER.exception("Unexpected error in WS handler", extra={**ctx})
                 error = {"code": "unknown_error", "message": UNEXPECTED_ERROR_MESSAGE}
-            # Sent for real Home Assistant; returned for the offline stub.
-            err = _error_envelope(msg.get("id", 0), error, ctx)
-            conn.send_message(err)
-            return err
+            conn.send_message(_error_envelope(msg.get("id", 0), error, ctx))
 
-        wrapper._haventory_ws_guard = True  # type: ignore[attr-defined]  # checked by tests
+        wrapper._haventory_ws_guard = True  # type: ignore[attr-defined]  # read by a test
         return wrapper
 
     return decorator
@@ -152,7 +151,7 @@ def ws_guard(op: str, context_fields: tuple[str, ...] = ()) -> Callable[[_WSHand
 
 def _command(
     command: str, fields: dict[Any, Any] | None = None, context: tuple[str, ...] = ()
-) -> Callable[[_WSHandler], _WSHandler]:
+) -> Callable[[AsyncWebSocketCommandHandler], WebSocketCommandHandler]:
     """Declare a command: its schema, HA's async wrapper and `ws_guard`.
 
     The guard's `op` is the command type after `haventory/`, with `/` as `_`.
@@ -161,7 +160,7 @@ def _command(
     op = command.removeprefix("haventory/").replace("/", "_")
     schema = {vol.Required("type"): command, **(fields or {})}
 
-    def decorator(func: _WSHandler) -> _WSHandler:
+    def decorator(func: AsyncWebSocketCommandHandler) -> WebSocketCommandHandler:
         guarded = websocket_api.async_response(ws_guard(op, context)(func))
         return websocket_api.websocket_command(schema)(guarded)
 
@@ -616,9 +615,6 @@ async def ws_item_attachment_add(hass: HomeAssistant, conn: _Conn, msg: _Msg) ->
     both caps are enforced here.
     """
 
-    if process_uploaded_file is None:  # pragma: no cover - real HA always has it
-        raise StorageError("Home Assistant's file_upload component is unavailable")
-
     kind = msg.get("kind", "picture")
     if kind not in ATTACHMENT_KINDS:
         raise ValidationError(f"kind must be one of: {', '.join(ATTACHMENT_KINDS)}")
@@ -1065,7 +1061,7 @@ async def ws_import_execute(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None
 
 # Home Assistant keys its command registry by type, so registering these again
 # on a reload replaces each handler rather than adding a second.
-HANDLERS: tuple[Any, ...] = (
+HANDLERS: tuple[WebSocketCommandHandler, ...] = (
     ws_ping,
     ws_version,
     ws_config,

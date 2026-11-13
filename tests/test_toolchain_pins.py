@@ -94,14 +94,15 @@ RUFF_TARGET_VERSION = re.compile(r"target-version *= *\"py3(\d\d)\"")
 # (path relative to the repository root, copies naming the series, copies
 # naming the patch-level floor).
 PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
-    ("pyproject.toml", 6, 2),
+    ("pyproject.toml", 5, 2),
     (".github/workflows/ci.yml", 5, 0),
     (".github/workflows/codeql.yml", 1, 0),
     (".github/workflows/ha-latest.yml", 3, 0),
     (".github/workflows/card-smoke.yml", 3, 0),
     ("docs/developing.md", 1, 0),
     ("requirements-integration.txt", 2, 0),
-    ("scripts/test_integration.sh", 4, 0),
+    ("scripts/test_integration.sh", 2, 0),
+    ("scripts/common.sh", 2, 0),
     (".devcontainer/Dockerfile", 1, 0),
     (".devcontainer/develop.sh", 2, 0),
     (".claude/hooks/session-start.sh", 8, 0),

@@ -164,7 +164,7 @@ class HAventoryOptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(step_id="init", data_schema=_options_schema(current))
 
 
-class HAventoryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]  # HA ConfigFlow domain= kwarg; HA is not installed for mypy
+class HAventoryConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for HAventory."""
 
     VERSION = 1

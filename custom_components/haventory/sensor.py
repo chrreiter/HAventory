@@ -14,7 +14,7 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_time_change
@@ -46,7 +46,7 @@ def device_info(entry: ConfigEntry) -> DeviceInfo:
         manufacturer="HAventory",
         model="Inventory",
         sw_version=INTEGRATION_VERSION,
-        entry_type="service",
+        entry_type=DeviceEntryType.SERVICE,
     )
 
 

@@ -89,42 +89,23 @@ quote-style = "preserve"
 "scripts/**" = ["ASYNC240", "ASYNC250"]
 
 [tool.mypy]
-# python_version follows requires-python; mypy takes the series only
-# (HA 2026.7.0 => Python 3.14).
+# python_version follows requires-python; mypy takes the series only.
 python_version = "3.14"
 files = ["custom_components/haventory"]
 namespace_packages = true
 explicit_package_bases = true
-# stubs/ carries minimal local homeassistant .pyi stubs so the core modules
-# type-check against real signatures even though HA is not installed offline.
-mypy_path = "custom_components:stubs"
-# Home Assistant modules not covered by stubs/ (and untyped deps such as
-# voluptuous) resolve to Any rather than failing the run.
-ignore_missing_imports = true
-warn_redundant_casts = true
+mypy_path = "custom_components"
+# Imports resolve against the in-process suite's environment, so the integration
+# is checked against the real Home Assistant at the declared floor, with the
+# aiohttp and voluptuous that release pins. `requirements-integration.txt` pins
+# that environment to the hacs.json floor and nothing here repeats the number;
+# `scripts/typecheck.sh` builds the environment and runs this.
+python_executable = ".venv-integration/bin/python"
+strict = true
 
-# The core modules are held to (per-module) strict mode; the rest of the
-# integration stays at the non-strict baseline.
+# Home Assistant's component packages publish their API by importing it into
+# `__init__.py` without `__all__` (`websocket_api.result_message`,
+# `http.HomeAssistantView`), which is how its own components call it.
 [[tool.mypy.overrides]]
-module = [
-  "haventory.models",
-  "haventory.ops",
-  "haventory.repository",
-  "haventory.runtime",
-  "haventory.serialization",
-  "haventory.storage",
-  "haventory.subscriptions",
-  "haventory.ws",
-]
-disallow_any_generics = true
-disallow_subclassing_any = true
-disallow_untyped_calls = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-disallow_untyped_decorators = true
-warn_unused_ignores = true
-warn_return_any = true
-no_implicit_reexport = true
-strict_equality = true
-extra_checks = true
+module = ["homeassistant.*"]
+implicit_reexport = true

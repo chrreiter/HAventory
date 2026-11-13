@@ -152,6 +152,8 @@ async def announce_store(
     stream: TextIO = sys.stderr,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """Probe the resolved instance and print the banner -- one call per helper."""
+    counts: dict[str, Any] | None
+    why: str | None
     if target.token is None:
         counts, why = None, f"HA_TOKEN is unset (looked in {target.source})"
     else:
