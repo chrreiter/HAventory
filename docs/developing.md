@@ -40,7 +40,9 @@ Run every Python tool through uv (`uv run <tool>`) so it uses the locked environ
   `tests/conftest.py` reads to pick the offline mode.
 - **The card** is Lit, TypeScript, Vite and Vitest with jsdom, formatted by Prettier
   (`cards/haventory-card/.prettierrc.yaml`) and linted by ESLint's flat config
-  (`cards/haventory-card/eslint.config.js`). The versions are the ones `package.json` pins.
+  (`cards/haventory-card/eslint.config.js`): typescript-eslint's type-checked rules, which
+  read the same `tsconfig.json` as `npm run typecheck`, plus the Lit, custom-element and
+  template-accessibility plugins. The versions are the ones `package.json` pins.
 - **pre-commit** runs ruff, codespell and the basic hygiene hooks.
 
 ## The gate
