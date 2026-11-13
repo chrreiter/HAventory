@@ -1,0 +1,4 @@
+# npm writes the lockfile; formatting it would fight every install.
+package-lock.json
+coverage/
+dist/
