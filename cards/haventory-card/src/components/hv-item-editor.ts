@@ -65,6 +65,8 @@ const customFieldTypes = (): { value: CustomFieldType; label: string }[] => [
 /** The two disclosures' holders, named so `aria-controls` can point at them while closed. */
 const LOCATION_TREE_ID = 'editor-location-tree-holder';
 const CATEGORY_LIST_ID = 'editor-category-list';
+/** The category label names the listbox, which has no text of its own, and the combobox with it. */
+const CATEGORY_LABEL_ID = 'editor-category-label';
 
 /**
  * One file the picker is working through. A failed entry keeps the `File` so
@@ -1296,13 +1298,14 @@ export class HVItemEditor extends LitElement {
     const typed = this._model.category.trim();
     const options = this._categoryOptions;
     return html`<div class="cell">
-      <label class="hv-label" for="editor-category">${t('hv.field.category')}</label>
+      <label class="hv-label" id=${CATEGORY_LABEL_ID} for="editor-category">${t('hv.field.category')}</label>
       <div class="combo">
         <input
           id="editor-category"
           class="hv-input"
           data-testid="editor-category"
           role="combobox"
+          aria-labelledby=${CATEGORY_LABEL_ID}
           autocomplete="off"
           placeholder=${t('hv.editor.categoryPlaceholder')}
           aria-autocomplete="list"
@@ -1347,6 +1350,7 @@ export class HVItemEditor extends LitElement {
         class="list-holder"
         role="listbox"
         id=${CATEGORY_LIST_ID}
+        aria-labelledby=${CATEGORY_LABEL_ID}
         data-testid="editor-category-list"
         ?hidden=${!this._categoryOpen}
       >

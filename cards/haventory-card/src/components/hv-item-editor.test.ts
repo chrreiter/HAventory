@@ -850,6 +850,19 @@ describe('hv-item-editor: category picker', () => {
     return input;
   }
 
+  // A listbox is announced by its name when focus moves into it, and it has
+  // no text of its own to fall back on.
+  it('names the listbox and its combobox after the field label', async () => {
+    const el = await mount(null);
+    const label = el.shadowRoot?.querySelector('label[for="editor-category"]');
+    const labelId = label?.id ?? '';
+
+    expect(labelId).not.toBe('');
+    expect(label?.textContent?.trim()).toBe(t('hv.field.category'));
+    expect(q(el, '[data-testid="editor-category-list"]')?.getAttribute('aria-labelledby')).toBe(labelId);
+    expect(q(el, '[data-testid="editor-category"]')?.getAttribute('aria-labelledby')).toBe(labelId);
+  });
+
   it('shows every existing category on focus, before a single keystroke', async () => {
     const el = await mount(null);
     expectListShut(el);
