@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { setLanguage } from '../i18n';
+import { defined } from '../test.utils';
 import {
   COLUMN_DEFS,
   columnLabel,
@@ -179,7 +180,7 @@ function minWidthOf(template: string): number {
 
 /** The growth factor of a track: the `fr` in a `minmax()`, or 0 for a fixed one. */
 function growthOf(template: string, index: number): number {
-  const track = template.split(/\s+(?![^(]*\))/)[index];
+  const track = defined(template.split(/\s+(?![^(]*\))/)[index], 'track');
   return Number(/,\s*([\d.]+)fr\)$/.exec(track)?.[1] ?? 0);
 }
 
@@ -223,12 +224,15 @@ function widthOf(contentWidth: number, key: ColumnKey): number {
   const columns = [...DEFAULT_COLUMNS];
   const widths = resolveTracks(tableTemplateFor(columns, { selectable: false }), contentWidth);
   // 0 is the name; the chosen columns follow it in order, then the gutter.
-  return widths[1 + columns.indexOf(key)];
+  return defined(widths[1 + columns.indexOf(key)], 'column width');
 }
 
 /** The resolved width of the name column of the default table. */
 function nameWidthOf(contentWidth: number): number {
-  return resolveTracks(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }), contentWidth)[0];
+  return defined(
+    resolveTracks(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }), contentWidth)[0],
+    'name width',
+  );
 }
 
 /**
@@ -270,7 +274,9 @@ describe('table column widths', () => {
   it('floors the name column above every flexible column beside it', () => {
     const template = tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false });
     const tracks = template.split(/\s+(?![^(]*\))/);
-    const nameMin = Number(/^minmax\((\d+)px,/.exec(tracks[0])![1]);
+    const nameMin = Number(
+      defined(/^minmax\((\d+)px,/.exec(defined(tracks[0], 'name track'))?.[1], 'name minimum'),
+    );
     const flexible = tracks
       .slice(1)
       .map((t) => Number(/^minmax\((\d+)px,/.exec(t)?.[1] ?? 0))

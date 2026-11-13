@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { HA_THEME_VARS, SURFACE_VARS, registerCustomCard } from './ha-contract';
+import { defined } from './test.utils';
 
 /**
  * The contract in `ha-contract.ts` is only worth writing if it stays true, and
@@ -65,7 +66,8 @@ describe('the Home Assistant contact surface', () => {
     for (const path of sourceFiles()) {
       for (const match of code(read(path)).matchAll(/var\((--[a-z0-9_-]+)/gi)) {
         // The card's own tokens are not Home Assistant's.
-        if (!match[1].startsWith('--hv-')) bound.add(match[1]);
+        const name = defined(match[1], 'var name');
+        if (!name.startsWith('--hv-')) bound.add(name);
       }
     }
     expect([...bound].sort()).toEqual([...HA_THEME_VARS].sort());

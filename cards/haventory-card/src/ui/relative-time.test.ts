@@ -78,9 +78,9 @@ describe('formatDate', () => {
 describe('quickDayOffsets', () => {
   it('offers a week, a month and a quarter, labelled in the language in force', () => {
     expect(quickDayOffsets().map((o) => o.days)).toEqual([7, 30, 90]);
-    expect(quickDayOffsets()[0].label).toBe('+7 days');
+    expect(quickDayOffsets()[0]?.label).toBe('+7 days');
     setLanguage('de');
-    expect(quickDayOffsets()[0].label).toBe('+7 Tage');
+    expect(quickDayOffsets()[0]?.label).toBe('+7 Tage');
   });
 });
 

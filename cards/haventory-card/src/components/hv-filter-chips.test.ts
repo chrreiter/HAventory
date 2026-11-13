@@ -57,18 +57,18 @@ describe('chipsFor', () => {
   it('names the location by its path, punctuated the way the rest of the card does', () => {
     const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: false };
     const [chip] = chipsFor(filters, { locations: [loc('shelf', 'Shelf A', 'Garage / Shelf A')] });
-    expect(chip.label).toBe('Garage › Shelf A');
+    expect(chip?.label).toBe('Garage › Shelf A');
   });
 
   it('marks a subtree scope on the location chip', () => {
     const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: true };
     const [chip] = chipsFor(filters, { locations: [loc('shelf', 'Shelf A', 'Garage / Shelf A')] });
-    expect(chip.label).toBe('Garage › Shelf A + sub');
+    expect(chip?.label).toBe('Garage › Shelf A + sub');
   });
 
   it('falls back to a generic label when the location is not in the cache', () => {
     const filters = { ...defaultFilters(), locationIds: ['gone'], includeSubtree: false };
-    expect(chipsFor(filters, { locations: [] })[0].label).toBe('Location');
+    expect(chipsFor(filters, { locations: [] })[0]?.label).toBe('Location');
   });
 
   it('names the area a location inherits from its tree, in the chip row own wording', () => {
@@ -77,7 +77,7 @@ describe('chipsFor', () => {
       locations: nested('a1'),
       areas: [{ id: 'a1', name: 'Kitchen' }],
     });
-    expect(chip.label).toBe('Area: Kitchen · Garage › Shelf A');
+    expect(chip?.label).toBe('Area: Kitchen · Garage › Shelf A');
   });
 
   it('keeps the subtree marker last, behind the area and the path', () => {
@@ -86,12 +86,12 @@ describe('chipsFor', () => {
       locations: nested('a1'),
       areas: [{ id: 'a1', name: 'Kitchen' }],
     });
-    expect(chip.label).toBe('Area: Kitchen · Garage › Shelf A + sub');
+    expect(chip?.label).toBe('Area: Kitchen · Garage › Shelf A + sub');
   });
 
   it('leaves a location in no area labelled exactly as before', () => {
     const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: false };
-    expect(chipsFor(filters, { locations: nested(null), areas: [] })[0].label).toBe('Garage › Shelf A');
+    expect(chipsFor(filters, { locations: nested(null), areas: [] })[0]?.label).toBe('Garage › Shelf A');
   });
 
   // Browsing a root named after its own room wrote the room twice on one chip:
@@ -104,28 +104,28 @@ describe('chipsFor', () => {
     ] as const) {
       const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: subtree };
       const [chip] = chipsFor(filters, { locations: nested('a1'), areas: [{ id: 'a1', name: 'Garage' }] });
-      expect(chip.label, `subtree=${subtree}`).toBe(label);
+      expect(chip?.label, `subtree=${subtree}`).toBe(label);
     }
   });
 
   it('names an area the registry has dropped by its id, so the chip never reads as arealess', () => {
     const filters = { ...defaultFilters(), locationIds: ['shelf'], includeSubtree: false };
-    expect(chipsFor(filters, { locations: nested('a-gone'), areas: [] })[0].label).toBe(
+    expect(chipsFor(filters, { locations: nested('a-gone'), areas: [] })[0]?.label).toBe(
       'Area: a-gone · Garage › Shelf A',
     );
   });
 
   it('resolves an area name, falling back to its id', () => {
     const filters = { ...defaultFilters(), areaId: 'a1' };
-    expect(chipsFor(filters, { areas: [{ id: 'a1', name: 'Kitchen' }] })[0].label).toBe('Area: Kitchen');
-    expect(chipsFor(filters, { areas: [] })[0].label).toBe('Area: a1');
+    expect(chipsFor(filters, { areas: [{ id: 'a1', name: 'Kitchen' }] })[0]?.label).toBe('Area: Kitchen');
+    expect(chipsFor(filters, { areas: [] })[0]?.label).toBe('Area: a1');
   });
 
   it('says which way multiple tags combine', () => {
     const any = { ...defaultFilters(), tags: ['a', 'b'], tagsMode: 'any' as const };
     const all = { ...defaultFilters(), tags: ['a', 'b'], tagsMode: 'all' as const };
-    expect(chipsFor(any)[0].label).toBe('any of: #a, #b');
-    expect(chipsFor(all)[0].label).toBe('all of: #a, #b');
+    expect(chipsFor(any)[0]?.label).toBe('any of: #a, #b');
+    expect(chipsFor(all)[0]?.label).toBe('all of: #a, #b');
   });
 
   // Nothing above this row says which filter a chip clears, so a bare value
@@ -140,7 +140,7 @@ describe('chipsFor', () => {
   // one vocabulary rather than two spellings of it.
   it('marks a single tag the way a tag chip is marked', () => {
     const filters = { ...defaultFilters(), tags: ['metric'] };
-    expect(chipsFor(filters)[0].label).toBe('any of: #metric');
+    expect(chipsFor(filters)[0]?.label).toBe('any of: #metric');
   });
 
   it('keeps low-stock-only and low-stock-first as separate chips', () => {
@@ -238,8 +238,8 @@ describe('chipsFor', () => {
 
   it('formats a date bound from the date half of the timestamp', () => {
     const filters = { ...defaultFilters(), createdAfter: '2026-07-31T13:45:12.000Z' };
-    expect(chipsFor(filters)[0].label).toMatch(/^Created ≥ /);
-    expect(chipsFor(filters)[0].label).not.toContain('13:45');
+    expect(chipsFor(filters)[0]?.label).toMatch(/^Created ≥ /);
+    expect(chipsFor(filters)[0]?.label).not.toContain('13:45');
   });
 });
 

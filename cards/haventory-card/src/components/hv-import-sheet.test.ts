@@ -73,9 +73,9 @@ describe('hv-import-sheet: step 1', () => {
     const el = await mount();
     const policies = all(el, '[data-testid="import-policy"]');
     expect(policies.map((p) => p.dataset.policy)).toEqual(['merge', 'replace', 'skip']);
-    expect(policies[0].getAttribute('aria-checked')).toBe('true');
+    expect(policies[0]?.getAttribute('aria-checked')).toBe('true');
     // Each explains what it does, rather than relying on the word alone.
-    expect(policies[1].textContent).toContain("Overwrite items matched by id with the file's version");
+    expect(policies[1]?.textContent).toContain("Overwrite items matched by id with the file's version");
   });
 
   it('says what an item is matched on, because it is the id and not the name', async () => {
@@ -394,9 +394,9 @@ describe('hv-import-sheet: invalid document', () => {
 
     const rows = all(el, '[data-testid="import-error-row"]');
     expect(rows).toHaveLength(3);
-    expect(rows[0].textContent).toContain('items[14].quantity');
-    expect(rows[0].textContent).toContain('must be a number');
-    expect(rows[2].textContent).toContain('creates a cycle');
+    expect(rows[0]?.textContent).toContain('items[14].quantity');
+    expect(rows[0]?.textContent).toContain('must be a number');
+    expect(rows[2]?.textContent).toContain('creates a cycle');
   });
 
   it('words a row the backend keyed in the language in force, and keeps the rest as sent', async () => {
@@ -417,8 +417,8 @@ describe('hv-import-sheet: invalid document', () => {
     const el = await mount({ preview: keyed });
 
     const rows = all(el, '[data-testid="import-error-row"]');
-    expect(rows[0].textContent).toContain('Die Menge darf nicht negativ sein.');
-    expect(rows[1].textContent).toContain('status icon must be one of');
+    expect(rows[0]?.textContent).toContain('Die Menge darf nicht negativ sein.');
+    expect(rows[1]?.textContent).toContain('status icon must be one of');
   });
 
   it('has no import action at all in this state', async () => {

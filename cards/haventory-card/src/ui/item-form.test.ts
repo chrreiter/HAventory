@@ -88,16 +88,16 @@ describe('validateForm', () => {
   it('scopes each problem to its field', () => {
     const errors = validateForm({ ...base(), name: '  ', quantity: -3, lowStock: -1 });
     expect(errors.map((e) => e.field)).toEqual(['name', 'quantity', 'lowStock']);
-    expect(errors[1].message).toBe("Quantity can't be negative.");
+    expect(errors[1]?.message).toBe("Quantity can't be negative.");
   });
 
   it('enforces the backend name limit', () => {
-    expect(validateForm({ ...base(), name: 'x'.repeat(121) })[0].message).toContain('120 characters');
+    expect(validateForm({ ...base(), name: 'x'.repeat(121) })[0]?.message).toContain('120 characters');
     expect(validateForm({ ...base(), name: 'x'.repeat(120) })).toEqual([]);
   });
 
   it('rejects a fractional quantity', () => {
-    expect(validateForm({ ...base(), name: 'A', quantity: 1.5 })[0].field).toBe('quantity');
+    expect(validateForm({ ...base(), name: 'A', quantity: 1.5 })[0]?.field).toBe('quantity');
   });
 
   it('rejects a non-numeric number field and a malformed date field', () => {
@@ -107,8 +107,8 @@ describe('validateForm', () => {
     ];
     const errors = validateForm({ ...base(), name: 'A', customFields: rows });
     expect(errors).toHaveLength(2);
-    expect(errors[0].message).toContain('"price" must be a number');
-    expect(errors[1].message).toContain('"checked" must be a date');
+    expect(errors[0]?.message).toContain('"price" must be a number');
+    expect(errors[1]?.message).toContain('"checked" must be a date');
   });
 
   it('catches a duplicated custom-field key', () => {
@@ -116,7 +116,7 @@ describe('validateForm', () => {
       newCustomFieldRow({ key: 'serial', value: 'a' }),
       newCustomFieldRow({ key: 'serial', value: 'b' }),
     ];
-    expect(validateForm({ ...base(), name: 'A', customFields: rows })[0].message).toContain(
+    expect(validateForm({ ...base(), name: 'A', customFields: rows })[0]?.message).toContain(
       '"serial" is used twice',
     );
   });

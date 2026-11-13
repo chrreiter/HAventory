@@ -72,7 +72,7 @@ describe.each(['haventory-card', 'haventory-panel'])('%s: the store lifecycle', 
 
     // Nothing the backend broadcasts afterwards has anywhere to land.
     hass.__emit('items', 'updated', { item: makeItem({ id: '1', quantity: 42, version: 2 }) });
-    expect(gone.state.value.items[0].quantity).toBe(5);
+    expect(gone.state.value.items[0]?.quantity).toBe(5);
   });
 
   it('comes back live when Home Assistant re-attaches it', async () => {

@@ -1,5 +1,14 @@
 import './hv-full-view';
-import { componentCss, discardAsker, makeItem, mountHost, q, settle, stubViewport } from '../test.utils';
+import {
+  componentCss,
+  defined,
+  discardAsker,
+  makeItem,
+  mountHost,
+  q,
+  settle,
+  stubViewport,
+} from '../test.utils';
 import { deepActiveElement, deepFocusables } from '../ui/dialog-focus';
 import { SEARCH_DEBOUNCE_MS } from '../ui/filter-chrome';
 import { toIsoDate } from '../ui/relative-time';
@@ -449,7 +458,7 @@ describe('hv-full-view: embedded', () => {
     const rows = [...(table.shadowRoot?.querySelectorAll('[data-testid="table-row"]') ?? [])];
     // The row menu is the row's last control, and its trigger lives one shadow
     // root deeper still — which is the case this test exists for.
-    const lastMenu = rows[rows.length - 1]
+    const lastMenu = defined(rows[rows.length - 1], 'last table row')
       .querySelector('[data-testid="table-row-menu"]')
       ?.shadowRoot?.querySelector('.trigger');
 
@@ -499,8 +508,8 @@ describe('hv-full-view: the narrow-mode sidebar affordance', () => {
     window.removeEventListener('hass-toggle-menu', onToggle);
 
     expect(seen).toHaveLength(1);
-    expect(seen[0].composed).toBe(true);
-    expect(seen[0].bubbles).toBe(true);
+    expect(seen[0]?.composed).toBe(true);
+    expect(seen[0]?.bubbles).toBe(true);
     expect((seen[0] as CustomEvent).detail).toBeUndefined();
     el.remove();
   });
@@ -521,7 +530,7 @@ describe('hv-full-view: sidebar', () => {
     const rows = [...(tree.shadowRoot?.querySelectorAll('[data-testid="tree-row"]') ?? [])];
     expect(rows.map((r) => (r as HTMLElement).dataset.id)).toEqual(['garage', 'kitchen']);
     // Garage holds one directly plus one on Shelf A.
-    expect(rows[0].querySelector('[data-testid="tree-count"]')?.textContent?.trim()).toBe('2');
+    expect(rows[0]?.querySelector('[data-testid="tree-count"]')?.textContent?.trim()).toBe('2');
     expect(tree.shadowRoot?.querySelector('[data-testid="tree-all"]')?.textContent).toContain('All items');
     expect(tree.shadowRoot?.querySelector('[data-testid="tree-orphans"]')?.textContent).toContain('1');
   });
@@ -706,7 +715,7 @@ describe('hv-full-view: sidebar facets', () => {
     const { sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
 
     expect(rows(sr, 'categories').map((r) => r.dataset.value)).toEqual(['Cleaning', 'Tools']);
-    expect(rows(sr, 'categories')[1].textContent).toContain('2');
+    expect(rows(sr, 'categories')[1]?.textContent).toContain('2');
     expect(rows(sr, 'tags').map((r) => r.dataset.value)).toEqual(['heavy', 'metric']);
     expect(q(sr, '[data-testid="sidebar-tags-tally"]')?.textContent?.trim()).toBe('2');
 
@@ -862,9 +871,9 @@ describe('hv-full-view: sidebar facets', () => {
     await settle(el);
     const modes = [...sr.querySelectorAll('[data-testid="sidebar-tags-mode"]')] as HTMLElement[];
     expect(modes.map((m) => m.dataset.mode)).toEqual(['any', 'all']);
-    expect(modes[0].classList.contains('on')).toBe(true);
+    expect(modes[0]?.classList.contains('on')).toBe(true);
 
-    modes[1].click();
+    defined(modes[1], 'second mode').click();
     await settle(el);
     expect(store.state.value.filters.tagsMode).toBe('all');
     expect(
@@ -1150,7 +1159,7 @@ describe('hv-full-view: context bar and table', () => {
         locations: [kitchen, pantry],
         areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
       });
-      store.setFilters({ locationIds: [id] });
+      store.setFilters({ locationIds: [defined(id, 'location id')] });
       await settle(el);
 
       const crumb = q(sr, '[data-testid="full-breadcrumb"]');
@@ -1189,7 +1198,7 @@ describe('hv-full-view: context bar and table', () => {
 
     (table.shadowRoot?.querySelector('[data-testid="table-increment"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(store.state.value.items[0].quantity).toBe(6);
+    expect(store.state.value.items[0]?.quantity).toBe(6);
   });
 
   it('opens the filter panel from the Filters button', async () => {
@@ -1531,7 +1540,7 @@ describe('hv-full-view: editing', () => {
           '[data-testid="table-edit"]',
         ) ?? []),
       ] as HTMLButtonElement[];
-      rows[rows.length - 1].click();
+      defined(rows[rows.length - 1], 'last edit button').click();
       await settle(el);
       // The refused save left the typed name in the form, so the switch asks
       // before it takes it away.
@@ -1600,7 +1609,7 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
           '[data-testid="table-edit"]',
         ) ?? []),
       ] as HTMLButtonElement[];
-      rows[rows.length - 1].click();
+      defined(rows[rows.length - 1], 'last edit button').click();
     },
     backdrop: (sr: ShadowRoot) => (q(sr, '.backdrop') as HTMLElement).click(),
     escape: (sr: ShadowRoot) =>
@@ -2518,7 +2527,9 @@ describe('hv-full-view: table row actions', () => {
         '[data-testid="table-row-menu"]',
       ) ?? []),
     ];
-    menus[row].dispatchEvent(new CustomEvent('select', { detail: { id }, bubbles: true, composed: true }));
+    defined(menus[row], `menu ${row}`).dispatchEvent(
+      new CustomEvent('select', { detail: { id }, bubbles: true, composed: true }),
+    );
   };
 
   it('checks an item back in', async () => {
@@ -2649,7 +2660,7 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
         '[data-testid="table-row"]',
       ) ?? []),
     ] as HTMLElement[];
-    rows[index].click();
+    defined(rows[index], `row ${index}`).click();
     await settle(el);
     await settle(el);
   };
@@ -2720,7 +2731,7 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
       await openRow(el, sr);
       expect(sheet(sr)?.open).toBe(true);
 
-      const item = store.state.value.items[0];
+      const item = defined(store.state.value.items[0], 'first item');
       await store.deleteItem(item.id, item.version);
       await settle(el);
 
@@ -2793,7 +2804,7 @@ describe('hv-full-view: one tab stop per facet list', () => {
 
   it('moves the stop and the focus with the arrows, and stops at both ends', async () => {
     const { el, sr } = await mount({ items: faceted });
-    rows(sr, 'tags')[0].focus();
+    defined(rows(sr, 'tags')[0], 'first tags row').focus();
 
     await press(el, sr, 'ArrowDown');
     expect(focused(sr)).toBe('metric');
@@ -2817,7 +2828,7 @@ describe('hv-full-view: one tab stop per facet list', () => {
 
   it('moves only inside the list the key came from', async () => {
     const { el, sr } = await mount({ items: faceted });
-    rows(sr, 'categories')[0].focus();
+    defined(rows(sr, 'categories')[0], 'first categories row').focus();
 
     await press(el, sr, 'End');
 
@@ -2831,7 +2842,7 @@ describe('hv-full-view: one tab stop per facet list', () => {
   // afterwards can only be the press itself.
   it('leaves the stop where a click put it', async () => {
     const { el, sr } = await mount({ items: faceted });
-    const third = () => rows(sr, 'categories')[2];
+    const third = () => defined(rows(sr, 'categories')[2], 'third category row');
 
     third().click();
     await settle(el);
@@ -2848,9 +2859,9 @@ describe('hv-full-view: one tab stop per facet list', () => {
 
   it('hands the stop to the selected row when the row holding it is drawn away', async () => {
     const { el, store, sr } = await mount({ items: faceted });
-    rows(sr, 'tags')[0].click();
+    defined(rows(sr, 'tags')[0], 'first tags row').click();
     await settle(el);
-    rows(sr, 'tags')[0].focus();
+    defined(rows(sr, 'tags')[0], 'first tags row').focus();
     await press(el, sr, 'ArrowDown');
     expect(stops(sr, 'tags')).toEqual(['metric']);
 
@@ -2864,7 +2875,7 @@ describe('hv-full-view: one tab stop per facet list', () => {
 
   it('falls back to the first row when nothing is selected either', async () => {
     const { el, store, sr } = await mount({ items: faceted });
-    rows(sr, 'tags')[0].focus();
+    defined(rows(sr, 'tags')[0], 'first tags row').focus();
     await press(el, sr, 'End');
     expect(stops(sr, 'tags')).toEqual(['worn']);
 

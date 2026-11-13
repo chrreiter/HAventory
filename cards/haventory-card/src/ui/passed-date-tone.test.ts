@@ -1,7 +1,7 @@
 import '../components/hv-data-table';
 import '../components/hv-detail-sheet';
 import '../components/hv-list-row';
-import { componentCss } from '../test.utils';
+import { componentCss, defined } from '../test.utils';
 
 /**
  * One tone for a date that has passed, wherever the card prints a bare one.
@@ -25,9 +25,15 @@ function rulesOf(tag: string): string {
 /** The `color` of the rule whose selector list holds `selector`. */
 function colorFor(tag: string, selector: string): string | null {
   for (const rule of rulesOf(tag).matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    if (!rule[1].split(',').some((s) => s.trim() === selector)) continue;
-    const color = rule[2].match(/(?:^|;)\s*color:\s*([^;]+)/);
-    if (color) return color[1].trim();
+    const [, selectors, body] = rule;
+    if (
+      !defined(selectors, 'selector list')
+        .split(',')
+        .some((s) => s.trim() === selector)
+    )
+      continue;
+    const color = defined(body, 'rule body').match(/(?:^|;)\s*color:\s*([^;]+)/);
+    if (color) return defined(color[1], 'color value').trim();
   }
   return null;
 }

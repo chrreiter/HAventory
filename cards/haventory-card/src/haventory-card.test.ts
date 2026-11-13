@@ -1,5 +1,5 @@
 import './index';
-import { makeItem, makeMockHass, mountComponent, settle } from './test.utils';
+import { makeItem, makeMockHass, mountComponent, settle, defined } from './test.utils';
 import { COLUMN_PREFS_STORAGE_KEY, DEFAULT_COLUMNS } from './store/columns';
 import type { HAventoryCard } from './index';
 
@@ -196,8 +196,8 @@ describe('haventory-card: the Lovelace element', () => {
       const grid = (el as unknown as { getGridOptions(): Record<string, number> }).getGridOptions();
       expect(grid.columns).toBeGreaterThan(0);
       expect(grid.rows).toBeGreaterThan(0);
-      expect(grid.min_columns).toBeLessThan(grid.columns);
-      expect(grid.min_rows).toBeLessThan(grid.rows);
+      expect(grid.min_columns).toBeLessThan(defined(grid.columns, 'grid columns'));
+      expect(grid.min_rows).toBeLessThan(defined(grid.rows, 'grid rows'));
     });
 
     it('registers with the card picker, documentation link and all', async () => {
@@ -300,8 +300,8 @@ describe('haventory-card: host surfaces through the real element', () => {
 
       expect(scopes, id).toEqual([scope]);
       expect(downloads, id).toHaveLength(1);
-      expect(downloads[0].filename, id).toMatch(/^haventory-export-.*\.json$/);
-      expect(JSON.parse(downloads[0].text), id).toHaveProperty('haventory_export_version');
+      expect(downloads[0]?.filename, id).toMatch(/^haventory-export-.*\.json$/);
+      expect(JSON.parse(defined(downloads[0], 'download').text), id).toHaveProperty('haventory_export_version');
       document.body.innerHTML = '';
     }
   });

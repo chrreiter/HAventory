@@ -598,11 +598,11 @@ describe('hv-card-shell: list and footer', () => {
 
     (row.shadowRoot?.querySelector('[data-testid="row-increment"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(store.state.value.items[0].quantity).toBe(6);
+    expect(store.state.value.items[0]?.quantity).toBe(6);
 
     (row.shadowRoot?.querySelector('[data-testid="row-decrement"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(store.state.value.items[0].quantity).toBe(5);
+    expect(store.state.value.items[0]?.quantity).toBe(5);
   });
 
   it('never sends a decrement that would take the quantity below zero', async () => {
@@ -799,7 +799,7 @@ describe('hv-card-shell: banners', () => {
     expect(bannerKind(sr)).toBe('warning');
     expect(sr.querySelector('[data-testid="banner-view-latest"]')).toBe(null);
     // The queue still carries the backend's sentence; only the banner drops it.
-    expect(store.state.value.errorQueue[0].message).toBe('version conflict: expected 4, actual 5');
+    expect(store.state.value.errorQueue[0]?.message).toBe('version conflict: expected 4, actual 5');
   });
 
   it('re-applies the rejected change against the newer server version', async () => {
@@ -1206,7 +1206,7 @@ describe('hv-card-shell: mobile', () => {
     expect(row.shadowRoot?.querySelector('[data-testid="row-stepper"]')).toBe(null);
     (row.shadowRoot?.querySelector('[data-testid="row-check-in"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(store.state.value.items[0].checked_out).toBe(false);
+    expect(store.state.value.items[0]?.checked_out).toBe(false);
   });
 });
 
@@ -1255,7 +1255,7 @@ describe('hv-card-shell: inline editing', () => {
     await settle(el);
     await settle(el);
 
-    expect(store.state.value.items[0].name).toBe('New');
+    expect(store.state.value.items[0]?.name).toBe('New');
     expect(editor(sr)).toBe(null);
   });
 
@@ -1716,7 +1716,7 @@ describe('hv-card-shell: mobile detail sheet', () => {
 
     (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-increment"]') as HTMLButtonElement).click();
     await settle(el);
-    expect(store.state.value.items[0].quantity).toBe(6);
+    expect(store.state.value.items[0]?.quantity).toBe(6);
   });
 
   it('offers the due-date step inline in the sheet, and honours "no due date"', async () => {
@@ -1735,8 +1735,8 @@ describe('hv-card-shell: mobile detail sheet', () => {
     await settle(el);
     await settle(el);
 
-    expect(store.state.value.items[0].checked_out).toBe(true);
-    expect(store.state.value.items[0].due_date).toBe(null);
+    expect(store.state.value.items[0]?.checked_out).toBe(true);
+    expect(store.state.value.items[0]?.due_date).toBe(null);
   });
 
   it('checks out from the sheet with the suggested due date', async () => {
@@ -1751,15 +1751,15 @@ describe('hv-card-shell: mobile detail sheet', () => {
     await settle(el);
     await settle(el);
 
-    expect(store.state.value.items[0].checked_out).toBe(true);
-    expect(store.state.value.items[0].due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(store.state.value.items[0]?.checked_out).toBe(true);
+    expect(store.state.value.items[0]?.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it('saves an edit made in the sheet', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })], mobile: true });
     await editInSheet(el, sr);
 
-    expect(store.state.value.items[0].name).toBe('New');
+    expect(store.state.value.items[0]?.name).toBe('New');
     // A phone has no second surface to report the save on, so the sheet itself
     // is the answer: it stays up and shows what was written.
     expect(sheet(sr).open).toBe(true);
@@ -2075,7 +2075,7 @@ describe('hv-card-shell: check-out with a due date', () => {
       (b) => b as HTMLElement,
     );
     expect(items.map((b) => b.dataset.id)).toEqual(['check-in', 'set-due-date', 'delete']);
-    expect(items[1].textContent).toContain('Set due date');
+    expect(items[1]?.textContent).toContain('Set due date');
   });
 
   it('says "Change due date" when there already is one', async () => {
@@ -2094,14 +2094,14 @@ describe('hv-card-shell: check-out with a due date', () => {
     await settle(el);
 
     expect(popover(sr).open).toBe(true);
-    expect(store.state.value.items[0].checked_out).toBe(false);
+    expect(store.state.value.items[0]?.checked_out).toBe(false);
 
     (popover(sr).shadowRoot?.querySelector('[data-testid="checkout-confirm"]') as HTMLButtonElement).click();
     await settle(el);
     await settle(el);
 
-    expect(store.state.value.items[0].checked_out).toBe(true);
-    expect(store.state.value.items[0].due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(store.state.value.items[0]?.checked_out).toBe(true);
+    expect(store.state.value.items[0]?.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it('checks in straight from the row menu', async () => {
@@ -2110,7 +2110,7 @@ describe('hv-card-shell: check-out with a due date', () => {
     (menu.shadowRoot?.querySelector('[data-id="check-in"]') as HTMLButtonElement).click();
     await settle(el);
     await settle(el);
-    expect(store.state.value.items[0].checked_out).toBe(false);
+    expect(store.state.value.items[0]?.checked_out).toBe(false);
   });
 
   it('sets a due date on an item that is already out', async () => {
@@ -2123,8 +2123,8 @@ describe('hv-card-shell: check-out with a due date', () => {
     await settle(el);
     await settle(el);
 
-    expect(store.state.value.items[0].due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(store.state.value.items[0].checked_out).toBe(true);
+    expect(store.state.value.items[0]?.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(store.state.value.items[0]?.checked_out).toBe(true);
   });
 
   it('deletes from the row menu through the same confirmation', async () => {

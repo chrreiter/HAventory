@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { makeMockHass, makeItem } from '../test.utils';
+import { makeMockHass, makeItem, defined } from '../test.utils';
 import { Store, subscribeRetryDelayMs } from './store';
 
 /**
@@ -239,8 +239,8 @@ describe('subscribeRetryDelayMs', () => {
     await store.adjustQuantity('1', 1);
 
     expect(store.state.value.errorQueue).toHaveLength(1);
-    expect(store.state.value.errorQueue[0].code).toBe('connection_lost');
-    expect(store.state.value.errorQueue[0].message).toContain('Could not reach Home Assistant');
+    expect(store.state.value.errorQueue[0]?.code).toBe('connection_lost');
+    expect(store.state.value.errorQueue[0]?.message).toContain('Could not reach Home Assistant');
   });
 
   it('queues one entry for an outage however many calls fail', async () => {
@@ -261,7 +261,7 @@ describe('subscribeRetryDelayMs', () => {
     expect(store.state.value.degraded.connectionLost).toBe(true);
 
     // Dismissing it is not a permanent silence: the next failure says so again.
-    store.dismissError(store.state.value.errorQueue[0].id);
+    store.dismissError(defined(store.state.value.errorQueue[0], 'queued error').id);
     hass.__failNext(1, new Error('socket closed'));
     await store.adjustQuantity('1', 1);
     expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['connection_lost']);

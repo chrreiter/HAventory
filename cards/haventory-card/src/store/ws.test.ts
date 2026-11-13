@@ -280,9 +280,9 @@ describe('WSClient attachments', () => {
 
     await ws.uploadAttachment('i-1', new File(['x'], 'drill.png', { type: 'image/png' }));
 
-    expect(hass.posts[0].path).toBe('/api/file_upload');
-    expect(hass.posts[0].init?.method).toBe('POST');
-    expect(hass.posts[0].init?.body).toBeInstanceOf(FormData);
+    expect(hass.posts[0]?.path).toBe('/api/file_upload');
+    expect(hass.posts[0]?.init?.method).toBe('POST');
+    expect(hass.posts[0]?.init?.body).toBeInstanceOf(FormData);
     expect(hass.sent[0]).toEqual({
       type: 'haventory/item/attachment/add',
       item_id: 'i-1',

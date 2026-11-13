@@ -1,5 +1,6 @@
 import { DICTIONARIES } from './index';
 import { en } from './en';
+import { defined } from '../test.utils';
 
 const enKeys = new Set<string>(Object.keys(en));
 const PLACEHOLDER = /\{(\w+)\}/g;
@@ -35,7 +36,7 @@ function englishFor(key: string): string | undefined {
 }
 
 function placeholders(value: string): Set<string> {
-  return new Set([...value.matchAll(PLACEHOLDER)].map((m) => m[1]));
+  return new Set([...value.matchAll(PLACEHOLDER)].map((m) => defined(m[1], 'placeholder name')));
 }
 
 /**
@@ -123,7 +124,7 @@ describe.each(COMPLETE)('the %s dictionary', (tag) => {
     // the suite rather than the compiler output. A counted key is owed `.other`
     // and nothing else — a language that does not inflect the noun writes one
     // form, and `tn` reaches it for every count.
-    const dictionary = DICTIONARIES[tag];
+    const dictionary = defined(DICTIONARIES[tag], 'dictionary');
     const missing = [...enKeys].filter((key) => {
       if (key in dictionary) return false;
       const form = pluralForm(key);

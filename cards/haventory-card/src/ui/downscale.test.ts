@@ -112,7 +112,7 @@ describe('prepareForUpload', () => {
     const encode = vi.fn(async () => new Blob(['tiny']));
     await prepareForUpload(big(), 'picture', deps({ decode: async () => bitmap(4032, 3024), encode }));
 
-    expect(encode.mock.calls[0].slice(1, 4)).toEqual([MAX_IMAGE_EDGE, 1536, 'image/jpeg']);
+    expect(encode.mock.calls[0]?.slice(1, 4)).toEqual([MAX_IMAGE_EDGE, 1536, 'image/jpeg']);
   });
 
   it('uploads the original when the re-encode comes out larger', async () => {

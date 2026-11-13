@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { BULK_CHUNK_SIZE, Store, makeBulkOp } from './store';
-import { makeMockHass, makeItem } from '../test.utils';
+import { makeMockHass, makeItem, defined } from '../test.utils';
 import { setLanguage } from '../i18n';
 import type { Location, StoreState } from './types';
 
@@ -84,9 +84,9 @@ describe('Store', () => {
     await store.updateItem('1', { name: 'A2' }).catch(() => undefined);
     const errs = store.state.value.errorQueue;
     expect(errs.length).toBe(1);
-    expect(errs[0].code).toBe('conflict');
-    expect(errs[0].itemId).toBe('1');
-    expect(errs[0].changes?.name).toBe('A2');
+    expect(errs[0]?.code).toBe('conflict');
+    expect(errs[0]?.itemId).toBe('1');
+    expect(errs[0]?.changes?.name).toBe('A2');
     // View latest
     await store.refreshItem('1');
     // Re-apply (disable conflict for retry)
@@ -256,7 +256,7 @@ describe('Store', () => {
     await store.updateItem('1', { name: 'New' }).catch(() => undefined);
     expect(store.state.value.errorQueue.length).toBe(1);
 
-    const errorId = store.state.value.errorQueue[0].id;
+    const errorId = defined(store.state.value.errorQueue[0], 'queued error').id;
     store.dismissError(errorId);
     expect(store.state.value.errorQueue.length).toBe(0);
   });
@@ -277,7 +277,7 @@ describe('Store', () => {
 
     await store.updateItem('1', { name: 'New' }).catch(() => undefined);
 
-    expect(store.state.value.errorQueue[0].message).toBe(
+    expect(store.state.value.errorQueue[0]?.message).toBe(
       'Diesen Gegenstand gibt es nicht mehr. Vielleicht hat ihn jemand gelöscht.',
     );
   });
@@ -511,8 +511,8 @@ describe('Store: bulk operations', () => {
 
     expect(outcome.succeeded).toHaveLength(2);
     expect(outcome.failed).toHaveLength(1);
-    expect(outcome.failed[0].itemId).toBe('ghost');
-    expect(outcome.failed[0].error.code).toBe('not_found');
+    expect(outcome.failed[0]?.itemId).toBe('ghost');
+    expect(outcome.failed[0]?.error.code).toBe('not_found');
   });
 
   it('gives every operation a unique op_id so results cannot collapse', () => {
@@ -614,11 +614,11 @@ describe('Store: location tree and diagnostics data', () => {
 
     const tree = store.state.value.locationTreeCache!;
     expect(tree).toHaveLength(1);
-    expect(tree[0].id).toBe('garage');
-    expect(tree[0].direct_item_count).toBe(1);
-    expect(tree[0].subtree_item_count).toBe(3);
-    expect(tree[0].children[0].id).toBe('shelf-a');
-    expect(tree[0].children[0].subtree_item_count).toBe(2);
+    expect(tree[0]?.id).toBe('garage');
+    expect(tree[0]?.direct_item_count).toBe(1);
+    expect(tree[0]?.subtree_item_count).toBe(3);
+    expect(tree[0]?.children[0]?.id).toBe('shelf-a');
+    expect(tree[0]?.children[0]?.subtree_item_count).toBe(2);
   });
 
   // Unfiltered, the tree is asked plainly — no filter key on the wire at all,
@@ -631,7 +631,7 @@ describe('Store: location tree and diagnostics data', () => {
     );
     await store.init();
 
-    expect(store.state.value.locationTreeCache![0].matching_subtree_count).toBeUndefined();
+    expect(store.state.value.locationTreeCache?.[0]?.matching_subtree_count).toBeUndefined();
     expect(store.state.value.locationMatchTotal).toBe(null);
   });
 

@@ -327,8 +327,8 @@ describe('hv-data-table: columns', () => {
   it('keeps the name column first and the actions last whatever the order', async () => {
     const el = await mount([{ id: '1', name: 'Sander' }], { columns: ['tags', 'quantity'] });
     const headers = all(el, '[role="columnheader"]');
-    expect(headers[0].textContent?.trim()).toBe('Name');
-    expect(headers[headers.length - 1].textContent?.trim()).toBe('');
+    expect(headers[0]?.textContent?.trim()).toBe('Name');
+    expect(headers[headers.length - 1]?.textContent?.trim()).toBe('');
 
     const row = q(el, '[data-testid="table-row"]') as HTMLElement;
     expect((row.firstElementChild as HTMLElement).classList.contains('name-cell')).toBe(true);
@@ -520,8 +520,8 @@ describe('hv-data-table: row thumbnail', () => {
       expect(marks).toHaveLength(2);
       // Glyph-only in a 34px box, so the state has to reach a screen reader and
       // a pointer some other way.
-      expect(marks[0].getAttribute('aria-label')).toBe('File missing');
-      expect(marks[0].getAttribute('title')).toBe('File missing');
+      expect(marks[0]?.getAttribute('aria-label')).toBe('File missing');
+      expect(marks[0]?.getAttribute('title')).toBe('File missing');
       // No <img> at all: an element with a src is what draws the glyph and
       // spills the alt text out of the tile.
       expect(el.shadowRoot?.querySelector('img')).toBeNull();
@@ -681,8 +681,12 @@ describe('hv-data-table: rows', () => {
       { id: '2', quantity: 0 },
     ]);
     const rows = all(el, '[data-testid="table-row"]');
-    expect((rows[0].querySelector('[data-testid="table-increment"]') as HTMLButtonElement).disabled).toBe(true);
-    expect((rows[1].querySelector('[data-testid="table-decrement"]') as HTMLButtonElement).disabled).toBe(true);
+    expect((rows[0]?.querySelector('[data-testid="table-increment"]') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect((rows[1]?.querySelector('[data-testid="table-decrement"]') as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 
   // The host is the box that scrolls, so the host is where the position can be
@@ -803,7 +807,7 @@ describe('hv-data-table: table semantics', () => {
     const cells = [...row.querySelectorAll('[role="cell"]')];
     // Name, the five mounted columns, and the action group.
     expect(cells).toHaveLength(7);
-    expect(cells[0].querySelector('[data-testid="table-name"]')).toBeTruthy();
+    expect(cells[0]?.querySelector('[data-testid="table-name"]')).toBeTruthy();
     expect(cells.map((c) => c.getAttribute('data-testid'))).toContain('cell-quantity');
   });
 

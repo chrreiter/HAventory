@@ -1,3 +1,4 @@
+import { defined } from '../test.utils';
 import { rovingTarget, syncRovingTabindex } from './roving-list';
 
 /** A facet list in miniature: pressable rows, each wrapping its own label. */
@@ -117,12 +118,24 @@ describe('syncRovingTabindex', () => {
       { value: 'kitchen', actions: 2 },
     ]);
     syncRovingTabindex(rows, 'tags:kitchen', keyOf, actionsOf);
-    expect([...actionsOf(rows[1])].map((b) => b.getAttribute('tabindex'))).toEqual(['0', '0']);
-    expect([...actionsOf(rows[0])].map((b) => b.getAttribute('tabindex'))).toEqual(['-1', '-1']);
+    expect([...actionsOf(defined(rows[1], 'row 1'))].map((b) => b.getAttribute('tabindex'))).toEqual([
+      '0',
+      '0',
+    ]);
+    expect([...actionsOf(defined(rows[0], 'row 0'))].map((b) => b.getAttribute('tabindex'))).toEqual([
+      '-1',
+      '-1',
+    ]);
 
     syncRovingTabindex(rows, 'tags:garage', keyOf, actionsOf);
-    expect([...actionsOf(rows[0])].map((b) => b.getAttribute('tabindex'))).toEqual(['0', '0']);
-    expect([...actionsOf(rows[1])].map((b) => b.getAttribute('tabindex'))).toEqual(['-1', '-1']);
+    expect([...actionsOf(defined(rows[0], 'row 0'))].map((b) => b.getAttribute('tabindex'))).toEqual([
+      '0',
+      '0',
+    ]);
+    expect([...actionsOf(defined(rows[1], 'row 1'))].map((b) => b.getAttribute('tabindex'))).toEqual([
+      '-1',
+      '-1',
+    ]);
   });
 });
 
@@ -144,21 +157,21 @@ describe('rovingTarget: rows that open and close', () => {
   it('opens a closed row with Right, moving nothing', () => {
     const rows = branch();
     const { toggled, spec } = disclosure();
-    expect(rovingTarget(press(rows[2], 'ArrowRight'), rows, spec)).toBe(null);
+    expect(rovingTarget(press(defined(rows[2], 'row 2'), 'ArrowRight'), rows, spec)).toBe(null);
     expect(toggled).toEqual(['kitchen']);
   });
 
   it('steps into an open row with Right — the first child is the next row', () => {
     const rows = branch();
     const { toggled, spec } = disclosure();
-    expect(rovingTarget(press(rows[0], 'ArrowRight'), rows, spec)).toBe(rows[1]);
+    expect(rovingTarget(press(defined(rows[0], 'row 0'), 'ArrowRight'), rows, spec)).toBe(rows[1]);
     expect(toggled).toEqual([]);
   });
 
   it('claims Right on a leaf and does nothing with it', () => {
     const rows = branch();
     const { toggled, spec } = disclosure();
-    const event = press(rows[3], 'ArrowRight');
+    const event = press(defined(rows[3], 'row 3'), 'ArrowRight');
     expect(rovingTarget(event, rows, spec)).toBe(null);
     expect(event.defaultPrevented).toBe(true);
     expect(toggled).toEqual([]);
@@ -167,15 +180,15 @@ describe('rovingTarget: rows that open and close', () => {
   it('closes an open row with Left, keeping the stop on it', () => {
     const rows = branch();
     const { toggled, spec } = disclosure();
-    expect(rovingTarget(press(rows[0], 'ArrowLeft'), rows, spec)).toBe(null);
+    expect(rovingTarget(press(defined(rows[0], 'row 0'), 'ArrowLeft'), rows, spec)).toBe(null);
     expect(toggled).toEqual(['garage']);
   });
 
   it('steps out to the parent with Left on a row that is not open', () => {
     const rows = branch();
     const { toggled, spec } = disclosure();
-    expect(rovingTarget(press(rows[1], 'ArrowLeft'), rows, spec)).toBe(rows[0]);
-    expect(rovingTarget(press(rows[2], 'ArrowLeft'), rows, spec)).toBe(null);
+    expect(rovingTarget(press(defined(rows[1], 'row 1'), 'ArrowLeft'), rows, spec)).toBe(rows[0]);
+    expect(rovingTarget(press(defined(rows[2], 'row 2'), 'ArrowLeft'), rows, spec)).toBe(null);
     expect(toggled).toEqual([]);
   });
 
@@ -184,46 +197,46 @@ describe('rovingTarget: rows that open and close', () => {
   it('steps out rather than closing while the list is drawn open', () => {
     const rows = branch();
     const { toggled, spec } = disclosure(true);
-    expect(rovingTarget(press(rows[0], 'ArrowLeft'), rows, spec)).toBe(null);
-    expect(rovingTarget(press(rows[1], 'ArrowLeft'), rows, spec)).toBe(rows[0]);
+    expect(rovingTarget(press(defined(rows[0], 'row 0'), 'ArrowLeft'), rows, spec)).toBe(null);
+    expect(rovingTarget(press(defined(rows[1], 'row 1'), 'ArrowLeft'), rows, spec)).toBe(rows[0]);
     expect(toggled).toEqual([]);
   });
 
   it('still walks the list with the keys a flat one answers to', () => {
     const rows = branch();
     const { spec } = disclosure();
-    expect(rovingTarget(press(rows[0], 'ArrowDown'), rows, spec)).toBe(rows[1]);
-    expect(rovingTarget(press(rows[3], 'Home'), rows, spec)).toBe(rows[0]);
-    expect(rovingTarget(press(rows[0], 'End'), rows, spec)).toBe(rows[3]);
+    expect(rovingTarget(press(defined(rows[0], 'row 0'), 'ArrowDown'), rows, spec)).toBe(rows[1]);
+    expect(rovingTarget(press(defined(rows[3], 'row 3'), 'Home'), rows, spec)).toBe(rows[0]);
+    expect(rovingTarget(press(defined(rows[0], 'row 0'), 'End'), rows, spec)).toBe(rows[3]);
   });
 });
 
 describe('rovingTarget', () => {
   it('moves one row down and one row up', () => {
     const rows = list(['blue', 'green', 'red']);
-    expect(rovingTarget(press(rows[0], 'ArrowDown'), rows)).toBe(rows[1]);
-    expect(rovingTarget(press(rows[1], 'ArrowUp'), rows)).toBe(rows[0]);
+    expect(rovingTarget(press(defined(rows[0], 'row 0'), 'ArrowDown'), rows)).toBe(rows[1]);
+    expect(rovingTarget(press(defined(rows[1], 'row 1'), 'ArrowUp'), rows)).toBe(rows[0]);
   });
 
   // No wrap: the ends of a filter list are ends, and wrapping past them reads
   // as the focus having jumped somewhere else entirely.
   it('stays put at both ends', () => {
     const rows = list(['blue', 'green', 'red']);
-    expect(rovingTarget(press(rows[2], 'ArrowDown'), rows)).toBe(rows[2]);
-    expect(rovingTarget(press(rows[0], 'ArrowUp'), rows)).toBe(rows[0]);
+    expect(rovingTarget(press(defined(rows[2], 'row 2'), 'ArrowDown'), rows)).toBe(rows[2]);
+    expect(rovingTarget(press(defined(rows[0], 'row 0'), 'ArrowUp'), rows)).toBe(rows[0]);
   });
 
   it('reaches both ends with Home and End', () => {
     const rows = list(['blue', 'green', 'red']);
-    expect(rovingTarget(press(rows[1], 'Home'), rows)).toBe(rows[0]);
-    expect(rovingTarget(press(rows[1], 'End'), rows)).toBe(rows[2]);
+    expect(rovingTarget(press(defined(rows[1], 'row 1'), 'Home'), rows)).toBe(rows[0]);
+    expect(rovingTarget(press(defined(rows[1], 'row 1'), 'End'), rows)).toBe(rows[2]);
   });
 
   // The row holds the focus, so it is usually the target; a key can still
   // arrive from the label inside it.
   it('finds the row from a target inside it', () => {
     const rows = list(['blue', 'green', 'red']);
-    const label = rows[1].querySelector('span') as HTMLElement;
+    const label = defined(rows[1], 'row 1').querySelector('span') as HTMLElement;
     expect(rovingTarget(press(label, 'ArrowDown'), rows)).toBe(rows[2]);
   });
 
@@ -232,14 +245,14 @@ describe('rovingTarget', () => {
   // button's own Enter and Space.
   it('claims the keys it answers to and no others', () => {
     const rows = list(['blue', 'green', 'red']);
-    const handled = press(rows[0], 'ArrowDown');
+    const handled = press(defined(rows[0], 'row 0'), 'ArrowDown');
     expect(rovingTarget(handled, rows)).toBe(rows[1]);
     expect(handled.defaultPrevented).toBe(true);
 
-    const ignored = press(rows[0], 'ArrowRight');
+    const ignored = press(defined(rows[0], 'row 0'), 'ArrowRight');
     expect(rovingTarget(ignored, rows)).toBe(null);
     expect(ignored.defaultPrevented).toBe(false);
-    expect(rovingTarget(press(rows[0], 'Enter'), rows)).toBe(null);
+    expect(rovingTarget(press(defined(rows[0], 'row 0'), 'Enter'), rows)).toBe(null);
   });
 
   it('ignores a key pressed outside the rows', () => {

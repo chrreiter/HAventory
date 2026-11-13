@@ -3,6 +3,7 @@ import './hv-item-editor';
 import {
   all,
   componentCss,
+  defined,
   discardAsker,
   makeAttachment,
   makeItem,
@@ -318,7 +319,7 @@ describe('hv-item-editor: field parity', () => {
     (all(el, '[data-testid="editor-inspection-offset"]')[1] as HTMLButtonElement).click();
     await el.updateComplete;
     expect(dateInput().value).toBe(addDays(30));
-    expect(all(el, '[data-testid="editor-inspection-offset"]')[1].classList.contains('on')).toBe(true);
+    expect(all(el, '[data-testid="editor-inspection-offset"]')[1]?.classList.contains('on')).toBe(true);
   });
 
   it('takes an interval of your own behind +X days', async () => {
@@ -355,7 +356,7 @@ describe('hv-item-editor: field parity', () => {
     await el.updateComplete;
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
 
-    expect(saves[0].changes?.inspection_date).toBe(addDays(7));
+    expect(saves[0]?.changes?.inspection_date).toBe(addDays(7));
   });
 
   // Every other way in is drawn on the box; the way back out was emptying the
@@ -375,7 +376,7 @@ describe('hv-item-editor: field parity', () => {
     expect(el.dirty).toBe(true);
 
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
-    expect(saves[0].changes?.inspection_date).toBe(null);
+    expect(saves[0]?.changes?.inspection_date).toBe(null);
   });
 
   // Disabled rather than absent, on the terms the due date and the repeat are:
@@ -468,8 +469,8 @@ describe('hv-item-editor: saving', () => {
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
 
     expect(saves).toHaveLength(1);
-    expect(saves[0].itemId).toBe(null);
-    expect(saves[0].create).toMatchObject({ name: 'M4 Screws', quantity: 340 });
+    expect(saves[0]?.itemId).toBe(null);
+    expect(saves[0]?.create).toMatchObject({ name: 'M4 Screws', quantity: 340 });
   });
 
   it('offers the three statuses and carries the chosen one into the save', async () => {
@@ -486,7 +487,7 @@ describe('hv-item-editor: saving', () => {
     await el.updateComplete;
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
 
-    expect(saves[0].changes?.status).toBe('needs_repair');
+    expect(saves[0]?.changes?.status).toBe('needs_repair');
   });
 
   it('defaults a new item to ok and saves the picked status on create', async () => {
@@ -501,7 +502,7 @@ describe('hv-item-editor: saving', () => {
     await el.updateComplete;
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
 
-    expect(saves[0].create?.status).toBe('missing');
+    expect(saves[0]?.create?.status).toBe('missing');
   });
 
   it('sends the expected version so a conflict surfaces as a conflict', async () => {
@@ -512,7 +513,7 @@ describe('hv-item-editor: saving', () => {
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
 
     expect(saves[0]).toMatchObject({ itemId: 'item-1', expectedVersion: 9 });
-    expect(saves[0].changes?.name).toBe('B');
+    expect(saves[0]?.changes?.name).toBe('B');
   });
 
   // The row under the form is live: another member's quantity change arrives as
@@ -531,7 +532,7 @@ describe('hv-item-editor: saving', () => {
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
 
     expect(saves[0]).toMatchObject({ itemId: 'item-1', expectedVersion: 3 });
-    expect(saves[0].changes).toEqual({ description: 'mine' });
+    expect(saves[0]?.changes).toEqual({ description: 'mine' });
   });
 
   it('blocks the save and shows the problem on the offending field', async () => {
@@ -693,7 +694,7 @@ describe('hv-item-editor: location and tags', () => {
     expect(el.shadowRoot?.querySelector('hv-location-tree')).toBe(null);
 
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
-    expect(saves[0].changes?.location_id).toBe('garage');
+    expect(saves[0]?.changes?.location_id).toBe('garage');
   });
 
   // aria-expanded on its own says only that something opened; which element it
@@ -742,7 +743,7 @@ describe('hv-item-editor: location and tags', () => {
     expect(q(el, '[data-testid="editor-location"]')?.textContent).toContain('No location');
 
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
-    expect(saves[0].changes?.location_id).toBeNull();
+    expect(saves[0]?.changes?.location_id).toBeNull();
   });
 
   it('marks the area behind the chosen location, apart from the path itself', async () => {
@@ -824,7 +825,7 @@ describe('hv-item-editor: location and tags', () => {
     await el.updateComplete;
 
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
-    expect(saves[0].changes?.tags).toEqual(['metric', 'm4']);
+    expect(saves[0]?.changes?.tags).toEqual(['metric', 'm4']);
   });
 });
 
@@ -946,7 +947,7 @@ describe('hv-item-editor: category picker', () => {
     expectListShut(el);
 
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
-    expect(saves[0].changes?.category).toBe('Tools');
+    expect(saves[0]?.changes?.category).toBe('Tools');
   });
 
   it('picks with the keyboard and closes on Escape without discarding the edit', async () => {
@@ -999,7 +1000,7 @@ describe('hv-item-editor: typed custom fields', () => {
     const types = all(el, '[data-testid="editor-cf-type"]').map((s) => (s as HTMLSelectElement).value);
     expect(types).toEqual(['string', 'number', 'boolean']);
     // The boolean row is a switch, not a text box.
-    expect(rows[2].querySelector('[data-testid="editor-cf-value"]')?.getAttribute('role')).toBe('switch');
+    expect(rows[2]?.querySelector('[data-testid="editor-cf-value"]')?.getAttribute('role')).toBe('switch');
   });
 
   it('puts the remove button right after the value it removes', async () => {
@@ -1068,12 +1069,14 @@ describe('hv-item-editor: typed custom fields', () => {
     const saves = onSave(el);
 
     const rows = all(el, '[data-testid="editor-cf-row"]');
-    (rows[1].querySelector('[data-testid="editor-cf-remove"]') as HTMLButtonElement).click();
+    (
+      defined(rows[1], 'second row').querySelector('[data-testid="editor-cf-remove"]') as HTMLButtonElement
+    ).click();
     await el.updateComplete;
 
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
-    expect(saves[0].changes?.custom_fields_unset).toEqual(['gone']);
-    expect(saves[0].changes?.custom_fields_set).toBeUndefined();
+    expect(saves[0]?.changes?.custom_fields_unset).toEqual(['gone']);
+    expect(saves[0]?.changes?.custom_fields_set).toBeUndefined();
   });
 
   it('refuses to save a number field holding text', async () => {
@@ -1413,7 +1416,7 @@ describe('hv-item-editor: creating the first location from the picker', () => {
     // existing location.
     expect(el.shadowRoot?.querySelector('hv-location-tree')).toBe(null);
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
-    expect(saves[0].create?.location_id).toBe('loc-new');
+    expect(saves[0]?.create?.location_id).toBe('loc-new');
   });
 
   /** Type a name into the empty picker's create row and submit it. */
@@ -1558,14 +1561,14 @@ describe('hv-item-editor: pictures', () => {
     await el.updateComplete;
 
     expect(media.uploads).toHaveLength(1);
-    expect(media.uploads[0].itemId).toBe('i-1');
+    expect(media.uploads[0]?.itemId).toBe('i-1');
 
     // The next save must carry the post-upload version, or the backend answers
     // `conflict` against a version the upload already moved past.
     const saves: CustomEvent[] = [];
     el.addEventListener('save', (e) => saves.push(e as CustomEvent));
     q(el, '[data-testid="editor-save"]')?.click();
-    expect(saves[0].detail.expectedVersion).toBe(7);
+    expect(saves[0]?.detail.expectedVersion).toBe(7);
   });
 
   it('renders per-file error text and leaves the other files alone', async () => {
@@ -1587,9 +1590,9 @@ describe('hv-item-editor: pictures', () => {
     const entries = all(el, '[data-testid="editor-upload"]');
     // The failed one stays with its message; the one that succeeded is gone.
     expect(entries).toHaveLength(1);
-    expect(entries[0].dataset.state).toBe('error');
-    expect(entries[0].textContent).toContain('bad.png');
-    expect(entries[0].textContent).toContain('That file is not an image.');
+    expect(entries[0]?.dataset.state).toBe('error');
+    expect(entries[0]?.textContent).toContain('bad.png');
+    expect(entries[0]?.textContent).toContain('That file is not an image.');
     expect(media.uploads.map((u) => u.file.name)).toEqual(['bad.png', 'good.png']);
   });
 
@@ -1828,7 +1831,7 @@ describe('hv-item-editor: documents', () => {
     await el.updateComplete;
 
     expect(media.uploads).toHaveLength(1);
-    expect(media.uploads[0].kind).toBe('manual');
+    expect(media.uploads[0]?.kind).toBe('manual');
   });
 
   // A document comes off the file system; pointing the control at the camera
@@ -1912,7 +1915,7 @@ describe('hv-item-editor: documents', () => {
     const saves: CustomEvent[] = [];
     el.addEventListener('save', (e) => saves.push(e as CustomEvent));
     q(el, '[data-testid="editor-save"]')?.click();
-    expect(saves[0].detail.expectedVersion).toBe(6);
+    expect(saves[0]?.detail.expectedVersion).toBe(6);
   });
 
   it('shows the filename as the placeholder for an untitled document', async () => {
@@ -2111,7 +2114,7 @@ describe('hv-item-editor: photo order and the cover', () => {
     const el = await mount(makeItem({ id: 'i-1', attachments: three() }), { media });
     await el.updateComplete;
 
-    all(el, '[data-testid="editor-photo-make-cover"]')[1].click();
+    defined(all(el, '[data-testid="editor-photo-make-cover"]')[1], 'photo button 1').click();
     await drain();
 
     expect(media.reorders).toEqual([{ itemId: 'i-1', kind: 'picture', attachmentIds: ['c', 'a', 'b'] }]);
@@ -2123,10 +2126,10 @@ describe('hv-item-editor: photo order and the cover', () => {
     const el = await mount(makeItem({ id: 'i-1', attachments: three() }), { media });
     await el.updateComplete;
 
-    all(el, '[data-testid="editor-photo-later"]')[0].click();
+    defined(all(el, '[data-testid="editor-photo-later"]')[0], 'photo button 0').click();
     await drain();
 
-    expect(media.reorders[0].attachmentIds).toEqual(['b', 'a', 'c']);
+    expect(media.reorders[0]?.attachmentIds).toEqual(['b', 'a', 'c']);
   });
 
   it('offers no move past either end', async () => {
@@ -2137,8 +2140,8 @@ describe('hv-item-editor: photo order and the cover', () => {
 
     const earlier = all<HTMLButtonElement>(el, '[data-testid="editor-photo-earlier"]');
     const later = all<HTMLButtonElement>(el, '[data-testid="editor-photo-later"]');
-    expect([earlier[0].disabled, earlier[2].disabled]).toEqual([true, false]);
-    expect([later[0].disabled, later[2].disabled]).toEqual([false, true]);
+    expect([earlier[0]?.disabled, earlier[2]?.disabled]).toEqual([true, false]);
+    expect([later[0]?.disabled, later[2]?.disabled]).toEqual([false, true]);
   });
 
   it('shows no ordering controls for a single photo', async () => {
@@ -2161,7 +2164,7 @@ describe('hv-item-editor: photo order and the cover', () => {
     const el = await mount(makeItem({ id: 'i-1', attachments: three() }), { media });
     await el.updateComplete;
 
-    all(el, '[data-testid="editor-photo-later"]')[0].click();
+    defined(all(el, '[data-testid="editor-photo-later"]')[0], 'photo button 0').click();
     await drain();
     await el.updateComplete;
 
@@ -2191,7 +2194,7 @@ describe('hv-item-editor: photo order and the cover', () => {
     await el.updateComplete;
 
     expect(media.uploads).toHaveLength(2);
-    expect(media.uploads[1].file.name).toBe('shelf.png');
+    expect(media.uploads[1]?.file.name).toBe('shelf.png');
     // The entry clears once it lands, like any other successful upload.
     expect(q(el, '[data-testid="editor-upload"]')).toBeNull();
   });
@@ -2271,7 +2274,7 @@ describe('hv-item-editor: shrinking a photo before it is sent', () => {
     await el.updateComplete;
 
     expect(media.uploads).toHaveLength(1);
-    expect(media.uploads[0].file.size).toBe(512);
+    expect(media.uploads[0]?.file.size).toBe(512);
     expect(q(el, '[data-testid="editor-upload"]')).toBeNull();
   });
 
@@ -2301,7 +2304,7 @@ describe('hv-item-editor: shrinking a photo before it is sent', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await el.updateComplete;
 
-    expect(media.uploads[0].file).toBe(pdf);
+    expect(media.uploads[0]?.file).toBe(pdf);
   });
 });
 
@@ -2378,11 +2381,11 @@ describe('hv-item-editor: same-item refreshes', () => {
 
     const saves = onSave(el);
     q(el, '[data-testid="editor-save"]')?.click();
-    expect(saves[0].expectedVersion).toBe(7);
+    expect(saves[0]?.expectedVersion).toBe(7);
 
     await refreshed(el, { version: 9 });
     q(el, '[data-testid="editor-save"]')?.click();
-    expect(saves[1].expectedVersion).toBe(9);
+    expect(saves[1]?.expectedVersion).toBe(9);
   });
 
   it('rebuilds the form when the create form saves into a real item', async () => {
@@ -2433,9 +2436,9 @@ describe('hv-item-editor: upload errors outlive their siblings', () => {
 
     const entries = all(el, '[data-testid="editor-upload"]');
     expect(entries).toHaveLength(1);
-    expect(entries[0].dataset.state).toBe('error');
-    expect(entries[0].textContent).toContain('broken.jpg');
-    expect(entries[0].textContent).toContain('not one of the accepted types');
+    expect(entries[0]?.dataset.state).toBe('error');
+    expect(entries[0]?.textContent).toContain('broken.jpg');
+    expect(entries[0]?.textContent).toContain('not one of the accepted types');
     expect(q(el, '[data-testid="editor-upload-retry"]')).toBeTruthy();
   });
 
@@ -2451,7 +2454,7 @@ describe('hv-item-editor: upload errors outlive their siblings', () => {
 
     const left = all(el, '[data-testid="editor-upload"]');
     expect(left).toHaveLength(1);
-    expect(left[0].textContent).toContain('also-broken.jpg');
+    expect(left[0]?.textContent).toContain('also-broken.jpg');
   });
 
   // Nothing else clears the queue any more, so a row with no Retry — a failed
@@ -2502,12 +2505,12 @@ describe('hv-item-editor: the upload queue reports where the work is', () => {
 
     const lists = all(el, '[data-testid="editor-upload-list"]');
     expect(lists.map((l) => l.dataset.kind)).toEqual(['picture', 'manual']);
-    expect(lists[0].textContent).toContain('shelf.png');
-    expect(lists[0].textContent).not.toContain('manual.pdf');
-    expect(lists[1].textContent).toContain('manual.pdf');
+    expect(lists[0]?.textContent).toContain('shelf.png');
+    expect(lists[0]?.textContent).not.toContain('manual.pdf');
+    expect(lists[1]?.textContent).toContain('manual.pdf');
     // Each list sits inside the section whose picker filled it.
-    expect(lists[0].closest('.cell')?.querySelector('[data-testid="editor-photos"]')).toBeTruthy();
-    expect(lists[1].closest('.cell')?.querySelector('[data-testid="editor-documents"]')).toBeTruthy();
+    expect(lists[0]?.closest('.cell')?.querySelector('[data-testid="editor-photos"]')).toBeTruthy();
+    expect(lists[1]?.closest('.cell')?.querySelector('[data-testid="editor-documents"]')).toBeTruthy();
   });
 
   it('moves something while a file is in flight, and stops when it fails', async () => {
@@ -2917,8 +2920,8 @@ describe('hv-item-editor: reminders', () => {
     await type(el, 'editor-reminder-count', '3');
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
 
-    expect(saves[0].changes?.reminder_date).toBe('2026-09-01');
-    expect(saves[0].changes?.reminder_interval).toEqual({ unit: 'months', count: 3 });
+    expect(saves[0]?.changes?.reminder_date).toBe('2026-09-01');
+    expect(saves[0]?.changes?.reminder_interval).toEqual({ unit: 'months', count: 3 });
   });
 
   it('saves a date with no repeat as a one-off', async () => {
@@ -2930,7 +2933,7 @@ describe('hv-item-editor: reminders', () => {
 
     // The item had no interval, so there is none to clear: the date alone says
     // one-off, and the write names only what this edit moved.
-    expect(saves[0].changes).toEqual({ reminder_date: '2026-09-01' });
+    expect(saves[0]?.changes).toEqual({ reminder_date: '2026-09-01' });
   });
 
   it('clears both halves when the date is cleared', async () => {
@@ -2947,9 +2950,9 @@ describe('hv-item-editor: reminders', () => {
     await type(el, 'editor-reminder-date', '');
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
 
-    expect(saves[0].changes?.reminder_date).toBe(null);
+    expect(saves[0]?.changes?.reminder_date).toBe(null);
     // Not just left as it was: the backend refuses an interval with no anchor.
-    expect(saves[0].changes?.reminder_interval).toBe(null);
+    expect(saves[0]?.changes?.reminder_interval).toBe(null);
   });
 });
 
