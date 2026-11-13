@@ -1,7 +1,7 @@
 """The card's input caps must be the backend's, and something has to say so.
 
 ``cards/haventory-card/src/ui/item-form.ts`` copies the size limits out of
-``models.py`` so the editor refuses input before the round trip rather than
+``validation.py`` so the editor refuses input before the round trip rather than
 showing a server error on save. Both halves are internally consistent — the
 card's own test checks the card's numbers against the card's numbers — so a
 drift shows up in neither suite:
@@ -30,7 +30,7 @@ import re
 from pathlib import Path
 
 import pytest
-from custom_components.haventory import models
+from custom_components.haventory import validation
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ITEM_FORM_TS = REPO_ROOT / "cards" / "haventory-card" / "src" / "ui" / "item-form.ts"
@@ -88,9 +88,9 @@ def test_each_card_cap_equals_the_backend_cap(cap: str) -> None:
 
     parsed = card_caps()
     assert cap in parsed, f"{ITEM_FORM_TS.name} declares no {cap}"
-    assert hasattr(models, cap), f"models.py declares no {cap}"
-    assert parsed[cap] == getattr(models, cap), (
-        f"{cap}: card has {parsed[cap]}, models.py has {getattr(models, cap)} — "
+    assert hasattr(validation, cap), f"validation.py declares no {cap}"
+    assert parsed[cap] == getattr(validation, cap), (
+        f"{cap}: card has {parsed[cap]}, validation.py has {getattr(validation, cap)} — "
         "the editor and the API would disagree about what to accept"
     )
 
@@ -107,4 +107,4 @@ def test_no_unregistered_cap_hides_in_the_editor() -> None:
 def test_the_reminder_units_match() -> None:
     """The unit vocabulary is a cap on input too: an extra one is refused."""
 
-    assert card_reminder_units() == models.REMINDER_UNITS
+    assert card_reminder_units() == validation.REMINDER_UNITS

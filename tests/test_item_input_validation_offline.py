@@ -19,6 +19,11 @@ from typing import Any
 import pytest
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
+    ItemCreate,
+    ItemUpdate,
+)
+from custom_components.haventory.repository import Repository
+from custom_components.haventory.validation import (
     CATEGORY_MAX_LENGTH,
     CUSTOM_FIELD_KEY_MAX_LENGTH,
     CUSTOM_FIELD_VALUE_MAX_LENGTH,
@@ -26,10 +31,7 @@ from custom_components.haventory.models import (
     DESCRIPTION_MAX_LENGTH,
     TAG_MAX_LENGTH,
     TAGS_MAX_COUNT,
-    ItemCreate,
-    ItemUpdate,
 )
-from custom_components.haventory.repository import Repository
 
 from runtime_helpers import ws_hass
 from ws_helpers import ws_send

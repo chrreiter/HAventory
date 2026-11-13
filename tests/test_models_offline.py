@@ -18,7 +18,6 @@ from custom_components.haventory.const import (
 )
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
-    ATTACHMENT_TITLE_MAX_LENGTH,
     EMPTY_LOCATION_PATH,
     Item,
     ItemCreate,
@@ -37,15 +36,18 @@ from custom_components.haventory.models import (
     serialize_reminder_interval,
     serialize_status_definition,
     validate_attachment_meta,
-    validate_optional_date,
     validate_status_definition,
-    validate_tags,
     walk_location_chain,
 )
 from custom_components.haventory.timestamps import (
     is_canonical_utc_timestamp,
     iso_utc_now,
     monotonic_timestamp_after,
+)
+from custom_components.haventory.validation import (
+    ATTACHMENT_TITLE_MAX_LENGTH,
+    validate_optional_date,
+    validate_tags,
 )
 
 UUID4_RE = re.compile(

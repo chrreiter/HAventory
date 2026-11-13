@@ -25,6 +25,12 @@ from custom_components.haventory import media
 from custom_components.haventory.exceptions import StorageError, ValidationError
 from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
 from custom_components.haventory.models import (
+    ReminderInterval,
+    validate_attachment_meta,
+)
+from custom_components.haventory.repository import Repository
+from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
+from custom_components.haventory.validation import (
     CATEGORY_MAX_LENGTH,
     CUSTOM_FIELD_KEY_MAX_LENGTH,
     CUSTOM_FIELD_VALUE_MAX_LENGTH,
@@ -33,11 +39,7 @@ from custom_components.haventory.models import (
     NAME_MAX_LENGTH,
     TAG_MAX_LENGTH,
     TAGS_MAX_COUNT,
-    ReminderInterval,
-    validate_attachment_meta,
 )
-from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from homeassistant.core import HomeAssistant
 
 from runtime_helpers import repo_of, runtime_of, ws_hass

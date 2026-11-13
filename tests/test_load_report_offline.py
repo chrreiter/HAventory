@@ -21,9 +21,10 @@ import logging
 import uuid
 
 import pytest
-from custom_components.haventory.models import NAME_MAX_LENGTH, ItemCreate
+from custom_components.haventory.models import ItemCreate
 from custom_components.haventory.repository import LOAD_DROP_LOG_LIMIT, LoadReport, Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
+from custom_components.haventory.validation import NAME_MAX_LENGTH
 
 
 def _loc(loc_id: str, name: str, parent_id: str | None) -> dict[str, object]:
