@@ -31,7 +31,6 @@ from typing import Any, Literal, cast
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
-from homeassistant.util import dt as dt_util
 
 from . import media as media_mod
 from . import todo_bridge
@@ -55,6 +54,7 @@ from .repository import UNSET, Repository, RepositorySnapshot
 from .runtime import loaded_runtime
 from .serialization import serialize_item, serialize_location
 from .storage import async_persist_repo
+from .timestamps import today_local_date
 from .validation import normalize_string_list, require_string_list, validate_quantity
 
 LOGGER = context_logger(__name__)
@@ -230,7 +230,7 @@ def _op_reminder_bump(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
         # The instance's local day, as the calendar and the card use: counting
         # from the UTC day would skip tomorrow's occurrence for an evening bump
         # west of Greenwich.
-        today=dt_util.now().date(),
+        today=today_local_date(),
         expected_version=payload.get("expected_version"),
     )
     return _item(hass, updated)

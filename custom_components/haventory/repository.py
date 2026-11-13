@@ -880,7 +880,9 @@ class Repository:
             buckets.sort(key=len)
             ids = buckets[0].intersection(*buckets[1:])
             source = [self._items_by_id[i] for i in ids]
-        return filter_items(source, flt, known_statuses=self.status_slugs())
+        return filter_items(
+            source, flt, today=today_local_date(), known_statuses=self.status_slugs()
+        )
 
     def list_items(
         self,

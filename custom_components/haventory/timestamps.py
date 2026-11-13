@@ -11,7 +11,7 @@ it rather than against the UTC date.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import TypeGuard
 
 from homeassistant.util import dt as dt_util
@@ -61,10 +61,11 @@ def is_canonical_utc_timestamp(ts: object) -> TypeGuard[str]:
     return True
 
 
-def today_local_date() -> str:
-    """Today as YYYY-MM-DD in Home Assistant's configured time zone.
+def today_local_date() -> date:
+    """Today in Home Assistant's configured time zone.
 
-    Every date count and chip measures against this one day. `dt_util.now()`
-    reads the zone Home Assistant configured, so no `hass` is needed.
+    Every date count, chip and reminder bump measures against this one day.
+    `dt_util.now()` reads the zone Home Assistant configured, so no `hass` is
+    needed.
     """
-    return dt_util.now().date().isoformat()
+    return dt_util.now().date()

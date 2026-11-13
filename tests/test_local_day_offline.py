@@ -75,7 +75,7 @@ def _repo_with(**fields: object) -> Repository:
 def test_today_is_the_instances_day_and_not_the_utc_one() -> None:
     """The whole fix in one line: 01:30 in Auckland is still yesterday in UTC."""
 
-    assert today_local_date() == LOCAL_TODAY
+    assert today_local_date().isoformat() == LOCAL_TODAY
     # The frozen instant, not the machine's clock: the pair is a claim about
     # the zone the household is in, and reading the real day here made the
     # whole file pass only on the date the constants were written.
@@ -88,15 +88,17 @@ def test_an_inspection_dated_today_is_due_on_every_surface() -> None:
 
     item = _item(inspection_date=LOCAL_TODAY)
 
-    assert item_inspection_is_due(item) is True
-    assert item_inspection_is_overdue(item) is False
+    assert item_inspection_is_due(item, today=today_local_date()) is True
+    assert item_inspection_is_overdue(item, today=today_local_date()) is False
 
     repo = _repo_with(inspection_date=LOCAL_TODAY)
     counts = repo.get_counts()
     assert counts["inspection_due_count"] == 1
     assert counts["inspection_overdue_count"] == 0
 
-    assert [i.id for i in filter_items([item], {"inspection_due_only": True})] == [item.id]
+    assert [
+        i.id for i in filter_items([item], {"inspection_due_only": True}, today=today_local_date())
+    ] == [item.id]
 
 
 @pytest.mark.usefixtures("household_in_new_zealand")
@@ -105,15 +107,17 @@ def test_a_date_that_passed_locally_is_overdue_before_utc_agrees() -> None:
 
     item = _item(checked_out=True, due_date=UTC_TODAY)
 
-    assert item_is_overdue(item) is True
-    assert item_is_due(item) is True
+    assert item_is_overdue(item, today=today_local_date()) is True
+    assert item_is_due(item, today=today_local_date()) is True
 
     repo = _repo_with(checked_out=True, due_date=UTC_TODAY)
     counts = repo.get_counts()
     assert counts["overdue_count"] == 1
     assert counts["checked_out_due_count"] == 1
 
-    assert [i.id for i in filter_items([item], {"overdue_only": True})] == [item.id]
+    assert [
+        i.id for i in filter_items([item], {"overdue_only": True}, today=today_local_date())
+    ] == [item.id]
 
 
 @pytest.mark.usefixtures("household_in_new_zealand")
@@ -122,9 +126,11 @@ def test_a_reminder_dated_today_has_come_round() -> None:
 
     item = _item(reminder_date=LOCAL_TODAY)
 
-    assert item_reminder_is_due(item) is True
+    assert item_reminder_is_due(item, today=today_local_date()) is True
     assert _repo_with(reminder_date=LOCAL_TODAY).get_counts()["reminder_due_count"] == 1
-    assert [i.id for i in filter_items([item], {"reminder_due_only": True})] == [item.id]
+    assert [
+        i.id for i in filter_items([item], {"reminder_due_only": True}, today=today_local_date())
+    ] == [item.id]
 
 
 @pytest.mark.usefixtures("household_in_new_zealand")
@@ -137,15 +143,15 @@ def test_tomorrow_is_not_yet_due_anywhere() -> None:
 
     item = _item(inspection_date="2026-08-24", reminder_date="2026-08-24")
 
-    assert item_inspection_is_due(item) is False
-    assert item_reminder_is_due(item) is False
+    assert item_inspection_is_due(item, today=today_local_date()) is False
+    assert item_reminder_is_due(item, today=today_local_date()) is False
 
     repo = _repo_with(inspection_date="2026-08-24", reminder_date="2026-08-24")
     counts = repo.get_counts()
     assert counts["inspection_due_count"] == 0
     assert counts["reminder_due_count"] == 0
 
-    assert filter_items([item], {"inspection_due_only": True}) == []
+    assert filter_items([item], {"inspection_due_only": True}, today=today_local_date()) == []
 
 
 @pytest.mark.usefixtures("household_in_new_zealand")
@@ -171,5 +177,5 @@ def test_the_subscription_matcher_and_the_item_predicate_read_one_day(
     payload = serialize_item(hass, item)
     matched = _item_matches_filter(payload, {"topic": "items", "inspection_overdue_only": True})
 
-    assert item_inspection_is_overdue(item) is expected
+    assert item_inspection_is_overdue(item, today=today_local_date()) is expected
     assert matched is expected

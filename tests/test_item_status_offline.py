@@ -29,6 +29,7 @@ from custom_components.haventory.query import filter_items
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.services import SCHEMA_ITEM_CREATE, SCHEMA_ITEM_UPDATE
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
+from custom_components.haventory.timestamps import today_local_date
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store as HAStore
 
@@ -90,18 +91,20 @@ def test_filter_items_by_status() -> None:
     repair = create_item_from_create({"name": "Drill", "status": "needs_repair"})
     items = [ok, missing, repair]
 
-    assert filter_items(items, {"status": "missing"}) == [missing]
-    assert filter_items(items, {"status": "needs_repair"}) == [repair]
-    assert filter_items(items, {"status": "ok"}) == [ok]
+    assert filter_items(items, {"status": "missing"}, today=today_local_date()) == [missing]
+    assert filter_items(items, {"status": "needs_repair"}, today=today_local_date()) == [repair]
+    assert filter_items(items, {"status": "ok"}, today=today_local_date()) == [ok]
     # Combined with q: both predicates must hold.
-    assert filter_items(items, {"status": "missing", "q": "drill"}) == []
-    assert filter_items(items, {"status": "needs_repair", "q": "drill"}) == [repair]
+    assert filter_items(items, {"status": "missing", "q": "drill"}, today=today_local_date()) == []
+    assert filter_items(
+        items, {"status": "needs_repair", "q": "drill"}, today=today_local_date()
+    ) == [repair]
 
 
 def test_filter_items_rejects_unknown_status() -> None:
     items = [create_item_from_create({"name": "Hammer"})]
     with pytest.raises(ValidationError, match="status must be one of"):
-        filter_items(items, {"status": "bogus"})  # type: ignore[typeddict-item]
+        filter_items(items, {"status": "bogus"}, today=today_local_date())  # type: ignore[typeddict-item]
 
 
 def test_repository_roundtrip_preserves_status() -> None:

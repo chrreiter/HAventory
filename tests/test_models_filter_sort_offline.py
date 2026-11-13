@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import date
 
 import pytest
 from custom_components.haventory import query
@@ -15,12 +16,16 @@ from custom_components.haventory.query import (
     ItemFilter,
     Sort,
     filter_items,
+    item_is_due,
+    item_is_overdue,
     sort_items,
     validate_area_filter,
     validate_item_filter,
     validate_sort,
 )
+from custom_components.haventory.repository import Repository
 from custom_components.haventory.text import normalize_text_for_sort
+from custom_components.haventory.timestamps import today_local_date
 
 from date_helpers import day_offset
 
@@ -60,16 +65,16 @@ def test_filter_q_matches_name_description_tags_and_location() -> None:
     )
 
     # Name/description/tags/location display_path should all be matched case-insensitively
-    out = filter_items([a, b, c, d], ItemFilter(q="adhesive"))
+    out = filter_items([a, b, c, d], ItemFilter(q="adhesive"), today=today_local_date())
     assert [x.name for x in out] == ["Glue"]
 
-    out2 = filter_items([a, b, c, d], ItemFilter(q="tool"))
+    out2 = filter_items([a, b, c, d], ItemFilter(q="tool"), today=today_local_date())
     assert [x.name for x in out2] == ["Electric Saw"]
 
-    out3 = filter_items([a, b, c, d], ItemFilter(q="aid"))
+    out3 = filter_items([a, b, c, d], ItemFilter(q="aid"), today=today_local_date())
     assert [x.name for x in out3] == ["Band"]
 
-    out4 = filter_items([a, b, c, d], ItemFilter(q="GARAGE"))
+    out4 = filter_items([a, b, c, d], ItemFilter(q="GARAGE"), today=today_local_date())
     assert [x.name for x in out4] == ["Tape"]
 
 
@@ -83,17 +88,17 @@ def test_filter_q_is_accent_insensitive() -> None:
     a = create_item_from_create({"name": "Probe Café"})
     b = create_item_from_create({"name": "Plain Mug"})
 
-    out = filter_items([a, b], ItemFilter(q="cafe"))
+    out = filter_items([a, b], ItemFilter(q="cafe"), today=today_local_date())
     assert [x.name for x in out] == ["Probe Café"]
 
-    out2 = filter_items([a, b], ItemFilter(q="CAFE"))
+    out2 = filter_items([a, b], ItemFilter(q="CAFE"), today=today_local_date())
     assert [x.name for x in out2] == ["Probe Café"]
 
-    out3 = filter_items([a, b], ItemFilter(q="café"))
+    out3 = filter_items([a, b], ItemFilter(q="café"), today=today_local_date())
     assert [x.name for x in out3] == ["Probe Café"]
 
     c = create_item_from_create({"name": "Cafe Filter"})
-    out4 = filter_items([b, c], ItemFilter(q="café"))
+    out4 = filter_items([b, c], ItemFilter(q="café"), today=today_local_date())
     assert [x.name for x in out4] == ["Cafe Filter"]
 
 
@@ -102,13 +107,21 @@ def test_filter_tags_any_and_all() -> None:
     i2 = create_item_from_create({"name": "Tape", "tags": ["blue"]})
     i3 = create_item_from_create({"name": "Bag", "tags": ["yellow"]})
 
-    out_any = filter_items([i1, i2, i3], ItemFilter(tags_any=["blue", "white"]))
+    out_any = filter_items(
+        [i1, i2, i3], ItemFilter(tags_any=["blue", "white"]), today=today_local_date()
+    )
     assert [x.name for x in out_any] == ["Box", "Tape"]
 
-    out_all = filter_items([i1, i2, i3], ItemFilter(tags_all=["red", "blue"]))
+    out_all = filter_items(
+        [i1, i2, i3], ItemFilter(tags_all=["red", "blue"]), today=today_local_date()
+    )
     assert [x.name for x in out_all] == ["Box"]
 
-    out_both = filter_items([i1, i2, i3], ItemFilter(tags_any=["blue"], tags_all=["red", "blue"]))
+    out_both = filter_items(
+        [i1, i2, i3],
+        ItemFilter(tags_any=["blue"], tags_all=["red", "blue"]),
+        today=today_local_date(),
+    )
     assert [x.name for x in out_both] == ["Box"]
 
 
@@ -118,10 +131,10 @@ def test_filter_category_and_checked_out() -> None:
         {"name": "Glue", "category": "Consumables", "checked_out": True, "due_date": "2024-01-02"}
     )
 
-    out_cat = filter_items([a, b], ItemFilter(category="tools"))
+    out_cat = filter_items([a, b], ItemFilter(category="tools"), today=today_local_date())
     assert [x.name for x in out_cat] == ["Hammer"]
 
-    out_checked = filter_items([a, b], ItemFilter(checked_out=True))
+    out_checked = filter_items([a, b], ItemFilter(checked_out=True), today=today_local_date())
     assert [x.name for x in out_checked] == ["Glue"]
 
 
@@ -132,7 +145,7 @@ def test_filter_low_stock_only_threshold_rules() -> None:
     c = create_item_from_create({"name": "Batteries", "quantity": 2, "low_stock_threshold": 2})
     d = create_item_from_create({"name": "Nails", "quantity": 3, "low_stock_threshold": 2})
 
-    out = filter_items([a, b, c, d], ItemFilter(low_stock_only=True))
+    out = filter_items([a, b, c, d], ItemFilter(low_stock_only=True), today=today_local_date())
     assert [x.name for x in out] == ["Glue", "Batteries"]
 
 
@@ -148,7 +161,7 @@ def test_low_stock_first_orders_without_filtering() -> None:
     d.updated_at = "2024-01-04T00:00:00Z"
 
     items = sort_items(
-        filter_items([a, b, c, d], ItemFilter()),
+        filter_items([a, b, c, d], ItemFilter(), today=today_local_date()),
         Sort(field="updated_at", order="desc"),
     )
     assert [x.name for x in items] == ["D", "C", "B", "A"]
@@ -180,18 +193,24 @@ def test_filter_location_id_with_and_without_subtree() -> None:
     )
 
     without_subtree = filter_items(
-        [at_root, at_mid, at_leaf], ItemFilter(location_id=str(root.id), include_subtree=False)
+        [at_root, at_mid, at_leaf],
+        ItemFilter(location_id=str(root.id), include_subtree=False),
+        today=today_local_date(),
     )
     assert [x.name for x in without_subtree] == ["Box"]
 
     with_subtree = filter_items(
-        [at_root, at_mid, at_leaf], ItemFilter(location_id=str(root.id), include_subtree=True)
+        [at_root, at_mid, at_leaf],
+        ItemFilter(location_id=str(root.id), include_subtree=True),
+        today=today_local_date(),
     )
     assert [x.name for x in with_subtree] == ["Box", "Tape", "Glue"]
 
     # Unknown location id → empty result (no error)
     empty = filter_items(
-        [at_root, at_mid, at_leaf], ItemFilter(location_id=str(uuid.uuid4()), include_subtree=True)
+        [at_root, at_mid, at_leaf],
+        ItemFilter(location_id=str(uuid.uuid4()), include_subtree=True),
+        today=today_local_date(),
     )
     assert empty == []
 
@@ -208,14 +227,18 @@ def test_filter_updated_after_and_created_after() -> None:
     c.created_at = "2024-01-03T00:00:00Z"
     c.updated_at = "2024-01-03T10:00:00Z"
 
-    out_upd = filter_items([a, b, c], ItemFilter(updated_after="2024-01-02T00:00:00Z"))
+    out_upd = filter_items(
+        [a, b, c], ItemFilter(updated_after="2024-01-02T00:00:00Z"), today=today_local_date()
+    )
     assert [x.name for x in out_upd] == ["B", "C"]
 
-    out_created = filter_items([a, b, c], ItemFilter(created_after="2024-01-01T12:00:00Z"))
+    out_created = filter_items(
+        [a, b, c], ItemFilter(created_after="2024-01-01T12:00:00Z"), today=today_local_date()
+    )
     assert [x.name for x in out_created] == ["B", "C"]
 
     with pytest.raises(ValidationError):
-        filter_items([a, b, c], ItemFilter(updated_after="2024/01/01"))
+        filter_items([a, b, c], ItemFilter(updated_after="2024/01/01"), today=today_local_date())
 
 
 def test_filter_updated_before_and_created_before() -> None:
@@ -232,16 +255,21 @@ def test_filter_updated_before_and_created_before() -> None:
     c.created_at = "2024-01-03T00:00:00Z"
     c.updated_at = "2024-01-03T10:00:00Z"
 
-    out_upd = filter_items([a, b, c], ItemFilter(updated_before="2024-01-02T00:00:00Z"))
+    out_upd = filter_items(
+        [a, b, c], ItemFilter(updated_before="2024-01-02T00:00:00Z"), today=today_local_date()
+    )
     assert [x.name for x in out_upd] == ["A"]
 
-    out_created = filter_items([a, b, c], ItemFilter(created_before="2024-01-03T00:00:00Z"))
+    out_created = filter_items(
+        [a, b, c], ItemFilter(created_before="2024-01-03T00:00:00Z"), today=today_local_date()
+    )
     assert [x.name for x in out_created] == ["A", "B"]
 
     # Both ends together select the middle, and the bounds stay exclusive.
     windowed = filter_items(
         [a, b, c],
         ItemFilter(updated_after="2024-01-01T10:00:00Z", updated_before="2024-01-03T10:00:00Z"),
+        today=today_local_date(),
     )
     assert [x.name for x in windowed] == ["B"]
 
@@ -250,12 +278,13 @@ def test_filter_updated_before_and_created_before() -> None:
         filter_items(
             [a, b, c],
             ItemFilter(updated_after="2024-01-03T00:00:00Z", updated_before="2024-01-02T00:00:00Z"),
+            today=today_local_date(),
         )
         == []
     )
 
     with pytest.raises(ValidationError):
-        filter_items([a, b, c], ItemFilter(created_before="2024/01/01"))
+        filter_items([a, b, c], ItemFilter(created_before="2024/01/01"), today=today_local_date())
 
 
 def test_filter_overdue_only() -> None:
@@ -267,10 +296,12 @@ def test_filter_overdue_only() -> None:
     home = create_item_from_create({"name": "Home"})
     every = [late, soon, undated, home]
 
-    assert [x.name for x in filter_items(every, ItemFilter(overdue_only=True))] == ["Late"]
+    assert [
+        x.name for x in filter_items(every, ItemFilter(overdue_only=True), today=today_local_date())
+    ] == ["Late"]
 
     # Off (or absent) it is not a predicate at all, so nothing is excluded.
-    assert filter_items(every, ItemFilter(overdue_only=False)) == every
+    assert filter_items(every, ItemFilter(overdue_only=False), today=today_local_date()) == every
 
 
 def test_filter_inspection_overdue_only_is_strictly_before_today() -> None:
@@ -283,11 +314,14 @@ def test_filter_inspection_overdue_only_is_strictly_before_today() -> None:
     every = [yesterday, today, tomorrow, undated]
 
     # An inspection due today has not been missed yet — the comparison is strict.
-    kept = filter_items(every, ItemFilter(inspection_overdue_only=True))
+    kept = filter_items(every, ItemFilter(inspection_overdue_only=True), today=today_local_date())
     assert [x.name for x in kept] == ["Yesterday"]
 
     # Off (or absent) it is not a predicate at all, so nothing is excluded.
-    assert filter_items(every, ItemFilter(inspection_overdue_only=False)) == every
+    assert (
+        filter_items(every, ItemFilter(inspection_overdue_only=False), today=today_local_date())
+        == every
+    )
 
 
 def test_filter_inspection_overdue_is_independent_of_checkout() -> None:
@@ -304,12 +338,23 @@ def test_filter_inspection_overdue_is_independent_of_checkout() -> None:
     )
     every = [shelved, borrowed]
 
-    inspection = filter_items(every, ItemFilter(inspection_overdue_only=True))
+    inspection = filter_items(
+        every, ItemFilter(inspection_overdue_only=True), today=today_local_date()
+    )
     assert [x.name for x in inspection] == ["Shelved"]
-    assert [x.name for x in filter_items(every, ItemFilter(overdue_only=True))] == ["Borrowed"]
+    assert [
+        x.name for x in filter_items(every, ItemFilter(overdue_only=True), today=today_local_date())
+    ] == ["Borrowed"]
 
     # Both predicates at once is an AND, and nothing here is late on both counts.
-    assert filter_items(every, ItemFilter(overdue_only=True, inspection_overdue_only=True)) == []
+    assert (
+        filter_items(
+            every,
+            ItemFilter(overdue_only=True, inspection_overdue_only=True),
+            today=today_local_date(),
+        )
+        == []
+    )
 
 
 def test_filter_checked_out_due_only_counts_today() -> None:
@@ -328,13 +373,18 @@ def test_filter_checked_out_due_only_counts_today() -> None:
     home = create_item_from_create({"name": "Home"})
     every = [late, today, tomorrow, undated, home]
 
-    kept = filter_items(every, ItemFilter(checked_out_due_only=True))
+    kept = filter_items(every, ItemFilter(checked_out_due_only=True), today=today_local_date())
     assert [x.name for x in kept] == ["Late", "Today"]
     # The strict twin drops the one due today, which is the whole difference.
-    assert [x.name for x in filter_items(every, ItemFilter(overdue_only=True))] == ["Late"]
+    assert [
+        x.name for x in filter_items(every, ItemFilter(overdue_only=True), today=today_local_date())
+    ] == ["Late"]
 
     # Off (or absent) it is not a predicate at all, so nothing is excluded.
-    assert filter_items(every, ItemFilter(checked_out_due_only=False)) == every
+    assert (
+        filter_items(every, ItemFilter(checked_out_due_only=False), today=today_local_date())
+        == every
+    )
 
 
 def test_filter_inspection_due_only_counts_today() -> None:
@@ -346,13 +396,16 @@ def test_filter_inspection_due_only_counts_today() -> None:
     undated = create_item_from_create({"name": "Undated"})
     every = [yesterday, today, tomorrow, undated]
 
-    kept = filter_items(every, ItemFilter(inspection_due_only=True))
+    kept = filter_items(every, ItemFilter(inspection_due_only=True), today=today_local_date())
     assert [x.name for x in kept] == ["Yesterday", "Today"]
-    strict = filter_items(every, ItemFilter(inspection_overdue_only=True))
+    strict = filter_items(every, ItemFilter(inspection_overdue_only=True), today=today_local_date())
     assert [x.name for x in strict] == ["Yesterday"]
 
     # Off (or absent) it is not a predicate at all, so nothing is excluded.
-    assert filter_items(every, ItemFilter(inspection_due_only=False)) == every
+    assert (
+        filter_items(every, ItemFilter(inspection_due_only=False), today=today_local_date())
+        == every
+    )
 
 
 def test_the_two_due_filters_ask_about_different_dates() -> None:
@@ -364,16 +417,20 @@ def test_the_two_due_filters_ask_about_different_dates() -> None:
     shelved = create_item_from_create({"name": "Shelved", "inspection_date": day_offset(0)})
     every = [borrowed, shelved]
 
-    assert [x.name for x in filter_items(every, ItemFilter(checked_out_due_only=True))] == [
-        "Borrowed"
-    ]
-    assert [x.name for x in filter_items(every, ItemFilter(inspection_due_only=True))] == [
-        "Shelved"
-    ]
+    assert [
+        x.name
+        for x in filter_items(
+            every, ItemFilter(checked_out_due_only=True), today=today_local_date()
+        )
+    ] == ["Borrowed"]
+    assert [
+        x.name
+        for x in filter_items(every, ItemFilter(inspection_due_only=True), today=today_local_date())
+    ] == ["Shelved"]
 
     # Both predicates at once is an AND, and neither item answers both.
     both = ItemFilter(checked_out_due_only=True, inspection_due_only=True)
-    assert filter_items(every, both) == []
+    assert filter_items(every, both, today=today_local_date()) == []
 
 
 def test_sort_default_and_fields_with_tiebreak() -> None:
@@ -432,15 +489,23 @@ def test_filter_orphaned_only_matches_items_without_location() -> None:
     orphan_a = create_item_from_create({"name": "Orphan Saw"})
     orphan_b = create_item_from_create({"name": "Orphan Glue"})
 
-    out = filter_items([placed, orphan_a, orphan_b], ItemFilter(orphaned_only=True))
+    out = filter_items(
+        [placed, orphan_a, orphan_b], ItemFilter(orphaned_only=True), today=today_local_date()
+    )
     assert sorted(x.name for x in out) == ["Orphan Glue", "Orphan Saw"]
 
     # Combines with q (AND semantics)
-    out_q = filter_items([placed, orphan_a, orphan_b], ItemFilter(orphaned_only=True, q="saw"))
+    out_q = filter_items(
+        [placed, orphan_a, orphan_b],
+        ItemFilter(orphaned_only=True, q="saw"),
+        today=today_local_date(),
+    )
     assert [x.name for x in out_q] == ["Orphan Saw"]
 
     # False / absent → no effect
-    out_off = filter_items([placed, orphan_a, orphan_b], ItemFilter(orphaned_only=False))
+    out_off = filter_items(
+        [placed, orphan_a, orphan_b], ItemFilter(orphaned_only=False), today=today_local_date()
+    )
     assert sorted(x.name for x in out_off) == ["Orphan Glue", "Orphan Saw", "Placed"]
 
 
@@ -484,7 +549,9 @@ def test_filter_then_sort_pipeline() -> None:
     b = create_item_from_create({"name": "A", "tags": ["y"]})
     c = create_item_from_create({"name": "C", "tags": ["x"]})
     filt = ItemFilter(tags_any=["x"])
-    out = sort_items(filter_items([a, b, c], filt), Sort(field="name", order="asc"))
+    out = sort_items(
+        filter_items([a, b, c], filt, today=today_local_date()), Sort(field="name", order="asc")
+    )
     assert [x.name for x in out] == ["B", "C"]
 
 
@@ -563,11 +630,15 @@ def test_filter_categories_unions_the_selection() -> None:
     b = create_item_from_create({"name": "Novel", "category": "Books"})
     c = create_item_from_create({"name": "Soap", "category": "Cleaning"})
 
-    out = filter_items([a, b, c], ItemFilter(categories=["Tools", "Books"]))
+    out = filter_items(
+        [a, b, c], ItemFilter(categories=["Tools", "Books"]), today=today_local_date()
+    )
     assert sorted(x.name for x in out) == ["Hammer", "Novel"]
 
     # Case-insensitive and de-duplicating, like the scalar it sits beside.
-    out_case = filter_items([a, b, c], ItemFilter(categories=["tOOLs", "TOOLS"]))
+    out_case = filter_items(
+        [a, b, c], ItemFilter(categories=["tOOLs", "TOOLS"]), today=today_local_date()
+    )
     assert [x.name for x in out_case] == ["Hammer"]
 
 
@@ -577,7 +648,9 @@ def test_filter_categories_unions_with_the_scalar_rather_than_intersecting() -> 
     a = create_item_from_create({"name": "Hammer", "category": "Tools"})
     b = create_item_from_create({"name": "Novel", "category": "Books"})
 
-    out = filter_items([a, b], ItemFilter(category="Tools", categories=["Books"]))
+    out = filter_items(
+        [a, b], ItemFilter(category="Tools", categories=["Books"]), today=today_local_date()
+    )
     assert sorted(x.name for x in out) == ["Hammer", "Novel"]
 
 
@@ -587,7 +660,7 @@ def test_an_empty_category_selection_does_not_narrow() -> None:
     a = create_item_from_create({"name": "Hammer", "category": "Tools"})
     b = create_item_from_create({"name": "Loose", "category": None})
 
-    out = filter_items([a, b], ItemFilter(categories=[]))
+    out = filter_items([a, b], ItemFilter(categories=[]), today=today_local_date())
     assert sorted(x.name for x in out) == ["Hammer", "Loose"]
 
 
@@ -602,11 +675,18 @@ def test_filter_location_ids_unions_the_selection() -> None:
     nowhere = create_item_from_create({"name": "Nowhere"})
     items = [in_root, in_leaf, nowhere]
 
-    direct = filter_items(items, ItemFilter(location_ids=[str(root.id), str(leaf.id)]))
+    direct = filter_items(
+        items, ItemFilter(location_ids=[str(root.id), str(leaf.id)]), today=today_local_date()
+    )
     assert sorted(x.name for x in direct) == ["At leaf", "At root"]
 
     # An item with no location is not in any selected location.
-    assert [x.name for x in filter_items(items, ItemFilter(location_ids=[str(mid.id)]))] == []
+    assert [
+        x.name
+        for x in filter_items(
+            items, ItemFilter(location_ids=[str(mid.id)]), today=today_local_date()
+        )
+    ] == []
 
 
 def test_include_subtree_is_one_flag_for_the_whole_location_selection() -> None:
@@ -626,12 +706,16 @@ def test_include_subtree_is_one_flag_for_the_whole_location_selection() -> None:
     # `mid` is an ancestor of `leaf`; `other` holds its item directly. One flag
     # applies to both entries — there is no per-entry form.
     with_subtree = filter_items(
-        items, ItemFilter(location_ids=[str(mid.id), str(other.id)], include_subtree=True)
+        items,
+        ItemFilter(location_ids=[str(mid.id), str(other.id)], include_subtree=True),
+        today=today_local_date(),
     )
     assert sorted(x.name for x in with_subtree) == ["At cellar", "At leaf"]
 
     without = filter_items(
-        items, ItemFilter(location_ids=[str(mid.id), str(other.id)], include_subtree=False)
+        items,
+        ItemFilter(location_ids=[str(mid.id), str(other.id)], include_subtree=False),
+        today=today_local_date(),
     )
     assert [x.name for x in without] == ["At cellar"]
 
@@ -644,9 +728,14 @@ def test_a_selection_of_only_unparseable_location_ids_matches_nothing() -> None:
         {"name": "Filed", "location_id": root.id}, locations_by_id=by_id
     )
 
-    assert filter_items([filed], ItemFilter(location_ids=["not-a-uuid"])) == []
+    assert (
+        filter_items([filed], ItemFilter(location_ids=["not-a-uuid"]), today=today_local_date())
+        == []
+    )
     # One good id beside a bad one still selects on the good one.
-    kept = filter_items([filed], ItemFilter(location_ids=["not-a-uuid", str(root.id)]))
+    kept = filter_items(
+        [filed], ItemFilter(location_ids=["not-a-uuid", str(root.id)]), today=today_local_date()
+    )
     assert [x.name for x in kept] == ["Filed"]
 
 
@@ -677,7 +766,9 @@ def test_the_location_selection_is_parsed_once_per_query(monkeypatch) -> None:  
 
     monkeypatch.setattr(query, "parse_uuid4", counting)
 
-    kept = filter_items(items, ItemFilter(location_ids=[str(root.id), str(mid.id)]))
+    kept = filter_items(
+        items, ItemFilter(location_ids=[str(root.id), str(mid.id)]), today=today_local_date()
+    )
     assert len(kept) == len(items)
     assert calls == 2  # noqa: PLR2004 — one per selected id, whatever the item count
 
@@ -688,7 +779,7 @@ def test_a_multi_select_key_that_is_not_a_list_of_strings_is_refused(key: str, b
     """A bare string is the one worth naming: iterating it filters by letters."""
 
     with pytest.raises(ValidationError, match=f"{key} must be a list of strings"):
-        filter_items([], {key: bad})
+        filter_items([], {key: bad}, today=today_local_date())
 
 
 def test_validate_item_filter_accepts_the_multi_select_keys() -> None:
@@ -824,3 +915,24 @@ def test_location_joins_the_sort_vocabulary() -> None:
     assert "location" in SORT_FIELDS
     validate_sort({"field": "location", "order": "asc"})
     validate_sort({"field": "location", "order": "desc"})
+
+
+def test_date_checks_measure_against_the_day_the_caller_names() -> None:
+    """No date check reads the clock: the same item answers per the day it is given."""
+
+    repo = Repository()
+    item = repo.create_item(
+        {
+            "name": "Drill",
+            "checked_out": True,
+            "due_date": "2030-06-15",
+            "inspection_date": "2030-06-15",
+        }
+    )
+    before, on, after = date(2030, 6, 14), date(2030, 6, 15), date(2030, 6, 16)
+
+    assert [item_is_overdue(item, today=d) for d in (before, on, after)] == [False, False, True]
+    assert [item_is_due(item, today=d) for d in (before, on, after)] == [False, True, True]
+    assert filter_items([item], ItemFilter(overdue_only=True), today=on) == []
+    assert filter_items([item], ItemFilter(overdue_only=True), today=after) == [item]
+    assert filter_items([item], ItemFilter(inspection_due_only=True), today=on) == [item]
