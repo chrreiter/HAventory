@@ -246,11 +246,17 @@ Every event carries `{domain: "haventory", topic, action, ts}` plus a payload:
 - **An event implies a durable write.** Every mutation persists before it broadcasts and
   before it replies, so a received event on any topic says the write behind it reached
   storage. When the write fails the caller receives `storage_error` and no event is emitted.
-  - The guarantee is about the wire, not the running repository: a failed write leaves the
-    mutation applied in memory until the next restart reads back what reached disk.
-    `import/execute` is the exception and rolls the dataset back.
+  - A failed write is also undone in memory, for every write alike: after `storage_error`
+    the repository is exactly as it was before the command, and no later save writes any
+    part of the failed change. Writes are serialized, so a command that arrives while a
+    save is in flight waits until that save succeeds, or fails and is undone, before it
+    changes anything.
+  - A read command (`item/list`, `item/get`, `stats`, `location/tree` and the like)
+    answered while a write's save is in flight sees that write's change. If the save then
+    fails, the change is undone and no event says so: that client shows the change until
+    it next re-lists. The window lasts as long as one save.
   - `items/bulk` shares one write across the batch, so a failed write fails the whole
-    command and none of its operations broadcast.
+    command, every row is undone, and none of its operations broadcast.
   - The midnight `stats/counts` is the one event with no write behind it.
 - **Both write paths broadcast the same events.** A `haventory.*` service call emits exactly
   what the WebSocket command doing the same thing emits, because both announce through
@@ -427,7 +433,7 @@ stale. Unless a command says otherwise it answers the updated `<Item>` and emits
   - A failing operation fails only its own row; the rest still run, and the successful ones
     persist in one shared write. Each successful row emits its own `items` event, and the
     batch emits one `stats/counts` if any row succeeded. A failed *write* fails the whole
-    command with `storage_error` and returns no `results`.
+    command with `storage_error`, undoes every row in memory and returns no `results`.
   - The envelope is validated first. A malformed entry (not an object, an `op_id` that is
     missing or neither a string nor an integer, a non-string `kind`, a non-object
     `payload`) rejects the whole command with `validation_error` and runs nothing. So does a repeated `op_id`;
@@ -591,9 +597,9 @@ upgrade.
   - Result: `<ImportSummary>`. Applies the document with the chosen policy, persists, then
     emits `items/reloaded`, `locations/reloaded` and `stats/counts`.
   - An invalid document is refused with `validation_error` whose `data.errors` lists the
-    problems, and nothing changes. If the write fails after the in-memory swap, the
-    repository is rolled back to its pre-import snapshot and the error is `storage_error`. A
-    bad import never leaves partial state.
+    problems, and nothing changes. If the write fails, the error is `storage_error`
+    and the dataset is put back as it was, like any other failed write. A bad import never
+    leaves partial state.
   - **Identity is the entity id, and only the id.** An incoming entity whose id is present
     *is* the stored one and is resolved by the policy; one whose id is absent is added.
     Names are never compared, because matching by name would fuse two genuinely different
