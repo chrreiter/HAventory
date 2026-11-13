@@ -8,6 +8,7 @@ survive it, and the sweep that keeps a new module from quietly opting out.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from pathlib import Path
 
@@ -81,6 +82,92 @@ def test_the_extra_mapping_is_handed_on_untouched(caplog) -> None:
     assert record.getMessage() == "Persisted op=persist_complete ms=3"
     assert record.op == "persist_complete"
     assert record.domain == "haventory"
+
+
+def test_a_percent_in_a_value_survives_a_call_with_args(caplog) -> None:
+    """With args, `logging` formats the joined text; the value must not be read."""
+
+    caplog.set_level(logging.DEBUG)
+    logger = context_logger("custom_components.haventory.test")
+
+    logger.error("Failed to load %s", "item", extra={"op": "x", "item_id": "50%s off %d"})
+
+    assert caplog.records[-1].getMessage() == 'Failed to load item op=x item_id="50%s off %d"'
+
+
+def test_a_format_directive_in_a_value_cannot_take_the_args(caplog) -> None:
+    """Unescaped, `%s` in the value would consume an arg and shift the rest."""
+
+    caplog.set_level(logging.DEBUG)
+    logger = context_logger("custom_components.haventory.test")
+
+    logger.warning("%s then %s", "a", "b", extra={"key": "%s"})
+
+    assert caplog.records[-1].getMessage() == "a then b key=%s"
+
+
+def test_a_percent_in_a_value_survives_mapping_args(caplog) -> None:
+    caplog.set_level(logging.DEBUG)
+    logger = context_logger("custom_components.haventory.test")
+
+    logger.info("%(what)s loaded", {"what": "item"}, extra={"key": "%(what)s"})
+
+    assert caplog.records[-1].getMessage() == "item loaded key=%(what)s"
+
+
+def test_a_percent_in_a_value_is_printed_once_without_args(caplog) -> None:
+    """Without args nothing formats the text, so nothing may be doubled."""
+
+    caplog.set_level(logging.DEBUG)
+    logger = context_logger("custom_components.haventory.test")
+
+    logger.info("Swept", extra={"op": "sweep", "ratio": "50%"})
+
+    assert caplog.records[-1].getMessage() == "Swept op=sweep ratio=50%"
+
+
+@pytest.mark.parametrize("method", ["debug", "info", "warning", "error", "critical", "exception"])
+def test_every_level_carries_a_percent_through(caplog, method: str) -> None:
+    """Each level method reaches the one place that joins the tail."""
+
+    caplog.set_level(logging.DEBUG)
+    logger = context_logger("custom_components.haventory.test")
+
+    getattr(logger, method)("Saw %s", "x", extra={"key": "5%d"})
+
+    assert caplog.records[-1].getMessage() == "Saw x key=5%d"
+
+
+def test_a_level_given_as_a_number_carries_a_percent_through(caplog) -> None:
+    caplog.set_level(logging.DEBUG)
+    logger = context_logger("custom_components.haventory.test")
+
+    logger.log(logging.INFO, "Saw %s", "x", extra={"key": "5%d"})
+
+    assert caplog.records[-1].getMessage() == "Saw x key=5%d"
+
+
+def test_the_record_points_at_the_caller_not_the_adapter(caplog) -> None:
+    """Home Assistant's system log shows the file and line a record names."""
+
+    caplog.set_level(logging.DEBUG)
+    logger = context_logger("custom_components.haventory.test")
+
+    logger.info("Here", extra={"op": "x"})
+    line = inspect.currentframe().f_lineno - 1  # type: ignore[union-attr]
+
+    record = caplog.records[-1]
+    assert (record.pathname, record.lineno) == (__file__, line)
+    assert record.funcName == "test_the_record_points_at_the_caller_not_the_adapter"
+
+
+def test_a_disabled_level_records_nothing(caplog) -> None:
+    caplog.set_level(logging.INFO)
+    logger = context_logger("custom_components.haventory.test")
+
+    logger.debug("Quiet %s", "x", extra={"op": "x"})
+
+    assert caplog.records == []
 
 
 @pytest.mark.asyncio

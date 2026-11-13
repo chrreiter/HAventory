@@ -7,13 +7,18 @@ the message as `key=value` pairs and passes `extra=` on unchanged:
 
     Repository persisted successfully op=persist_complete elapsed_ms=12
 
+The tail is joined in `log`, where the call's `%`-args are visible, and its `%`
+signs are doubled exactly when there are args for `logging` to format, so a
+contributor keeps writing ordinary `%`-arg calls and no context value can be
+read as a format directive.
+
 `domain` is left out of the text: the logger name already carries it.
 """
 
 from __future__ import annotations
 
 import logging
-from collections.abc import MutableMapping
+from collections.abc import Mapping
 from typing import Any
 
 # Long enough for a path, a URL or a store key; short enough that one field
@@ -37,7 +42,7 @@ def _render_value(value: Any) -> str:
     return text
 
 
-def render_context(context: MutableMapping[str, Any]) -> str:
+def render_context(context: Mapping[str, Any]) -> str:
     """The `key=value` tail for one record's context, `op` first."""
 
     fields = [(key, value) for key, value in context.items() if key not in _SKIPPED_FIELDS]
@@ -48,16 +53,25 @@ def render_context(context: MutableMapping[str, Any]) -> str:
 class ContextLogger(logging.LoggerAdapter):  # type: ignore[type-arg]
     """A logger whose `extra=` context is also written into the message."""
 
-    def process(
-        self, msg: Any, kwargs: MutableMapping[str, Any]
-    ) -> tuple[Any, MutableMapping[str, Any]]:
-        """Append the context to the message, and pass `extra=` on unchanged."""
+    def log(self, level: int, msg: Any, *args: Any, **kwargs: Any) -> None:
+        """Append the context to the message, and pass `extra=` on unchanged.
 
+        Overridden rather than `process`, which is never shown the args: with
+        args, `logging` runs `msg % args` over the joined text, so a `%` in a
+        value has to be doubled; without them it formats nothing, so doubling
+        would print `%%`. The extra stack level keeps the record's file and line
+        on the caller, not on this method.
+        """
+
+        if not self.isEnabledFor(level):
+            return
         context = kwargs.get("extra")
-        if not isinstance(context, MutableMapping):
-            return msg, kwargs
-        tail = render_context(context)
-        return (f"{msg} {tail}" if tail else msg), kwargs
+        if isinstance(context, Mapping):
+            tail = render_context(context)
+            if tail:
+                msg = f"{msg} {tail.replace('%', '%%') if args else tail}"
+        kwargs["stacklevel"] = kwargs.get("stacklevel", 1) + 1
+        self.logger.log(level, msg, *args, **kwargs)
 
 
 def context_logger(name: str) -> ContextLogger:
