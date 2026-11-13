@@ -18,10 +18,10 @@ from custom_components.haventory.models import (
     AttachmentMeta,
     ItemCreate,
     Sort,
-    iso_utc_now,
     new_uuid4,
 )
 from custom_components.haventory.repository import Repository
+from custom_components.haventory.timestamps import iso_utc_now
 
 
 def test_sort_key_survives_persistence_round_trip() -> None:

@@ -26,8 +26,9 @@ from custom_components.haventory.exceptions import (
     StorageError,
     ValidationError,
 )
-from custom_components.haventory.models import AttachmentMeta, iso_utc_now, new_uuid4
+from custom_components.haventory.models import AttachmentMeta, new_uuid4
 from custom_components.haventory.repository import Repository
+from custom_components.haventory.timestamps import iso_utc_now
 from homeassistant.core import HomeAssistant, SupportsResponse
 from homeassistant.helpers import area_registry as ar
 from homeassistant.util import dt as dt_util

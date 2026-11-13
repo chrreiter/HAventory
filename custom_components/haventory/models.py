@@ -5,7 +5,7 @@ schemas beside them are what a surface hands in. Validation lives here so a
 WebSocket command, a service call and an import document refuse the same value
 with the same message, and that message names the field.
 
-Free of I/O. `dt_util` is imported only for the household's local calendar day.
+Free of I/O.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import re
 import uuid
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime
 from functools import partial
 from typing import (
     Any,
@@ -22,12 +22,9 @@ from typing import (
     Literal,
     NotRequired,
     TypedDict,
-    TypeGuard,
     get_args,
     get_type_hints,
 )
-
-from homeassistant.util import dt as dt_util
 
 from .const import (
     DEFAULT_STATUS_COLOR,
@@ -37,6 +34,12 @@ from .const import (
 )
 from .exceptions import ValidationError
 from .text import normalize_text_for_sort
+from .timestamps import (
+    is_canonical_utc_timestamp,
+    iso_utc_now,
+    monotonic_timestamp_after,
+    today_local_date,
+)
 
 # Scalar values allowed inside custom_fields.
 ScalarValue = str | int | float | bool
@@ -241,9 +244,8 @@ class Item:
     category: str | None = None
     low_stock_threshold: int | None = None
     custom_fields: dict[str, ScalarValue] = field(default_factory=dict)
-    # The lambda defers resolving `iso_utc_now`, which is defined further down.
-    created_at: str = field(default_factory=lambda: iso_utc_now())  # noqa: PLW0108
-    updated_at: str = field(default_factory=lambda: iso_utc_now())  # noqa: PLW0108
+    created_at: str = field(default_factory=iso_utc_now)
+    updated_at: str = field(default_factory=iso_utc_now)
     version: int = 1
     location_path: LocationPath = field(default_factory=lambda: EMPTY_LOCATION_PATH)
     # Absent from ItemCreate / ItemUpdate: only the attachment commands write it.
@@ -449,12 +451,6 @@ def parse_uuid4(value: str | uuid.UUID, *, field_name: str = "id") -> uuid.UUID:
             placeholders={"field": field_name},
         )
     return value
-
-
-def iso_utc_now() -> str:
-    """The current time as the canonical ``YYYY-MM-DDTHH:MM:SSZ``."""
-
-    return datetime.now(tz=UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def new_uuid4() -> uuid.UUID:
@@ -1334,44 +1330,6 @@ def apply_item_update(
     return new_item
 
 
-#: Canonical timestamps are fixed-width, so lexicographic order is chronological
-#: order. Sorting and range filters rely on it.
-_CANONICAL_TS_LENGTH = 20
-
-
-def monotonic_timestamp_after(previous_ts: str) -> str:
-    """The current canonical timestamp, bumped to one second past ``previous_ts``."""
-
-    now_ts = iso_utc_now()
-    if now_ts > previous_ts or not is_canonical_utc_timestamp(previous_ts):
-        return now_ts
-    bumped = datetime.fromisoformat(previous_ts) + timedelta(seconds=1)
-    return bumped.isoformat().replace("+00:00", "Z")
-
-
-def is_canonical_utc_timestamp(ts: object) -> TypeGuard[str]:
-    """Return True when ``ts`` is exactly the canonical YYYY-MM-DDTHH:MM:SSZ form.
-
-    The separators are checked by position: ``datetime.fromisoformat`` alone
-    accepts forms that would compare wrong against canonical timestamps.
-    """
-
-    if not (
-        isinstance(ts, str)
-        and len(ts) == _CANONICAL_TS_LENGTH
-        and ts[4] == ts[7] == "-"
-        and ts[10] == "T"
-        and ts[13] == ts[16] == ":"
-        and ts[19] == "Z"
-    ):
-        return False
-    try:
-        datetime.fromisoformat(ts)
-    except ValueError:
-        return False
-    return True
-
-
 def _coerce_canonical_ts(value: object, *, fallback: str | None = None) -> str:
     """``value`` when canonical, else ``fallback`` when canonical, else now."""
 
@@ -1402,15 +1360,6 @@ def _item_matches_q(item: Item, query_words: Sequence[str]) -> bool:
 def item_is_low_stock(item: Item) -> bool:
     thr = item.low_stock_threshold
     return thr is not None and item.quantity <= thr
-
-
-def today_local_date() -> str:
-    """Today as YYYY-MM-DD in Home Assistant's configured time zone.
-
-    Every date count and chip measures against this one day. `dt_util.now()`
-    reads the zone Home Assistant configured, so no `hass` is needed.
-    """
-    return dt_util.now().date().isoformat()
 
 
 def _date_passed(item: Item, field: str, today: str, *, inclusive: bool) -> bool:

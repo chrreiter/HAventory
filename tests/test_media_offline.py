@@ -26,10 +26,10 @@ from custom_components.haventory.const import (
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.models import (
     AttachmentMeta,
-    iso_utc_now,
     new_uuid4,
 )
 from custom_components.haventory.repository import Repository
+from custom_components.haventory.timestamps import iso_utc_now
 from homeassistant.core import HomeAssistant
 
 # Smallest byte strings that identify each accepted format, plus the ones that

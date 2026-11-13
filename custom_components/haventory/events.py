@@ -27,10 +27,10 @@ from .const import (
 )
 from .exceptions import NotFoundError
 from .logs import context_logger
-from .models import iso_utc_now
 from .repository import Repository
 from .runtime import HAventoryRuntime, find_runtime
 from .subscriptions import broadcast_counts, broadcast_event
+from .timestamps import iso_utc_now
 
 LOGGER = context_logger(__name__)
 

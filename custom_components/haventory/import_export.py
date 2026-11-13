@@ -46,8 +46,6 @@ from .models import (
     ITEM_STATUSES,
     Location,
     build_location_path_from_map,
-    is_canonical_utc_timestamp,
-    iso_utc_now,
     normalize_tags,
     parse_uuid4,
     seed_status_definitions,
@@ -65,6 +63,7 @@ from .models import (
 )
 from .repository import Repository
 from .text import normalize_text_for_sort
+from .timestamps import is_canonical_utc_timestamp, iso_utc_now
 
 # The document envelope's version, independent of the storage ``schema_version``.
 EXPORT_VERSION: int = 1

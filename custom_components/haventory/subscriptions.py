@@ -23,8 +23,8 @@ from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
 from .logs import context_logger
-from .models import today_local_date
 from .runtime import Subscription, find_runtime, loaded_runtime
+from .timestamps import today_local_date
 
 LOGGER = context_logger(__name__)
 

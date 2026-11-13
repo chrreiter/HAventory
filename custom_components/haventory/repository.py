@@ -45,7 +45,6 @@ from .models import (
     item_is_overdue,
     item_reminder_is_due,
     location_chain_to_root,
-    monotonic_timestamp_after,
     new_uuid4,
     parse_uuid4,
     require_string_list,
@@ -56,12 +55,12 @@ from .models import (
     serialize_status_definition,
     sort_items,
     sort_value,
-    today_local_date,
     validate_status_definition,
     validate_status_slug,
     validate_write_name,
     walk_location_chain,
 )
+from .timestamps import monotonic_timestamp_after, today_local_date
 
 LOGGER = context_logger(__name__)
 

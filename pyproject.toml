@@ -115,6 +115,7 @@ module = [
   "haventory.storage",
   "haventory.subscriptions",
   "haventory.text",
+  "haventory.timestamps",
   "haventory.ws",
 ]
 disallow_any_generics = true

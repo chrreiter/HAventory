@@ -30,11 +30,8 @@ from custom_components.haventory.models import (
     build_location_path,
     build_location_path_from_map,
     create_item_from_create,
-    is_canonical_utc_timestamp,
-    iso_utc_now,
     load_attachments,
     load_reminder_interval,
-    monotonic_timestamp_after,
     seed_status_definitions,
     serialize_attachment_meta,
     serialize_reminder_interval,
@@ -44,6 +41,11 @@ from custom_components.haventory.models import (
     validate_status_definition,
     validate_tags,
     walk_location_chain,
+)
+from custom_components.haventory.timestamps import (
+    is_canonical_utc_timestamp,
+    iso_utc_now,
+    monotonic_timestamp_after,
 )
 
 UUID4_RE = re.compile(
