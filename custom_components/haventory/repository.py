@@ -12,7 +12,7 @@ from __future__ import annotations
 import copy
 import uuid
 from collections import deque
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any, TypeVar
@@ -20,6 +20,7 @@ from typing import Any, TypeVar
 from .calendar_projection import next_occurrence_after
 from .exceptions import ConflictError, NotFoundError, ValidationError
 from .item_writes import ItemCreate, ItemUpdate, apply_item_update, create_item_from_create
+from .load_report import LoadReport, load_rows
 from .location_paths import (
     build_location_path,
     build_location_path_from_map,
@@ -72,37 +73,6 @@ _BucketKey = TypeVar("_BucketKey", str, str | None)
 
 # Tells "not provided" from an explicit None.
 UNSET: object = object()
-
-#: Rows of one kind logged individually before ``load_state`` logs only a total,
-#: so a wholesale corruption does not bury the log in one line per row.
-LOAD_DROP_LOG_LIMIT = 10
-
-
-@dataclass(frozen=True)
-class LoadReport:
-    """What ``load_state`` had to drop or found cyclic.
-
-    ``load_state`` coerces what it can, so an entry here is structurally broken.
-    Setup refuses on a non-empty report, because the first save afterwards
-    would write the store without the dropped rows. The ids are carried so the
-    repair can quote them.
-    """
-
-    dropped_item_ids: tuple[str, ...] = ()
-    dropped_location_ids: tuple[str, ...] = ()
-    #: Locations whose own ``parent_id`` closes a loop — the entries a repair edits.
-    cyclic_location_ids: tuple[str, ...] = ()
-    #: Locations left unreachable *because* of those, needing no edit of their own.
-    unrooted_location_ids: tuple[str, ...] = ()
-
-    @property
-    def has_corruption(self) -> bool:
-        return bool(
-            self.dropped_item_ids
-            or self.dropped_location_ids
-            or self.cyclic_location_ids
-            or self.unrooted_location_ids
-        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1223,7 +1193,7 @@ class Repository:
         # on a custom status to the default.
         self._load_statuses(data.get("statuses"))
         # Locations before items, so items can reference them.
-        dropped_location_ids = self._load_rows(
+        dropped_location_ids = load_rows(
             data.get("locations") or {},
             lambda key, row: self._add_location(Location.from_dict(row, fallback_id=key)),
             op="load_state_locations",
@@ -1231,7 +1201,7 @@ class Repository:
             what="location",
         )
         known_statuses = self.status_slugs()
-        dropped_item_ids = self._load_rows(
+        dropped_item_ids = load_rows(
             data.get("items") or {},
             lambda key, row: self._index_item(
                 Item.from_dict(row, known_statuses=known_statuses, fallback_id=key)
@@ -1248,44 +1218,6 @@ class Repository:
             unrooted_location_ids=blocked_below,
         )
         self._rebuild_location_hierarchy_indexes()
-
-    @staticmethod
-    def _load_rows(
-        rows: dict[str, Any],
-        load: Callable[[str, Any], None],
-        *,
-        op: str,
-        id_field: str,
-        what: str,
-    ) -> list[str]:
-        """Load each row, returning the keys of the rows that could not be read.
-
-        Logged at ERROR: a dropped row is gone from memory and the next save
-        would write the store without it.
-        """
-
-        dropped: list[str] = []
-        for key, row in rows.items():
-            try:
-                load(str(key), row)
-            except AttributeError, TypeError, ValueError, ValidationError:
-                if len(dropped) < LOAD_DROP_LOG_LIMIT:
-                    LOGGER.error(
-                        "Failed to load %s from persisted state",
-                        what,
-                        extra={"op": op, id_field: str(key)},
-                    )
-                dropped.append(str(key))
-        if len(dropped) > LOAD_DROP_LOG_LIMIT:
-            LOGGER.error(
-                "Further rows failed to load from persisted state; ids omitted",
-                extra={
-                    "op": op,
-                    "dropped_total": len(dropped),
-                    "dropped_logged": LOAD_DROP_LOG_LIMIT,
-                },
-            )
-        return dropped
 
     def _reset_state(self) -> None:
         """Drop every store and index; the one place the fields are listed."""

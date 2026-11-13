@@ -57,8 +57,9 @@ from .const import (
     REPAIR_ISSUE_IDS,
 )
 from .exceptions import CorruptSchemaVersionError, SchemaDowngradeError, StorageError
+from .load_report import LoadReport
 from .logs import context_logger
-from .repository import LoadReport, Repository
+from .repository import Repository
 from .runtime import HAventoryConfigEntry, HAventoryRuntime, find_runtime
 from .storage import (
     CURRENT_SCHEMA_VERSION,
