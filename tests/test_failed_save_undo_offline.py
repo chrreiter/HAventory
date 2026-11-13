@@ -319,5 +319,5 @@ def test_a_snapshot_is_not_reached_by_later_writes() -> None:
     repo.restore(snapshot)
 
     assert [i.name for i in repo.list_items()["items"]] == ["Whisk"]
-    assert repo.get_item(item.id).tags == ["metal"]
+    assert repo.get_item(item.id).tags == ("metal",)
     assert collect_index_issues(repo) == []

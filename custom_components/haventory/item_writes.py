@@ -6,6 +6,9 @@ a field is checked the same way on both, and a rule that depends on another fiel
 write leaves behind. A rule leaves the draft alone when the payload does not name
 its keys, which is how an update keeps a field. Only ``apply_item_update`` moves
 ``version`` and ``updated_at``.
+
+``Item`` is frozen, so the rules edit an ``_ItemDraft`` of the client-writable
+fields, and the new item is built from it once every rule has passed.
 """
 
 from __future__ import annotations
@@ -13,7 +16,6 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, replace
-from functools import partial
 from typing import Any, Final, NotRequired, TypedDict
 
 from .exceptions import ValidationError
@@ -24,6 +26,8 @@ from .models import (
     Item,
     ItemStatus,
     Location,
+    LocationPath,
+    ReminderInterval,
     new_uuid4,
     validate_item_status,
     validate_reminder_rules,
@@ -86,12 +90,85 @@ class ItemUpdate(TypedDict, total=False):
     custom_fields_unset: NotRequired[list[str]]
 
 
+@dataclass(slots=True)
+class _ItemDraft:
+    """The fields of ``Item`` a client writes, editable while the rules run.
+
+    Every other field (``id``, the timestamps, ``version``, ``attachments``) is
+    decided outside the rule table, and ``tests/test_frozen_records_offline.py``
+    holds this list equal to ``Item``'s.
+    """
+
+    name: str
+    description: str | None
+    quantity: int
+    status: ItemStatus
+    checked_out: bool
+    due_date: str | None
+    inspection_date: str | None
+    reminder_date: str | None
+    reminder_anchor: str | None
+    reminder_interval: ReminderInterval | None
+    location_id: uuid.UUID | None
+    location_path: LocationPath
+    tags: tuple[str, ...]
+    category: str | None
+    low_stock_threshold: int | None
+    custom_fields: Mapping[str, ScalarValue]
+
+    @classmethod
+    def of(cls, item: Item) -> _ItemDraft:
+        return cls(
+            name=item.name,
+            description=item.description,
+            quantity=item.quantity,
+            status=item.status,
+            checked_out=item.checked_out,
+            due_date=item.due_date,
+            inspection_date=item.inspection_date,
+            reminder_date=item.reminder_date,
+            reminder_anchor=item.reminder_anchor,
+            reminder_interval=item.reminder_interval,
+            location_id=item.location_id,
+            location_path=item.location_path,
+            tags=item.tags,
+            category=item.category,
+            low_stock_threshold=item.low_stock_threshold,
+            custom_fields=item.custom_fields,
+        )
+
+    def build(self, base: Item, *, updated_at: str, version: int) -> Item:
+        """``base`` with the drafted fields, as a new item."""
+
+        return replace(
+            base,
+            name=self.name,
+            description=self.description,
+            quantity=self.quantity,
+            status=self.status,
+            checked_out=self.checked_out,
+            due_date=self.due_date,
+            inspection_date=self.inspection_date,
+            reminder_date=self.reminder_date,
+            reminder_anchor=self.reminder_anchor,
+            reminder_interval=self.reminder_interval,
+            location_id=self.location_id,
+            location_path=self.location_path,
+            tags=self.tags,
+            category=self.category,
+            low_stock_threshold=self.low_stock_threshold,
+            custom_fields=self.custom_fields,
+            updated_at=updated_at,
+            version=version,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class _ItemWrite:
-    """One item write in progress: ``draft`` is the field defaults on a create and
-    a copy of the stored item on an update, and the rules fill it in."""
+    """One item write in progress: ``draft`` starts as the field defaults on a
+    create and as the stored item's fields on an update, and the rules fill it in."""
 
-    draft: Item
+    draft: _ItemDraft
     payload: Mapping[str, Any]
     creating: bool
     locations_by_id: dict[str, Location] | None
@@ -107,14 +184,25 @@ def _write_name(write: _ItemWrite) -> None:
     write.draft.name = validate_write_name(value)
 
 
-def _write_optional_text(write: _ItemWrite, *, key: str, max_length: int) -> None:
-    """One nullable free-text field; ``key`` names the payload field and attribute."""
+def _write_description(write: _ItemWrite) -> None:
+    if "description" in write.payload:
+        value = write.payload["description"]
+        validate_optional_text(
+            value,
+            "description",
+            max_length=DESCRIPTION_MAX_LENGTH,
+            previous=write.draft.description,
+        )
+        write.draft.description = value
 
-    if key not in write.payload:
-        return
-    value = write.payload[key]
-    validate_optional_text(value, key, max_length=max_length, previous=getattr(write.draft, key))
-    setattr(write.draft, key, value)
+
+def _write_category(write: _ItemWrite) -> None:
+    if "category" in write.payload:
+        value = write.payload["category"]
+        validate_optional_text(
+            value, "category", max_length=CATEGORY_MAX_LENGTH, previous=write.draft.category
+        )
+        write.draft.category = value
 
 
 def _write_quantity(write: _ItemWrite) -> None:
@@ -200,7 +288,7 @@ def _write_location(write: _ItemWrite) -> None:
 
 def _write_tags(write: _ItemWrite) -> None:
     if "tags" in write.payload:
-        write.draft.tags = validate_tags(write.payload["tags"], previous=write.draft.tags)
+        write.draft.tags = tuple(validate_tags(write.payload["tags"], previous=write.draft.tags))
 
 
 def _write_low_stock_threshold(write: _ItemWrite) -> None:
@@ -244,7 +332,7 @@ def _write_custom_fields(write: _ItemWrite) -> None:
 #: names none of its keys.
 _ITEM_FIELD_RULES: Final[tuple[Callable[[_ItemWrite], None], ...]] = (
     _write_name,
-    partial(_write_optional_text, key="description", max_length=DESCRIPTION_MAX_LENGTH),
+    _write_description,
     _write_quantity,
     _write_status,
     _write_checkout,
@@ -252,7 +340,7 @@ _ITEM_FIELD_RULES: Final[tuple[Callable[[_ItemWrite], None], ...]] = (
     _write_reminder,
     _write_location,
     _write_tags,
-    partial(_write_optional_text, key="category", max_length=CATEGORY_MAX_LENGTH),
+    _write_category,
     _write_low_stock_threshold,
     _write_custom_fields,
 )
@@ -267,11 +355,12 @@ def create_item_from_create(
     """Create a validated Item; ``locations_by_id`` resolves ``location_id``."""
 
     created_ts = iso_utc_now()
-    draft = Item(id=new_uuid4(), name="", created_at=created_ts, updated_at=created_ts)
+    defaults = Item(id=new_uuid4(), name="", created_at=created_ts, updated_at=created_ts)
+    draft = _ItemDraft.of(defaults)
     write = _ItemWrite(draft, payload, True, locations_by_id, known_statuses)
     for rule in _ITEM_FIELD_RULES:
         rule(write)
-    return draft
+    return draft.build(defaults, updated_at=created_ts, version=defaults.version)
 
 
 def apply_item_update(
@@ -283,10 +372,10 @@ def apply_item_update(
 ) -> Item:
     """Apply an update payload to an Item and return a new updated instance."""
 
-    new_item = replace(item)
-    write = _ItemWrite(new_item, update, False, locations_by_id, known_statuses)
+    draft = _ItemDraft.of(item)
+    write = _ItemWrite(draft, update, False, locations_by_id, known_statuses)
     for rule in _ITEM_FIELD_RULES:
         rule(write)
-    new_item.updated_at = monotonic_timestamp_after(item.updated_at)
-    new_item.version = item.version + 1
-    return new_item
+    return draft.build(
+        item, updated_at=monotonic_timestamp_after(item.updated_at), version=item.version + 1
+    )

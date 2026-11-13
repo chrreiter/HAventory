@@ -650,7 +650,7 @@ async def test_import_replace_deletes_a_file_whose_metadata_it_overwrote() -> No
     res = await ws_send(hass, 1, "haventory/import/execute", document=document, policy="replace")
 
     assert res["success"] is True, res
-    assert repo.get_item(item.id).attachments == []
+    assert repo.get_item(item.id).attachments == ()
     assert not path.exists()
 
 

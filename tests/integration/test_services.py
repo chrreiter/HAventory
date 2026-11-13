@@ -95,7 +95,7 @@ async def test_every_service_dispatches_its_handler(hass: HomeAssistant, setup_e
     item_id = _only_item_id(repo)
     item = repo.get_item(item_id)
     assert item.name == "Hammer"
-    assert item.tags == ["tools"]
+    assert item.tags == ("tools",)
     assert item.location_path.display_path == "Workshop"
 
     await _call(hass, "item_update", {"item_id": item_id, "description": "Claw hammer"})

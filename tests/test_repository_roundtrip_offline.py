@@ -216,7 +216,7 @@ def test_attachments_survive_export_state_to_load_state() -> None:
 
     reloaded = Repository.from_state(repo.export_state())
 
-    assert reloaded.get_item(item.id).attachments == [meta]
+    assert reloaded.get_item(item.id).attachments == (meta,)
 
 
 def test_a_stored_attachments_field_that_is_not_a_list_loads_as_none() -> None:
@@ -229,7 +229,7 @@ def test_a_stored_attachments_field_that_is_not_a_list_loads_as_none() -> None:
 
     reloaded = Repository.from_state(payload)
 
-    assert reloaded.get_item(item.id).attachments == []
+    assert reloaded.get_item(item.id).attachments == ()
     assert not reloaded.last_load_report.has_corruption
 
 

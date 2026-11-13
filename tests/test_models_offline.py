@@ -78,7 +78,7 @@ def test_create_with_defaults_and_optionals() -> None:
     assert item.checked_out is False
     assert item.due_date is None
     assert item.location_id is None
-    assert item.tags == ["tools", "diy"]
+    assert item.tags == ("tools", "diy")
     assert item.version == 1
     assert UUID4_RE.match(str(item.id))
     assert item.created_at.endswith("Z") and item.updated_at.endswith("Z")
@@ -92,10 +92,10 @@ def test_invalid_due_date_requires_checked_out() -> None:
 
 def test_tag_normalization_and_update_clears_fields() -> None:
     item = create_item_from_create({"name": "Battery", "tags": ["Li-Ion", " li-ion ", "Spare"]})
-    assert item.tags == ["li-ion", "spare"]
+    assert item.tags == ("li-ion", "spare")
 
     updated = apply_item_update(item, ItemUpdate(tags=[]))
-    assert updated.tags == []
+    assert updated.tags == ()
 
     updated2 = apply_item_update(updated, ItemUpdate(description=None, category=None))
     assert updated2.description is None and updated2.category is None
@@ -143,7 +143,7 @@ def test_denormalized_location_path_generation() -> None:
 
     assert isinstance(path, LocationPath)
     assert [str(x) for x in path.id_path] == [root_id, mid_id, leaf_id]
-    assert path.name_path == ["Garage", "Shelf A", "Bin 3"]
+    assert list(path.name_path) == ["Garage", "Shelf A", "Bin 3"]
     assert path.display_path == "Garage / Shelf A / Bin 3"
     assert path.sort_key == "garage / shelf a / bin 3"
 
@@ -368,17 +368,17 @@ def _attachment_doc(**overrides) -> dict:
 def test_a_fresh_item_carries_no_attachments() -> None:
     item = create_item_from_create(ItemCreate(name="Drill"))
 
-    assert item.attachments == []
+    assert item.attachments == ()
 
 
 def test_attachments_are_not_settable_through_create_or_update() -> None:
     """The two attachment commands are the only writers of the field."""
 
     item = create_item_from_create({"name": "Drill", "attachments": [_attachment_doc()]})
-    assert item.attachments == []
+    assert item.attachments == ()
 
     updated = apply_item_update(item, {"attachments": [_attachment_doc()]})
-    assert updated.attachments == []
+    assert updated.attachments == ()
 
 
 def test_valid_attachment_metadata_round_trips() -> None:
@@ -410,8 +410,8 @@ def test_malformed_attachment_metadata_is_rejected(overrides: dict, match: str) 
 def test_attachments_absent_or_non_list_read_as_none() -> None:
     """A store written before the field existed must not fail the whole item."""
 
-    assert load_attachments(None) == []
-    assert load_attachments("garbage") == []
+    assert load_attachments(None) == ()
+    assert load_attachments("garbage") == ()
 
 
 def test_a_malformed_entry_is_not_silently_dropped() -> None:

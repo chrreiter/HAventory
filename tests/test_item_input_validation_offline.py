@@ -14,6 +14,7 @@ Three rules hold together here:
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Any
 
 import pytest
@@ -342,13 +343,17 @@ def test_an_item_over_a_cap_can_still_be_edited_down() -> None:
     item = repo.create_item(ItemCreate(name="Widget"))
     # Reach past the write path the way a pre-cap store would have.
     stored = repo._items_by_id[str(item.id)]
-    stored.tags = [f"t{i}" for i in range(TAGS_MAX_COUNT + 10)]
-    stored.custom_fields = {f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 10)}
+    legacy = dataclasses.replace(
+        stored,
+        tags=tuple(f"t{i}" for i in range(TAGS_MAX_COUNT + 10)),
+        custom_fields={f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 10)},
+    )
+    repo._reindex_item_replacement(stored, legacy)
 
     kept_tags = 5
     unset_keys = 20
 
-    trimmed = repo.update_item(item.id, ItemUpdate(tags=stored.tags[:kept_tags]))
+    trimmed = repo.update_item(item.id, ItemUpdate(tags=list(legacy.tags[:kept_tags])))
     assert len(trimmed.tags) == kept_tags
 
     unset = repo.update_item(
@@ -360,9 +365,10 @@ def test_an_item_over_a_cap_can_still_be_edited_down() -> None:
 def test_an_item_over_the_custom_field_cap_may_not_grow_further() -> None:
     repo = Repository()
     item = repo.create_item(ItemCreate(name="Widget"))
-    repo._items_by_id[str(item.id)].custom_fields = {
-        f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 1)
-    }
+    stored = repo._items_by_id[str(item.id)]
+    repo._items_by_id[str(item.id)] = dataclasses.replace(
+        stored, custom_fields={f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 1)}
+    )
 
     with pytest.raises(ValidationError):
         repo.update_item(item.id, ItemUpdate(custom_fields_set={"one_more": 1}))
@@ -380,7 +386,8 @@ def test_a_pre_cap_description_may_be_resent_or_trimmed_but_not_grown() -> None:
     legacy = "d" * (DESCRIPTION_MAX_LENGTH + 500)
     repo = Repository()
     item = repo.create_item(ItemCreate(name="Widget"))
-    repo._items_by_id[str(item.id)].description = legacy
+    stored = repo._items_by_id[str(item.id)]
+    repo._items_by_id[str(item.id)] = dataclasses.replace(stored, description=legacy)
 
     # Resending the stored value unchanged is not growth.
     same = repo.update_item(item.id, ItemUpdate(description=legacy))
@@ -400,7 +407,8 @@ def test_a_pre_cap_category_follows_the_same_growth_rule() -> None:
     legacy = "c" * (CATEGORY_MAX_LENGTH + 30)
     repo = Repository()
     item = repo.create_item(ItemCreate(name="Widget"))
-    repo._items_by_id[str(item.id)].category = legacy
+    stored = repo._items_by_id[str(item.id)]
+    repo._reindex_item_replacement(stored, dataclasses.replace(stored, category=legacy))
 
     kept = repo.update_item(item.id, ItemUpdate(category=legacy))
     assert kept.category == legacy
@@ -415,7 +423,10 @@ def test_pre_cap_custom_field_values_and_keys_are_grandfathered() -> None:
     long_value = "v" * (CUSTOM_FIELD_VALUE_MAX_LENGTH + 300)
     repo = Repository()
     item = repo.create_item(ItemCreate(name="Widget"))
-    repo._items_by_id[str(item.id)].custom_fields = {long_key: long_value}
+    stored = repo._items_by_id[str(item.id)]
+    repo._items_by_id[str(item.id)] = dataclasses.replace(
+        stored, custom_fields={long_key: long_value}
+    )
 
     # The editor resends the whole map: stored key and value pass unchanged.
     same = repo.update_item(item.id, ItemUpdate(custom_fields_set={long_key: long_value}))
@@ -441,7 +452,8 @@ def test_a_pre_cap_custom_field_map_may_be_resent_wholesale() -> None:
     legacy_fields = {f"k{i}": i for i in range(CUSTOM_FIELDS_MAX_KEYS + 10)}
     repo = Repository()
     item = repo.create_item(ItemCreate(name="Widget"))
-    repo._items_by_id[str(item.id)].custom_fields = dict(legacy_fields)
+    stored = repo._items_by_id[str(item.id)]
+    repo._items_by_id[str(item.id)] = dataclasses.replace(stored, custom_fields=dict(legacy_fields))
 
     same = repo.update_item(item.id, ItemUpdate(custom_fields_set=dict(legacy_fields)))
     assert len(same.custom_fields) == CUSTOM_FIELDS_MAX_KEYS + 10

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import uuid
 from datetime import date
 
@@ -46,11 +47,11 @@ def _build_locations() -> tuple[dict[str, Location], Location, Location, Locatio
     root = _make_location(root_id, "Garage", None)
     mid = _make_location(mid_id, "Shelf A", root_id)
     leaf = _make_location(leaf_id, "Bin 3", mid_id)
-    by_id = {root_id: root, mid_id: mid, leaf_id: leaf}
     # Provide path data (not required for filtering but helpful for q/location tests)
-    root.path = build_location_path([root])
-    mid.path = build_location_path([root, mid])
-    leaf.path = build_location_path([root, mid, leaf])
+    root = dataclasses.replace(root, path=build_location_path([root]))
+    mid = dataclasses.replace(mid, path=build_location_path([root, mid]))
+    leaf = dataclasses.replace(leaf, path=build_location_path([root, mid, leaf]))
+    by_id = {root_id: root, mid_id: mid, leaf_id: leaf}
     return by_id, root, mid, leaf
 
 
@@ -155,10 +156,10 @@ def test_low_stock_first_orders_without_filtering() -> None:
     c = create_item_from_create({"name": "C", "quantity": 3, "low_stock_threshold": None})
     d = create_item_from_create({"name": "D", "quantity": 0, "low_stock_threshold": 0})
     # Set timestamps so default secondary sorting is deterministic (updated_at desc)
-    a.updated_at = "2024-01-01T00:00:00Z"
-    b.updated_at = "2024-01-02T00:00:00Z"
-    c.updated_at = "2024-01-03T00:00:00Z"
-    d.updated_at = "2024-01-04T00:00:00Z"
+    a = dataclasses.replace(a, updated_at="2024-01-01T00:00:00Z")
+    b = dataclasses.replace(b, updated_at="2024-01-02T00:00:00Z")
+    c = dataclasses.replace(c, updated_at="2024-01-03T00:00:00Z")
+    d = dataclasses.replace(d, updated_at="2024-01-04T00:00:00Z")
 
     items = sort_items(
         filter_items([a, b, c, d], ItemFilter(), today=today_local_date()),
@@ -220,12 +221,9 @@ def test_filter_updated_after_and_created_after() -> None:
     b = create_item_from_create({"name": "B"})
     c = create_item_from_create({"name": "C"})
 
-    a.created_at = "2024-01-01T00:00:00Z"
-    a.updated_at = "2024-01-01T10:00:00Z"
-    b.created_at = "2024-01-02T00:00:00Z"
-    b.updated_at = "2024-01-02T10:00:00Z"
-    c.created_at = "2024-01-03T00:00:00Z"
-    c.updated_at = "2024-01-03T10:00:00Z"
+    a = dataclasses.replace(a, created_at="2024-01-01T00:00:00Z", updated_at="2024-01-01T10:00:00Z")
+    b = dataclasses.replace(b, created_at="2024-01-02T00:00:00Z", updated_at="2024-01-02T10:00:00Z")
+    c = dataclasses.replace(c, created_at="2024-01-03T00:00:00Z", updated_at="2024-01-03T10:00:00Z")
 
     out_upd = filter_items(
         [a, b, c], ItemFilter(updated_after="2024-01-02T00:00:00Z"), today=today_local_date()
@@ -248,12 +246,9 @@ def test_filter_updated_before_and_created_before() -> None:
     b = create_item_from_create({"name": "B"})
     c = create_item_from_create({"name": "C"})
 
-    a.created_at = "2024-01-01T00:00:00Z"
-    a.updated_at = "2024-01-01T10:00:00Z"
-    b.created_at = "2024-01-02T00:00:00Z"
-    b.updated_at = "2024-01-02T10:00:00Z"
-    c.created_at = "2024-01-03T00:00:00Z"
-    c.updated_at = "2024-01-03T10:00:00Z"
+    a = dataclasses.replace(a, created_at="2024-01-01T00:00:00Z", updated_at="2024-01-01T10:00:00Z")
+    b = dataclasses.replace(b, created_at="2024-01-02T00:00:00Z", updated_at="2024-01-02T10:00:00Z")
+    c = dataclasses.replace(c, created_at="2024-01-03T00:00:00Z", updated_at="2024-01-03T10:00:00Z")
 
     out_upd = filter_items(
         [a, b, c], ItemFilter(updated_before="2024-01-02T00:00:00Z"), today=today_local_date()
@@ -438,9 +433,10 @@ def test_sort_default_and_fields_with_tiebreak() -> None:
     b = create_item_from_create({"name": "Bravo"})
     c = create_item_from_create({"name": "Charlie"})
 
-    a.updated_at = "2024-01-02T10:00:00Z"
-    b.updated_at = "2024-01-03T10:00:00Z"
-    c.updated_at = "2024-01-03T10:00:00Z"  # equal to b → tie broken by id asc
+    a = dataclasses.replace(a, updated_at="2024-01-02T10:00:00Z")
+    b = dataclasses.replace(b, updated_at="2024-01-03T10:00:00Z")
+    # Equal to b → tie broken by id asc
+    c = dataclasses.replace(c, updated_at="2024-01-03T10:00:00Z")
 
     # Default: updated_at desc, id asc tie-break
     out_default = sort_items([a, b, c])
@@ -470,9 +466,9 @@ def test_sort_by_quantity_and_timestamps() -> None:
     t1 = create_item_from_create({"name": "T1"})
     t2 = create_item_from_create({"name": "T2"})
     t3 = create_item_from_create({"name": "T3"})
-    t1.created_at = "2024-01-01T00:00:00Z"
-    t2.created_at = "2024-01-02T00:00:00Z"
-    t3.created_at = "2024-01-03T00:00:00Z"
+    t1 = dataclasses.replace(t1, created_at="2024-01-01T00:00:00Z")
+    t2 = dataclasses.replace(t2, created_at="2024-01-02T00:00:00Z")
+    t3 = dataclasses.replace(t3, created_at="2024-01-03T00:00:00Z")
     out_c_asc = sort_items([t3, t1, t2], Sort(field="created_at", order="asc"))
     assert [x.name for x in out_c_asc] == ["T1", "T2", "T3"]
     out_c_desc = sort_items([t1, t2, t3], Sort(field="created_at", order="desc"))
@@ -692,8 +688,8 @@ def test_filter_location_ids_unions_the_selection() -> None:
 def test_include_subtree_is_one_flag_for_the_whole_location_selection() -> None:
     by_id, _root, mid, leaf = _build_locations()
     other = _make_location(str(uuid.uuid4()), "Cellar", None)
+    other = dataclasses.replace(other, path=build_location_path([other]))
     by_id[str(other.id)] = other
-    other.path = build_location_path([other])
 
     in_leaf = create_item_from_create(
         {"name": "At leaf", "location_id": leaf.id}, locations_by_id=by_id
@@ -803,7 +799,7 @@ def _located(name: str, chain: list[Location]) -> Item:
 def test_sort_by_location_orders_on_the_denormalized_path() -> None:
     by_id, root, mid, leaf = _build_locations()
     cellar = _make_location(str(uuid.uuid4()), "Cellar", None)
-    cellar.path = build_location_path([cellar])
+    cellar = dataclasses.replace(cellar, path=build_location_path([cellar]))
     by_id[str(cellar.id)] = cellar
 
     in_leaf = _located("Deep", [root, mid, leaf])  # Garage / Shelf A / Bin 3
@@ -849,7 +845,7 @@ def test_unlocated_items_stay_last_behind_a_non_latin_location_name() -> None:
     """
 
     accented = _make_location(str(uuid.uuid4()), "Éclairage", None)
-    accented.path = build_location_path([accented])
+    accented = dataclasses.replace(accented, path=build_location_path([accented]))
     filed = _located("Filed", [accented])
     loose = create_item_from_create({"name": "Loose"})
 
@@ -887,9 +883,9 @@ def test_a_non_latin_location_sorts_among_the_others_and_ahead_of_unlocated() ->
     """Its key is not empty, so `location_sort_key` does not read it as "no location"."""
 
     cyrillic = _make_location(str(uuid.uuid4()), "Гараж", None)
-    cyrillic.path = build_location_path([cyrillic])
+    cyrillic = dataclasses.replace(cyrillic, path=build_location_path([cyrillic]))
     latin = _make_location(str(uuid.uuid4()), "Attic", None)
-    latin.path = build_location_path([latin])
+    latin = dataclasses.replace(latin, path=build_location_path([latin]))
     assert cyrillic.path.sort_key == "гараж"
 
     items = [

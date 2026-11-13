@@ -6,6 +6,7 @@ series stays on its own day however far past the anchor the bump happens.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, date, datetime, timedelta, timezone
 
 import pytest
@@ -289,7 +290,8 @@ async def test_bump_names_a_stored_anchor_it_cannot_read() -> None:
         reminder_interval=MONTHLY,
     )
     repo = repo_of(hass)
-    repo.get_item(item_id).reminder_date = "next week"
+    stored = repo.get_item(item_id)
+    repo._items_by_id[str(stored.id)] = dataclasses.replace(stored, reminder_date="next week")
 
     res = await ws_send(hass, 3, "haventory/reminder/bump", item_id=item_id)
 

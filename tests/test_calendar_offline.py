@@ -9,6 +9,7 @@ type at all.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta, timezone
@@ -44,7 +45,10 @@ def _item(
         due_date=due,
         inspection_date=inspection,
         location_path=LocationPath(
-            id_path=[], name_path=path.split(" / ") if path else [], display_path=path, sort_key=""
+            id_path=(),
+            name_path=tuple(path.split(" / ")) if path else (),
+            display_path=path,
+            sort_key="",
         ),
     )
 
@@ -192,12 +196,16 @@ def test_a_part_day_window_finds_the_all_day_event_it_overlaps() -> None:
     assert [e.summary for e in events] == ["Ladder due back"]
 
 
-def _reminder(name: str, *, anchor: str, unit: str | None = None, count: int = 1) -> Item:
-    item = _item(name)
-    item.reminder_date = anchor
-    item.reminder_anchor = anchor
-    item.reminder_interval = ReminderInterval(unit=unit, count=count) if unit else None
-    return item
+def _reminder(
+    name: str, *, anchor: str, unit: str | None = None, count: int = 1, **overrides: object
+) -> Item:
+    fields: dict[str, object] = {
+        "reminder_date": anchor,
+        "reminder_anchor": anchor,
+        "reminder_interval": ReminderInterval(unit=unit, count=count) if unit else None,
+    }
+    fields.update(overrides)
+    return dataclasses.replace(_item(name), **fields)
 
 
 def test_a_reminder_with_no_interval_is_a_single_occurrence() -> None:
@@ -289,8 +297,13 @@ def test_next_event_over_a_recurring_reminder_returns_the_nearest_occurrence() -
 
 
 def test_a_reminder_and_an_inspection_on_one_item_are_separate_events() -> None:
-    item = _reminder("Extinguisher", anchor="2026-08-10", unit="months", count=6)
-    item.inspection_date = "2026-08-12"
+    item = _reminder(
+        "Extinguisher",
+        anchor="2026-08-10",
+        unit="months",
+        count=6,
+        inspection_date="2026-08-12",
+    )
 
     events = build_events([item], WINDOW_START, WINDOW_END)
 
@@ -332,8 +345,7 @@ def test_a_reminder_date_that_cannot_be_parsed_costs_only_that_item(caplog) -> N
     the answer is to leave that item off and say so once.
     """
 
-    broken = _reminder("Boiler", anchor="2026-08-10")
-    broken.reminder_date = "next week"
+    broken = _reminder("Boiler", anchor="2026-08-10", reminder_date="next week")
     ladder = _item("Ladder", due="2026-08-10")
 
     with caplog.at_level(logging.WARNING):
@@ -358,8 +370,7 @@ def test_an_unreadable_due_or_inspection_date_is_skipped_the_same_way() -> None:
 def test_the_next_event_walk_survives_an_unreadable_date() -> None:
     """The entity's state comes from this walk, so it fails the same way or not at all."""
 
-    broken = _reminder("Boiler", anchor="2026-08-10")
-    broken.reminder_date = "next week"
+    broken = _reminder("Boiler", anchor="2026-08-10", reminder_date="next week")
 
     assert next_event([broken], date(2026, 8, 1)) is None
     assert next_event([broken, _item("Ladder", due="2026-08-10")], date(2026, 8, 1)) is not None
@@ -368,8 +379,7 @@ def test_the_next_event_walk_survives_an_unreadable_date() -> None:
 def test_one_unreadable_value_is_reported_once_however_often_it_is_read(caplog) -> None:
     """A calendar read happens on every state write; a warning per read is a log nobody reads."""
 
-    broken = _reminder("Boiler", anchor="2026-08-10")
-    broken.reminder_date = "not-a-date-at-all"
+    broken = _reminder("Boiler", anchor="2026-08-10", reminder_date="not-a-date-at-all")
 
     with caplog.at_level(logging.WARNING):
         for _ in range(5):
@@ -387,8 +397,13 @@ def test_a_bumped_series_keeps_the_anchor_s_day_of_month() -> None:
     the anchor, so October is the 31st rather than the 30th the bump landed on.
     """
 
-    item = _reminder("Meter reading", anchor="2026-09-30", unit="months", count=1)
-    item.reminder_anchor = "2026-08-31"
+    item = _reminder(
+        "Meter reading",
+        anchor="2026-09-30",
+        unit="months",
+        count=1,
+        reminder_anchor="2026-08-31",
+    )
 
     events = build_events([item], date(2026, 8, 1), date(2027, 1, 1))
 
@@ -403,8 +418,13 @@ def test_a_bumped_series_keeps_the_anchor_s_day_of_month() -> None:
 def test_occurrences_already_marked_done_stay_off_the_calendar() -> None:
     """A window covering them is what "bumped" has to survive."""
 
-    item = _reminder("Water filter", anchor="2026-08-15", unit="weeks", count=1)
-    item.reminder_anchor = "2026-08-01"
+    item = _reminder(
+        "Water filter",
+        anchor="2026-08-15",
+        unit="weeks",
+        count=1,
+        reminder_anchor="2026-08-01",
+    )
 
     events = build_events([item], date(2026, 8, 1), date(2026, 8, 31))
 
@@ -414,8 +434,9 @@ def test_occurrences_already_marked_done_stay_off_the_calendar() -> None:
 def test_a_reminder_with_no_anchor_projects_from_its_own_date() -> None:
     """Every store written before v9 carries none, and reads as this."""
 
-    item = _reminder("HVAC filter", anchor="2026-08-10", unit="months", count=1)
-    item.reminder_anchor = None
+    item = _reminder(
+        "HVAC filter", anchor="2026-08-10", unit="months", count=1, reminder_anchor=None
+    )
 
     events = build_events([item], WINDOW_START, date(2026, 11, 1))
 
