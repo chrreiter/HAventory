@@ -8,6 +8,7 @@ import pytest
 from custom_components.haventory import models
 from custom_components.haventory.exceptions import ValidationError
 from custom_components.haventory.item_writes import create_item_from_create
+from custom_components.haventory.location_paths import build_location_path
 from custom_components.haventory.models import (
     EMPTY_LOCATION_PATH,
     SORT_FIELDS,
@@ -15,7 +16,6 @@ from custom_components.haventory.models import (
     ItemFilter,
     Location,
     Sort,
-    build_location_path,
     filter_items,
     sort_items,
     validate_area_filter,

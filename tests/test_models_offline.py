@@ -23,14 +23,17 @@ from custom_components.haventory.item_writes import (
     apply_item_update,
     create_item_from_create,
 )
+from custom_components.haventory.location_paths import (
+    build_location_path,
+    build_location_path_from_map,
+    walk_location_chain,
+)
 from custom_components.haventory.models import (
     EMPTY_LOCATION_PATH,
     Item,
     Location,
     LocationPath,
     ReminderInterval,
-    build_location_path,
-    build_location_path_from_map,
     load_attachments,
     load_reminder_interval,
     seed_status_definitions,
@@ -39,7 +42,6 @@ from custom_components.haventory.models import (
     serialize_status_definition,
     validate_attachment_meta,
     validate_status_definition,
-    walk_location_chain,
 )
 from custom_components.haventory.timestamps import (
     is_canonical_utc_timestamp,

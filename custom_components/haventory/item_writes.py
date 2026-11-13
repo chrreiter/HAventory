@@ -17,13 +17,13 @@ from functools import partial
 from typing import Any, Final, NotRequired, TypedDict
 
 from .exceptions import ValidationError
+from .location_paths import build_location_path_from_map
 from .models import (
     EMPTY_LOCATION_PATH,
     ITEM_STATUSES,
     Item,
     ItemStatus,
     Location,
-    build_location_path_from_map,
     new_uuid4,
     validate_item_status,
     validate_reminder_rules,

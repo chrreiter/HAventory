@@ -22,6 +22,12 @@ from typing import Any, TypedDict, TypeVar
 from .calendar_projection import next_occurrence_after
 from .exceptions import ConflictError, NotFoundError, ValidationError
 from .item_writes import ItemCreate, ItemUpdate, apply_item_update, create_item_from_create
+from .location_paths import (
+    build_location_path,
+    build_location_path_from_map,
+    location_chain_to_root,
+    walk_location_chain,
+)
 from .logs import context_logger
 from .models import (
     DEFAULT_ITEM_STATUS,
@@ -32,8 +38,6 @@ from .models import (
     Location,
     Sort,
     StatusDefinition,
-    build_location_path,
-    build_location_path_from_map,
     filter_items,
     item_inspection_is_due,
     item_inspection_is_overdue,
@@ -41,7 +45,6 @@ from .models import (
     item_is_low_stock,
     item_is_overdue,
     item_reminder_is_due,
-    location_chain_to_root,
     new_uuid4,
     seed_status_definitions,
     selected_categories,
@@ -51,7 +54,6 @@ from .models import (
     sort_items,
     sort_value,
     validate_status_definition,
-    walk_location_chain,
 )
 from .timestamps import monotonic_timestamp_after, today_local_date
 from .validation import (

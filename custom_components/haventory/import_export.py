@@ -39,13 +39,13 @@ from typing import Any, Literal
 
 from .const import INTEGRATION_VERSION
 from .exceptions import ValidationError, translation_fields
+from .location_paths import build_location_path_from_map
 from .migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
 from .models import (
     DEFAULT_ITEM_STATUS,
     EMPTY_LOCATION_PATH,
     ITEM_STATUSES,
     Location,
-    build_location_path_from_map,
     seed_status_definitions,
     serialize_status_definition,
     validate_attachment_meta,

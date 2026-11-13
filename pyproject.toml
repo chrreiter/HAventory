@@ -108,6 +108,7 @@ warn_redundant_casts = true
 [[tool.mypy.overrides]]
 module = [
   "haventory.item_writes",
+  "haventory.location_paths",
   "haventory.models",
   "haventory.ops",
   "haventory.repository",
