@@ -15,7 +15,8 @@ from collections import deque
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Any, TypeVar
+from enum import Enum
+from typing import Any, Final, TypeVar
 
 from .calendar_projection import next_occurrence_after
 from .exceptions import ConflictError, NotFoundError, ValidationError
@@ -71,8 +72,15 @@ LOGGER = context_logger(__name__)
 _BucketKey = TypeVar("_BucketKey", str, str | None)
 
 
-# Tells "not provided" from an explicit None.
-UNSET: object = object()
+class Unset(Enum):
+    """The type of :data:`UNSET`, so a signature can name "not provided"."""
+
+    UNSET = "unset"
+
+
+#: "Not provided": an argument left alone, told apart from ``None`` and from
+#: every value. Narrowed away by ``is UNSET``.
+UNSET: Final = Unset.UNSET
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,7 +334,7 @@ class Repository:
         self._index_item(new)
 
     def _parse_new_parent(
-        self, new_parent_id: str | uuid.UUID | object | None, current_parent: uuid.UUID | None
+        self, new_parent_id: str | uuid.UUID | Unset | None, current_parent: uuid.UUID | None
     ) -> tuple[bool, uuid.UUID | None]:
         """Return ``(parent_changed, target_parent_id)``; UNSET is no change."""
 
@@ -340,7 +348,7 @@ class Repository:
         raise ValidationError("new_parent_id must be a UUID v4 string or null")
 
     def _parse_area_change(
-        self, area_id: str | object | None, current_area: str | None
+        self, area_id: str | Unset | None, current_area: str | None
     ) -> tuple[str | None, bool]:
         """Return ``(target_area, area_changed)``; UNSET is no change, None clears."""
 
@@ -1079,8 +1087,8 @@ class Repository:
         location_id: str | uuid.UUID,
         *,
         name: str | None = None,
-        new_parent_id: str | uuid.UUID | object | None = UNSET,
-        area_id: str | uuid.UUID | object | None = UNSET,
+        new_parent_id: str | uuid.UUID | Unset | None = UNSET,
+        area_id: str | Unset | None = UNSET,
     ) -> Location:
         """Rename a location, move it, set its area, or all three.
 
