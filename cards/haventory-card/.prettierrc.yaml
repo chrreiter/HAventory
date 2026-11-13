@@ -1,0 +1,10 @@
+# Quotes, semicolons and indentation are the ones the code is written in. Width
+# 112 with trailing commas everywhere is the layout most of it already has; a
+# different width reflows most multi-line calls in the package.
+singleQuote: true
+printWidth: 112
+trailingComma: all
+# Lit's html`` and css`` bodies ship in the bundle as written, so reindenting
+# them makes it larger and can move whitespace a reader sees between inline
+# elements.
+embeddedLanguageFormatting: off

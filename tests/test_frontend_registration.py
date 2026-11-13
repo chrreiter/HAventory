@@ -148,7 +148,7 @@ def test_the_card_build_emits_a_single_file() -> None:
     """
     config = (REPO_ROOT / "cards" / "haventory-card" / "vite.config.ts").read_text(encoding="utf-8")
 
-    assert re.search(r"^\s*codeSplitting: false$", config, re.MULTILINE) is not None
+    assert re.search(r"^\s*codeSplitting: false,?$", config, re.MULTILINE) is not None
 
 
 @pytest.mark.asyncio
