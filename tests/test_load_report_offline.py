@@ -142,6 +142,29 @@ def test_a_broken_item_is_reported_and_logged_at_error(caplog) -> None:
     assert [r.levelno for r in failures] == [logging.ERROR]
 
 
+def test_a_stored_key_with_a_percent_sign_still_reaches_the_log(caplog) -> None:
+    """The key comes from the file, and the log line is passed `%`-args.
+
+    A `%` in it once made `logging` fail to format the record, which dropped the
+    one line naming the corrupt row.
+    """
+
+    key = "50%s off %d"
+    payload = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "locations": {},
+        "items": {key: {"id": key, "name": "Broken"}},
+    }
+
+    with caplog.at_level(logging.DEBUG):
+        Repository.from_state(payload)
+
+    failures = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert [r.getMessage() for r in failures] == [
+        'Failed to load item from persisted state op=load_state_items item_id="50%s off %d"'
+    ]
+
+
 def test_a_broken_location_is_reported_and_logged_at_error(caplog) -> None:
     """Same for the location half of the load."""
 

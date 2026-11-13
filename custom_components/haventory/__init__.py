@@ -169,7 +169,7 @@ async def _async_load_repository(
     except SchemaDowngradeError as exc:
         LOGGER.error(
             "Refusing to set up against storage whose schema version this build cannot read",
-            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            extra={"op": "setup_storage", "schema_version": store.schema_version},
             exc_info=True,
         )
         _create_refusal_issue(hass, ISSUE_SCHEMA_DOWNGRADE, exc, store_key=store.key)
@@ -179,7 +179,7 @@ async def _async_load_repository(
     except CorruptSchemaVersionError as exc:
         LOGGER.error(
             "Refusing to set up against storage whose schema_version is unreadable",
-            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            extra={"op": "setup_storage", "schema_version": store.schema_version},
             exc_info=True,
         )
         _create_refusal_issue(hass, ISSUE_CORRUPT_SCHEMA_VERSION, exc, store_key=store.key)
@@ -187,14 +187,14 @@ async def _async_load_repository(
     except StorageError as exc:
         LOGGER.error(
             "Storage validation failed during setup",
-            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            extra={"op": "setup_storage", "schema_version": store.schema_version},
             exc_info=True,
         )
         raise ConfigEntryNotReady("storage validation failed") from exc
     except Exception as exc:  # pragma: no cover - defensive
         LOGGER.error(
             "Failed to load storage during setup",
-            extra={"domain": DOMAIN, "op": "setup_storage", "schema_version": store.schema_version},
+            extra={"op": "setup_storage", "schema_version": store.schema_version},
             exc_info=True,
         )
         raise ConfigEntryNotReady("storage load failed") from exc
@@ -210,7 +210,6 @@ async def _async_load_repository(
                 else "Refusing to set up against a store this build cannot fully read"
             ),
             extra={
-                "domain": DOMAIN,
                 "op": "setup_storage",
                 "dropped_items": len(load_report.dropped_item_ids),
                 "dropped_locations": len(load_report.dropped_location_ids),
@@ -247,7 +246,6 @@ async def _async_settle_lossy_load(hass: HomeAssistant, repository: Repository) 
     LOGGER.warning(
         "Rewrote the HAventory store without the rows this build cannot read",
         extra={
-            "domain": DOMAIN,
             "op": "settle_lossy_load",
             "dropped_items": len(repository.last_load_report.dropped_item_ids),
             "dropped_locations": len(repository.last_load_report.dropped_location_ids),
@@ -269,7 +267,7 @@ def _register_media_view(hass: HomeAssistant) -> None:
         # attachment on every card is a broken image until it is fixed.
         LOGGER.warning(
             "Failed to register the HAventory media view; attachments will not load",
-            extra={"domain": DOMAIN, "op": "media_register"},
+            extra={"op": "media_register"},
             exc_info=True,
         )
         return
@@ -277,7 +275,7 @@ def _register_media_view(hass: HomeAssistant) -> None:
     bucket[_MEDIA_VIEW_KEY] = True
     LOGGER.debug(
         "Serving HAventory item attachments",
-        extra={"domain": DOMAIN, "op": "media_register"},
+        extra={"op": "media_register"},
     )
 
 
@@ -305,7 +303,6 @@ async def _async_sweep_orphaned_media(hass: HomeAssistant, repository: Repositor
             LOGGER.info(
                 "Keeping the attachment files of items only the corrupt-store backup holds",
                 extra={
-                    "domain": DOMAIN,
                     "op": "attachment_sweep",
                     "held_items": len(held),
                     "backup_key": CORRUPT_BACKUP_STORAGE_KEY,
@@ -315,7 +312,7 @@ async def _async_sweep_orphaned_media(hass: HomeAssistant, repository: Repositor
     except Exception:
         LOGGER.warning(
             "Could not sweep orphaned attachment files",
-            extra={"domain": DOMAIN, "op": "media_sweep"},
+            extra={"op": "media_sweep"},
             exc_info=True,
         )
 
@@ -341,7 +338,7 @@ async def _async_options_updated(hass: HomeAssistant, entry: HAventoryConfigEntr
     await todo_mod.async_reconcile(hass)
     LOGGER.info(
         "Applied updated HAventory options",
-        extra={"domain": DOMAIN, "op": "options_updated"},
+        extra={"op": "options_updated"},
     )
 
 
@@ -356,7 +353,7 @@ async def _async_flush_pending_writes(hass: HomeAssistant, *, op: str) -> None:
     except Exception:  # pragma: no cover - defensive
         LOGGER.error(
             "Failed to persist during teardown",
-            extra={"domain": DOMAIN, "op": op},
+            extra={"op": op},
             exc_info=True,
         )
 
@@ -430,7 +427,7 @@ async def _async_lovelace_resources(hass: HomeAssistant, *, op: str) -> Any:
     if resources is None:
         LOGGER.debug(
             "Lovelace not initialized or resources unavailable",
-            extra={"domain": DOMAIN, "op": op},
+            extra={"op": op},
         )
         return None
 
@@ -459,7 +456,7 @@ async def _async_register_static_path(hass: HomeAssistant) -> bool:
         # ERROR: without the route neither card loader has anything to load.
         LOGGER.error(
             "Failed to serve the HAventory card directory; the card cannot load",
-            extra={"domain": DOMAIN, "op": "frontend_register", "path": str(_WWW_DIR)},
+            extra={"op": "frontend_register", "path": str(_WWW_DIR)},
             exc_info=True,
         )
         return False
@@ -468,7 +465,6 @@ async def _async_register_static_path(hass: HomeAssistant) -> bool:
     LOGGER.debug(
         "Serving the HAventory card bundle",
         extra={
-            "domain": DOMAIN,
             "op": "frontend_register",
             "url": _STATIC_URL_PATH,
             "path": str(_WWW_DIR),
@@ -488,7 +484,7 @@ def _register_extra_js_url(hass: HomeAssistant, url: str) -> None:
     except Exception:
         LOGGER.debug(
             "Frontend not ready for an extra module URL; the card relies on the Lovelace resource",
-            extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+            extra={"op": "frontend_register", "url": url},
             exc_info=True,
         )
         return
@@ -496,7 +492,7 @@ def _register_extra_js_url(hass: HomeAssistant, url: str) -> None:
     hass.data.setdefault(DOMAIN, {})[_EXTRA_JS_URL_KEY] = url
     LOGGER.debug(
         "Registered the HAventory card as a frontend module URL",
-        extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+        extra={"op": "frontend_register", "url": url},
     )
 
 
@@ -515,14 +511,14 @@ def _remove_extra_js_url(hass: HomeAssistant, fallback_url: str | None = None) -
     except Exception:
         LOGGER.debug(
             "Could not remove the frontend module URL",
-            extra={"domain": DOMAIN, "op": "frontend_unregister", "url": url},
+            extra={"op": "frontend_unregister", "url": url},
             exc_info=True,
         )
         return
 
     LOGGER.debug(
         "Removed the HAventory card frontend module URL",
-        extra={"domain": DOMAIN, "op": "frontend_unregister", "url": url},
+        extra={"op": "frontend_unregister", "url": url},
     )
 
 
@@ -539,7 +535,7 @@ def _remove_sidebar_panel(hass: HomeAssistant) -> None:
     except Exception:  # pragma: no cover - defensive
         LOGGER.debug(
             "Could not remove the HAventory sidebar panel",
-            extra={"domain": DOMAIN, "op": "panel_unregister", "url": PANEL_URL_PATH},
+            extra={"op": "panel_unregister", "url": PANEL_URL_PATH},
             exc_info=True,
         )
 
@@ -564,7 +560,7 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
         give_back()
         LOGGER.debug(
             "Sidebar panel disabled in the options; not registering",
-            extra={"domain": DOMAIN, "op": "panel_register"},
+            extra={"op": "panel_register"},
         )
         return
 
@@ -574,7 +570,6 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
         LOGGER.debug(
             "Card bundle not built; skipping sidebar panel registration",
             extra={
-                "domain": DOMAIN,
                 "op": "panel_register",
                 "path": str(_CARD_BUNDLE_PATH),
             },
@@ -590,7 +585,6 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
         LOGGER.debug(
             "Sidebar panel already registered as asked; leaving it in place",
             extra={
-                "domain": DOMAIN,
                 "op": "panel_register",
                 "url": PANEL_URL_PATH,
                 "module_url": url,
@@ -616,7 +610,7 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
     except Exception:
         LOGGER.warning(
             "Failed to register the HAventory sidebar panel",
-            extra={"domain": DOMAIN, "op": "panel_register", "url": PANEL_URL_PATH},
+            extra={"op": "panel_register", "url": PANEL_URL_PATH},
             exc_info=True,
         )
         return
@@ -625,7 +619,6 @@ async def _async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) ->
     LOGGER.debug(
         "Registered the HAventory sidebar panel",
         extra={
-            "domain": DOMAIN,
             "op": "panel_register",
             "url": PANEL_URL_PATH,
             "module_url": url,
@@ -641,7 +634,7 @@ async def _rewrite_card_resource(resources: Any, stale: dict[str, Any], url: str
     if stale_id is None or not hasattr(resources, "async_update_item"):
         LOGGER.debug(
             "Cannot rewrite the registered card resource; leaving it as-is",
-            extra={"domain": DOMAIN, "op": "frontend_register", "url": stale.get("url")},
+            extra={"op": "frontend_register", "url": stale.get("url")},
         )
         return
 
@@ -650,7 +643,6 @@ async def _rewrite_card_resource(resources: Any, stale: dict[str, Any], url: str
         LOGGER.info(
             "Updated HAventory card Lovelace resource to the current version",
             extra={
-                "domain": DOMAIN,
                 "op": "frontend_register",
                 "url": url,
                 "previous_url": stale.get("url"),
@@ -659,7 +651,7 @@ async def _rewrite_card_resource(resources: Any, stale: dict[str, Any], url: str
     except Exception:  # pragma: no cover - defensive
         LOGGER.warning(
             "Failed to update frontend resource",
-            extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+            extra={"op": "frontend_register", "url": url},
             exc_info=True,
         )
 
@@ -669,7 +661,7 @@ async def _create_card_resource(resources: Any, url: str) -> None:
     if not hasattr(resources, "async_create_item"):
         LOGGER.debug(
             "Lovelace in YAML mode; the card loads through the frontend module URL instead",
-            extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+            extra={"op": "frontend_register", "url": url},
         )
         return
 
@@ -677,12 +669,12 @@ async def _create_card_resource(resources: Any, url: str) -> None:
         await resources.async_create_item({"res_type": "module", "url": url})
         LOGGER.info(
             "Registered HAventory card as Lovelace resource",
-            extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+            extra={"op": "frontend_register", "url": url},
         )
     except Exception:  # pragma: no cover - defensive
         LOGGER.warning(
             "Failed to register frontend resource",
-            extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+            extra={"op": "frontend_register", "url": url},
             exc_info=True,
         )
 
@@ -698,7 +690,6 @@ async def _delete_card_resource(resources: Any, item: dict[str, Any], *, op: str
         LOGGER.info(
             "Removed HAventory card Lovelace resource",
             extra={
-                "domain": DOMAIN,
                 "op": op,
                 "url": item.get("url"),
                 "resource_id": item_id,
@@ -708,7 +699,6 @@ async def _delete_card_resource(resources: Any, item: dict[str, Any], *, op: str
         LOGGER.warning(
             "Failed to remove frontend resource",
             extra={
-                "domain": DOMAIN,
                 "op": op,
                 "url": item.get("url"),
                 "resource_id": item_id,
@@ -732,7 +722,7 @@ async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> No
     if keep.get("url") == url:
         LOGGER.debug(
             "HAventory card resource already registered at the current version",
-            extra={"domain": DOMAIN, "op": "frontend_register", "url": url},
+            extra={"op": "frontend_register", "url": url},
         )
     else:
         await _rewrite_card_resource(resources, keep, url)
@@ -749,7 +739,6 @@ async def _register_frontend_module(hass: HomeAssistant) -> None:
         LOGGER.debug(
             "Card bundle not built; skipping frontend registration",
             extra={
-                "domain": DOMAIN,
                 "op": "frontend_register",
                 "path": str(_CARD_BUNDLE_PATH),
             },
@@ -777,7 +766,7 @@ async def _unregister_frontend_module(hass: HomeAssistant) -> None:
     if not hasattr(resources, "async_delete_item"):
         LOGGER.info(
             "Lovelace in YAML mode; remove any HAventory card resource from configuration.yaml",
-            extra={"domain": DOMAIN, "op": "frontend_unregister", "url": _CARD_URL_PATH},
+            extra={"op": "frontend_unregister", "url": _CARD_URL_PATH},
         )
         return
 
@@ -895,7 +884,6 @@ def _log_storage_health(payload: dict[str, Any], *, schema_version: int) -> None
     LOGGER.debug(
         "Storage health",
         extra={
-            "domain": DOMAIN,
             "op": "setup_storage_health",
             "schema_version": schema_version,
             "items_count": item_count,

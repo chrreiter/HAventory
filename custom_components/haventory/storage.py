@@ -21,7 +21,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from . import migrations
-from .const import CORRUPT_BACKUP_STORAGE_KEY, DOMAIN
+from .const import CORRUPT_BACKUP_STORAGE_KEY
 from .exceptions import (
     CorruptSchemaVersionError,
     NotLoadedError,
@@ -131,7 +131,6 @@ async def async_backup_store(
     _LOGGER.warning(
         "Copied the HAventory store aside before loading it with unreadable rows",
         extra={
-            "domain": DOMAIN,
             "op": "backup_store",
             "storage_key": source_key,
             "backup_key": backup_key,
@@ -209,7 +208,6 @@ class DomainStore:
 
     def _log_context(self, from_version: int | None) -> dict[str, Any]:
         return {
-            "domain": DOMAIN,
             "op": "migrate",
             "from_version": from_version,
             "to_version": self._schema_version,
@@ -291,7 +289,7 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
         start_time = time.monotonic()
         _LOGGER.debug(
             "Persisting repository state",
-            extra={"domain": DOMAIN, "op": "persist_start"},
+            extra={"op": "persist_start"},
         )
         payload = runtime.repository.export_state()
         try:
@@ -300,7 +298,6 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
             _LOGGER.error(
                 "Failed to persist repository",
                 extra={
-                    "domain": DOMAIN,
                     "op": "persist_failed",
                     "elapsed_ms": int((time.monotonic() - start_time) * 1000),
                 },
@@ -310,7 +307,6 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
         _LOGGER.debug(
             "Repository persisted successfully",
             extra={
-                "domain": DOMAIN,
                 "op": "persist_complete",
                 "elapsed_ms": int((time.monotonic() - start_time) * 1000),
             },
@@ -322,6 +318,6 @@ async def async_persist_immediate(hass: HomeAssistant) -> None:
 
     _LOGGER.debug(
         "Immediate persist requested",
-        extra={"domain": DOMAIN, "op": "persist_immediate_request"},
+        extra={"op": "persist_immediate_request"},
     )
     await async_persist_repo(hass)

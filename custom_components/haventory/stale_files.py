@@ -13,7 +13,6 @@ from pathlib import Path
 
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN
 from .logs import context_logger
 
 LOGGER = context_logger(__name__)
@@ -47,7 +46,7 @@ def _delete(paths: Sequence[str]) -> list[str]:
         if target is None:
             LOGGER.warning(
                 "Refusing to sweep a path outside the integration directory",
-                extra={"domain": DOMAIN, "op": "sweep_stale_files", "path": relative_path},
+                extra={"op": "sweep_stale_files", "path": relative_path},
             )
             continue
 
@@ -58,7 +57,7 @@ def _delete(paths: Sequence[str]) -> list[str]:
         except OSError:
             LOGGER.warning(
                 "Could not remove a file left behind by an earlier HAventory version",
-                extra={"domain": DOMAIN, "op": "sweep_stale_files", "path": str(target)},
+                extra={"op": "sweep_stale_files", "path": str(target)},
                 exc_info=True,
             )
             continue
@@ -80,6 +79,6 @@ async def async_sweep_retired_files(
     if removed:
         LOGGER.debug(
             "Removed files left behind by an earlier HAventory version",
-            extra={"domain": DOMAIN, "op": "sweep_stale_files", "paths": list(removed)},
+            extra={"op": "sweep_stale_files", "paths": list(removed)},
         )
     return removed

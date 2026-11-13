@@ -50,7 +50,7 @@ class LossyLoadRepairFlow(RepairsFlow):
         except Exception:  # pragma: no cover - defensive
             LOGGER.error(
                 "Failed to copy the HAventory store aside; not loading it lossily",
-                extra={"domain": DOMAIN, "op": "repair_lossy_load"},
+                extra={"op": "repair_lossy_load"},
                 exc_info=True,
             )
             copied = False

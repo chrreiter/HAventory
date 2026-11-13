@@ -25,7 +25,6 @@ from homeassistant.helpers.storage import Store
 from .const import (
     CONF_TODO_ENTITY_ID,
     DEFAULT_TODO_ENTITY_ID,
-    DOMAIN,
     EVENT_ITEM_CHANGED,
     EVENT_LOW_STOCK,
     TODO_LINKS_STORAGE_KEY,
@@ -134,7 +133,7 @@ async def async_reconcile(hass: HomeAssistant) -> None:
     except Exception:
         LOGGER.exception(
             "Failed to reconcile the to-do list",
-            extra={"domain": DOMAIN, "op": "todo_reconcile"},
+            extra={"op": "todo_reconcile"},
         )
 
 
@@ -151,7 +150,7 @@ async def _async_reconcile_locked(hass: HomeAssistant, runtime: HAventoryRuntime
     if not _list_is_available(hass, entity_id):
         LOGGER.warning(
             "The configured to-do list is unavailable; leaving it untouched",
-            extra={"domain": DOMAIN, "op": "todo_reconcile", "entity_id": entity_id},
+            extra={"op": "todo_reconcile", "entity_id": entity_id},
         )
         return
 
@@ -269,7 +268,6 @@ async def _async_add_line(hass: HomeAssistant, entity_id: str, summary: str) -> 
         LOGGER.warning(
             "Could not add a line to the to-do list; the next change retries it",
             extra={
-                "domain": DOMAIN,
                 "op": "todo_add",
                 "entity_id": entity_id,
                 "summary": summary,
@@ -294,7 +292,6 @@ async def _async_remove_line(hass: HomeAssistant, link: dict[str, str]) -> bool:
             "The to-do list cannot delete its own lines, so this one stays on it; "
             "keeping the link so the next crossing restates it rather than repeating it",
             extra={
-                "domain": DOMAIN,
                 "op": "todo_remove",
                 "entity_id": link["entity_id"],
                 "summary": link["summary"],
@@ -314,7 +311,6 @@ async def _async_remove_line(hass: HomeAssistant, link: dict[str, str]) -> bool:
             "Could not remove a line from the to-do list; dropping the link and "
             "leaving the line to be cleared by hand",
             extra={
-                "domain": DOMAIN,
                 "op": "todo_remove",
                 "entity_id": link["entity_id"],
                 "summary": link["summary"],
@@ -340,7 +336,6 @@ async def _async_rename_line(
         LOGGER.warning(
             "Could not restate a line on the to-do list; it keeps the count it was written with",
             extra={
-                "domain": DOMAIN,
                 "op": "todo_rename",
                 "entity_id": entity_id,
                 "summary": summary,
@@ -359,7 +354,7 @@ async def _async_load_links(store: Store[dict[str, Any]]) -> dict[str, dict[str,
     except Exception:
         LOGGER.warning(
             "Could not read the to-do link map; starting from an empty one",
-            extra={"domain": DOMAIN, "op": "todo_links_load"},
+            extra={"op": "todo_links_load"},
             exc_info=True,
         )
         return {}
@@ -390,6 +385,6 @@ async def _async_save_links(runtime: HAventoryRuntime) -> None:
     except Exception:
         LOGGER.warning(
             "Could not save the to-do link map; lines already on the list may be written again",
-            extra={"domain": DOMAIN, "op": "todo_links_save"},
+            extra={"op": "todo_links_save"},
             exc_info=True,
         )

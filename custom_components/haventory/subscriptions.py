@@ -207,7 +207,7 @@ def _send_event_message(
     except Exception:  # pragma: no cover - defensive logging only
         LOGGER.debug(
             "Failed to send WS event message",
-            extra={"domain": DOMAIN, "op": "send_event", "subscription_id": subscription_id},
+            extra={"op": "send_event", "subscription_id": subscription_id},
             exc_info=True,
         )
 
@@ -237,7 +237,7 @@ def broadcast_event(
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to broadcast WS event",
-            extra={"domain": DOMAIN, "op": "broadcast_event", "topic": topic, "action": action},
+            extra={"op": "broadcast_event", "topic": topic, "action": action},
         )
 
 
@@ -247,9 +247,7 @@ def broadcast_counts(hass: HomeAssistant) -> None:
     try:
         counts_payload = loaded_runtime(hass).repository.get_counts()
     except Exception:  # pragma: no cover - defensive
-        LOGGER.exception(
-            "Failed to broadcast counts", extra={"domain": DOMAIN, "op": "broadcast_counts"}
-        )
+        LOGGER.exception("Failed to broadcast counts", extra={"op": "broadcast_counts"})
         return
     broadcast_event(hass, topic="stats", action="counts", payload={"counts": counts_payload})
 

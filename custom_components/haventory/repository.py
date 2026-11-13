@@ -563,7 +563,7 @@ class Repository:
         self._index_item(item)
         LOGGER.debug(
             "Item created",
-            extra={"domain": "haventory", "op": "create_item", "item_id": item.id},
+            extra={"op": "create_item", "item_id": item.id},
         )
         return item
 
@@ -597,7 +597,6 @@ class Repository:
         LOGGER.debug(
             "Item updated",
             extra={
-                "domain": "haventory",
                 "op": "update_item",
                 "item_id": str(item_id),
                 "old_version": current.version,
@@ -610,7 +609,7 @@ class Repository:
         self._unindex_item(self._item_at_version(item_id, expected_version))
         LOGGER.debug(
             "Item deleted",
-            extra={"domain": "haventory", "op": "delete_item", "item_id": str(item_id)},
+            extra={"op": "delete_item", "item_id": str(item_id)},
         )
 
     def adjust_quantity(
@@ -1046,7 +1045,7 @@ class Repository:
 
         LOGGER.debug(
             "Location created",
-            extra={"domain": "haventory", "op": "create_location", "location_id": new_key},
+            extra={"op": "create_location", "location_id": new_key},
         )
         self._rebuild_location_hierarchy_indexes()
         return self._locations_by_id[new_key]
@@ -1121,7 +1120,6 @@ class Repository:
         LOGGER.debug(
             "Location updated",
             extra={
-                "domain": "haventory",
                 "op": "update_location",
                 "location_id": key,
                 "moved": bool(parent_changed),
@@ -1148,7 +1146,7 @@ class Repository:
         self._remove_location(loc)
         LOGGER.debug(
             "Location deleted",
-            extra={"domain": "haventory", "op": "delete_location", "location_id": key},
+            extra={"op": "delete_location", "location_id": key},
         )
         self._rebuild_location_hierarchy_indexes()
 
@@ -1341,14 +1339,13 @@ class Repository:
                     LOGGER.error(
                         "Failed to load %s from persisted state",
                         what,
-                        extra={"domain": "haventory", "op": op, id_field: str(key)},
+                        extra={"op": op, id_field: str(key)},
                     )
                 dropped.append(str(key))
         if len(dropped) > LOAD_DROP_LOG_LIMIT:
             LOGGER.error(
                 "Further rows failed to load from persisted state; ids omitted",
                 extra={
-                    "domain": "haventory",
                     "op": op,
                     "dropped_total": len(dropped),
                     "dropped_logged": LOAD_DROP_LOG_LIMIT,
@@ -1403,7 +1400,7 @@ class Repository:
             except ValidationError:
                 LOGGER.warning(
                     "Skipping an unreadable status definition",
-                    extra={"domain": "haventory", "op": "load_state_statuses"},
+                    extra={"op": "load_state_statuses"},
                 )
                 continue
             loaded[definition.slug] = definition
