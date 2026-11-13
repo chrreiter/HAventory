@@ -577,11 +577,41 @@ async def test_a_bulk_batch_repaints_once_and_counts_once(monkeypatch) -> None:
     assert [e["item"]["id"] for e in item_events] == ids
     assert len(conn.events(topic="stats")) == 1
     entered = [e for e in hass.bus.events_of(EVENT_LOW_STOCK) if e["action"] == "entered"]
-    # The rows are announced after the shared save, so the first row's diff
-    # already sees both crossings; each is announced once, with its own name.
+    # One diff for the whole batch, after every row's own events; each crossing
+    # is announced once, with its own name.
     assert sorted((e["item_id"], e["name"]) for e in entered) == sorted(
         [(ids[0], "Battery 0"), (ids[1], "Battery 1")]
     )
+
+
+@pytest.mark.asyncio
+async def test_a_bulk_delete_names_the_low_item_it_removed_from_any_row() -> None:
+    """A deleted item is gone from the store, so its name has to come from its row."""
+
+    hass = ws_hass()
+    plain = await ws_send(hass, 1, "haventory/item/create", name="Tape", quantity=10)
+    low = await ws_send(
+        hass,
+        2,
+        "haventory/item/create",
+        name="Batteries",
+        quantity=1,
+        low_stock_threshold=LOW_THRESHOLD,
+    )
+    low_id = low["result"]["id"]
+    hass.bus.fired.clear()
+
+    operations = [
+        {"op_id": str(n), "kind": "item_delete", "payload": {"item_id": item["result"]["id"]}}
+        for n, item in enumerate([plain, low])
+    ]
+    res = await ws_send(hass, 3, "haventory/items/bulk", operations=operations)
+
+    assert res["success"] is True
+    cleared = [e for e in hass.bus.events_of(EVENT_LOW_STOCK) if e["action"] == "cleared"]
+    assert [
+        (e["item_id"], e["name"], e["quantity"], e["low_stock_threshold"]) for e in cleared
+    ] == [(low_id, "Batteries", 1, LOW_THRESHOLD)]
 
 
 @pytest.mark.asyncio

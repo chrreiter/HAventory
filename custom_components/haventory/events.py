@@ -69,15 +69,15 @@ def notify_mutation(
     action: str,
     item: dict[str, Any] | None = None,
     counts: bool = True,
-    repaint: bool = True,
+    batch_row: bool = False,
 ) -> None:
     """Announce one item mutation: `items` event, bus event, low-stock diff, repaint, counts.
 
     ``item`` is the serialized item, or for a delete the body as it last stood.
     Without one, nothing goes on the `items` topic or the bus, but the rest
-    still runs. ``counts`` False is for a write that moves no count. A batch
-    row passes both ``counts`` and ``repaint`` False, and the batch sends them
-    once at the end through ``notify_batch_settled``.
+    still runs. ``counts`` False is for a write that moves no count. A
+    ``batch_row`` holds back the low-stock diff, the repaint and the counts,
+    and the batch sends them once at the end through ``notify_batch_settled``.
     """
 
     try:
@@ -90,9 +90,10 @@ def notify_mutation(
             broadcast_event(hass, topic="items", action=action, payload={"item": item})
             _fire_item_changed(hass, action, item)
 
-        _fire_low_stock_transitions(hass, runtime, item=item)
-
-        _repaint_and_count(hass, runtime, repaint=repaint, counts=counts)
+        if batch_row:
+            return
+        _fire_low_stock_transitions(hass, runtime, bodies=_by_id([item] if item else []))
+        _repaint_and_count(hass, runtime, repaint=True, counts=counts)
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a mutation",
@@ -106,11 +107,16 @@ def notify_counts(hass: HomeAssistant) -> None:
     broadcast_counts(hass)
 
 
-def notify_batch_settled(hass: HomeAssistant) -> None:
-    """The one repaint and counts event for a batch whose rows held them back."""
+def notify_batch_settled(hass: HomeAssistant, items: Sequence[dict[str, Any]]) -> None:
+    """The one low-stock diff, repaint and counts event for a batch whose rows held them back.
+
+    ``items`` is every successful row's body. The diff needs them because a row
+    that deleted a low item leaves nothing in the repository to name it by.
+    """
 
     runtime = find_runtime(hass)
     if runtime is not None:
+        _fire_low_stock_transitions(hass, runtime, bodies=_by_id(items))
         _repaint_and_count(hass, runtime, repaint=True, counts=True)
 
 
@@ -135,8 +141,7 @@ def notify_bulk_mutation(
         for item in items:
             _fire_item_changed(hass, action, item)
 
-        # No single row is the one a crossing should be attributed to.
-        _fire_low_stock_transitions(hass, runtime, item=None)
+        _fire_low_stock_transitions(hass, runtime, bodies=_by_id(items))
 
         _repaint_and_count(hass, runtime, repaint=True, counts=True)
     except Exception:  # pragma: no cover - defensive
@@ -231,12 +236,20 @@ def _fire_item_changed(hass: HomeAssistant, action: str, item: dict[str, Any]) -
     )
 
 
+def _by_id(items: Sequence[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The bodies keyed by id; a later row for the same item wins, as in the store."""
+
+    return {str(item["id"]): item for item in items if item.get("id") is not None}
+
+
 def _fire_low_stock_transitions(
-    hass: HomeAssistant, runtime: HAventoryRuntime, *, item: dict[str, Any] | None
+    hass: HomeAssistant, runtime: HAventoryRuntime, *, bodies: dict[str, dict[str, Any]]
 ) -> None:
     """Fire `entered` / `cleared` for the ids that crossed the threshold.
 
     A set diff, so one place covers single writes, bulk and import alike.
+    ``bodies`` are the written items' own bodies, which name a deleted item the
+    repository can no longer read.
     """
 
     repo = runtime.repository
@@ -247,15 +260,19 @@ def _fire_low_stock_transitions(
     runtime.low_stock_ids = current
 
     for item_id in current - previous:
-        hass.bus.async_fire(EVENT_LOW_STOCK, _low_stock_payload(repo, item_id, "entered", item))
+        hass.bus.async_fire(
+            EVENT_LOW_STOCK, _low_stock_payload(repo, item_id, "entered", bodies.get(item_id))
+        )
     for item_id in previous - current:
-        hass.bus.async_fire(EVENT_LOW_STOCK, _low_stock_payload(repo, item_id, "cleared", item))
+        hass.bus.async_fire(
+            EVENT_LOW_STOCK, _low_stock_payload(repo, item_id, "cleared", bodies.get(item_id))
+        )
 
 
 def _low_stock_payload(
     repo: Repository, item_id: str, action: str, mutated: dict[str, Any] | None
 ) -> dict[str, Any]:
-    if mutated is not None and mutated.get("id") == item_id:
+    if mutated is not None:
         name = mutated.get("name")
         quantity = mutated.get("quantity")
         threshold = mutated.get("low_stock_threshold")
