@@ -515,7 +515,9 @@ async def commit_batch(
         await _free_files(hass, successful)
         for written in successful:
             await _announce(hass, written, batch_row=True)
-        notify_batch_settled(hass)
+        notify_batch_settled(
+            hass, [w.entity for w in successful if w.noun == "item" and w.entity is not None]
+        )
     return results
 
 
@@ -559,8 +561,8 @@ async def _announce(hass: HomeAssistant, written: Written, *, batch_row: bool = 
             hass,
             action=written.action,
             item=written.entity,
-            counts=written.counts and not batch_row,
-            repaint=not batch_row,
+            counts=written.counts,
+            batch_row=batch_row,
         )
     elif written.noun == "location":
         notify_location_mutation(
