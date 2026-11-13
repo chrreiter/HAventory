@@ -104,9 +104,10 @@ describe('tn', () => {
         if (rules.select(count) !== (count === 1 ? 'one' : 'other')) continue;
         for (const base of bases) {
           const half = `${base}.${count === 1 ? 'one' : 'other'}`;
-          const before = (dictionary[half as keyof Dictionary] ??
+          const before =
+            dictionary[half as keyof Dictionary] ??
             dictionary[`${base}.other` as keyof Dictionary] ??
-            en[half as keyof typeof en]) as string;
+            en[half as keyof typeof en];
           expect([tag, half, tn(base, count)]).toEqual([tag, half, before.replace('{count}', String(count))]);
         }
       }

@@ -43,11 +43,12 @@ import {
 import { renderStatBadges } from '../ui/stat-badges';
 import { ViewportNarrow } from '../ui/responsive';
 import { ItemWorkspace } from '../item-workspace';
+import type { RowEventDetail } from '../item-workspace';
 import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
-import type { DistinctValue, Item, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
+import type { DistinctValue, Item, Sort, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import { makeBulkOp } from '../store/store';
 import type { BulkOperation, BulkOutcome } from '../store/types';
@@ -1275,7 +1276,7 @@ export class HVFullView extends LitElement {
         }
         <hv-location-tree
           data-testid="sidebar-tree"
-          .nodes=${(st?.locationTreeCache ?? []) as LocationTreeNode[]}
+          .nodes=${st?.locationTreeCache ?? []}
           .selectedIds=${filters.locationIds}
           .orphansSelected=${filters.orphansOnly}
           .areas=${st?.areasCache?.areas ?? []}
@@ -1602,8 +1603,8 @@ export class HVFullView extends LitElement {
             onPrimary
             data-testid="full-overflow"
             .entries=${this.menuEntries}
-            @select=${(e: CustomEvent) => {
-              if ((e.detail as { id: string }).id === 'select-items') this._selecting = true;
+            @select=${(e: CustomEvent<Record<string, unknown>>) => {
+              if (e.detail.id === 'select-items') this._selecting = true;
               else this._menuAction(e.detail);
             }}
           ></hv-overflow-menu>
@@ -1683,20 +1684,20 @@ export class HVFullView extends LitElement {
               .areas=${st?.areasCache?.areas ?? []}
               .media=${this._workspace.media}
               data-testid="full-table"
-              .items=${(st?.items ?? []) as Item[]}
+              .items=${st?.items ?? []}
               .columns=${this.columns}
-              .sort=${filters.sort as Sort}
+              .sort=${filters.sort}
               ?selectable=${this._selecting}
               ?narrow=${this._viewport.narrow}
               .selection=${selection}
               @sort-change=${(e: CustomEvent) => this.store?.setFilters({ sort: (e.detail as { sort: Sort }).sort })}
               @near-end=${(e: CustomEvent) =>
                 void this.store?.prefetchIfNeeded((e.detail as { ratio: number }).ratio)}
-              @increment=${(e: CustomEvent) => this._workspace.onRowEvent('increment', e.detail)}
-              @decrement=${(e: CustomEvent) => this._workspace.onRowEvent('decrement', e.detail)}
-              @edit=${(e: CustomEvent) => this._workspace.onRowEvent('edit', e.detail)}
-              @open-item=${(e: CustomEvent) => this._workspace.onRowEvent('open-item', e.detail)}
-              @row-action=${(e: CustomEvent) => this._workspace.onRowAction(e.detail)}
+              @increment=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('increment', e.detail)}
+              @decrement=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('decrement', e.detail)}
+              @edit=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('edit', e.detail)}
+              @open-item=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('open-item', e.detail)}
+              @row-action=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowAction(e.detail)}
               @toggle-select=${(e: CustomEvent) =>
                 this.store?.toggleSelected((e.detail as { itemId: string }).itemId)}
               @select-all-loaded=${() => this.store?.selectAllLoaded()}

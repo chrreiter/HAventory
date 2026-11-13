@@ -130,7 +130,7 @@ describe('Store', () => {
     // Optimistic update happens immediately
     const adjustPromise = store.adjustQuantity('1', 5);
     // Check optimistic state before promise resolves
-    let optimistic = store.state.value.items.find((i) => i.id === '1');
+    const optimistic = store.state.value.items.find((i) => i.id === '1');
     expect(optimistic?.quantity).toBe(15);
     await adjustPromise;
   });
@@ -143,7 +143,7 @@ describe('Store', () => {
 
     // Optimistic update happens immediately
     const setPromise = store.setQuantity('1', 25);
-    let optimistic = store.state.value.items.find((i) => i.id === '1');
+    const optimistic = store.state.value.items.find((i) => i.id === '1');
     expect(optimistic?.quantity).toBe(25);
     await setPromise;
   });
@@ -756,10 +756,10 @@ describe('Store: location tree and diagnostics data', () => {
   it('still loads when the backend does not know haventory/config', async () => {
     const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
     const realCallWS = hass.callWS.bind(hass);
-    hass.callWS = (async (msg: Record<string, unknown>) => {
+    hass.callWS = async (msg: Record<string, unknown>) => {
       if (msg.type === 'haventory/config') throw { code: 'unknown_command', message: 'nope' };
       return realCallWS(msg);
-    }) as typeof hass.callWS;
+    };
 
     const store = new Store(hass, fast);
     await store.init();

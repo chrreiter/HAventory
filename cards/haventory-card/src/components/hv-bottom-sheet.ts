@@ -140,7 +140,7 @@ export class HVBottomSheet extends LitElement {
     this._dragFrom = null;
     this._dragY = 0;
 
-    const height = (this.renderRoot.querySelector('.sheet') as HTMLElement | null)?.offsetHeight ?? 0;
+    const height = this.renderRoot.querySelector<HTMLElement>('.sheet')?.offsetHeight ?? 0;
     // Dragged far enough, or flicked: a short fast throw dismisses too.
     const farEnough = travelled > Math.max(80, height * 0.25);
     const flicked = travelled > 24 && travelled / elapsed > 0.5;

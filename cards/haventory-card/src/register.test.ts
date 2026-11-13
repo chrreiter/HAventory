@@ -9,7 +9,7 @@ const realRegistry = window.customElements;
 function useRegistry(get: () => CustomElementConstructor | undefined = () => undefined) {
   const define = vi.fn();
   Object.defineProperty(window, 'customElements', {
-    value: { define, get: vi.fn(get) } as unknown as CustomElementRegistry,
+    value: { define, get: vi.fn(get) },
     configurable: true,
     writable: true,
   });

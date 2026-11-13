@@ -837,7 +837,7 @@ describe('hv-item-editor: category picker', () => {
    * out instead of leaving — shut means hidden with nothing in it, not gone.
    */
   function expectListShut(el: HVItemEditor) {
-    const list = q(el, '[data-testid="editor-category-list"]') as HTMLElement | null;
+    const list = q<HTMLElement>(el, '[data-testid="editor-category-list"]');
     expect(list).toBeTruthy();
     expect(list?.hidden).toBe(true);
     expect(list?.children).toHaveLength(0);
@@ -2122,8 +2122,8 @@ describe('hv-item-editor: photo order and the cover', () => {
     });
     await el.updateComplete;
 
-    const earlier = all(el, '[data-testid="editor-photo-earlier"]') as HTMLButtonElement[];
-    const later = all(el, '[data-testid="editor-photo-later"]') as HTMLButtonElement[];
+    const earlier = all<HTMLButtonElement>(el, '[data-testid="editor-photo-earlier"]');
+    const later = all<HTMLButtonElement>(el, '[data-testid="editor-photo-later"]');
     expect([earlier[0].disabled, earlier[2].disabled]).toEqual([true, false]);
     expect([later[0].disabled, later[2].disabled]).toEqual([false, true]);
   });

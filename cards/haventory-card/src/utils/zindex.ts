@@ -2,6 +2,12 @@ const Z_BASE_START = 10000;
 const Z_INCREMENT = 2;
 const GLOBAL_KEY = '__haventoryZBase';
 
+declare global {
+  interface Window {
+    [GLOBAL_KEY]?: number;
+  }
+}
+
 /**
  * The next base z-index for a modal, so the last one opened sits on top.
  *
@@ -10,10 +16,8 @@ const GLOBAL_KEY = '__haventoryZBase';
  * own module scope but they share one stacking context.
  */
 export function nextZBase(): number {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const w = window as any;
-  const current: number = typeof w[GLOBAL_KEY] === 'number' ? w[GLOBAL_KEY] : Z_BASE_START;
-  const next = current + Z_INCREMENT;
-  w[GLOBAL_KEY] = next;
+  const stored = window[GLOBAL_KEY];
+  const next = (typeof stored === 'number' ? stored : Z_BASE_START) + Z_INCREMENT;
+  window[GLOBAL_KEY] = next;
   return next;
 }

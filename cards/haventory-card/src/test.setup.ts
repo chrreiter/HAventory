@@ -19,7 +19,7 @@ class RO {
   unobserve() {}
   disconnect() {}
 }
-globalThis.ResizeObserver = globalThis.ResizeObserver || (RO as unknown as typeof ResizeObserver);
+globalThis.ResizeObserver = globalThis.ResizeObserver || RO;
 
 /*
  * Card code deliberately schedules work that outlives a single test —

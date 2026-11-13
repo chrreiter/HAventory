@@ -50,7 +50,7 @@ describe.each(['haventory-card', 'haventory-panel'])('%s: the store lifecycle', 
 
   it('builds one store when hass is set before the element is in the DOM', async () => {
     const hass = makeMockHass();
-    const { el } = await mountComponent<Host>(tag, { hass } as Partial<Host>);
+    const { el } = await mountComponent<Host>(tag, { hass });
     await settle(el);
 
     expect(storeOf(el)).toBeTruthy();

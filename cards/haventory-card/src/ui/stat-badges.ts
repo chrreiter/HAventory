@@ -124,7 +124,7 @@ export function renderStatBadges(
       data-testid=${`${opts.prefix}-${spec.id}`}
       aria-pressed=${String(on)}
       title=${t(spec.title)}
-      @click=${() => opts.setFilters({ [spec.filter]: !on } as Partial<StoreFilters>)}
+      @click=${() => opts.setFilters({ [spec.filter]: !on })}
     >
       ${t(spec.label, { count })}
     </button>`;

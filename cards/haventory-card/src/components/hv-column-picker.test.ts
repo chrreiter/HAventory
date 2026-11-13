@@ -35,7 +35,7 @@ describe('hv-column-picker', () => {
   it('reflects the current selection as ticked boxes', async () => {
     const el = await mount({ columns: ['quantity', 'location'] });
     const sr = el.shadowRoot as ShadowRoot;
-    const rows = Array.from(sr.querySelectorAll('[data-testid="column-option"]')) as HTMLElement[];
+    const rows = Array.from(sr.querySelectorAll<HTMLElement>('[data-testid="column-option"]'));
     const checked = rows
       .filter((r) => r.getAttribute('aria-checked') === 'true')
       .map((r) => r.getAttribute('data-key'));
