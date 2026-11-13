@@ -37,6 +37,7 @@ otherwise blocks the loopback the event loop sets itself up on.
 """
 
 import asyncio
+import contextlib
 import dataclasses
 import datetime
 import functools
@@ -913,6 +914,19 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     sys.modules["homeassistant.components.lovelace"] = types.SimpleNamespace(
         LOVELACE_DATA="lovelace"
     )
+
+    # homeassistant.components.file_upload: no upload ever reached this fake, so
+    # every id is one core does not hold. A test that uploads patches
+    # `ws.process_uploaded_file` with a stand-in that yields a real file.
+    ha_file_upload = types.ModuleType("homeassistant.components.file_upload")
+
+    @contextlib.contextmanager
+    def process_uploaded_file(_hass, _file_id):  # type: ignore[override]
+        raise ValueError("File does not exist")
+        yield  # pragma: no cover - makes this a generator, as core's is
+
+    ha_file_upload.process_uploaded_file = process_uploaded_file
+    sys.modules["homeassistant.components.file_upload"] = ha_file_upload
 
     # homeassistant.components.frontend
     ha_frontend = types.ModuleType("homeassistant.components.frontend")

@@ -58,7 +58,7 @@ Run it before every commit. Both halves must be green.
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
 uv run ruff check .
 uv run ruff format --check .   # CI fails on formatting alone; `ruff check` does not cover it
-uv run mypy
+scripts/typecheck.sh           # mypy against the real Home Assistant at the declared floor
 
 # Frontend (in cards/haventory-card)
 npm audit --audit-level=moderate
@@ -72,6 +72,13 @@ The audit is the only place a development-scope npm vulnerability shows up: the
 repository's Dependabot rule dismisses dev-scope alerts, so the alert dashboard is not the
 truth for the card's lockfile, CI is. The level is `moderate` for the same reason. CI and
 `scripts/ci_local.sh` run the same level, so a lower one locally is green against a red CI.
+
+The type check resolves `homeassistant` to the real package, not to stubs.
+`scripts/typecheck.sh` builds the in-process suite's `.venv-integration` (the Home Assistant
+release `requirements-integration.txt` pins) and runs `uv run mypy`, which reads its imports
+from there. A bare `uv run mypy` works once that environment exists and fails loudly when it
+does not. Whatever it finds is fixed, not ignored, and a `type: ignore` carries its reason on
+the same line.
 
 `scripts/ci_local.sh` runs everything at once. CI runs the same checks plus the in-process
 Home Assistant suite, `actionlint`, `hassfest`, HACS validation, CodeQL, dependency review

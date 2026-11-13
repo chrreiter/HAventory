@@ -51,7 +51,8 @@ uv run ruff check custom_components tests
 uv run ruff format --check .
 # → 184 files already formatted
 
-uv run mypy
+# mypy against the real HA at the floor; builds .venv-integration first if needed.
+scripts/typecheck.sh
 # → Success: no issues found in 25 source files
 ```
 

@@ -18,6 +18,7 @@ from typing import (
     Any,
     Final,
     Literal,
+    TypeIs,
 )
 
 from .const import (
@@ -411,7 +412,7 @@ def validate_attachment_meta(value: object) -> AttachmentMeta:
 
     if not isinstance(value, dict):
         raise ValidationError("attachment must be an object")
-    att_id = parse_uuid4(value.get("id"), field_name="attachment.id")  # type: ignore[arg-type]
+    att_id = parse_uuid4(value.get("id"), field_name="attachment.id")
     kind = value.get("kind")
     if kind not in ATTACHMENT_KINDS:
         raise ValidationError(f"attachment kind must be one of: {', '.join(ATTACHMENT_KINDS)}")
@@ -422,7 +423,7 @@ def validate_attachment_meta(value: object) -> AttachmentMeta:
     if not isinstance(mime, str) or not mime.strip():
         raise ValidationError("attachment mime is required and must be a non-empty string")
     size = value.get("size")
-    if not _is_int_not_bool(size) or int(size) < 0:  # type: ignore[arg-type]
+    if not _is_int_not_bool(size) or size < 0:
         raise ValidationError("attachment size must be an integer >= 0")
     uploaded_at = value.get("uploaded_at")
     if not is_canonical_utc_timestamp(uploaded_at):
@@ -444,7 +445,7 @@ def validate_attachment_meta(value: object) -> AttachmentMeta:
         kind=kind,
         filename=filename.strip(),
         mime=mime.strip(),
-        size=int(size),  # type: ignore[arg-type]
+        size=size,
         uploaded_at=str(uploaded_at),
         title=title.strip(),
         order=int(order),
@@ -559,7 +560,7 @@ def load_reminder_interval(value: object) -> ReminderInterval | None:
         return None
 
 
-def _is_int_not_bool(value: object) -> bool:
+def _is_int_not_bool(value: object) -> TypeIs[int]:
     return isinstance(value, int) and not isinstance(value, bool)
 
 

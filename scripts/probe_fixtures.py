@@ -19,7 +19,8 @@ Pillow lives in the non-default ``probes`` dependency group, so a plain
 ``uv sync`` does not pull it in.
 
 Type-checked manually — ``scripts/`` sits outside mypy's ``files``:
-  uv run --group probes mypy scripts/probe_fixtures.py
+  MYPYPATH=scripts uv run --group probes mypy --python-executable .venv/bin/python \
+    scripts/probe_fixtures.py
 
 Exit codes: 0 written, 2 Pillow missing or the output directory unusable.
 """

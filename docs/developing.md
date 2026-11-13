@@ -32,9 +32,12 @@ Run every Python tool through uv (`uv run <tool>`) so it uses the locked environ
 - **Ruff** lints and formats. The `dev` group pins it exactly, and the hook in
   `.pre-commit-config.yaml` must name the same version (`tests/test_toolchain_pins.py`),
   because two ruff releases can format the same file differently.
-- **mypy** checks `custom_components/haventory` against the local Home Assistant stubs in
-  `stubs/`. The modules listed in `[[tool.mypy.overrides]]` in `pyproject.toml` are held to
-  strict mode; the rest sit at the non-strict baseline.
+- **mypy** checks the whole of `custom_components/haventory` in strict mode, against the
+  real Home Assistant at the declared floor. It runs from `.venv`, and `python_executable` in
+  `pyproject.toml` points its import resolution at `.venv-integration`, so Home Assistant,
+  aiohttp and voluptuous are the versions that release pins. `scripts/typecheck.sh` builds
+  that environment and runs it. The offline `.venv` stays Home-Assistant-free, which is what
+  `tests/conftest.py` reads to pick the offline mode.
 - **The card** is Lit, TypeScript, Vite and Vitest with jsdom, linted by ESLint's flat config
   (`cards/haventory-card/eslint.config.js`). The versions are the ones `package.json` pins.
 - **pre-commit** runs ruff, codespell and the basic hygiene hooks.
@@ -265,10 +268,10 @@ Assistant contact surface, the phone breakpoints and the known gaps) is
 ## CI and repository automation
 
 - **CI** (`.github/workflows/ci.yml`) runs the backend gate with coverage, the in-process
-  suite pinned to the declared Home Assistant floor (`integration`), the card gate on every
-  Node major `engines` names, `actionlint` (through its pre-commit hook), hassfest and HACS
-  validation. CodeQL, dependency review and the Conventional-Commit PR-title check run as
-  their own workflows.
+  suite and the type check, both against the declared Home Assistant floor (`integration`),
+  the card gate on every Node major `engines` names, `actionlint` (through its pre-commit
+  hook), hassfest and HACS validation. CodeQL, dependency review and the
+  Conventional-Commit PR-title check run as their own workflows.
 - **Action pinning.** Third-party actions, `docker://` images included, name an immutable
   revision (a commit SHA or an image digest), because a tag can be repointed by whoever owns
   it. GitHub's own `actions/*` are pinned by major tag. `tests/test_repo_hardening_offline.py`

@@ -48,7 +48,7 @@ REMINDER_UNITS: Final[tuple[str, ...]] = ("days", "weeks", "months")
 REMINDER_COUNT_MAX: Final[int] = 1000
 
 
-def parse_uuid4(value: str | uuid.UUID, *, field_name: str = "id") -> uuid.UUID:
+def parse_uuid4(value: object, *, field_name: str = "id") -> uuid.UUID:
     """Parse a UUID v4 string, or check a ``uuid.UUID``, raising ``ValidationError``."""
 
     UUID_VERSION_V4: Final[int] = 4

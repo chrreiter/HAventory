@@ -518,7 +518,7 @@ def _content_disposition(meta: AttachmentMeta) -> str:
     return f"inline; filename=\"{fallback}\"; filename*=UTF-8''{quote(name, safe='')}"
 
 
-def _cache_control(request: Any) -> str:
+def _cache_control(request: web.Request) -> str:
     """How long a client may hold this response without asking again.
 
     The bytes an id names never change, but a retitle changes the
@@ -530,7 +530,7 @@ def _cache_control(request: Any) -> str:
     return "private, no-store"
 
 
-class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
+class HaventoryMediaView(HomeAssistantView):
     """Serve one attachment, to an authenticated Home Assistant user.
 
     Not `/local` and not `/haventory_static`: both are served without
@@ -541,7 +541,9 @@ class HaventoryMediaView(HomeAssistantView):  # type: ignore[misc, valid-type]
     name = "api:haventory:media"
     requires_auth = True
 
-    async def get(self, request: Any, item_id: str, attachment_id: str) -> Any:
+    async def get(
+        self, request: web.Request, item_id: str, attachment_id: str
+    ) -> web.StreamResponse:
         """Return the file the two ids name, or 404 if no metadata claims it.
 
         ``?size=thumb`` asks for the row tile; any other size is a 400.
