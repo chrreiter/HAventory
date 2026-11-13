@@ -549,7 +549,7 @@ async def test_a_non_image_is_refused_and_leaves_nothing_behind(
 
     assert refused["success"] is False
     assert refused["error"]["code"] == "validation_error"
-    assert find_runtime(hass).repository.get_item(item["id"]).attachments == []
+    assert find_runtime(hass).repository.get_item(item["id"]).attachments == ()
     # Refused bytes are torn down on the same terms as accepted ones: off the
     # loop, and gone by the time the caller is told no.
     assert len(upload_teardowns) == 1
@@ -902,4 +902,4 @@ async def test_a_pdf_is_refused_as_a_picture(
 
     assert refused["success"] is False
     assert refused["error"]["code"] == "validation_error"
-    assert find_runtime(hass).repository.get_item(item["id"]).attachments == []
+    assert find_runtime(hass).repository.get_item(item["id"]).attachments == ()

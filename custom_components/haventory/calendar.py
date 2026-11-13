@@ -29,6 +29,7 @@ from .const import CALENDAR_UNIQUE_ID, DOMAIN, SIGNAL_INVENTORY_CHANGED
 from .models import Item
 from .runtime import find_runtime
 from .sensor import device_info
+from .timestamps import today_local_date
 
 # hassfest rejects an invented top-level section in `strings.json`, so the
 # summary patterns sit in `common` under `calendar_`-prefixed keys.
@@ -86,7 +87,7 @@ class HaventoryCalendar(CalendarEntity):
         items = self._items()
         if items is None:
             return None
-        upcoming = next_event(items, dt_util.now().date(), summaries=self._summaries)
+        upcoming = next_event(items, today_local_date(), summaries=self._summaries)
         return _as_calendar_event(upcoming) if upcoming is not None else None
 
     async def async_get_events(

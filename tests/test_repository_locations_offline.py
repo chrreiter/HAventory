@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 from custom_components.haventory.exceptions import NotFoundError, ValidationError
 from custom_components.haventory.item_writes import ItemCreate, ItemUpdate
-from custom_components.haventory.repository import Repository
+from custom_components.haventory.repository import UNSET, Repository
 
 
 def test_create_get_and_delete_location_constraints() -> None:
@@ -145,3 +145,37 @@ def test_the_tree_is_readable_without_reaching_into_the_indexes() -> None:
     repo.delete_location(bin_1.id)
     assert repo.children_of(shelf.id) == frozenset()
     assert [loc.id for loc in repo.iter_locations()] == [garage.id, shelf.id]
+
+
+def test_unset_leaves_parent_and_area_alone_while_none_clears_them() -> None:
+    """Leaving an argument out is not the same as sending ``None``."""
+
+    repo = Repository()
+    root = repo.create_location(name="Garage", area_id="garage")
+    shelf = repo.create_location(name="Shelf", parent_id=root.id)
+
+    kept = repo.update_location(shelf.id, new_parent_id=UNSET, area_id=UNSET)
+    assert kept.parent_id == root.id
+    assert repo.effective_area_id(str(shelf.id)) == "garage"
+
+    cleared = repo.update_location(root.id, area_id=None)
+    assert cleared.area_id is None
+
+    moved = repo.update_location(shelf.id, new_parent_id=None)
+    assert moved.parent_id is None
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"new_parent_id": 3}, "new_parent_id must be a UUID v4 string or null"),
+        ({"area_id": 3}, "area_id must be a string or null"),
+    ],
+)
+def test_an_untyped_payload_value_is_refused(kwargs: dict[str, object], message: str) -> None:
+    """A surface hands payload values through untyped; the wrong kind is refused."""
+
+    repo = Repository()
+    loc = repo.create_location(name="Garage")
+    with pytest.raises(ValidationError, match=message):
+        repo.update_location(loc.id, **kwargs)

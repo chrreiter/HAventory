@@ -62,10 +62,10 @@ def location_chain_to_root(
 def build_location_path(location_chain: list[Location]) -> LocationPath:
     """Build a denormalized LocationPath from a chain ordered root->leaf."""
 
-    name_path = [loc.name for loc in location_chain]
+    name_path = tuple(loc.name for loc in location_chain)
     display = " / ".join(name_path)
     return LocationPath(
-        id_path=[loc.id for loc in location_chain],
+        id_path=tuple(loc.id for loc in location_chain),
         name_path=name_path,
         display_path=display,
         sort_key=normalize_text_for_sort(display),

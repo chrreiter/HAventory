@@ -15,7 +15,11 @@ from custom_components.haventory.item_writes import ItemCreate
 from custom_components.haventory.query import ItemFilter, filter_items
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
-from custom_components.haventory.timestamps import is_canonical_utc_timestamp, iso_utc_now
+from custom_components.haventory.timestamps import (
+    is_canonical_utc_timestamp,
+    iso_utc_now,
+    today_local_date,
+)
 
 
 def test_is_canonical_accepts_only_the_canonical_form() -> None:
@@ -44,9 +48,13 @@ def test_filter_rejects_non_canonical_bounds() -> None:
     items = list(repo._items_by_id.values())
 
     with pytest.raises(ValidationError):
-        filter_items(items, ItemFilter(updated_after="2026-07-23 10:00:00Z"))
+        filter_items(
+            items, ItemFilter(updated_after="2026-07-23 10:00:00Z"), today=today_local_date()
+        )
     with pytest.raises(ValidationError):
-        filter_items(items, ItemFilter(created_after="2026-07-23x10:00:00Z"))
+        filter_items(
+            items, ItemFilter(created_after="2026-07-23x10:00:00Z"), today=today_local_date()
+        )
 
 
 def test_filter_accepts_canonical_bounds() -> None:
@@ -56,8 +64,10 @@ def test_filter_accepts_canonical_bounds() -> None:
 
     past = "2000-01-01T00:00:00Z"
     future = "2999-01-01T00:00:00Z"
-    assert [i.id for i in filter_items(items, ItemFilter(updated_after=past))] == [item.id]
-    assert filter_items(items, ItemFilter(updated_after=future)) == []
+    assert [
+        i.id for i in filter_items(items, ItemFilter(updated_after=past), today=today_local_date())
+    ] == [item.id]
+    assert filter_items(items, ItemFilter(updated_after=future), today=today_local_date()) == []
 
 
 def test_import_rejects_non_canonical_item_timestamps() -> None:

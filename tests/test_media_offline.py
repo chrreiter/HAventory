@@ -9,6 +9,7 @@ decides *what* the view would be allowed to serve and *where* it would find it.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
 import os
 from pathlib import Path
@@ -175,9 +176,7 @@ def test_the_stored_extension_comes_from_the_sniffed_type(tmp_path: Path) -> Non
 
 
 def _disposition(*, filename: str = "photo.png", title: str = "") -> str:
-    meta = _meta()
-    meta.filename = filename
-    meta.title = title
+    meta = dataclasses.replace(_meta(), filename=filename, title=title)
     return media._content_disposition(meta)
 
 
@@ -209,8 +208,7 @@ def test_a_non_ascii_title_survives_in_the_rfc_5987_form() -> None:
 
 
 def test_a_title_of_only_non_ascii_characters_falls_back_to_the_attachment_id() -> None:
-    meta = _meta()
-    meta.title = "説明書"
+    meta = dataclasses.replace(_meta(), title="説明書")
 
     value = media._content_disposition(meta)
 
@@ -245,7 +243,7 @@ def test_an_untitled_upload_with_no_filename_is_named_by_its_id() -> None:
     """`item/attachment/add` stores the attachment id when the client sent no name."""
 
     meta = _meta()
-    meta.filename = str(meta.id)
+    meta = dataclasses.replace(meta, filename=str(meta.id))
 
     assert f'filename="{meta.id}"' in media._content_disposition(meta)
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable, Collection, Iterable, Sequence
+from datetime import date
 from functools import partial
 from typing import Any, Final, Literal, TypedDict, get_args, get_type_hints
 
@@ -23,7 +24,7 @@ from .models import (
     validate_item_status,
 )
 from .text import normalize_text_for_sort
-from .timestamps import is_canonical_utc_timestamp, today_local_date
+from .timestamps import is_canonical_utc_timestamp
 from .validation import normalize_string_list, parse_uuid4
 
 
@@ -191,38 +192,41 @@ def item_is_low_stock(item: Item) -> bool:
     return thr is not None and item.quantity <= thr
 
 
-def _date_passed(item: Item, field: str, today: str, *, inclusive: bool) -> bool:
-    """Whether the item's ``field`` date has come round by ``today``.
+def _date_passed(value: str | None, day: str, *, inclusive: bool) -> bool:
+    """Whether a stored ``YYYY-MM-DD`` has come round by ``day``, in the same form.
 
-    An item with no date on that field never counts. An empty ``today`` reads
-    the clock, and only for an item that has a date.
+    Fixed-width ISO dates order as text, so no date is parsed. An absent date
+    never counts.
     """
 
-    value: str | None = getattr(item, field)
     if not value:
         return False
-    day = today or today_local_date()
     return value <= day if inclusive else value < day
 
 
-def item_is_overdue(item: Item, *, today: str = "") -> bool:
-    return _date_passed(item, "due_date", today, inclusive=False)
+# The caller names the day: the household's own (`timestamps.today_local_date`)
+# is read once per answer, so a count or a page spanning midnight measures
+# every item against the same day.
 
 
-def item_is_due(item: Item, *, today: str = "") -> bool:
-    return _date_passed(item, "due_date", today, inclusive=True)
+def item_is_overdue(item: Item, *, today: date) -> bool:
+    return _date_passed(item.due_date, today.isoformat(), inclusive=False)
 
 
-def item_inspection_is_overdue(item: Item, *, today: str = "") -> bool:
-    return _date_passed(item, "inspection_date", today, inclusive=False)
+def item_is_due(item: Item, *, today: date) -> bool:
+    return _date_passed(item.due_date, today.isoformat(), inclusive=True)
 
 
-def item_inspection_is_due(item: Item, *, today: str = "") -> bool:
-    return _date_passed(item, "inspection_date", today, inclusive=True)
+def item_inspection_is_overdue(item: Item, *, today: date) -> bool:
+    return _date_passed(item.inspection_date, today.isoformat(), inclusive=False)
 
 
-def item_reminder_is_due(item: Item, *, today: str = "") -> bool:
-    return _date_passed(item, "reminder_date", today, inclusive=True)
+def item_inspection_is_due(item: Item, *, today: date) -> bool:
+    return _date_passed(item.inspection_date, today.isoformat(), inclusive=True)
+
+
+def item_reminder_is_due(item: Item, *, today: date) -> bool:
+    return _date_passed(item.reminder_date, today.isoformat(), inclusive=True)
 
 
 def _parse_location_selection(location_ids: Sequence[str]) -> list[uuid.UUID]:
@@ -260,31 +264,37 @@ DateFilterKey = Literal[
 ]
 TimestampBoundKey = Literal["updated_after", "created_after", "updated_before", "created_before"]
 
-#: Each date filter, the field it reads, and whether today itself counts.
-_DATE_FILTERS: Final[tuple[tuple[DateFilterKey, str, bool], ...]] = (
-    ("overdue_only", "due_date", False),
-    ("checked_out_due_only", "due_date", True),
-    ("inspection_overdue_only", "inspection_date", False),
-    ("inspection_due_only", "inspection_date", True),
-    ("reminder_due_only", "reminder_date", True),
+#: Each date filter, the date it reads, and whether today itself counts.
+_DATE_FILTERS: Final[tuple[tuple[DateFilterKey, Callable[[Item], str | None], bool], ...]] = (
+    ("overdue_only", lambda item: item.due_date, False),
+    ("checked_out_due_only", lambda item: item.due_date, True),
+    ("inspection_overdue_only", lambda item: item.inspection_date, False),
+    ("inspection_due_only", lambda item: item.inspection_date, True),
+    ("reminder_due_only", lambda item: item.reminder_date, True),
 )
 
-#: Each timestamp bound, the field it reads, and whether an item must fall after it.
-_TIMESTAMP_BOUNDS: Final[tuple[tuple[TimestampBoundKey, str, bool], ...]] = (
-    ("updated_after", "updated_at", True),
-    ("created_after", "created_at", True),
-    ("updated_before", "updated_at", False),
-    ("created_before", "created_at", False),
+#: Each timestamp bound, the timestamp it reads, and whether an item must fall after it.
+_TIMESTAMP_BOUNDS: Final[tuple[tuple[TimestampBoundKey, Callable[[Item], str], bool], ...]] = (
+    ("updated_after", lambda item: item.updated_at, True),
+    ("created_after", lambda item: item.created_at, True),
+    ("updated_before", lambda item: item.updated_at, False),
+    ("created_before", lambda item: item.created_at, False),
 )
 
 
-def _beyond_bound(item: Item, *, field: str, bound: str, after: bool) -> bool:
-    value: str = getattr(item, field)
+def _date_filter_passes(
+    item: Item, *, read: Callable[[Item], str | None], day: str, inclusive: bool
+) -> bool:
+    return _date_passed(read(item), day, inclusive=inclusive)
+
+
+def _beyond_bound(item: Item, *, read: Callable[[Item], str], bound: str, after: bool) -> bool:
+    value = read(item)
     return value > bound if after else value < bound
 
 
-def _filter_predicates(  # noqa: PLR0912 - one branch per filter key
-    flt: ItemFilter, *, known_statuses: Collection[str]
+def _filter_predicates(
+    flt: ItemFilter, *, known_statuses: Collection[str], today: date
 ) -> list[Callable[[Item], bool]]:
     """The tests a filter asks for, one per key it carries.
 
@@ -316,13 +326,12 @@ def _filter_predicates(  # noqa: PLR0912 - one branch per filter key
     if flt.get("orphaned_only"):
         predicates.append(lambda item: item.location_id is None)
 
-    dated = [(attr, inclusive) for key, attr, inclusive in _DATE_FILTERS if flt.get(key)]
-    if dated:
-        today = today_local_date()
-        predicates.extend(
-            partial(_date_passed, field=attr, today=today, inclusive=inclusive)
-            for attr, inclusive in dated
-        )
+    day = today.isoformat()
+    predicates.extend(
+        partial(_date_filter_passes, read=read, day=day, inclusive=inclusive)
+        for key, read, inclusive in _DATE_FILTERS
+        if flt.get(key)
+    )
 
     location_ids = selected_location_ids(flt)
     if location_ids:
@@ -331,13 +340,13 @@ def _filter_predicates(  # noqa: PLR0912 - one branch per filter key
         predicates.append(lambda item: _item_matches_locations(item, needles, include_subtree))
 
     # An empty bound is compared rather than parsed: `updated_before: ""` keeps nothing.
-    for key, attr, after in _TIMESTAMP_BOUNDS:
+    for key, read_ts, after in _TIMESTAMP_BOUNDS:
         bound = flt.get(key)
         if bound is None:
             continue
         if bound and not is_canonical_utc_timestamp(bound):
             raise ValidationError(f"{key} must be an ISO-8601 UTC timestamp with 'Z'")
-        predicates.append(partial(_beyond_bound, field=attr, bound=bound, after=after))
+        predicates.append(partial(_beyond_bound, read=read_ts, bound=bound, after=after))
 
     query_words = normalize_text_for_sort(q).split()
     if query_words:
@@ -349,13 +358,17 @@ def filter_items(
     items: Iterable[Item],
     flt: ItemFilter | None = None,
     *,
+    today: date,
     known_statuses: Collection[str] = ITEM_STATUSES,
 ) -> list[Item]:
-    """Keep the items every key of ``flt`` accepts; see :class:`ItemFilter`."""
+    """Keep the items every key of ``flt`` accepts; see :class:`ItemFilter`.
+
+    ``today`` is the day the date flags measure against.
+    """
 
     if not flt:
         return list(items)
-    predicates = _filter_predicates(flt, known_statuses=known_statuses)
+    predicates = _filter_predicates(flt, known_statuses=known_statuses, today=today)
     return [item for item in items if all(passes(item) for passes in predicates)]
 
 
@@ -383,6 +396,13 @@ def date_sort_key(value: str | None, order: str) -> str:
 
 DEFAULT_SORT: Final[Sort] = Sort(field="updated_at", order="desc")
 
+#: The sort fields that order by a nullable date, and the date each reads.
+_DATE_SORT_FIELDS: Final[dict[str, Callable[[Item], str | None]]] = {
+    "due_date": lambda item: item.due_date,
+    "inspection_date": lambda item: item.inspection_date,
+    "reminder_date": lambda item: item.reminder_date,
+}
+
 
 def sort_value(item: Item, sort: Sort) -> str | int:
     """The key an item sorts under, shared by ``sort_items`` and the cursors."""
@@ -392,8 +412,9 @@ def sort_value(item: Item, sort: Sort) -> str | int:
         return normalize_text_for_sort(item.name)
     if field == "quantity":
         return int(item.quantity)
-    if field in ("due_date", "inspection_date", "reminder_date"):
-        return date_sort_key(getattr(item, field), order)
+    read_date = _DATE_SORT_FIELDS.get(field)
+    if read_date is not None:
+        return date_sort_key(read_date(item), order)
     if field == "location":
         return location_sort_key(item.location_path, order)
     return item.created_at if field == "created_at" else item.updated_at

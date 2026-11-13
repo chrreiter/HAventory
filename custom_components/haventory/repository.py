@@ -9,13 +9,13 @@ Synchronous and framework-agnostic: the caller persists and announces.
 
 from __future__ import annotations
 
-import copy
 import uuid
 from collections import deque
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Any, TypeVar
+from enum import Enum
+from typing import Any, Final, TypeVar
 
 from .calendar_projection import next_occurrence_after
 from .exceptions import ConflictError, NotFoundError, ValidationError
@@ -71,8 +71,15 @@ LOGGER = context_logger(__name__)
 _BucketKey = TypeVar("_BucketKey", str, str | None)
 
 
-# Tells "not provided" from an explicit None.
-UNSET: object = object()
+class Unset(Enum):
+    """The type of :data:`UNSET`, so a signature can name "not provided"."""
+
+    UNSET = "unset"
+
+
+#: "Not provided": an argument left alone, told apart from ``None`` and from
+#: every value. Narrowed away by ``is UNSET``.
+UNSET: Final = Unset.UNSET
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,7 +333,7 @@ class Repository:
         self._index_item(new)
 
     def _parse_new_parent(
-        self, new_parent_id: str | uuid.UUID | object | None, current_parent: uuid.UUID | None
+        self, new_parent_id: str | uuid.UUID | Unset | None, current_parent: uuid.UUID | None
     ) -> tuple[bool, uuid.UUID | None]:
         """Return ``(parent_changed, target_parent_id)``; UNSET is no change."""
 
@@ -340,7 +347,7 @@ class Repository:
         raise ValidationError("new_parent_id must be a UUID v4 string or null")
 
     def _parse_area_change(
-        self, area_id: str | object | None, current_area: str | None
+        self, area_id: str | Unset | None, current_area: str | None
     ) -> tuple[str | None, bool]:
         """Return ``(target_area, area_changed)``; UNSET is no change, None clears."""
 
@@ -547,10 +554,7 @@ class Repository:
             area_changed = old_area != new_area
 
             for item_id in item_ids:
-                # copy.copy is measurably cheaper than dataclasses.replace here.
-                updated = copy.copy(self._items_by_id[item_id])
-                updated.location_path = new_path
-                self._items_by_id[item_id] = updated
+                self._items_by_id[item_id] = self._items_by_id[item_id].with_location_path(new_path)
 
                 if area_changed:
                     if old_area is not None:
@@ -664,8 +668,7 @@ class Repository:
         lands on its next future occurrence. Otherwise an ordinary versioned edit.
         """
 
-        key = str(item_id)
-        current = self.get_item(key)
+        current = self.get_item(item_id)
         if current.reminder_date is None:
             raise ValidationError("item has no reminder to bump", key="reminder_missing")
         if current.reminder_interval is None:
@@ -678,19 +681,22 @@ class Repository:
         occurrence = _parse_reminder_date(current.reminder_date, "date")
         following = next_occurrence_after(anchor, current.reminder_interval, max(occurrence, today))
 
-        updated = self.update_item(
-            key,
+        self._item_at_version(item_id, expected_version)
+        moved = apply_item_update(
+            current,
             ItemUpdate(reminder_date=following.isoformat()),
-            expected_version=expected_version,
+            locations_by_id=self._locations_by_id,
+            known_statuses=self.status_slugs(),
         )
-        # `update_item` re-anchored on the new date; a bump keeps the anchor.
-        self._items_by_id[key] = replace(updated, reminder_anchor=current.reminder_anchor)
-        return self._items_by_id[key]
+        # The update rules re-anchor a series on a new date; a bump keeps the anchor.
+        updated = replace(moved, reminder_anchor=current.reminder_anchor)
+        self._reindex_item_replacement(current, updated)
+        return updated
 
     def _replace_attachments(
         self,
         item_id: str | uuid.UUID,
-        attachments: list[AttachmentMeta],
+        attachments: Iterable[AttachmentMeta],
         expected_version: int | None,
     ) -> Item:
         """Swap an item's attachment list, as an ordinary versioned item edit.
@@ -702,7 +708,7 @@ class Repository:
         current = self._item_at_version(item_id, expected_version)
         updated = replace(
             current,
-            attachments=attachments,
+            attachments=tuple(attachments),
             updated_at=monotonic_timestamp_after(current.updated_at),
             version=current.version + 1,
         )
@@ -873,7 +879,9 @@ class Repository:
             buckets.sort(key=len)
             ids = buckets[0].intersection(*buckets[1:])
             source = [self._items_by_id[i] for i in ids]
-        return filter_items(source, flt, known_statuses=self.status_slugs())
+        return filter_items(
+            source, flt, today=today_local_date(), known_statuses=self.status_slugs()
+        )
 
     def list_items(
         self,
@@ -1046,8 +1054,8 @@ class Repository:
 
         # A tree's area lives on its root, so a new node carries none of its own;
         # a requested area is propagated once the node exists.
-        new_loc = Location(id=new_uuid4(), parent_id=parent, name=name)
-        new_loc.path = build_location_path([*lineage, new_loc])
+        unplaced = Location(id=new_uuid4(), parent_id=parent, name=name)
+        new_loc = replace(unplaced, path=build_location_path([*lineage, unplaced]))
         new_key = str(new_loc.id)
         self._add_location(new_loc)
         if parsed_area is not None:
@@ -1085,8 +1093,8 @@ class Repository:
         location_id: str | uuid.UUID,
         *,
         name: str | None = None,
-        new_parent_id: str | uuid.UUID | object | None = UNSET,
-        area_id: str | uuid.UUID | object | None = UNSET,
+        new_parent_id: str | uuid.UUID | Unset | None = UNSET,
+        area_id: str | Unset | None = UNSET,
     ) -> Location:
         """Rename a location, move it, set its area, or all three.
 
@@ -1291,10 +1299,9 @@ class Repository:
         """Everything ``restore`` needs to put the repository back as it is now.
 
         Shallow by design, so a write pays for copying containers and never for
-        copying or re-validating records: every write replaces an ``Item``,
-        ``Location`` or ``StatusDefinition`` rather than editing it, and edits
-        only the maps and index sets copied here. A write that edited a stored
-        record in place would leak through ``restore``.
+        copying or re-validating records: the records are frozen, so every
+        write replaces an ``Item``, ``Location`` or ``StatusDefinition`` and
+        edits only the maps and index sets copied here.
         """
 
         return RepositorySnapshot(

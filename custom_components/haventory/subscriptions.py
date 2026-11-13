@@ -134,7 +134,7 @@ def _payload_inspection_is_overdue(item: dict[str, Any]) -> bool:
     date = item.get("inspection_date")
     if not isinstance(date, str) or not date:
         return False
-    return date < today_local_date()
+    return date < today_local_date().isoformat()
 
 
 def _item_matches_filter(item: dict[str, Any], sub: Subscription) -> bool:

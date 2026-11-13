@@ -504,7 +504,7 @@ async def test_attachment_add_refuses_a_file_whose_bytes_are_not_an_image(upload
 
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
-    assert repo_of(hass).get_item(created["result"]["id"]).attachments == []
+    assert repo_of(hass).get_item(created["result"]["id"]).attachments == ()
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,12 @@
 """The persisted shapes: items, locations, statuses, attachments and reminders.
 
+Every shape is a frozen record: a write builds a new record and the repository
+swaps it in, because its indexes and its undo snapshot hold the old one.
+Assigning a field is a type error and raises at run time. The collections
+inside are tuples, except ``Item.custom_fields``: a ``dict`` typed ``Mapping``,
+so the checker refuses an edit while a record stays deep-copyable, which a
+read-only mapping proxy is not.
+
 Each shape's ``to_dict`` is the stored and exported form. ``from_dict``, or the
 ``load_*`` / ``validate_*`` function beside a nested shape, reads it back and
 refuses a row no write path could have written, so a load drops and reports the
@@ -64,19 +71,19 @@ class LocationPath:
     """Denormalized path data for a location or item.
 
     Attributes:
-        id_path: Ordered list of UUID v4 strings from root to leaf.
-        name_path: Ordered list of names from root to leaf.
+        id_path: The location ids from root to leaf.
+        name_path: The location names from root to leaf.
         display_path: Human-readable path (e.g., "Garage / Shelf A / Bin 3").
         sort_key: Case-insensitive key suitable for lexicographic sorting.
     """
 
-    id_path: list[uuid.UUID]
-    name_path: list[str]
+    id_path: tuple[uuid.UUID, ...]
+    name_path: tuple[str, ...]
     display_path: str
     sort_key: str
 
     def to_dict(self) -> dict[str, Any]:
-        """The serialized shape. The lists are copies, so a caller may edit them."""
+        """The serialized shape, with lists a caller may edit."""
 
         return {
             "id_path": [str(entry) for entry in self.id_path],
@@ -96,25 +103,25 @@ class LocationPath:
         """
 
         if data is None:
-            return cls(id_path=[], name_path=[], display_path="", sort_key="")
+            return EMPTY_LOCATION_PATH
         if not isinstance(data, Mapping):
             raise ValidationError("a location path must be an object")
         display = str(data.get("display_path", ""))
         return cls(
-            id_path=[
+            id_path=tuple(
                 parse_uuid4(str(entry), field_name="path.id_path")
                 for entry in (data.get("id_path") or [])
-            ],
-            name_path=list(data.get("name_path") or []),
+            ),
+            name_path=tuple(data.get("name_path") or ()),
             display_path=display,
             sort_key=normalize_text_for_sort(display),
         )
 
 
-EMPTY_LOCATION_PATH = LocationPath(id_path=[], name_path=[], display_path="", sort_key="")
+EMPTY_LOCATION_PATH: Final = LocationPath(id_path=(), name_path=(), display_path="", sort_key="")
 
 
-@dataclass
+@dataclass(frozen=True)
 class Location:
     """Persisted shape for a location node."""
 
@@ -122,7 +129,7 @@ class Location:
     parent_id: uuid.UUID | None
     name: str
     area_id: str | None = None
-    path: LocationPath = field(default_factory=lambda: EMPTY_LOCATION_PATH)
+    path: LocationPath = EMPTY_LOCATION_PATH
 
     def to_dict(self) -> dict[str, Any]:
         """The one serialized shape: store, export document and wire alike."""
@@ -158,7 +165,7 @@ class Location:
         )
 
 
-@dataclass
+@dataclass(frozen=True)
 class StatusDefinition:
     """One entry of the store's ``statuses`` collection.
 
@@ -174,7 +181,7 @@ class StatusDefinition:
     icon: str = DEFAULT_STATUS_ICON
 
 
-@dataclass
+@dataclass(frozen=True)
 class AttachmentMeta:
     """Metadata for one file attached to an item; the bytes live in ``media.py``."""
 
@@ -198,7 +205,8 @@ class ReminderInterval:
     count: int
 
 
-@dataclass
+# Not `slots`: `with_location_path` copies the instance dictionary.
+@dataclass(frozen=True)
 class Item:
     """Persisted shape for an inventory item."""
 
@@ -218,16 +226,31 @@ class Item:
     reminder_anchor: str | None = None  # YYYY-MM-DD
     reminder_interval: ReminderInterval | None = None
     location_id: uuid.UUID | None = None
-    tags: list[str] = field(default_factory=list)
+    tags: tuple[str, ...] = ()
     category: str | None = None
     low_stock_threshold: int | None = None
-    custom_fields: dict[str, ScalarValue] = field(default_factory=dict)
+    # Shared between an item and the next version of it, so never edited.
+    custom_fields: Mapping[str, ScalarValue] = field(default_factory=dict)
     created_at: str = field(default_factory=iso_utc_now)
     updated_at: str = field(default_factory=iso_utc_now)
     version: int = 1
-    location_path: LocationPath = field(default_factory=lambda: EMPTY_LOCATION_PATH)
+    location_path: LocationPath = EMPTY_LOCATION_PATH
     # Absent from ItemCreate / ItemUpdate: only the attachment commands write it.
-    attachments: list[AttachmentMeta] = field(default_factory=list)
+    attachments: tuple[AttachmentMeta, ...] = ()
+
+    def with_location_path(self, path: LocationPath) -> Item:
+        """This item under a recomputed path; nothing else changes.
+
+        A location rename rewrites the path of every item below it, so this
+        copies the instance dictionary rather than calling ``__init__``:
+        ``dataclasses.replace`` on a frozen record costs several times as much,
+        and a path built from the tree needs no re-check.
+        """
+
+        moved = object.__new__(Item)
+        moved.__dict__.update(self.__dict__)
+        moved.__dict__["location_path"] = path
+        return moved
 
     def to_dict(self) -> dict[str, Any]:
         """The stored and exported shape.
@@ -302,7 +325,7 @@ class Item:
                 if location_id is not None
                 else None
             ),
-            tags=list(data.get("tags", []) or []),
+            tags=tuple(data.get("tags", ()) or ()),
             category=data.get("category"),
             low_stock_threshold=data.get("low_stock_threshold"),
             custom_fields=dict(data.get("custom_fields", {}) or {}),
@@ -467,7 +490,7 @@ def serialize_attachment_meta(meta: AttachmentMeta) -> dict[str, Any]:
     }
 
 
-def load_attachments(value: object) -> list[AttachmentMeta]:
+def load_attachments(value: object) -> tuple[AttachmentMeta, ...]:
     """Read a stored ``attachments`` list; a missing or non-list value reads as none.
 
     A malformed entry raises rather than being dropped: dropping it would lose
@@ -475,8 +498,8 @@ def load_attachments(value: object) -> list[AttachmentMeta]:
     """
 
     if not isinstance(value, list):
-        return []
-    return [validate_attachment_meta(entry) for entry in value]
+        return ()
+    return tuple(validate_attachment_meta(entry) for entry in value)
 
 
 def validate_reminder_interval(value: object) -> ReminderInterval | None:
