@@ -1069,6 +1069,11 @@ class Repository:
     def iter_locations(self) -> Iterator[Location]:
         return iter(self._locations_by_id.values())
 
+    def iter_items(self) -> Iterator[Item]:
+        """Every item, in no particular order, for a reader that orders its own output."""
+
+        return iter(self._items_by_id.values())
+
     def children_of(self, parent_id: str | uuid.UUID | None) -> frozenset[str]:
         """The ids directly under ``parent_id`` (``None`` for the roots), as a copy."""
 
