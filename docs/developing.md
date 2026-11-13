@@ -38,7 +38,8 @@ Run every Python tool through uv (`uv run <tool>`) so it uses the locked environ
   aiohttp and voluptuous are the versions that release pins. `scripts/typecheck.sh` builds
   that environment and runs it. The offline `.venv` stays Home-Assistant-free, which is what
   `tests/conftest.py` reads to pick the offline mode.
-- **The card** is Lit, TypeScript, Vite and Vitest with jsdom, linted by ESLint's flat config
+- **The card** is Lit, TypeScript, Vite and Vitest with jsdom, formatted by Prettier
+  (`cards/haventory-card/.prettierrc.yaml`) and linted by ESLint's flat config
   (`cards/haventory-card/eslint.config.js`). The versions are the ones `package.json` pins.
 - **pre-commit** runs ruff, codespell and the basic hygiene hooks.
 
