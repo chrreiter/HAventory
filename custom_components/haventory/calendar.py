@@ -71,14 +71,14 @@ class HaventoryCalendar(CalendarEntity):
         )
 
     @callback
-    def _handle_update(self, *_now: datetime) -> None:
+    def _handle_update(self, *_args: object) -> None:
         self.async_write_ha_state()
 
     @property
     def available(self) -> bool:
         """Unavailable while no config entry is loaded to read items from."""
 
-        return self._items() is not None
+        return find_runtime(self.hass) is not None
 
     @property
     def event(self) -> CalendarEvent | None:
@@ -108,11 +108,13 @@ class HaventoryCalendar(CalendarEntity):
         """Every item, or none while the entry is unloaded.
 
         The whole inventory rather than a date index, which would go stale at
-        midnight with no mutation to invalidate it.
+        midnight with no mutation to invalidate it. Unsorted, because the
+        projection orders its own events and Home Assistant reads `event`
+        several times per state write.
         """
 
         runtime = find_runtime(self.hass)
-        return None if runtime is None else list(runtime.repository.list_items()["items"])
+        return None if runtime is None else list(runtime.repository.iter_items())
 
 
 async def _async_summaries(hass: HomeAssistant) -> Mapping[str, str]:

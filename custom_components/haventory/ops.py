@@ -35,6 +35,7 @@ from homeassistant.helpers import area_registry as ar
 from . import media as media_mod
 from . import todo_bridge
 from .events import (
+    notify_batch_settled,
     notify_bulk_mutation,
     notify_counts,
     notify_dataset_replaced,
@@ -490,7 +491,7 @@ async def commit_batch(
     ``refused`` with its index as it fails and reads None in the result; it
     stops no other row. A batch with no successful row saves and announces
     nothing. A failed save undoes every row. The events are each row's own with
-    the counts held back, then one counts event for the batch.
+    the repaint and the counts held back, then one of each for the batch.
     """
 
     runtime = loaded_runtime(hass)
@@ -513,8 +514,8 @@ async def commit_batch(
     if successful:
         await _free_files(hass, successful)
         for written in successful:
-            await _announce(hass, written, counts=False)
-        notify_counts(hass)
+            await _announce(hass, written, batch_row=True)
+        notify_batch_settled(hass)
     return results
 
 
@@ -548,14 +549,18 @@ async def _free_files(hass: HomeAssistant, writes: Sequence[Written]) -> None:
         await media_mod.async_sweep_orphans(hass, _repo(hass).iter_attachments())
 
 
-async def _announce(hass: HomeAssistant, written: Written, *, counts: bool = True) -> None:
-    """Send the events a saved write earns; ``counts`` False is for a batch row."""
+async def _announce(hass: HomeAssistant, written: Written, *, batch_row: bool = False) -> None:
+    """Send the events a saved write earns; a batch row holds back the repaint and counts."""
 
     if written.action == UNCHANGED:
         notify_counts(hass)
     elif written.noun == "item":
         notify_mutation(
-            hass, action=written.action, item=written.entity, counts=counts and written.counts
+            hass,
+            action=written.action,
+            item=written.entity,
+            counts=written.counts and not batch_row,
+            repaint=not batch_row,
         )
     elif written.noun == "location":
         notify_location_mutation(

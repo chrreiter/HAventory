@@ -185,6 +185,27 @@ def _check_locations_consistency(*, locations_by_id: dict[str, Location]) -> lis
     return issues
 
 
+def _check_subtree_index(idx: InternalIndexes) -> list[str]:
+    """The subtree index against a walk up the live tree from every item.
+
+    The writes keep this index in step incrementally and rebuild it only when
+    the tree moves, so a write that skips a rebuild it needed shows up here.
+    """
+
+    locations_by_id = idx["locations_by_id"]
+    expected: dict[str, set[str]] = {}
+    for item_id, item in idx["items_by_id"].items():
+        cursor = str(item.location_id) if item.location_id is not None else None
+        seen: set[str] = set()
+        while cursor is not None and cursor in locations_by_id and cursor not in seen:
+            seen.add(cursor)
+            expected.setdefault(cursor, set()).add(item_id)
+            parent = locations_by_id[cursor].parent_id
+            cursor = str(parent) if parent is not None else None
+    actual = {loc_id: set(ids) for loc_id, ids in idx["items_in_subtree"].items() if ids}
+    return [] if actual == expected else ["items_in_subtree_mismatch"]
+
+
 def collect_index_issues(repo: Repository) -> list[str]:
     """Return the repository's consistency issues; an empty list is what healthy means.
 
@@ -198,6 +219,7 @@ def collect_index_issues(repo: Repository) -> list[str]:
     issues.extend(_check_items_consistency(idx))
     issues.extend(_check_index_references(idx))
     issues.extend(_check_locations_consistency(locations_by_id=idx["locations_by_id"]))
+    issues.extend(_check_subtree_index(idx))
 
     counts = repo.get_counts()
     if counts.get("items_total") != len(idx["items_by_id"]):

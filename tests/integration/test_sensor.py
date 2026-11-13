@@ -364,3 +364,33 @@ async def test_the_location_sensor_moves_on_a_location_mutation(
     await hass.async_block_till_done()
 
     assert hass.states.get(locations).state == "1"
+
+
+async def test_a_write_repaints_every_sensor_from_one_pass_over_the_inventory(
+    hass: HomeAssistant, setup_entry, monkeypatch
+) -> None:
+    """The sensors read their value off the counts the signal carries.
+
+    Eight entities each computing their own would walk the inventory once
+    apiece per write, and a bulk batch once apiece per row.
+    """
+
+    entry = await setup_entry()
+    repo = find_runtime(hass).repository
+    calls: list[None] = []
+    original = type(repo).get_counts
+
+    def _counted(self):  # type: ignore[no-untyped-def]
+        calls.append(None)
+        return original(self)
+
+    monkeypatch.setattr(type(repo), "get_counts", _counted)
+
+    await hass.services.async_call(DOMAIN, "item_create", {"name": "Torch"}, blocking=True)
+    await hass.async_block_till_done()
+
+    assert len(calls) == 1
+    counts = repo.get_counts()
+    for descriptor in SENSOR_DESCRIPTIONS:
+        entity_id = _entity_id_for(hass, entry, descriptor.key)
+        assert hass.states.get(entity_id).state == str(counts[descriptor.key])

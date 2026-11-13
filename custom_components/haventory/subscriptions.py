@@ -243,14 +243,21 @@ def broadcast_event(
         )
 
 
-def broadcast_counts(hass: HomeAssistant) -> None:
-    """Send the whole counts object on the `stats` topic."""
+def broadcast_counts(hass: HomeAssistant, counts: dict[str, Any] | None = None) -> None:
+    """Send the whole counts object on the `stats` topic.
 
-    try:
-        counts_payload = loaded_runtime(hass).repository.get_counts()
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.exception("Failed to broadcast counts", extra={"op": "broadcast_counts"})
-        return
+    ``counts`` is a set the caller has already computed after the write;
+    without one, they are computed here.
+    """
+
+    if counts is not None:
+        counts_payload = counts
+    else:
+        try:
+            counts_payload = loaded_runtime(hass).repository.get_counts()
+        except Exception:  # pragma: no cover - defensive
+            LOGGER.exception("Failed to broadcast counts", extra={"op": "broadcast_counts"})
+            return
     broadcast_event(hass, topic="stats", action="counts", payload={"counts": counts_payload})
 
 
