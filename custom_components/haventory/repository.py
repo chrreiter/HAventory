@@ -9,15 +9,13 @@ Synchronous and framework-agnostic: the caller persists and announces.
 
 from __future__ import annotations
 
-import base64
 import copy
-import json
 import uuid
 from collections import deque
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Any, TypedDict, TypeVar
+from typing import Any, TypeVar
 
 from .calendar_projection import next_occurrence_after
 from .exceptions import ConflictError, NotFoundError, ValidationError
@@ -40,6 +38,7 @@ from .models import (
     serialize_status_definition,
     validate_status_definition,
 )
+from .pagination import PageResult, paginate
 from .query import (
     DEFAULT_SORT,
     ItemFilter,
@@ -55,7 +54,6 @@ from .query import (
     selected_location_ids,
     selected_tags,
     sort_items,
-    sort_value,
 )
 from .timestamps import monotonic_timestamp_after, today_local_date
 from .validation import (
@@ -72,17 +70,8 @@ LOGGER = context_logger(__name__)
 _BucketKey = TypeVar("_BucketKey", str, str | None)
 
 
-class PageResult(TypedDict):
-    items: list[Item]
-    next_cursor: str | None
-    total: int
-
-
 # Tells "not provided" from an explicit None.
 UNSET: object = object()
-
-#: A cursor is base64 of a small JSON object minted here; nothing longer is decoded.
-CURSOR_MAX_LENGTH = 2_048
 
 #: Rows of one kind logged individually before ``load_state`` logs only a total,
 #: so a wholesale corruption does not bury the log in one line per row.
@@ -925,7 +914,7 @@ class Repository:
     ) -> PageResult:
         sorted_items = sort_items(self._matching_items(flt), sort)
         # Groups low-stock items first, keeping the sort within each group. The
-        # cursor has to describe this order, so _paginate is told about it.
+        # cursor has to describe this order, so paginate is told about it.
         low_stock_first = bool(flt and flt.get("low_stock_first"))
         if low_stock_first:
             sorted_items.sort(key=lambda it: not item_is_low_stock(it))
@@ -936,7 +925,7 @@ class Repository:
         if limit is None or limit <= 0:
             return {"items": sorted_items, "next_cursor": None, "total": total}
 
-        page, next_cursor = self._paginate(
+        page, next_cursor = paginate(
             sorted_items, sort, limit, cursor, low_stock_first=low_stock_first
         )
         return {"items": page, "next_cursor": next_cursor, "total": total}
@@ -1203,115 +1192,6 @@ class Repository:
             extra={"op": "delete_location", "location_id": key},
         )
         self._rebuild_location_hierarchy_indexes()
-
-    def _encode_cursor(self, payload: dict[str, Any]) -> str:
-        raw = json.dumps(payload, separators=(",", ":"))
-        return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
-
-    def _decode_cursor(self, cursor: str) -> dict[str, Any] | None:
-        # Bounded before decoding: an unbounded cursor is unbounded work per frame.
-        if len(cursor) > CURSOR_MAX_LENGTH:
-            return None
-        try:
-            obj = json.loads(base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8"))
-        except ValueError:
-            return None
-        return obj if isinstance(obj, dict) else None
-
-    def _tuple_cmp(
-        self, a: tuple[int, str | int, str], b: tuple[int, str | int, str], order: str
-    ) -> int:
-        asc = order == "asc"
-        # The low_stock_first group compares ascending whatever the order.
-        if a[0] != b[0]:
-            return -1 if a[0] < b[0] else 1
-        # A forged cursor can mix types; str() keeps the comparison total.
-        a1, b1 = a[1], b[1]
-        if a1 != b1:
-            if isinstance(a1, int) and isinstance(b1, int):
-                primary_less = a1 < b1
-            else:
-                primary_less = str(a1) < str(b1)
-            return -1 if (primary_less == asc) else 1
-        if a[2] == b[2]:
-            return 0
-        return -1 if a[2] < b[2] else 1
-
-    def _low_stock_group(self, item: Item) -> int:
-        return 0 if item_is_low_stock(item) else 1
-
-    def _paginate(
-        self,
-        items_sorted: list[Item],
-        sort: Sort,
-        limit: int,
-        cursor: str | None,
-        *,
-        low_stock_first: bool = False,
-    ) -> tuple[list[Item], str | None]:
-        start_index = 0
-        order = sort.get("order", "desc")
-
-        if cursor:
-            # A bad cursor is an error, never a silent restart: page one dressed
-            # as "the next page" would loop a paging caller forever.
-            cursor_info = self._decode_cursor(cursor)
-            if cursor_info is None:
-                raise ValidationError("cursor is not a valid pagination cursor")
-            cur_sort = (
-                cursor_info.get("sort") if isinstance(cursor_info.get("sort"), dict) else None
-            )
-            if (
-                not cur_sort
-                or cur_sort.get("field") != sort.get("field")
-                or cur_sort.get("order") != sort.get("order")
-            ):
-                raise ValidationError(
-                    "cursor was issued for a different sort; restart pagination without it"
-                )
-            # low_stock_first reorders the list, so it binds a cursor like the sort.
-            if bool(cursor_info.get("low_stock_first", False)) != low_stock_first:
-                raise ValidationError(
-                    "cursor was issued under a different low_stock_first setting; "
-                    "restart pagination without it"
-                )
-            last_key = cursor_info.get("last_sort_key")
-            last_id = cursor_info.get("last_id")
-            if (
-                not isinstance(last_id, str)
-                or isinstance(last_key, bool)
-                or not isinstance(last_key, str | int)
-            ):
-                raise ValidationError("cursor is not a valid pagination cursor")
-            last_group = cursor_info.get("last_group", 0) if low_stock_first else 0
-            if isinstance(last_group, bool) or last_group not in (0, 1):
-                raise ValidationError("cursor is not a valid pagination cursor")
-            # The first item strictly after the cursor; none left is an empty page.
-            needle: tuple[int, str | int, str] = (last_group, last_key, last_id)
-            start_index = len(items_sorted)
-            for idx, it in enumerate(items_sorted):
-                group = self._low_stock_group(it) if low_stock_first else 0
-                tup = (group, sort_value(it, sort), str(it.id))
-                if self._tuple_cmp(tup, needle, order) > 0:
-                    start_index = idx
-                    break
-
-        end_index = min(len(items_sorted), start_index + max(0, limit))
-        page = items_sorted[start_index:end_index]
-
-        if not page or end_index >= len(items_sorted):
-            return page, None
-
-        last_item = page[-1]
-        cursor_payload: dict[str, Any] = {
-            "sort": {"field": sort.get("field"), "order": sort.get("order")},
-            "last_sort_key": sort_value(last_item, sort),
-            "last_id": str(last_item.id),
-        }
-        if low_stock_first:
-            cursor_payload["low_stock_first"] = True
-            cursor_payload["last_group"] = self._low_stock_group(last_item)
-        return page, self._encode_cursor(cursor_payload)
 
     def export_state(self) -> dict[str, Any]:
         """The storage payload: ``items``, ``locations`` and ``statuses``, id-keyed.

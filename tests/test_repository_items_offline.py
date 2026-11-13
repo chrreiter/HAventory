@@ -12,8 +12,9 @@ import uuid
 import pytest
 from custom_components.haventory.exceptions import ConflictError, NotFoundError, ValidationError
 from custom_components.haventory.item_writes import ItemCreate, ItemUpdate
+from custom_components.haventory.pagination import CURSOR_MAX_LENGTH
 from custom_components.haventory.query import ItemFilter, Sort
-from custom_components.haventory.repository import CURSOR_MAX_LENGTH, Repository
+from custom_components.haventory.repository import Repository
 
 from date_helpers import day_offset
 
