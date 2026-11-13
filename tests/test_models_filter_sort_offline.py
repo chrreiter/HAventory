@@ -5,24 +5,22 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from custom_components.haventory import models
+from custom_components.haventory import query
 from custom_components.haventory.exceptions import ValidationError
-from custom_components.haventory.models import (
-    EMPTY_LOCATION_PATH,
+from custom_components.haventory.item_writes import create_item_from_create
+from custom_components.haventory.location_paths import build_location_path
+from custom_components.haventory.models import EMPTY_LOCATION_PATH, Item, Location
+from custom_components.haventory.query import (
     SORT_FIELDS,
-    Item,
     ItemFilter,
-    Location,
     Sort,
-    build_location_path,
-    create_item_from_create,
     filter_items,
-    normalize_text_for_sort,
     sort_items,
     validate_area_filter,
     validate_item_filter,
     validate_sort,
 )
+from custom_components.haventory.text import normalize_text_for_sort
 
 from date_helpers import day_offset
 
@@ -669,7 +667,7 @@ def test_the_location_selection_is_parsed_once_per_query(monkeypatch) -> None:  
     ]
 
     calls = 0
-    real = models.parse_uuid4
+    real = query.parse_uuid4
 
     def counting(value, *, field_name="id"):  # type: ignore[no-untyped-def]
         nonlocal calls
@@ -677,7 +675,7 @@ def test_the_location_selection_is_parsed_once_per_query(monkeypatch) -> None:  
             calls += 1
         return real(value, field_name=field_name)
 
-    monkeypatch.setattr(models, "parse_uuid4", counting)
+    monkeypatch.setattr(query, "parse_uuid4", counting)
 
     kept = filter_items(items, ItemFilter(location_ids=[str(root.id), str(mid.id)]))
     assert len(kept) == len(items)

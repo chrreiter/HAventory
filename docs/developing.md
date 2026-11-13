@@ -207,8 +207,10 @@ announces. The surface answers once it returns, so the order is always:
 
 The API contract's "What an event guarantees" is what this order buys.
 
-**Validation** lives in `models.py`: the entity dataclasses, the input and filter shapes,
-and every refusal, so one bad value gets one answer on every surface. Most command schema
+**Validation** lives in `validation.py` (field checks and caps), `models.py` (the entity
+dataclasses and their stored-row readers), `item_writes.py` (the create and update rules) and
+`query.py` (the filter and sort shapes), and every surface refuses through them, so one bad
+value gets one answer everywhere. Most command schema
 fields are typed `object` so that the model, not Home Assistant, names the bad field
 (contract → "`validation_error` or `invalid_format`").
 

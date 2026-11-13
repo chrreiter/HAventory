@@ -30,13 +30,16 @@ CURRENT_CARD_URL = f"{CARD_URL}?v={INTEGRATION_VERSION}"
 def _import_with_lovelace(monkeypatch):
     """Reimport the integration with a stand-in lovelace component.
 
-    ``LOVELACE_DATA`` is read at import time, so the fake module has to be in
-    ``sys.modules`` before the integration package is (re)executed.
+    ``LOVELACE_DATA`` is read at import time by ``frontend_registration``, so the
+    fake module has to be in ``sys.modules`` before the integration package and
+    that submodule are (re)executed together.
     """
     lovelace_module = types.SimpleNamespace(LOVELACE_DATA=LOVELACE_KEY)
     monkeypatch.setitem(sys.modules, "homeassistant.components.lovelace", lovelace_module)
-    if "custom_components.haventory" in sys.modules:
-        del sys.modules["custom_components.haventory"]
+    monkeypatch.delitem(sys.modules, "custom_components.haventory", raising=False)
+    monkeypatch.delitem(
+        sys.modules, "custom_components.haventory.frontend_registration", raising=False
+    )
     return importlib.import_module("custom_components.haventory")
 
 

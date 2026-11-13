@@ -9,9 +9,10 @@ from __future__ import annotations
 import pytest
 from custom_components.haventory import media as media_mod
 from custom_components.haventory.exceptions import StorageError
-from custom_components.haventory.models import AttachmentMeta, iso_utc_now, new_uuid4
+from custom_components.haventory.models import AttachmentMeta, new_uuid4
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import DomainStore
+from custom_components.haventory.timestamps import iso_utc_now
 from homeassistant.core import HomeAssistant
 
 from runtime_helpers import runtime_of, ws_hass

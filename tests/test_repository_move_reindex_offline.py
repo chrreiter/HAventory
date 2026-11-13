@@ -17,12 +17,9 @@ These tests pin the invariants that must survive:
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.models import (
-    ItemCreate,
-    ItemFilter,
-    ItemUpdate,
-    build_location_path_from_map,
-)
+from custom_components.haventory.item_writes import ItemCreate, ItemUpdate
+from custom_components.haventory.location_paths import build_location_path_from_map
+from custom_components.haventory.query import ItemFilter
 from custom_components.haventory.repository import Repository
 
 from repository_invariants import internal_indexes

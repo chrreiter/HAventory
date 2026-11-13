@@ -51,18 +51,26 @@ CARD_PATH = f"{STATIC_URL_PATH}/haventory-card.js"
 # What both loaders and the panel receive, cache-buster and all.
 CURRENT_CARD_URL = f"{CARD_PATH}?v={INTEGRATION_VERSION}"
 REPO_ROOT = Path(__file__).resolve().parents[1]
+FRONTEND_MODULE = "custom_components.haventory.frontend_registration"
 
 
 def import_haventory(monkeypatch, lovelace_key: str):
     """Import the integration with ``homeassistant.components.lovelace`` stubbed.
 
-    ``LOVELACE_DATA`` is bound at import time, so the stub has to be in
-    ``sys.modules`` before the import and any cached module has to be dropped.
+    ``LOVELACE_DATA`` is bound at import time in ``frontend_registration``, so the
+    stub has to be in ``sys.modules`` before the import and the cached package and
+    submodule both have to be dropped so they are re-executed together.
     """
     lovelace_module = types.SimpleNamespace(LOVELACE_DATA=lovelace_key)
     monkeypatch.setitem(sys.modules, "homeassistant.components.lovelace", lovelace_module)
     sys.modules.pop("custom_components.haventory", None)
+    sys.modules.pop(FRONTEND_MODULE, None)
     return importlib.import_module("custom_components.haventory")
+
+
+def frontend_of(package) -> types.ModuleType:
+    """The frontend-registration module the freshly imported package imported."""
+    return package.frontend_registration
 
 
 class MockLovelaceData:
@@ -84,7 +92,7 @@ def make_hass() -> HomeAssistant:
     return hass
 
 
-def install_bundle(monkeypatch, hav_init, tmp_path, *, built: bool = True) -> Path:
+def install_bundle(monkeypatch, frontend, tmp_path, *, built: bool = True) -> Path:
     """Point the module at a throwaway bundle directory and return it.
 
     The real one lives inside the installed package, so a test that used it would
@@ -95,8 +103,8 @@ def install_bundle(monkeypatch, hav_init, tmp_path, *, built: bool = True) -> Pa
     bundle = www / "haventory-card.js"
     if built:
         bundle.write_text("// test bundle")
-    monkeypatch.setattr(hav_init, "_WWW_DIR", www)
-    monkeypatch.setattr(hav_init, "_CARD_BUNDLE_PATH", bundle)
+    monkeypatch.setattr(frontend, "_WWW_DIR", www)
+    monkeypatch.setattr(frontend, "_CARD_BUNDLE_PATH", bundle)
     return www
 
 
@@ -109,18 +117,24 @@ def registered_panel(hass: HomeAssistant) -> Any:
     return hass.data.get(DATA_PANELS, {}).get(PANEL_URL_PATH)
 
 
-async def setup_frontend(hav_init, hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def setup_frontend(frontend, hass: HomeAssistant, entry: ConfigEntry) -> None:
     """The two frontend steps of ``async_setup_entry``, in the order it runs them."""
-    await hav_init._register_frontend_module(hass)
-    await hav_init._async_apply_sidebar_panel(hass, entry)
+    await frontend.async_register_frontend_module(hass)
+    await frontend.async_apply_sidebar_panel(hass, entry)
 
 
 @pytest.fixture
 def hav_init(monkeypatch, tmp_path):
     """The integration module, with lovelace stubbed and a throwaway bundle built."""
     module = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, module, tmp_path)
+    install_bundle(monkeypatch, frontend_of(module), tmp_path)
     return module
+
+
+@pytest.fixture
+def frontend(hav_init):
+    """The frontend-registration module behind ``hav_init``, bundle path patched."""
+    return frontend_of(hav_init)
 
 
 def test_the_card_build_emits_a_single_file() -> None:
@@ -141,12 +155,13 @@ def test_the_card_build_emits_a_single_file() -> None:
 async def test_skips_everything_when_the_bundle_is_not_built(monkeypatch, tmp_path):
     """A dev checkout without a card build registers nothing, and does not fail."""
     hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path, built=False)
+    frontend = frontend_of(hav_init)
+    install_bundle(monkeypatch, frontend, tmp_path, built=False)
     hass = make_hass()
     lovelace_data = MockLovelaceData()
     hass.data["lovelace_data_key"] = lovelace_data
 
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
 
     assert hass.http.static_paths == []
     assert lovelace_data.resources.created == []
@@ -154,7 +169,7 @@ async def test_skips_everything_when_the_bundle_is_not_built(monkeypatch, tmp_pa
 
 
 @pytest.mark.asyncio
-async def test_a_failed_static_route_logs_at_error(hav_init, caplog):
+async def test_a_failed_static_route_logs_at_error(frontend, caplog):
     """A route that fails to register leaves the card served by nothing.
 
     This is the one frontend-registration failure worth an operator's attention:
@@ -172,7 +187,7 @@ async def test_a_failed_static_route_logs_at_error(hav_init, caplog):
     hass.http.async_register_static_paths = refuse
 
     with caplog.at_level(logging.DEBUG):
-        await hav_init._register_frontend_module(hass)
+        await frontend.async_register_frontend_module(hass)
 
     failures = [r for r in caplog.records if "cannot load" in r.getMessage()]
     assert [r.levelno for r in failures] == [logging.ERROR]
@@ -181,7 +196,7 @@ async def test_a_failed_static_route_logs_at_error(hav_init, caplog):
 
 
 @pytest.mark.asyncio
-async def test_registered_url_carries_the_integration_version(hav_init):
+async def test_registered_url_carries_the_integration_version(frontend):
     """The `?v=` value is the version this build declares.
 
     `INTEGRATION_VERSION` and `manifest.json` are rewritten together by
@@ -193,22 +208,22 @@ async def test_registered_url_carries_the_integration_version(hav_init):
     lovelace_data = MockLovelaceData()
     hass.data["lovelace_data_key"] = lovelace_data
 
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
 
     assert [c["url"] for c in lovelace_data.resources.created] == [CURRENT_CARD_URL]
     assert extra_js_urls(hass) == {CURRENT_CARD_URL}
 
 
 @pytest.mark.asyncio
-async def test_reregistration_at_the_same_version_is_idempotent(hav_init):
+async def test_reregistration_at_the_same_version_is_idempotent(frontend):
     """Entry already at the current `?v=` => nothing is created and nothing is written."""
     hass = make_hass()
     current_url = CURRENT_CARD_URL
     resources = MockResourceCollection([{"id": "existing", "url": current_url, "type": "module"}])
     hass.data["lovelace_data_key"] = MockLovelaceData(resources)
 
-    await hav_init._register_frontend_module(hass)
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
 
     assert resources.created == []
     assert resources.updated == []
@@ -233,14 +248,15 @@ async def test_updates_existing_entry_when_the_version_changed(
 ):
     """A stale entry for the card is rewritten in place, never duplicated."""
     hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path)
+    frontend = frontend_of(hav_init)
+    install_bundle(monkeypatch, frontend, tmp_path)
     hass = make_hass()
     resources = MockResourceCollection(
         [{"id": "existing", "url": registered_url, "type": "module"}]
     )
     hass.data["lovelace_data_key"] = MockLovelaceData(resources)
 
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
 
     expected = CURRENT_CARD_URL
     assert resources.created == []
@@ -248,13 +264,13 @@ async def test_updates_existing_entry_when_the_version_changed(
     assert [i["url"] for i in resources.async_items()] == [expected]
 
     # A second pass at the same version must not write again.
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
     assert len(resources.updated) == 1
     assert resources.created == []
 
 
 @pytest.mark.asyncio
-async def test_collapses_duplicate_card_resources(hav_init):
+async def test_collapses_duplicate_card_resources(frontend):
     """A second entry for the card is one element definition too many."""
     hass = make_hass()
     expected = CURRENT_CARD_URL
@@ -266,7 +282,7 @@ async def test_collapses_duplicate_card_resources(hav_init):
     )
     hass.data["lovelace_data_key"] = MockLovelaceData(resources)
 
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
 
     assert resources.created == []
     assert resources.deleted == ["stale"]
@@ -274,7 +290,7 @@ async def test_collapses_duplicate_card_resources(hav_init):
 
 
 @pytest.mark.asyncio
-async def test_finds_the_existing_entry_in_an_unloaded_collection(hav_init):
+async def test_finds_the_existing_entry_in_an_unloaded_collection(frontend):
     """Registering against a collection nobody has read yet must not add a second entry.
 
     Nothing loads the resource collection at Lovelace setup, so this is the state
@@ -289,20 +305,20 @@ async def test_finds_the_existing_entry_in_an_unloaded_collection(hav_init):
     )
     hass.data["lovelace_data_key"] = MockLovelaceData(resources)
 
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
 
     assert resources.created == []
     assert [i["url"] for i in resources.async_items()] == [current_url]
 
 
 @pytest.mark.asyncio
-async def test_leaves_a_stale_entry_alone_when_it_has_no_id(hav_init):
+async def test_leaves_a_stale_entry_alone_when_it_has_no_id(frontend):
     """An entry with no id cannot be addressed for update => leave it, add nothing."""
     hass = make_hass()
     resources = MockResourceCollection([{"url": f"{CARD_PATH}?v=0.0.0", "type": "module"}])
     hass.data["lovelace_data_key"] = MockLovelaceData(resources)
 
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
 
     assert resources.created == []
     assert resources.updated == []
@@ -310,7 +326,7 @@ async def test_leaves_a_stale_entry_alone_when_it_has_no_id(hav_init):
 
 
 @pytest.mark.asyncio
-async def test_registers_alongside_unrelated_resources(hav_init):
+async def test_registers_alongside_unrelated_resources(frontend):
     """Another integration's card, and a malformed entry, must not block us."""
     hass = make_hass()
     resources = MockResourceCollection(
@@ -324,7 +340,7 @@ async def test_registers_alongside_unrelated_resources(hav_init):
     )
     hass.data["lovelace_data_key"] = MockLovelaceData(resources)
 
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
 
     assert [c["url"] for c in resources.created] == [CURRENT_CARD_URL]
     assert resources.updated == []
@@ -333,50 +349,50 @@ async def test_registers_alongside_unrelated_resources(hav_init):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("registered_url", [None, f"{CARD_PATH}?v=0.0.0"])
-async def test_yaml_mode_loads_the_card_through_the_module_url(hav_init, registered_url):
+async def test_yaml_mode_loads_the_card_through_the_module_url(frontend, registered_url):
     """YAML resources are read-only — which is exactly what the extra-module URL is for."""
     hass = make_hass()
     items = [] if registered_url is None else [{"id": "yaml", "url": registered_url}]
     resources = MockYamlResourceCollection(items)
     hass.data["lovelace_data_key"] = MockLovelaceData(resources)
 
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
 
     assert resources.async_items() == items
     assert extra_js_urls(hass) == {CURRENT_CARD_URL}
 
 
 @pytest.mark.asyncio
-async def test_registers_the_module_url_when_lovelace_is_not_initialized(hav_init):
+async def test_registers_the_module_url_when_lovelace_is_not_initialized(frontend):
     """Lovelace missing is not fatal: the card still loads through the frontend."""
     hass = make_hass()
 
     # hass.data["lovelace_data_key"] is NOT set - simulates Lovelace not initialized
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
 
     assert extra_js_urls(hass) == {CURRENT_CARD_URL}
 
 
 @pytest.mark.asyncio
-async def test_skips_when_resources_is_none(hav_init):
+async def test_skips_when_resources_is_none(frontend):
     """lovelace_data.resources is None => skips gracefully without AttributeError."""
     hass = make_hass()
     hass.data["lovelace_data_key"] = types.SimpleNamespace(resources=None)
 
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
 
     assert extra_js_urls(hass) == {CURRENT_CARD_URL}
 
 
 @pytest.mark.asyncio
-async def test_frontend_without_a_url_manager_degrades_gracefully(hav_init):
+async def test_frontend_without_a_url_manager_degrades_gracefully(hav_init, frontend):
     """Frontend importable but never set up => no URL manager in hass.data, and no crash."""
     hass = make_hass()
     del hass.data[DATA_EXTRA_MODULE_URL]
     lovelace_data = MockLovelaceData()
     hass.data["lovelace_data_key"] = lovelace_data
 
-    await hav_init._register_frontend_module(hass)
+    await frontend.async_register_frontend_module(hass)
     await hav_init.async_unload_entry(hass, ConfigEntry())
 
     assert [c["url"] for c in lovelace_data.resources.created] == [CURRENT_CARD_URL]
@@ -590,7 +606,7 @@ def test_every_status_colour_has_a_rule_in_the_chip_stylesheet() -> None:
 
 
 @pytest.mark.asyncio
-async def test_applying_twice_over_registers_once(hav_init):
+async def test_applying_twice_over_registers_once(frontend):
     """An options save that changes nothing about the panel must not touch it.
 
     Registering onto a path already taken raises in HA, so a changed
@@ -600,9 +616,9 @@ async def test_applying_twice_over_registers_once(hav_init):
     hass = make_hass()
     entry = ConfigEntry()
 
-    await setup_frontend(hav_init, hass, entry)
+    await setup_frontend(frontend, hass, entry)
     panel = registered_panel(hass)
-    await hav_init._async_apply_sidebar_panel(hass, entry)
+    await frontend.async_apply_sidebar_panel(hass, entry)
 
     assert list(hass.data[DATA_PANELS]) == [PANEL_URL_PATH]
     # The same object, so the second pass neither replaced the registration nor
@@ -611,12 +627,12 @@ async def test_applying_twice_over_registers_once(hav_init):
 
 
 @pytest.mark.asyncio
-async def test_toggling_the_option_removes_and_restores_the_entry(hav_init):
+async def test_toggling_the_option_removes_and_restores_the_entry(hav_init, frontend):
     """The toggle applies through the options listener — no entry reload, no restart."""
     hass = make_hass()
     entry = ConfigEntry(options={CONF_SIDEBAR_PANEL_ENABLED: True})
 
-    await setup_frontend(hav_init, hass, entry)
+    await setup_frontend(frontend, hass, entry)
     assert registered_panel(hass) is not None
 
     entry.options[CONF_SIDEBAR_PANEL_ENABLED] = False
@@ -629,12 +645,12 @@ async def test_toggling_the_option_removes_and_restores_the_entry(hav_init):
 
 
 @pytest.mark.asyncio
-async def test_renaming_the_card_renames_the_sidebar_entry(hav_init):
+async def test_renaming_the_card_renames_the_sidebar_entry(hav_init, frontend):
     """One name for both surfaces: the panel carries the card title, live."""
     hass = make_hass()
     entry = ConfigEntry(options={CONF_CARD_TITLE: "Pantry"})
 
-    await setup_frontend(hav_init, hass, entry)
+    await setup_frontend(frontend, hass, entry)
     assert registered_panel(hass).sidebar_title == "Pantry"
 
     entry.options[CONF_CARD_TITLE] = "Garage"
@@ -649,9 +665,10 @@ async def test_renaming_the_card_renames_the_sidebar_entry(hav_init):
 async def test_no_sidebar_panel_without_a_built_bundle(monkeypatch, tmp_path):
     """The panel is the bundle's second element; with no bundle there is nothing to show."""
     hav_init = import_haventory(monkeypatch, "lovelace_data_key")
-    install_bundle(monkeypatch, hav_init, tmp_path, built=False)
+    frontend = frontend_of(hav_init)
+    install_bundle(monkeypatch, frontend, tmp_path, built=False)
     hass = make_hass()
 
-    await setup_frontend(hav_init, hass, ConfigEntry())
+    await setup_frontend(frontend, hass, ConfigEntry())
 
     assert registered_panel(hass) is None

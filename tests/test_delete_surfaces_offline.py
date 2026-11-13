@@ -16,8 +16,9 @@ from collections.abc import Awaitable, Callable
 import pytest
 from custom_components.haventory import media as media_mod
 from custom_components.haventory import services as services_mod
-from custom_components.haventory.models import AttachmentMeta, iso_utc_now, new_uuid4
+from custom_components.haventory.models import AttachmentMeta, new_uuid4
 from custom_components.haventory.repository import Repository
+from custom_components.haventory.timestamps import iso_utc_now
 from homeassistant.core import HomeAssistant
 
 from runtime_helpers import ws_hass

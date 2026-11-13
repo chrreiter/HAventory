@@ -14,16 +14,18 @@ from __future__ import annotations
 import pytest
 from custom_components.haventory import import_export as ie
 from custom_components.haventory.exceptions import ValidationError
-from custom_components.haventory.models import (
-    DEFAULT_ITEM_STATUS,
-    ITEM_STATUSES,
+from custom_components.haventory.item_writes import (
     ItemCreate,
     ItemUpdate,
     apply_item_update,
     create_item_from_create,
-    filter_items,
+)
+from custom_components.haventory.models import (
+    DEFAULT_ITEM_STATUS,
+    ITEM_STATUSES,
     validate_item_status,
 )
+from custom_components.haventory.query import filter_items
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.services import SCHEMA_ITEM_CREATE, SCHEMA_ITEM_UPDATE
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore

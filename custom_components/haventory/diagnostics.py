@@ -18,8 +18,8 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from . import _CARD_BUNDLE_PATH
 from .const import CONF_CARD_TITLE, CONF_TODO_ENTITY_ID, DOMAIN, INTEGRATION_VERSION
+from .frontend_registration import _CARD_BUNDLE_PATH
 from .models import ITEM_STATUSES
 from .repository import Repository
 from .runtime import find_runtime
