@@ -1274,10 +1274,12 @@ export class HVItemEditor extends LitElement {
         break;
       }
       case 'Enter':
-        if (this._categoryOpen && options[this._categoryIndex]) {
+        if (this._categoryOpen) {
+          const chosen = options[this._categoryIndex];
+          if (!chosen) break;
           e.preventDefault();
           e.stopPropagation();
-          this._chooseCategory(options[this._categoryIndex]);
+          this._chooseCategory(chosen);
         }
         break;
       case 'Escape':

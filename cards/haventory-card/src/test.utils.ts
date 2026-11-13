@@ -1320,3 +1320,13 @@ export function sheetsOf(tag: string): CSSResult[] {
   if (!ctor?.styles) throw new Error(`${tag} has no styles`);
   return Array.isArray(ctor.styles) ? ctor.styles : [ctor.styles];
 }
+
+/**
+ * A value the test has just arranged to exist, such as the first recorded call
+ * or the third rendered row. A miss throws with `what` in the message, so the
+ * test fails at the read rather than on a `TypeError` further down.
+ */
+export function defined<T>(value: T | undefined, what = 'value'): T {
+  if (value === undefined) throw new Error(`expected ${what} to be defined`);
+  return value;
+}

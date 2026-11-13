@@ -1794,8 +1794,11 @@ export class HVOrganizeDialog extends LitElement {
     const slugs = this._statusDefs.map((d) => d.slug);
     const from = slugs.indexOf(slug);
     const to = from + delta;
-    if (from < 0 || to < 0 || to >= slugs.length) return;
-    [slugs[from], slugs[to]] = [slugs[to], slugs[from]];
+    const moved = slugs[from];
+    const displaced = slugs[to];
+    if (moved === undefined || displaced === undefined) return;
+    slugs[from] = displaced;
+    slugs[to] = moved;
     try {
       await this.store?.reorderStatuses(slugs);
     } catch (err) {

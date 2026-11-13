@@ -1,5 +1,8 @@
 /** Nearest-neighbour suggestion, so the merge flow can pre-fill `batery` → `battery`. */
 
+/** A cell of a distance row; a missing one never wins a `Math.min`. */
+const cell = (row: readonly number[], j: number): number => row[j] ?? Number.POSITIVE_INFINITY;
+
 /** Levenshtein distance with a single rolling row. */
 export function editDistance(a: string, b: string): number {
   if (a === b) return 0;
@@ -13,11 +16,11 @@ export function editDistance(a: string, b: string): number {
     curr[0] = i;
     for (let j = 1; j <= b.length; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+      curr[j] = Math.min(cell(curr, j - 1) + 1, cell(prev, j) + 1, cell(prev, j - 1) + cost);
     }
     [prev, curr] = [curr, prev];
   }
-  return prev[b.length];
+  return cell(prev, b.length);
 }
 
 /**

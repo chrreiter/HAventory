@@ -234,7 +234,8 @@ export class ItemWorkspace implements ReactiveController {
     // `busy` falling with no message as a landed save and drops the form.
     const queue = this.st?.errorQueue ?? [];
     const failed = queue.length > before;
-    this.editorError = failed ? editorErrorText(queue[queue.length - 1]) : null;
+    const latest = failed ? queue[queue.length - 1] : undefined;
+    this.editorError = latest ? editorErrorText(latest) : null;
     if (!failed) this.editing = null;
     this.host.requestUpdate();
   };

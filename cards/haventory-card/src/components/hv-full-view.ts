@@ -774,7 +774,9 @@ export class HVFullView extends LitElement {
     this._barTarget = shell;
     this._barObserver?.disconnect();
     if (!shell) return this._setBarWidth(0);
-    this._barObserver ??= new ResizeObserver(([entry]) => this._setBarWidth(entry.contentRect.width));
+    this._barObserver ??= new ResizeObserver(([entry]) => {
+      if (entry) this._setBarWidth(entry.contentRect.width);
+    });
     this._barObserver.observe(shell);
   }
 

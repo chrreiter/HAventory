@@ -153,7 +153,7 @@ export function defaultFilters(): StoreFilters {
 
 /** The single location the view is pointed at; null for none or several. */
 export function soleLocationId(filters: StoreFilters): string | null {
-  return filters.locationIds.length === 1 ? filters.locationIds[0] : null;
+  return filters.locationIds.length === 1 ? (filters.locationIds[0] ?? null) : null;
 }
 
 /** Whether two selections name the same values, order included. */

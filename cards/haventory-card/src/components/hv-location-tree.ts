@@ -342,12 +342,13 @@ export class HVLocationTree extends LitElement {
   revealPathTo(id: string | null) {
     if (!id) return;
     const path = this._findPath(this.nodes, id) ?? [];
-    if (!path.length) return;
+    const [root] = path;
+    if (!root) return;
     const next = new Set(this._expanded);
     for (const node of path.slice(0, -1)) next.add(node.id);
     this._expanded = next;
 
-    const groupKey = this._groupKeyOf(path[0]);
+    const groupKey = this._groupKeyOf(root);
     if (this._collapsedAreas.has(groupKey)) {
       const areas = new Set(this._collapsedAreas);
       areas.delete(groupKey);
