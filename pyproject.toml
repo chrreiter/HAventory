@@ -111,6 +111,7 @@ module = [
   "haventory.location_paths",
   "haventory.models",
   "haventory.ops",
+  "haventory.query",
   "haventory.repository",
   "haventory.runtime",
   "haventory.serialization",

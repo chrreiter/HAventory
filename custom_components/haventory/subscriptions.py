@@ -108,7 +108,7 @@ def _register_close_listener(hass: HomeAssistant, conn: websocket_api.ActiveConn
 def _subscription_location_ids(sub: Subscription) -> list[str]:
     """The locations a subscription is scoped to, scalar and list unioned.
 
-    The rule ``models.selected_location_ids`` applies to an ``ItemFilter``. The
+    The rule ``query.selected_location_ids`` applies to an ``ItemFilter``. The
     list arrives validated; the scalar is whatever the client sent.
     """
 

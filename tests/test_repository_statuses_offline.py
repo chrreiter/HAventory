@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from custom_components.haventory.exceptions import NotFoundError, ValidationError
 from custom_components.haventory.item_writes import ItemUpdate
-from custom_components.haventory.models import ItemFilter
+from custom_components.haventory.query import ItemFilter
 from custom_components.haventory.repository import Repository
 
 from repository_invariants import internal_indexes
