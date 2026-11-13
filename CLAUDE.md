@@ -122,7 +122,8 @@ mode**. phacc must load, and the flag makes it silently collect nothing.
 - **Logging**: take the module logger from `logs.context_logger(__name__)`, never
   `logging.getLogger` (`tests/test_logs_offline.py` sweeps for it), and keep attaching
   context through `extra=`. It is folded into the message text because HA's formatter drops
-  everything else. Avoid reserved `LogRecord` keys there: `item_name`, not `name`.
+  everything else. `%`-args are safe beside it. No `domain` field (the logger name carries
+  it), and no reserved `LogRecord` keys: `item_name`, not `name`.
 - **User-facing text is never a literal**: [`CONTRIBUTING.md`](CONTRIBUTING.md) →
   "Conventions" and "Adding a language" carry the rule and the shape.
 - **Comments encode constraints, not history**, and everything written for this repository

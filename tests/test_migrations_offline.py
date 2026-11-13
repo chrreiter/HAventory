@@ -7,7 +7,6 @@ from copy import deepcopy
 from typing import Any
 
 import pytest
-from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import SchemaDowngradeError, StorageError
 from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS, migrate
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, DomainStore
@@ -104,11 +103,7 @@ async def test_log_context_on_corrupted_payload_via_storage(
 
     found = False
     for rec in caplog.records:
-        if (
-            rec.levelno >= logging.ERROR
-            and getattr(rec, "op", None) == "migrate"
-            and getattr(rec, "domain", None) == DOMAIN
-        ):
+        if rec.levelno >= logging.ERROR and getattr(rec, "op", None) == "migrate":
             found = True
             assert getattr(rec, "storage_key", None) == key
             assert getattr(rec, "to_version", None) == store.schema_version

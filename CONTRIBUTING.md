@@ -118,8 +118,10 @@ and the PR-title check.
 - **Logging.** Every module takes its logger from `logs.context_logger(__name__)`, never
   `logging.getLogger` (`tests/test_logs_offline.py` checks). Attach context through
   `extra=`: `context_logger` folds it into the message text as `key=value` pairs, because
-  Home Assistant's formatter drops everything else. Avoid reserved `LogRecord` keys there:
-  `item_name` / `location_name`, not `name`.
+  Home Assistant's formatter drops everything else. `%`-args work as usual alongside it,
+  whatever the values contain. Leave `domain` out (the logger name already carries it, and
+  the same test checks), and avoid reserved `LogRecord` keys: `item_name` /
+  `location_name`, not `name`.
 - Update `README.md` when behavior changes. Report out-of-scope findings under a
   "Follow-ups" note rather than fixing them in the same PR.
 

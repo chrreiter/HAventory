@@ -31,7 +31,6 @@ from . import media as media_mod
 from .const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
-    DOMAIN,
     INTEGRATION_VERSION,
     MAX_ATTACHMENT_BYTES,
     MAX_MANUALS_PER_ITEM,
@@ -106,7 +105,7 @@ def _log_rejection(exc: Exception, context: dict[str, Any]) -> tuple[str, str]:
     LOGGER.log(
         log_severity(code, exc),
         str(exc),
-        extra={"domain": DOMAIN, **context},
+        extra={**context},
         exc_info=log_exc_info(code, exc),
     )
     return code, str(exc)
@@ -138,7 +137,7 @@ def ws_guard(op: str, context_fields: tuple[str, ...] = ()) -> Callable[[_WSHand
                 code, message = _log_rejection(exc, ctx)
             except Exception:
                 ctx = _context_from_msg(op, msg, context_fields)
-                LOGGER.exception("Unexpected error in WS handler", extra={"domain": DOMAIN, **ctx})
+                LOGGER.exception("Unexpected error in WS handler", extra={**ctx})
                 code, message = "unknown_error", UNEXPECTED_ERROR_MESSAGE
             # Sent for real Home Assistant; returned for the offline stub.
             err = _error_envelope(msg.get("id", 0), code, message, ctx)
@@ -228,9 +227,7 @@ def _bulk_op_error(
     if isinstance(exc, _DOMAIN_ERRORS):
         code, message = _log_rejection(exc, context)
     else:
-        LOGGER.exception(
-            "Unexpected error in a bulk operation", extra={"domain": DOMAIN, **context}
-        )
+        LOGGER.exception("Unexpected error in a bulk operation", extra={**context})
         code, message = "unknown_error", UNEXPECTED_ERROR_MESSAGE
     return {"success": False, "error": {"code": code, "message": message, "context": context}}
 
@@ -368,7 +365,6 @@ async def ws_subscribe(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     LOGGER.debug(
         "Subscribed",
         extra={
-            "domain": DOMAIN,
             "op": "subscribe",
             "subscription_id": msg.get("id", 0),
             "topic": topic,
@@ -390,7 +386,6 @@ async def ws_unsubscribe(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     LOGGER.debug(
         "Unsubscribed",
         extra={
-            "domain": DOMAIN,
             "op": "unsubscribe",
             "subscription_id": sub_id,
             "removed": removed,
@@ -760,7 +755,6 @@ async def ws_items_bulk(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
         LOGGER.info(
             "Bulk operation completed",
             extra={
-                "domain": DOMAIN,
                 "op": "items_bulk",
                 "total_ops": len(operations),
                 "successful": successful,
@@ -1032,7 +1026,7 @@ async def ws_import_execute(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None
         errors = report.get("errors", [])
         LOGGER.warning(
             "Import rejected: invalid document",
-            extra={"domain": DOMAIN, "op": "import_execute", "error_count": len(errors)},
+            extra={"op": "import_execute", "error_count": len(errors)},
         )
         conn.send_message(
             _error_envelope(
@@ -1057,7 +1051,6 @@ async def ws_import_execute(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None
     LOGGER.info(
         "Import applied",
         extra={
-            "domain": DOMAIN,
             "op": "import_execute",
             "policy": policy,
             "items_total": summary["items"]["total"],

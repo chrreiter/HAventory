@@ -28,7 +28,6 @@ from homeassistant.util import dt as dt_util
 
 from . import media as media_mod
 from . import todo_bridge
-from .const import DOMAIN
 from .events import (
     notify_bulk_mutation,
     notify_counts,
@@ -525,7 +524,7 @@ async def _save(hass: HomeAssistant, name: str, writes: Sequence[Written]) -> No
         _repo(hass).load_state(restores[0])
         LOGGER.error(
             "Write failed during persist; rolled back",
-            extra={"domain": DOMAIN, "op": name},
+            extra={"op": name},
             exc_info=True,
         )
         raise
