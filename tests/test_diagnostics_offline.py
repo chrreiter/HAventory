@@ -88,6 +88,7 @@ async def test_the_payload_answers_shape_questions() -> None:
         "store",
         "subscriptions",
         "todo",
+        "write_lock",
     ]
 
 

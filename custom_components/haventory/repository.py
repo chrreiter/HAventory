@@ -114,6 +114,23 @@ class LoadReport:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class RepositorySnapshot:
+    """The repository's fields as ``Repository.snapshot`` copied them; opaque."""
+
+    fields: dict[str, Any]
+
+
+def _copy_container(value: Any) -> Any:
+    """A copy a write cannot reach: a map or set copied, and each set inside a map."""
+
+    if isinstance(value, set):
+        return set(value)
+    if isinstance(value, dict):
+        return {key: set(v) if isinstance(v, set) else v for key, v in value.items()}
+    return value
+
+
 def _parse_reminder_date(value: str, field: str) -> date:
     """Read a stored reminder date, naming it if a hand-edited store broke it."""
 
@@ -1410,6 +1427,27 @@ class Repository:
         self._statuses_by_slug.setdefault(
             DEFAULT_ITEM_STATUS, seed_status_definitions()[DEFAULT_ITEM_STATUS]
         )
+
+    def snapshot(self) -> RepositorySnapshot:
+        """Everything ``restore`` needs to put the repository back as it is now.
+
+        Shallow by design, so a write pays for copying containers and never for
+        copying or re-validating records: every write replaces an ``Item``,
+        ``Location`` or ``StatusDefinition`` rather than editing it, and edits
+        only the maps and index sets copied here. A write that edited a stored
+        record in place would leak through ``restore``.
+        """
+
+        return RepositorySnapshot(
+            {name: _copy_container(value) for name, value in vars(self).items()}
+        )
+
+    def restore(self, snapshot: RepositorySnapshot) -> None:
+        """Put back the state ``snapshot`` captured; each snapshot is restored once."""
+
+        state = vars(self)
+        state.clear()
+        state.update(snapshot.fields)
 
     @staticmethod
     def from_state(data: dict[str, Any]) -> Repository:

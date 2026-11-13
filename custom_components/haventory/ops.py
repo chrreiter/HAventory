@@ -10,10 +10,17 @@ answer.
 
 The order is the same for every write: persist, then free files, then
 announce, then reply. Announcing first would tell subscribers about a change
-the caller is about to be told failed, and which a restart then erases; a file
-unlinked before the save would leave stored metadata naming nothing if the save
-then failed. Because the op runs inside `commit`, `commit` is also the one place
-that knows a write ran and its save failed.
+the caller is about to be told failed; a file unlinked before the save would
+leave stored metadata naming nothing if the save then failed.
+
+A write whose save fails is undone. Every save writes the whole repository, so
+a failed change left in memory would reach disk with the next unrelated write
+that succeeds, and nobody would have been told about it. The undo restores a
+snapshot taken before the op, which is only sound while no other write can
+change the repository between that snapshot and the save settling: the
+runtime's `write_lock` is held across the op, the save and the undo. The ops
+are synchronous, so the only wait it adds is queueing behind another write's
+save, which the store's own lock already imposed.
 """
 
 from __future__ import annotations
@@ -48,7 +55,7 @@ from .models import (
     serialize_status_definition,
     validate_quantity,
 )
-from .repository import UNSET, Repository
+from .repository import UNSET, Repository, RepositorySnapshot
 from .runtime import loaded_runtime
 from .serialization import serialize_item, serialize_location
 from .storage import async_persist_repo
@@ -70,9 +77,7 @@ class Written:
     the location edit that re-anchors a subtree without moving a path.
     ``counts`` is False for an item edit that moves no count. ``detached`` are
     the attachments whose bytes go once the save lands. ``reassigned`` are the
-    items a status delete rewrote, as saved. ``restore`` is the state to load
-    back if the save fails, for the one write that cannot leave a half-applied
-    repository behind.
+    items a status delete rewrote, as saved.
     """
 
     noun: Literal["item", "location", "status", "dataset"]
@@ -82,7 +87,6 @@ class Written:
     counts: bool = True
     detached: tuple[tuple[str, AttachmentMeta], ...] = ()
     reassigned: tuple[dict[str, Any], ...] = ()
-    restore: dict[str, Any] | None = None
 
 
 Op = Callable[[HomeAssistant, dict[str, Any]], Written]
@@ -376,11 +380,8 @@ def _op_location_move_subtree(hass: HomeAssistant, payload: dict[str, Any]) -> W
 
 
 def _op_import_execute(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
-    repo = _repo(hass)
-    # The whole dataset is swapped, so a failed save must put the old one back.
-    snapshot = repo.export_state()
-    repo.load_state(payload["target"])
-    return Written("dataset", None, "reloaded", restore=snapshot)
+    _repo(hass).load_state(payload["target"])
+    return Written("dataset", None, "reloaded")
 
 
 def _op_status_create(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
@@ -469,8 +470,11 @@ BULK_KINDS = frozenset(
 async def commit(hass: HomeAssistant, name: str, payload: dict[str, Any]) -> Written:
     """Run one op, persist, free what it orphaned, announce; return what it wrote."""
 
-    written = OPS[name](hass, payload)
-    await _save(hass, name, [written])
+    runtime = loaded_runtime(hass)
+    async with runtime.write_lock:
+        before = runtime.repository.snapshot()
+        written = OPS[name](hass, payload)
+        await _save(hass, runtime.repository, name, before)
     await _free_files(hass, [written])
     await _announce(hass, written)
     return written
@@ -487,24 +491,28 @@ async def commit_batch(
     A row that raises, or names a kind outside `BULK_KINDS`, is handed to
     ``refused`` with its index as it fails and reads None in the result; it
     stops no other row. A batch with no successful row saves and announces
-    nothing. The events are each row's own with the counts held back, then one
-    counts event for the batch.
+    nothing. A failed save undoes every row. The events are each row's own with
+    the counts held back, then one counts event for the batch.
     """
 
+    runtime = loaded_runtime(hass)
     results: list[Written | None] = []
-    for index, (name, payload) in enumerate(rows):
-        try:
-            if name not in BULK_KINDS:
-                raise ValidationError("unknown operation kind")
-            results.append(OPS[name](hass, payload))
-        except Exception as exc:
-            # Whatever it was, it fails its own row and no other.
-            refused(index, exc)
-            results.append(None)
+    async with runtime.write_lock:
+        before = runtime.repository.snapshot()
+        for index, (name, payload) in enumerate(rows):
+            try:
+                if name not in BULK_KINDS:
+                    raise ValidationError("unknown operation kind")
+                results.append(OPS[name](hass, payload))
+            except Exception as exc:
+                # Whatever it was, it fails its own row and no other.
+                refused(index, exc)
+                results.append(None)
+        successful = [w for w in results if w is not None]
+        if successful:
+            await _save(hass, runtime.repository, "items_bulk", before)
 
-    successful = [w for w in results if w is not None]
     if successful:
-        await _save(hass, "items_bulk", successful)
         await _free_files(hass, successful)
         for written in successful:
             await _announce(hass, written, counts=False)
@@ -512,21 +520,17 @@ async def commit_batch(
     return results
 
 
-async def _save(hass: HomeAssistant, name: str, writes: Sequence[Written]) -> None:
-    """Persist what ``writes`` changed; the only place a write's failed save is seen."""
+async def _save(
+    hass: HomeAssistant, repo: Repository, name: str, before: RepositorySnapshot
+) -> None:
+    """Persist, or put ``before`` back and re-raise; the caller holds `write_lock`."""
 
     try:
         await async_persist_repo(hass)
     except Exception:
-        restores = [w.restore for w in writes if w.restore is not None]
-        if not restores:
-            raise
-        _repo(hass).load_state(restores[0])
-        LOGGER.error(
-            "Write failed during persist; rolled back",
-            extra={"op": name},
-            exc_info=True,
-        )
+        repo.restore(before)
+        # The storage layer logged the failure itself, at ERROR with the trace.
+        LOGGER.warning("Undid a write whose save failed", extra={"op": name})
         raise
 
 

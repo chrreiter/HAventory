@@ -8,10 +8,8 @@ that the write behind it succeeded. These tests hold both halves of that:
 - a *succeeding* persist delivers the event only once the store write resolved,
   not merely at some point after the mutation was applied.
 
-The mutation does remain applied in memory when the write fails — the handlers do
-not roll back (``import/execute`` does, because a wholesale dataset swap has more
-to undo than one entity does). That divergence is documented at the bottom of this
-file: it survives only until restart, and no client is told about it.
+What a failed write leaves in memory, and what the next save then writes, is
+held in ``test_failed_save_undo_offline.py``.
 """
 
 from __future__ import annotations
@@ -254,72 +252,3 @@ async def test_event_reaches_subscriber_only_after_the_write_resolves(monkeypatc
     assert res["success"] is True
     actions = [ev.get("action") for ev in conn.events()]
     assert actions == ["created"], "the created event must arrive once, after the write"
-
-
-@pytest.mark.asyncio
-async def test_failed_create_stays_in_memory_until_restart(monkeypatch, caplog) -> None:
-    """The handlers do not roll back: the item lives in memory but not on disk.
-
-    Nothing on the wire claims otherwise — the caller was told ``storage_error``
-    and no subscriber was told anything — so the divergence is invisible to
-    clients and ends at the next restart.
-    """
-
-    hass, repo, store = _make_hass()
-    _fail_next_save(monkeypatch, store)
-    caplog.set_level(logging.ERROR)
-
-    res = await ws_send(hass, 1, "haventory/item/create", name="Fragile Item")
-
-    assert res["success"] is False
-    assert res["error"]["code"] == "storage_error"
-
-    items = repo.list_items()["items"]
-    assert len(items) == 1
-    assert items[0].name == "Fragile Item"
-
-    # Restart reads what reached disk, which is nothing.
-    fresh_repo = Repository.from_state({"items": {}, "locations": {}})
-    assert fresh_repo.list_items()["items"] == []
-
-
-@pytest.mark.asyncio
-async def test_failed_delete_stays_removed_in_memory_until_restart(monkeypatch, caplog) -> None:
-    """The inverse divergence: the item is gone from memory and still on disk."""
-
-    hass, repo, store = _make_hass()
-    item = repo.create_item({"name": "To Delete"})
-
-    _fail_next_save(monkeypatch, store)
-    caplog.set_level(logging.ERROR)
-
-    res = await ws_send(hass, 1, "haventory/item/delete", item_id=str(item.id))
-
-    assert res["success"] is False
-    assert res["error"]["code"] == "storage_error"
-    assert repo.list_items()["items"] == []
-
-
-@pytest.mark.asyncio
-async def test_failed_update_keeps_the_new_value_in_memory(monkeypatch, caplog) -> None:
-    """A partial update is applied in memory even when the write fails."""
-
-    hass, repo, store = _make_hass()
-    INITIAL_QTY = 10
-    NEW_QTY = 25
-    item = repo.create_item({"name": "Quantity Test", "quantity": INITIAL_QTY})
-
-    _fail_next_save(monkeypatch, store)
-    caplog.set_level(logging.ERROR)
-
-    res = await ws_send(
-        hass,
-        1,
-        "haventory/item/update",
-        item_id=str(item.id),
-        quantity=NEW_QTY,
-    )
-
-    assert res["success"] is False
-    assert res["error"]["code"] == "storage_error"
-    assert repo.get_item(item.id).quantity == NEW_QTY

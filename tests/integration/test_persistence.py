@@ -8,6 +8,8 @@ here because only a real core sequences an entry's teardown around them.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import (
@@ -17,6 +19,7 @@ from custom_components.haventory.storage import (
     async_persist_immediate,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
@@ -99,3 +102,34 @@ async def test_setup_after_unload_reads_back_what_the_flush_wrote(
     assert second_runtime is not first_runtime
     names = [item.name for item in second_runtime.repository.list_items()["items"]]
     assert names == ["Across the reload"]
+
+
+async def test_a_write_whose_save_failed_is_not_saved_by_the_next_one(
+    hass: HomeAssistant, hass_storage: dict, hass_ws_client
+) -> None:
+    """The real `Store` raises, the write is undone, and the next save omits it.
+
+    `Store` itself catches `WriteError`, the error a full disk raises, and only
+    logs it, so the failure is injected below that catch as a bare `OSError`,
+    which `Store.async_save` lets through to the integration.
+    """
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    client = await hass_ws_client(hass)
+
+    with patch.object(Store, "_async_write_data", side_effect=OSError("disk full")):
+        await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Lost"})
+        failed = await client.receive_json()
+    assert failed["success"] is False
+    assert failed["error"]["code"] == "storage_error"
+    assert find_runtime(hass).repository.list_items()["items"] == []
+
+    await client.send_json({"id": 2, "type": "haventory/item/create", "name": "Kept"})
+    kept = await client.receive_json()
+    assert kept["success"] is True
+
+    stored = hass_storage[STORAGE_KEY]["data"]
+    assert [item["name"] for item in stored["items"].values()] == ["Kept"]

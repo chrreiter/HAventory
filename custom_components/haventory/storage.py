@@ -314,10 +314,18 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
 
 
 async def async_persist_immediate(hass: HomeAssistant) -> None:
-    """Persist from a path with no client waiting, logging that it was attempted."""
+    """Persist from a path with no client waiting, logging that it was attempted.
+
+    Waits for a write in flight to settle first: saving between a write's change
+    and its own failed save would put on disk a change its caller was told failed.
+    """
 
     _LOGGER.debug(
         "Immediate persist requested",
         extra={"op": "persist_immediate_request"},
     )
-    await async_persist_repo(hass)
+    runtime = find_runtime(hass)
+    if runtime is None:
+        raise NotLoadedError("HAventory runtime not initialized; run integration setup")
+    async with runtime.write_lock:
+        await async_persist_repo(hass)
