@@ -384,11 +384,7 @@ export class HVDataTable extends LitElement {
   private _onSort(field: SortField) {
     // The sorted column flips; a fresh one opens on its default direction.
     const order =
-      this.sort?.field === field
-        ? this.sort.order === 'asc'
-          ? 'desc'
-          : 'asc'
-        : getDefaultOrderFor(field);
+      this.sort?.field === field ? (this.sort.order === 'asc' ? 'desc' : 'asc') : getDefaultOrderFor(field);
     this._emit('sort-change', { sort: { field, order } });
   }
 
@@ -481,8 +477,9 @@ export class HVDataTable extends LitElement {
 
     return html`
       <div class="head" role="row" style="grid-template-columns: ${template}">
-        ${this.selectable
-          ? html`<span class="select-cell"
+        ${
+          this.selectable
+            ? html`<span class="select-cell"
               ><button
                 class="box ${allSelected ? 'on' : someSelected ? 'mixed' : ''}"
                 role="checkbox"
@@ -494,7 +491,8 @@ export class HVDataTable extends LitElement {
                 ${allSelected ? icon('check', 13) : someSelected ? icon('minus', 13) : null}
               </button></span
             >`
-          : null}
+            : null
+        }
         <span class="name-head" role="columnheader"
           >${this._sortHeader('name', t('hv.field.name'))}</span
         >
@@ -509,11 +507,12 @@ export class HVDataTable extends LitElement {
       </div>
 
       <div class="body" role="rowgroup" data-testid="table-body">
-        ${this.items.length
-          ? repeat(
-              this.items,
-              (it) => it.id,
-              (item) => html`
+        ${
+          this.items.length
+            ? repeat(
+                this.items,
+                (it) => it.id,
+                (item) => html`
                 <div
                   class="row ${this.selection.has(item.id) ? 'selected' : ''}"
                   role="row"
@@ -525,8 +524,9 @@ export class HVDataTable extends LitElement {
                   @click=${() =>
                     this._emit(this.selectable ? 'toggle-select' : 'open-item', { itemId: item.id })}
                 >
-                  ${this.selectable
-                    ? html`<span class="select-cell"
+                  ${
+                    this.selectable
+                      ? html`<span class="select-cell"
                         ><button
                           class="box ${this.selection.has(item.id) ? 'on' : ''}"
                           role="checkbox"
@@ -541,7 +541,8 @@ export class HVDataTable extends LitElement {
                           ${this.selection.has(item.id) ? icon('check', 13) : null}
                         </button></span
                       >`
-                    : null}
+                      : null
+                  }
                   <span class="name-cell" role="cell">
                     ${renderRowThumb(item, this._urls, this._thumbs)}
                     <span class="name" data-testid="table-name" title=${item.name}>${item.name}</span>
@@ -593,14 +594,15 @@ export class HVDataTable extends LitElement {
                   </span>
                 </div>
               `,
-            )
-          : html`<div role="row">
+              )
+            : html`<div role="row">
               <!-- A cell in a row, as a table requires; the slotted empty state
                    is its own live region. -->
               <div class="empty" role="cell" data-testid="table-empty">
                 <slot name="empty">${t('hv.empty.noItems.headline')}</slot>
               </div>
-            </div>`}
+            </div>`
+        }
       </div>
     `;
   }

@@ -3,13 +3,7 @@ import { LitElement, css, html, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
-import {
-  areaMarkName,
-  elideMobilePath,
-  itemPathParts,
-  pathTitle,
-  renderAreaChip,
-} from '../ui/location-path';
+import { areaMarkName, elideMobilePath, itemPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { onDayChange } from '../ui/day-clock';
 import { formatDate, isDue, isOverdue } from '../ui/relative-time';
@@ -362,17 +356,19 @@ export class HVListRow extends LitElement {
    * dropped piece takes its separator along.
    */
   private _mobileSecondary(lead: TemplateResult | null, area: string | null, tail: string) {
-    return html`${lead === null
-      ? null
-      : html`<span class="lead" data-testid="row-lead">${lead}</span>`}${area === null
-      ? null
-      : html`<span class="area" data-testid="row-area"
+    return html`${lead === null ? null : html`<span class="lead" data-testid="row-lead">${lead}</span>`}${
+      area === null
+        ? null
+        : html`<span class="area" data-testid="row-area"
           >${lead === null ? '' : ' · '}${renderAreaChip(area)}</span
-        >`}${tail
-      ? html`<span class="tail" data-testid="row-tail"
+        >`
+    }${
+      tail
+        ? html`<span class="tail" data-testid="row-tail"
           >${lead !== null && area === null ? ' · ' : ''}${tail}</span
         >`
-      : null}`;
+        : null
+    }`;
   }
 
   render() {
@@ -397,13 +393,14 @@ export class HVListRow extends LitElement {
     const status = itemStatus(item);
     const flagged = status !== 'ok';
     // The tone follows what the line says; a passed date outranks the rest.
-    const mobileState = overdue || (!item.checked_out && !flagged && inspectionDue)
-      ? 'overdue'
-      : item.checked_out
-        ? 'out'
-        : flagged
-          ? 'flagged'
-          : '';
+    const mobileState =
+      overdue || (!item.checked_out && !flagged && inspectionDue)
+        ? 'overdue'
+        : item.checked_out
+          ? 'out'
+          : flagged
+            ? 'flagged'
+            : '';
 
     return html`
       <div
@@ -420,70 +417,80 @@ export class HVListRow extends LitElement {
         <span class="names">
           <span class="name-line">
             <span class="name" data-testid="row-name" title=${item.name}>${item.name}</span>
-            ${manuals(item.attachments).length
-              ? html`<span
+            ${
+              manuals(item.attachments).length
+                ? html`<span
                   class="doc-marker"
                   data-testid="row-has-document"
                   title=${t('hv.row.hasDocument')}
                   aria-label=${t('hv.row.hasDocument')}
                   >${icon('fileDocument', 14)}</span
                 >`
-              : null}
+                : null
+            }
           </span>
           <span
             class="secondary ${this.mobile ? mobileState : 'hv-chip-line'}"
             data-testid="row-secondary"
             title=${secondaryFull}
           >
-            ${this.mobile && low && !item.checked_out
-              ? html`<span class="dot" data-testid="row-low-dot"></span>`
-              : null}
-            ${this.mobile && item.checked_out
-              ? this._mobileSecondary(
-                  html`${overdue ? t('hv.term.overdue') : t('hv.term.checkedOut')}${item.due_date
-                    ? ` · ${t('hv.term.due', { date: formatDate(item.due_date) })}`
-                    : ''}`,
-                  mobileLead.area,
-                  mobileTail,
-                )
-              : this.mobile && flagged
+            ${
+              this.mobile && low && !item.checked_out
+                ? html`<span class="dot" data-testid="row-low-dot"></span>`
+                : null
+            }
+            ${
+              this.mobile && item.checked_out
                 ? this._mobileSecondary(
-                    html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>`,
+                    html`${overdue ? t('hv.term.overdue') : t('hv.term.checkedOut')}${
+                      item.due_date ? ` · ${t('hv.term.due', { date: formatDate(item.due_date) })}` : ''
+                    }`,
                     mobileLead.area,
                     mobileTail,
                   )
-                : this.mobile && inspectionDue
-                  ? // The chore and its date take the whole line.
-                    this._mobileSecondary(
-                      html`<span data-testid="row-inspection-due">${t('hv.term.inspectionDue')}</span> ·
-                        ${formatDate(item.inspection_date)}`,
-                      null,
-                      '',
+                : this.mobile && flagged
+                  ? this._mobileSecondary(
+                      html`<span data-testid="row-status">${statusLabel(status, this.statuses)}</span>`,
+                      mobileLead.area,
+                      mobileTail,
                     )
-                  : this.mobile
-                    ? this._mobileSecondary(
+                  : this.mobile && inspectionDue
+                    ? // The chore and its date take the whole line.
+                      this._mobileSecondary(
+                        html`<span data-testid="row-inspection-due">${t('hv.term.inspectionDue')}</span> ·
+                        ${formatDate(item.inspection_date)}`,
                         null,
-                        mobileLead.area,
-                        hasMobileSecondary ? mobileTail : t('hv.term.noLocation'),
+                        '',
                       )
-                    : html`${renderAreaChip(areaMark)}<span class="hv-chip-line-text"
+                    : this.mobile
+                      ? this._mobileSecondary(
+                          null,
+                          mobileLead.area,
+                          hasMobileSecondary ? mobileTail : t('hv.term.noLocation'),
+                        )
+                      : html`${renderAreaChip(areaMark)}<span class="hv-chip-line-text"
                         >${secondary || t('hv.term.noLocation')}</span
-                      >`}
+                      >`
+            }
           </span>
         </span>
-        ${this.mobile
-          ? // The phone row's one line has said all of this already.
-            null
-          : renderNameChips(item, this.statuses, {
-              prefix: 'row',
-              // Nothing else on the row carries the due date.
-              overdueText: 'overdueOn',
-            })}
-        ${!this.mobile && inspectionDue
-          ? html`<span class="hv-chip warning" data-testid="row-inspection-due">
+        ${
+          this.mobile
+            ? // The phone row's one line has said all of this already.
+              null
+            : renderNameChips(item, this.statuses, {
+                prefix: 'row',
+                // Nothing else on the row carries the due date.
+                overdueText: 'overdueOn',
+              })
+        }
+        ${
+          !this.mobile && inspectionDue
+            ? html`<span class="hv-chip warning" data-testid="row-inspection-due">
               ${t('hv.term.inspectionDue')}
             </span>`
-          : null}
+            : null
+        }
         <span class="hover-actions">
           <button
             data-testid="row-edit"

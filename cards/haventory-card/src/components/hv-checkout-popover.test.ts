@@ -210,14 +210,13 @@ describe('hv-checkout-popover: placement', () => {
 
     const centred = await mount({}, { anchor: null });
     expect(q(centred, '.scrim')?.classList.contains('dim')).toBe(true);
-    expect(
-      (q(centred, '[data-testid="checkout-popover"]') as HTMLElement).getAttribute('style'),
-    ).toContain('left: 50%');
+    expect((q(centred, '[data-testid="checkout-popover"]') as HTMLElement).getAttribute('style')).toContain(
+      'left: 50%',
+    );
   });
 });
 
 describe('hv-checkout-popover: where it draws and how big it is are separate asks', () => {
-
   it('keeps the scrim and its own placement when only the sizes grow', async () => {
     const el = await mount({}, { touch: true });
     expect(q(el, '.scrim')?.classList.contains('dim')).toBe(true);

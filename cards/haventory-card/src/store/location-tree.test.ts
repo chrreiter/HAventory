@@ -62,7 +62,10 @@ describe('countLocations', () => {
   it('counts every depth, not just the roots', () => {
     // The sidebar heading says "Locations 6" beside "Categories 11" — a number
     // that stopped at the roots would claim two.
-    const tree = [node('Garage', [node('Shelf A', [node('Bin 1'), node('Bin 2')]), node('Shelf B')]), node('Kitchen')];
+    const tree = [
+      node('Garage', [node('Shelf A', [node('Bin 1'), node('Bin 2')]), node('Shelf B')]),
+      node('Kitchen'),
+    ];
     expect(countLocations(tree)).toBe(6);
   });
 

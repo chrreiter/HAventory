@@ -1,5 +1,13 @@
 import './hv-lightbox';
-import { componentCss, makeAttachment, makeItem, makeMediaBindings, mountComponent, q, settle } from '../test.utils';
+import {
+  componentCss,
+  makeAttachment,
+  makeItem,
+  makeMediaBindings,
+  mountComponent,
+  q,
+  settle,
+} from '../test.utils';
 import type { HVLightbox } from './hv-lightbox';
 import type { Item } from '../store/types';
 

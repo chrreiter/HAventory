@@ -101,7 +101,10 @@ describe('priceStaged', () => {
   it('counts the staged set once the edits have stopped landing', async () => {
     const { priced, store } = fakeStore(2);
     const counts: (number | null)[] = [];
-    const price = priceStaged(() => store, (count) => counts.push(count));
+    const price = priceStaged(
+      () => store,
+      (count) => counts.push(count),
+    );
     const staged = { ...defaultFilters(), lowStockOnly: true };
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -123,7 +126,10 @@ describe('priceStaged', () => {
   it('passes on a count the store could not give', async () => {
     const { store } = fakeStore(null);
     const counts: (number | null)[] = [];
-    const price = priceStaged(() => store, (count) => counts.push(count));
+    const price = priceStaged(
+      () => store,
+      (count) => counts.push(count),
+    );
 
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
@@ -184,10 +190,7 @@ describe('renderFilterHead', () => {
       }),
     );
 
-    expect([...(sheet.firstElementChild as HTMLElement).classList]).toEqual([
-      'hv-sheet-head',
-      'sheet-head',
-    ]);
+    expect([...(sheet.firstElementChild as HTMLElement).classList]).toEqual(['hv-sheet-head', 'sheet-head']);
     expect(sheet.querySelector('[data-testid="full-panel-head"]')).toBe(null);
     expect(sheet.textContent).toContain('1 active');
     expect(panel.querySelector('[data-testid="full-panel-count"]')?.textContent).toBe('0 active');

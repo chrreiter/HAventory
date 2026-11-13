@@ -15,12 +15,7 @@ import type { StatsCounts, StoreFilters } from '../store/types';
 /** The hue a pill carries; what each one means is `ui/chip`'s vocabulary. */
 export type BadgeTone = 'warning' | 'error' | 'state';
 
-type BadgeFilter =
-  | 'lowStockOnly'
-  | 'overdueOnly'
-  | 'inspectionDueOnly'
-  | 'reminderDueOnly'
-  | 'checkedOutOnly';
+type BadgeFilter = 'lowStockOnly' | 'overdueOnly' | 'inspectionDueOnly' | 'reminderDueOnly' | 'checkedOutOnly';
 
 interface BadgeSpec {
   /** The dashboard's name for this pill, which decides whether it is on offer. */

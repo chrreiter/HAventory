@@ -120,8 +120,7 @@ export function chipsFor(
       toneStyle: tone.toneStyle,
     });
   }
-  if (filters.orphansOnly)
-    chips.push({ key: 'orphansOnly', label: t('hv.term.noLocation'), tone: 'primary' });
+  if (filters.orphansOnly) chips.push({ key: 'orphansOnly', label: t('hv.term.noLocation'), tone: 'primary' });
   // One chip per bound, so a range can be half-undone.
   const dateChips: [FilterChipKey, string | null, TranslationKey][] = [
     ['updatedAfter', filters.updatedAfter, 'hv.chips.updatedAfter'],
@@ -221,9 +220,11 @@ export class HVFilterChips extends LitElement {
       <div class="row" data-testid="filter-chips">
         ${chips.map(
           (entry) => html`<button
-            class=${entry.toneClass !== undefined
-              ? `hv-status-chip chip ${entry.toneClass}`
-              : `hv-chip chip ${entry.tone === 'warning' ? 'warning' : 'state'}`}
+            class=${
+              entry.toneClass !== undefined
+                ? `hv-status-chip chip ${entry.toneClass}`
+                : `hv-chip chip ${entry.tone === 'warning' ? 'warning' : 'state'}`
+            }
             style=${ifDefined(entry.toneStyle)}
             data-testid="filter-chip"
             data-key=${entry.key}

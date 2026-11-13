@@ -68,9 +68,9 @@ describe('hv-list-row: content', () => {
     }
 
     // Still a secondary path, so a user who reaches for the menu keeps it.
-    expect(
-      rowMenuEntries(makeItem({ checked_out: true })).some((e) => 'id' in e && e.id === 'check-in'),
-    ).toBe(true);
+    expect(rowMenuEntries(makeItem({ checked_out: true })).some((e) => 'id' in e && e.id === 'check-in')).toBe(
+      true,
+    );
   });
 
   it('marks a checked-out item on the wide row and keeps its location beside it', async () => {
@@ -192,10 +192,7 @@ describe('hv-list-row: content', () => {
   // inspection is also due says the status and stays amber, because that is
   // what the line ends up printing.
   it('keeps the flagged tone when an inspection is due behind it', async () => {
-    const el = await mount(
-      { status: 'needs_repair', inspection_date: '2020-05-06' },
-      { mobile: true },
-    );
+    const el = await mount({ status: 'needs_repair', inspection_date: '2020-05-06' }, { mobile: true });
     const secondary = q(el, '[data-testid="row-secondary"]');
     expect(secondary?.classList.contains('flagged')).toBe(true);
     expect(secondary?.classList.contains('overdue')).toBe(false);
@@ -212,10 +209,7 @@ describe('hv-list-row: content', () => {
   });
 
   it('lets the flagged status outrank the inspection chore, but not the checkout', async () => {
-    const flaggedAndDue = await mount(
-      { status: 'missing', inspection_date: '2020-05-06' },
-      { mobile: true },
-    );
+    const flaggedAndDue = await mount({ status: 'missing', inspection_date: '2020-05-06' }, { mobile: true });
     const secondary = q(flaggedAndDue, '[data-testid="row-secondary"]');
     expect(secondary?.textContent).toContain('Missing');
     expect(secondary?.textContent).not.toContain('Inspection due');
@@ -386,9 +380,7 @@ describe('hv-list-row: mobile affordances', () => {
       const where = `mobile=${mobile}`;
 
       expect(secondary?.querySelector('[data-testid="area-chip"]'), where).toBe(null);
-      expect(secondary?.textContent?.replace(/\s+/g, ' ').trim(), where).toBe(
-        'Küche › Oberstes Fach',
-      );
+      expect(secondary?.textContent?.replace(/\s+/g, ' ').trim(), where).toBe('Küche › Oberstes Fach');
       // The pairing is still readable in full where the row keeps it.
       expect(secondary?.getAttribute('title'), where).toBe('Area: Küche · Küche › Oberstes Fach');
       el.remove();
@@ -432,9 +424,7 @@ describe('hv-list-row: mobile affordances', () => {
       { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
     );
     const secondary = q(el, '[data-testid="row-secondary"]');
-    expect(secondary?.querySelector('[data-testid="area-chip"] .hv-sr-only')?.textContent).toBe(
-      'Area: ',
-    );
+    expect(secondary?.querySelector('[data-testid="area-chip"] .hv-sr-only')?.textContent).toBe('Area: ');
     expect(secondary?.getAttribute('title')).toBe(
       'Area: Garage · Workshop › Parts Cabinet › Drawer A › Small Bin',
     );
@@ -444,7 +434,12 @@ describe('hv-list-row: mobile affordances', () => {
   // want the shelf of — the borrowed one — still names it.
   it('leads a checked-out phone row with the checkout and keeps the location behind it', async () => {
     const el = await mount(
-      { checked_out: true, due_date: '2099-07-31', effective_area_id: 'area-workshop', location_path: deepPath },
+      {
+        checked_out: true,
+        due_date: '2099-07-31',
+        effective_area_id: 'area-workshop',
+        location_path: deepPath,
+      },
       { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
     );
     const secondary = q(el, '[data-testid="row-secondary"]');
@@ -459,7 +454,10 @@ describe('hv-list-row: mobile affordances', () => {
   // Both lines clip with an ellipsis, and the phone row drops the middle of the
   // path on purpose — so the whole value has to be readable somewhere.
   it('carries the unelided path and the full name in tooltips', async () => {
-    const el = await mount({ name: 'Torque Wrench M4 #23', category: 'Tools', location_path: deepPath }, { mobile: true });
+    const el = await mount(
+      { name: 'Torque Wrench M4 #23', category: 'Tools', location_path: deepPath },
+      { mobile: true },
+    );
     expect(q(el, '[data-testid="row-name"]')?.getAttribute('title')).toBe('Torque Wrench M4 #23');
     expect(q(el, '[data-testid="row-secondary"]')?.getAttribute('title')).toBe(
       'Workshop › Parts Cabinet › Drawer A › Small Bin · Tools',
@@ -550,7 +548,13 @@ describe('hv-list-row: the phone line’s pieces', () => {
   // that piece drops the dot with it rather than ending on one.
   it('gives the separator to the piece that follows the lead', async () => {
     const withArea = await mount(
-      { checked_out: true, due_date: '2000-01-02', category: null, effective_area_id: 'area-workshop', location_path: deepPath },
+      {
+        checked_out: true,
+        due_date: '2000-01-02',
+        category: null,
+        effective_area_id: 'area-workshop',
+        location_path: deepPath,
+      },
       { mobile: true, areas: garage },
     );
     expect(q(withArea, '[data-testid="row-lead"]')?.textContent).toBe('Overdue · due Jan 2, 2000');
@@ -668,9 +672,9 @@ describe('hv-list-row thumbnail', () => {
     // download per row. The parameter is signed with the path, so it has to be
     // on the URL before signing rather than appended to a signed one.
     expect(img?.getAttribute('src')).toBe(
-      `/api/haventory/media/i-thumb/att-1?${MEDIA_NAME_TOKEN_PARAM}=`
-        + `${attachmentNameToken(makeAttachment({ id: 'att-1' }))}`
-        + `&${MEDIA_SIZE_PARAM}=thumb&authSig=test`,
+      `/api/haventory/media/i-thumb/att-1?${MEDIA_NAME_TOKEN_PARAM}=` +
+        `${attachmentNameToken(makeAttachment({ id: 'att-1' }))}` +
+        `&${MEDIA_SIZE_PARAM}=thumb&authSig=test`,
     );
     expect(img?.getAttribute('alt')).toBe('Photo of Cordless drill');
     // A tile is small but there is still one per row, so the browser is told
@@ -837,7 +841,6 @@ describe('hv-list-row: document marker', () => {
     // Immediately after the name, so it reads as belonging to it.
     expect(mark?.previousElementSibling?.getAttribute('data-testid')).toBe('row-name');
   });
-
 });
 
 describe('hv-list-row: the day turning over', () => {

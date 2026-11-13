@@ -54,8 +54,7 @@ export class ItemWorkspace implements ReactiveController {
   /** Item shown in the read sheet, which is the phone's read surface. */
   detailItemId: string | null = null;
   /** Item whose check-out / due-date step is open, with where to anchor it. */
-  checkout: { itemId: string; mode: 'check-out' | 'set-due-date'; anchor: DOMRect | null } | null =
-    null;
+  checkout: { itemId: string; mode: 'check-out' | 'set-due-date'; anchor: DOMRect | null } | null = null;
 
   private readonly host: ReactiveControllerHost & EventTarget;
   private readonly getStore: () => Store | undefined;
@@ -65,7 +64,11 @@ export class ItemWorkspace implements ReactiveController {
   private mediaFor?: Store;
   private mediaBindings: MediaBindings | null = null;
 
-  constructor(host: ReactiveControllerHost & EventTarget, getStore: () => Store | undefined, hooks: WorkspaceHooks) {
+  constructor(
+    host: ReactiveControllerHost & EventTarget,
+    getStore: () => Store | undefined,
+    hooks: WorkspaceHooks,
+  ) {
     this.host = host;
     this.getStore = getStore;
     this.hooks = hooks;

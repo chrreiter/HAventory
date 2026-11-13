@@ -471,9 +471,11 @@ export const en = {
   // for Home Assistant's own screens, and
   // `tests/test_exception_translations_offline.py` holds the two together. The
   // segment after the prefix is the backend's key, so it stays snake_case.
-  'hv.serverError.not_loaded': 'HAventory is not loaded right now. Wait for it to finish starting, or enable the integration again.',
+  'hv.serverError.not_loaded':
+    'HAventory is not loaded right now. Wait for it to finish starting, or enable the integration again.',
   'hv.serverError.item_not_found': 'This item no longer exists. Someone may have deleted it.',
-  'hv.serverError.version_conflict': 'This item was changed in the meantime (expected version {expected}, now {actual}). Load it again and repeat the change.',
+  'hv.serverError.version_conflict':
+    'This item was changed in the meantime (expected version {expected}, now {actual}). Load it again and repeat the change.',
   'hv.serverError.location_not_found': 'This location no longer exists. Someone may have deleted it.',
   'hv.serverError.parent_not_found': 'The parent location no longer exists.',
   'hv.serverError.location_under_itself': 'A location cannot be moved under itself.',
@@ -503,7 +505,8 @@ export const en = {
   'hv.serverError.status_label_too_long': 'A status label can be at most {max} characters long.',
   'hv.serverError.status_exists': 'A status “{slug}” already exists.',
   'hv.serverError.status_not_found': 'The status “{slug}” no longer exists.',
-  'hv.serverError.status_in_use': 'The status “{slug}” is still used by items ({count}). Choose a status to move them to first.',
+  'hv.serverError.status_in_use':
+    'The status “{slug}” is still used by items ({count}). Choose a status to move them to first.',
   'hv.serverError.status_order_stale': 'The list of statuses changed in the meantime. Reload and sort again.',
   'hv.serverError.reminder_missing': 'This item has no reminder.',
   'hv.serverError.reminder_without_interval': 'A one-time reminder has no next date. Clear it instead.',
@@ -647,8 +650,7 @@ export const en = {
   'hv.diagnostics.title': 'Diagnostics',
   'hv.diagnostics.refreshing': 'Refreshing…',
   'hv.diagnostics.notLive': 'Not live',
-  'hv.diagnostics.notLiveDetail':
-    ' — subscriptions are down, so the list only changes when you refresh.',
+  'hv.diagnostics.notLiveDetail': ' — subscriptions are down, so the list only changes when you refresh.',
   'hv.diagnostics.noIssues': 'No issues',
   'hv.diagnostics.noIssuesDetail': ' · live',
   'hv.diagnostics.sinceLastRefresh': 'Since last refresh',
@@ -680,8 +682,7 @@ export const en = {
   'hv.import.policy.mergeDescription':
     'Update items matched by id field by field, combining tags; add the rest',
   'hv.import.policy.replace': 'Replace',
-  'hv.import.policy.replaceDescription':
-    "Overwrite items matched by id with the file's version; add the rest",
+  'hv.import.policy.replaceDescription': "Overwrite items matched by id with the file's version; add the rest",
   'hv.import.policy.skip': 'Skip',
   'hv.import.policy.skipDescription':
     "Only add items whose id isn't in the inventory yet; leave matched items as they are",
@@ -726,7 +727,8 @@ export const en = {
   'hv.import.added': 'added {what}',
   'hv.import.updated': 'updated {what}',
   'hv.import.and': ' and ',
-  'hv.import.holdsNow': 'The inventory now holds {items} across {locations}. Every connected card has reloaded.',
+  'hv.import.holdsNow':
+    'The inventory now holds {items} across {locations}. Every connected card has reloaded.',
 
   // hv-organize-dialog.
   'hv.organize.title': 'Organize',
@@ -743,7 +745,8 @@ export const en = {
   'hv.organize.newValuePlaceholder': 'New {noun}…',
   'hv.organize.valueNeedsName': 'A {noun} needs a name.',
   'hv.organize.valueExists': '"{name}" already exists.',
-  'hv.organize.draftNote': 'A {noun} exists through the items using it — there is nothing to create on the server. This one is kept on the card and offered while editing items, until an item takes it.',
+  'hv.organize.draftNote':
+    'A {noun} exists through the items using it — there is nothing to create on the server. This one is kept on the card and offered while editing items, until an item takes it.',
   'hv.organize.draftBadge': 'new · not saved until an item uses it',
   'hv.organize.noValuesMatch': 'No {values} match',
   'hv.organize.noValuesYet': 'No {values} in use yet',

@@ -32,27 +32,18 @@ export function rewriteOps(
       const kept = item.tags.filter((t) => t.toLowerCase() !== source);
       const next = normalizeTags(target ? [...kept, target] : kept);
       if (next.join(' ') === normalizeTags(item.tags).join(' ')) continue;
-      ops.push(
-        makeBulkOp('item_update', { item_id: item.id, tags: next, expected_version: item.version }),
-      );
+      ops.push(makeBulkOp('item_update', { item_id: item.id, tags: next, expected_version: item.version }));
     } else {
       const next = to?.trim() || null;
       if ((item.category ?? null) === next) continue;
-      ops.push(
-        makeBulkOp('item_update', { item_id: item.id, category: next, expected_version: item.version }),
-      );
+      ops.push(makeBulkOp('item_update', { item_id: item.id, category: next, expected_version: item.version }));
     }
   }
   return ops;
 }
 
 /** Human summary of what a rewrite is about to do. */
-export function describeRewrite(
-  kind: ValueKind,
-  count: number,
-  from: string,
-  to: string | null,
-): string {
+export function describeRewrite(kind: ValueKind, count: number, from: string, to: string | null): string {
   if (to === null) {
     return kind === 'tag'
       ? tn('hv.rewrite.tag.remove', count, { from })

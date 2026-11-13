@@ -184,7 +184,9 @@ describe('hv-bottom-sheet: drag to dismiss', () => {
   it('reports Escape raised from inside the sheet', async () => {
     const el = await mount();
     let cancels = 0;
-    el.addEventListener('cancel', () => { cancels += 1; });
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
 
     (el.shadowRoot?.querySelector('[data-testid="bottom-sheet"]') as HTMLElement).dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),

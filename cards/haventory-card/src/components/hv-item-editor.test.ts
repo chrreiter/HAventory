@@ -103,8 +103,12 @@ async function removeAttachment(el: HVItemEditor, testid: string, answer: 'confi
 }
 
 function onSave(el: HVItemEditor) {
-  const saves: { itemId: string | null; expectedVersion?: number; changes?: ItemUpdate; create?: ItemCreate }[] =
-    [];
+  const saves: {
+    itemId: string | null;
+    expectedVersion?: number;
+    changes?: ItemUpdate;
+    create?: ItemCreate;
+  }[] = [];
   el.addEventListener('save', (e) => saves.push((e as CustomEvent).detail));
   return saves;
 }
@@ -304,9 +308,11 @@ describe('hv-item-editor: field parity', () => {
       '30',
       '90',
     ]);
-    expect(all(el, '[data-testid="editor-inspection-offset"]').map((b) => b.textContent?.trim())).toEqual(
-      ['+7 days', '+30 days', '+90 days'],
-    );
+    expect(all(el, '[data-testid="editor-inspection-offset"]').map((b) => b.textContent?.trim())).toEqual([
+      '+7 days',
+      '+30 days',
+      '+90 days',
+    ]);
 
     const dateInput = () => q(el, '[data-testid="editor-inspection-date"]') as HTMLInputElement;
     (all(el, '[data-testid="editor-inspection-offset"]')[1] as HTMLButtonElement).click();
@@ -324,17 +330,15 @@ describe('hv-item-editor: field parity', () => {
     const dateInput = () => q(el, '[data-testid="editor-inspection-date"]') as HTMLInputElement;
     expect(dateInput().value).toBe(addDays(14));
 
-    const input = q(el, '[data-testid="editor-inspection-custom"]')?.querySelector(
-      'input',
-    ) as HTMLInputElement;
+    const input = q(el, '[data-testid="editor-inspection-custom"]')?.querySelector('input') as HTMLInputElement;
     input.value = '180';
     input.dispatchEvent(new Event('input'));
     await el.updateComplete;
     expect(dateInput().value).toBe(addDays(180));
     // No preset can claim the date while the custom field owns it.
-    expect(
-      all(el, '[data-testid="editor-inspection-offset"]').some((b) => b.classList.contains('on')),
-    ).toBe(false);
+    expect(all(el, '[data-testid="editor-inspection-offset"]').some((b) => b.classList.contains('on'))).toBe(
+      false,
+    );
 
     // An emptied box means no date yet rather than the last one it wrote.
     input.value = '';
@@ -401,9 +405,7 @@ describe('hv-item-editor: field parity', () => {
 
     expect((q(el, '[data-testid="editor-inspection-date"]') as HTMLInputElement).value).toBe('');
     expect(q(el, '[data-testid="editor-inspection-custom"]')).toBe(null);
-    expect(
-      q(el, '[data-testid="editor-inspection-offset-custom"]')?.classList.contains('on'),
-    ).toBe(false);
+    expect(q(el, '[data-testid="editor-inspection-offset-custom"]')?.classList.contains('on')).toBe(false);
   });
 
   // The button disables itself on the empty field it has just made, and a
@@ -623,8 +625,7 @@ describe('hv-item-editor: saving', () => {
     const narrow = await mount(makeItem({ id: '1', name: 'A' }), { mobile: true });
     const wide = await mount(makeItem({ id: '1', name: 'A' }));
 
-    const label = (el: Element) =>
-      q(el, '[data-testid="editor-delete"]')?.textContent?.trim();
+    const label = (el: Element) => q(el, '[data-testid="editor-delete"]')?.textContent?.trim();
     expect(label(narrow)).toBe(t('hv.action.delete'));
     expect(label(wide)).toBe(t('hv.action.deleteItem'));
     expect(label(narrow)).not.toBe(label(wide));
@@ -1126,12 +1127,7 @@ describe('hv-item-editor: mobile layout', () => {
       ].join(','),
     ).map((node) => node.dataset.testid);
 
-    expect(order).toEqual([
-      'editor-name',
-      'editor-description',
-      'editor-inspection-date',
-      'editor-cf-add',
-    ]);
+    expect(order).toEqual(['editor-name', 'editor-description', 'editor-inspection-date', 'editor-cf-add']);
   });
 
   // The field is rendered at a different point in the grid on each width, from
@@ -1184,8 +1180,9 @@ describe('hv-item-editor: opening', () => {
     el.addEventListener('cancel', () => {
       cancelled = true;
     });
-    el.shadowRoot
-      ?.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }));
+    el.shadowRoot?.activeElement!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+    );
     expect(cancelled).toBe(true);
   });
 
@@ -1265,10 +1262,6 @@ describe('hv-item-editor: Escape takes back one thing at a time', () => {
     await el.updateComplete;
     expect(cancels.count).toBe(1);
   });
-
-
-
-
 });
 
 // Escape asked and the two buttons beside it did not, so the same decision had
@@ -1663,10 +1656,7 @@ describe('hv-item-editor: pictures', () => {
     const media = makeMediaBindings({
       remove: async (itemId) => makeItem({ id: itemId, version: 9, attachments: [] }),
     });
-    const el = await mount(
-      makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }),
-      { media },
-    );
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }), { media });
     await el.updateComplete;
     // A press moves focus to the control pressed; jsdom's click does not.
     (q(el, '[data-testid="editor-photo-remove"]') as HTMLButtonElement).focus();
@@ -1731,9 +1721,10 @@ describe('hv-item-editor: pictures', () => {
     expect(library.getAttribute('accept')).toBe(CONFIG.picture_mime_types.join(','));
 
     // The camera comes first, and each tile says which of the two it is.
-    expect(
-      all(el, '[data-testid="editor-photos"] .picker').map((tile) => tile.dataset.testid),
-    ).toEqual(['editor-photo-camera', 'editor-photo-picker']);
+    expect(all(el, '[data-testid="editor-photos"] .picker').map((tile) => tile.dataset.testid)).toEqual([
+      'editor-photo-camera',
+      'editor-photo-picker',
+    ]);
     expect(q(el, '[data-testid="editor-photo-camera"]')?.textContent).toContain('Take photo');
     expect(q(el, '[data-testid="editor-photo-picker"]')?.textContent).toContain('Add photo');
   });
@@ -1767,10 +1758,9 @@ describe('hv-item-editor: pictures', () => {
   });
 
   it('shows a placeholder rather than a broken image when signing fails', async () => {
-    const el = await mount(
-      makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }),
-      { media: makeMediaBindings({ signFails: true }) },
-    );
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }), {
+      media: makeMediaBindings({ signFails: true }),
+    });
     for (let i = 0; i < 3; i += 1) await el.updateComplete;
 
     expect(q(el, '[data-testid="editor-photo-placeholder"]')).toBeTruthy();
@@ -1843,10 +1833,10 @@ describe('hv-item-editor: documents', () => {
 
   it('refuses a document past its own per-item cap, not the photo one', async () => {
     const media = makeMediaBindings();
-    const el = await mount(
-      makeItem({ id: 'i-1', attachments: [makeManual({ id: 'm-1' })] }),
-      { media, mediaConfig: CONFIG },
-    );
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeManual({ id: 'm-1' })] }), {
+      media,
+      mediaConfig: CONFIG,
+    });
 
     pick(el, [pdf()]);
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1865,9 +1855,7 @@ describe('hv-item-editor: documents', () => {
     await el.updateComplete;
 
     expect(media.uploads).toHaveLength(0);
-    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain(
-      'not an accepted document type',
-    );
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('not an accepted document type');
   });
 
   it('sends a document cap the config never mentioned to the backend to judge', async () => {
@@ -1895,10 +1883,9 @@ describe('hv-item-editor: documents', () => {
           attachments: [makeManual({ id: 'm-1', title: 'Dishwasher manual' })],
         }),
     });
-    const el = await mount(
-      makeItem({ id: 'i-1', version: 5, attachments: [makeManual({ id: 'm-1' })] }),
-      { media },
-    );
+    const el = await mount(makeItem({ id: 'i-1', version: 5, attachments: [makeManual({ id: 'm-1' })] }), {
+      media,
+    });
     await el.updateComplete;
 
     const field = q(el, '[data-testid="editor-document-title"]') as HTMLInputElement;
@@ -1907,9 +1894,7 @@ describe('hv-item-editor: documents', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     await el.updateComplete;
 
-    expect(media.retitles).toEqual([
-      { itemId: 'i-1', attachmentId: 'm-1', title: 'Dishwasher manual' },
-    ]);
+    expect(media.retitles).toEqual([{ itemId: 'i-1', attachmentId: 'm-1', title: 'Dishwasher manual' }]);
     // The retitle bumped the version, so the next save must carry the new one.
     const saves: CustomEvent[] = [];
     el.addEventListener('save', (e) => saves.push(e as CustomEvent));
@@ -1933,10 +1918,9 @@ describe('hv-item-editor: documents', () => {
     const media = makeMediaBindings({
       remove: async (itemId) => makeItem({ id: itemId, version: 9, attachments: [] }),
     });
-    const el = await mount(
-      makeItem({ id: 'i-1', version: 4, attachments: [makeManual({ id: 'm-1' })] }),
-      { media },
-    );
+    const el = await mount(makeItem({ id: 'i-1', version: 4, attachments: [makeManual({ id: 'm-1' })] }), {
+      media,
+    });
     await el.updateComplete;
 
     await removeAttachment(el, 'editor-document-remove', 'confirm');
@@ -2005,8 +1989,8 @@ describe('hv-item-editor: opening a document', () => {
 
     const open = q(el, '[data-testid="editor-document-open"]') as HTMLAnchorElement;
     expect(open.getAttribute('href')).toBe(
-      `/api/haventory/media/i-1/m-1?${MEDIA_NAME_TOKEN_PARAM}=`
-        + `${attachmentNameToken(makeManual({ id: 'm-1', title: 'Warranty' }))}&authSig=test`,
+      `/api/haventory/media/i-1/m-1?${MEDIA_NAME_TOKEN_PARAM}=` +
+        `${attachmentNameToken(makeManual({ id: 'm-1', title: 'Warranty' }))}&authSig=test`,
     );
     expect(open.getAttribute('target')).toBe('_blank');
     expect(open.getAttribute('aria-label')).toBe('Open Warranty');
@@ -2014,10 +1998,9 @@ describe('hv-item-editor: opening a document', () => {
 
   it('replaces the link with the missing state when the file is gone', async () => {
     serve(404);
-    const el = await mount(
-      makeItem({ id: 'i-1', attachments: [makeManual({ id: 'm-1' })] }),
-      { media: makeMediaBindings() },
-    );
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeManual({ id: 'm-1' })] }), {
+      media: makeMediaBindings(),
+    });
     for (let i = 0; i < 4; i += 1) await el.updateComplete;
 
     expect(q(el, '[data-testid="editor-document-missing"]')).toBeTruthy();
@@ -2072,10 +2055,9 @@ describe('hv-item-editor: a picture whose file is gone', () => {
         throw new Error('offline');
       }),
     );
-    const el = await mount(
-      makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'p-1' })] }),
-      { media: makeMediaBindings() },
-    );
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'p-1' })] }), {
+      media: makeMediaBindings(),
+    });
     for (let i = 0; i < 4; i += 1) await el.updateComplete;
 
     expect(q(el, '[data-testid="editor-photo-missing"]')).toBeNull();
@@ -2119,9 +2101,7 @@ describe('hv-item-editor: photo order and the cover', () => {
     all(el, '[data-testid="editor-photo-make-cover"]')[1].click();
     await drain();
 
-    expect(media.reorders).toEqual([
-      { itemId: 'i-1', kind: 'picture', attachmentIds: ['c', 'a', 'b'] },
-    ]);
+    expect(media.reorders).toEqual([{ itemId: 'i-1', kind: 'picture', attachmentIds: ['c', 'a', 'b'] }]);
   });
 
   it('moves one photo a single place and names the whole order', async () => {
@@ -2469,10 +2449,7 @@ describe('hv-item-editor: upload errors outlive their siblings', () => {
         throw new Error('gone already');
       },
     });
-    const el = await mount(
-      makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }),
-      { media },
-    );
+    const el = await mount(makeItem({ id: 'i-1', attachments: [makeAttachment({ id: 'att-1' })] }), { media });
     await el.updateComplete;
 
     await removeAttachment(el, 'editor-photo-remove', 'confirm');
@@ -2555,11 +2532,9 @@ describe('hv-item-editor: the upload queue reports where the work is', () => {
     expect((q(el, '[data-testid="editor-upload"]') as HTMLElement).dataset.state).toBe('error');
     expect(q(el, '[data-testid="editor-upload-progress"]')).toBe(null);
   });
-
 });
 
 describe('hv-item-editor: touch targets and the shared tally', () => {
-
   // The count beside a facet is declared once, in the shared sheet.
   it('prices its custom fields with the shared tally', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
@@ -2748,7 +2723,6 @@ describe('hv-item-editor: dropping files onto the editor', () => {
 });
 
 describe('hv-item-editor: geometry and type', () => {
-
   // Both boxes are caption + body and nothing else, so the hint belongs to the
   // field it explains rather than hanging under the box.
   it('puts the due-date hint inside the field it is about', async () => {
@@ -2780,7 +2754,6 @@ describe('hv-item-editor: one label recipe, one note size', () => {
     const note = el.shadowRoot?.querySelector('.label-note');
     expect(note?.textContent).toContain('always lowercase');
   });
-
 });
 
 // "0 of 2 keys in use" reads as a quota. There is none: the denominator was the
@@ -2892,10 +2865,8 @@ describe('hv-item-editor: photos open full-size', () => {
 });
 
 describe('hv-item-editor: reminders', () => {
-  const count = (el: HVItemEditor) =>
-    q(el, '[data-testid="editor-reminder-count"]') as HTMLInputElement;
-  const unit = (el: HVItemEditor) =>
-    q(el, '[data-testid="editor-reminder-unit"]') as HTMLSelectElement;
+  const count = (el: HVItemEditor) => q(el, '[data-testid="editor-reminder-count"]') as HTMLInputElement;
+  const unit = (el: HVItemEditor) => q(el, '[data-testid="editor-reminder-unit"]') as HTMLSelectElement;
 
   it('prefills a stored recurring reminder', async () => {
     const el = await mount(
@@ -2906,9 +2877,7 @@ describe('hv-item-editor: reminders', () => {
       }),
     );
 
-    expect((q(el, '[data-testid="editor-reminder-date"]') as HTMLInputElement).value).toBe(
-      '2026-09-01',
-    );
+    expect((q(el, '[data-testid="editor-reminder-date"]') as HTMLInputElement).value).toBe('2026-09-01');
     expect(count(el).value).toBe('3');
     expect(unit(el).value).toBe('months');
   });
@@ -2969,7 +2938,6 @@ describe('hv-item-editor: reminders', () => {
     // Not just left as it was: the backend refuses an interval with no anchor.
     expect(saves[0].changes?.reminder_interval).toBe(null);
   });
-
 });
 
 describe('hv-item-editor: the id an automation names', () => {
@@ -3078,9 +3046,7 @@ describe('hv-item-editor: the day turning over', () => {
   // A form left open overnight is the ordinary case on a phone, and its header
   // chip is read off the clock at render.
   it('calls a check-out overdue once its due date has passed', async () => {
-    const el = await mountAndTrack(
-      makeItem({ id: '1', checked_out: true, due_date: '2026-08-22' }),
-    );
+    const el = await mountAndTrack(makeItem({ id: '1', checked_out: true, due_date: '2026-08-22' }));
     expect(q(el, '[data-testid="editor-out-chip"]')?.textContent).toContain('Checked out');
 
     vi.advanceTimersByTime(3_000);
@@ -3090,9 +3056,7 @@ describe('hv-item-editor: the day turning over', () => {
   });
 
   it('leaves a disconnected editor out of it', async () => {
-    const el = await mountAndTrack(
-      makeItem({ id: '1', checked_out: true, due_date: '2026-08-22' }),
-    );
+    const el = await mountAndTrack(makeItem({ id: '1', checked_out: true, due_date: '2026-08-22' }));
     el.remove();
 
     vi.advanceTimersByTime(3_000);

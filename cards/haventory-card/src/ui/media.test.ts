@@ -32,7 +32,12 @@ function attachment(overrides: Partial<Attachment> = {}): Attachment {
 
 /** A host that records how many times the component was asked to re-render. */
 function host() {
-  return { renders: 0, requestUpdate() { this.renders += 1; } };
+  return {
+    renders: 0,
+    requestUpdate() {
+      this.renders += 1;
+    },
+  };
 }
 
 /** Lets a test resolve or reject each signing call in its own time. */
@@ -85,8 +90,7 @@ describe('mediaPath', () => {
       `/api/haventory/media/item-1/att-1?${MEDIA_SIZE_PARAM}=thumb`,
     );
     expect(mediaPath('item-1', 'att-1', 'abc123', MEDIA_VARIANT_THUMB)).toBe(
-      `/api/haventory/media/item-1/att-1?${MEDIA_NAME_TOKEN_PARAM}=abc123`
-        + `&${MEDIA_SIZE_PARAM}=thumb`,
+      `/api/haventory/media/item-1/att-1?${MEDIA_NAME_TOKEN_PARAM}=abc123` + `&${MEDIA_SIZE_PARAM}=thumb`,
     );
   });
 });
@@ -115,9 +119,7 @@ describe('attachmentNameToken', () => {
   });
 
   it('survives a name outside US-ASCII', () => {
-    expect(attachmentNameToken(attachment({ title: 'Spülmaschine - Anleitung' }))).toMatch(
-      /^[0-9a-z]+$/,
-    );
+    expect(attachmentNameToken(attachment({ title: 'Spülmaschine - Anleitung' }))).toMatch(/^[0-9a-z]+$/);
   });
 });
 
@@ -182,9 +184,7 @@ describe('manuals', () => {
 
 describe('attachmentTitle', () => {
   it('prefers what the user called it', () => {
-    expect(attachmentTitle(manual({ title: 'Dishwasher manual (EN)' }))).toBe(
-      'Dishwasher manual (EN)',
-    );
+    expect(attachmentTitle(manual({ title: 'Dishwasher manual (EN)' }))).toBe('Dishwasher manual (EN)');
   });
 
   it('falls back to the filename when there is no title', () => {
@@ -244,9 +244,7 @@ describe('MediaUrls: the row-tile variant', () => {
     signer.resolve(`/api/haventory/media/item-1/att-1?${MEDIA_SIZE_PARAM}=thumb&authSig=abc`);
     await Promise.resolve();
 
-    expect(urls.get('item-1', 'att-1', undefined, MEDIA_VARIANT_THUMB)).toContain(
-      `${MEDIA_SIZE_PARAM}=thumb`,
-    );
+    expect(urls.get('item-1', 'att-1', undefined, MEDIA_VARIANT_THUMB)).toContain(`${MEDIA_SIZE_PARAM}=thumb`);
     expect(urls.get('item-1', 'att-1')).toBeNull();
   });
 });
@@ -280,9 +278,7 @@ describe('MediaUrls', () => {
     urls.get('item-1', 'att-1', 'old');
     signer.resolve('/api/haventory/media/item-1/att-1?v=old&authSig=abc');
     await Promise.resolve();
-    expect(urls.get('item-1', 'att-1', 'old')).toBe(
-      '/api/haventory/media/item-1/att-1?v=old&authSig=abc',
-    );
+    expect(urls.get('item-1', 'att-1', 'old')).toBe('/api/haventory/media/item-1/att-1?v=old&authSig=abc');
     expect(signer.sign).toHaveBeenCalledTimes(1);
 
     // The retitle: the held URL was signed for a name that is no longer the one
@@ -342,10 +338,7 @@ describe('MediaUrls', () => {
 
     urls.get('item-1', 'att-1');
 
-    expect(signer.sign).toHaveBeenCalledWith(
-      '/api/haventory/media/item-1/att-1',
-      SIGNED_URL_TTL_SECONDS,
-    );
+    expect(signer.sign).toHaveBeenCalledWith('/api/haventory/media/item-1/att-1', SIGNED_URL_TTL_SECONDS);
   });
 
   it('re-signs a URL that is about to expire', async () => {

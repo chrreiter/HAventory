@@ -43,7 +43,8 @@ export function luminanceOf(cssColor: string): number | null {
     const m = RGB.exec(value);
     if (!m) return null;
     const alphaRaw = m[4];
-    const alpha = alphaRaw === undefined ? 1 : alphaRaw.endsWith('%') ? parseFloat(alphaRaw) / 100 : parseFloat(alphaRaw);
+    const alpha =
+      alphaRaw === undefined ? 1 : alphaRaw.endsWith('%') ? parseFloat(alphaRaw) / 100 : parseFloat(alphaRaw);
     if (!Number.isFinite(alpha) || alpha < MIN_OPAQUE_ALPHA) return null;
     r = Number(m[1]);
     g = Number(m[2]);
@@ -65,7 +66,9 @@ export function schemeForSurface(cssColor: string): 'light' | 'dark' | null {
  * The scheme implied by an element's resolved surface variables, or `null` when
  * none carries a usable colour, which leaves the OS preference deciding.
  */
-export function resolveColorScheme(style: Pick<CSSStyleDeclaration, 'getPropertyValue'>): 'light' | 'dark' | null {
+export function resolveColorScheme(
+  style: Pick<CSSStyleDeclaration, 'getPropertyValue'>,
+): 'light' | 'dark' | null {
   for (const name of SURFACE_VARS) {
     const scheme = schemeForSurface(style.getPropertyValue(name));
     if (scheme) return scheme;

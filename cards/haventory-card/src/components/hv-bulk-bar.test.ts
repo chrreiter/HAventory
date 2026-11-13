@@ -217,7 +217,9 @@ describe('hv-bulk-bar: per-operation result', () => {
     expect(q(el, '[data-testid="bulk-result-title"]')?.textContent).toContain('finished with errors');
     expect(q(el, '[data-testid="bulk-result-summary"]')?.textContent).toContain('39 of 41 succeeded');
 
-    const failures = all(el, '[data-testid="bulk-failure"]').map((f) => f.textContent?.replace(/\s+/g, ' ').trim());
+    const failures = all(el, '[data-testid="bulk-failure"]').map((f) =>
+      f.textContent?.replace(/\s+/g, ' ').trim(),
+    );
     expect(failures[0]).toContain('Multimeter');
     expect(failures[0]).toContain('Conflict');
     expect(failures[1]).toContain('Hex Key Set');
@@ -264,7 +266,9 @@ describe('hv-bulk-bar: per-operation result', () => {
   });
 
   it('falls back to the item id when the row is no longer loaded', async () => {
-    const el = await mount({ result: { label: 'Move', succeeded: 0, failed: [failure('ghost', 'not_found')] } });
+    const el = await mount({
+      result: { label: 'Move', succeeded: 0, failed: [failure('ghost', 'not_found')] },
+    });
     expect(q(el, '[data-testid="bulk-failure"]')?.textContent).toContain('ghost');
   });
 });
@@ -302,7 +306,6 @@ describe('describeFailure', () => {
 // and the card's own button recipes, so the bar moves with the HA theme like
 // every other surface.
 describe('hv-bulk-bar: the band belongs to the theme', () => {
-
   it('draws the running batch a real button', async () => {
     const el = await mount({ progress: { done: 1, total: 4, failed: 0, label: 'Moving' } });
     expect(q(el, '[data-testid="bulk-cancel"]')?.className).toContain('band-button');

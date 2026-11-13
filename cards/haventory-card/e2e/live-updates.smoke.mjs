@@ -94,11 +94,25 @@ async function wsCommand(page, command) {
       new Promise((resolve, reject) => {
         const ws = new WebSocket(wsUrl);
         const done = (/** @type {any} */ v) => {
-          try { ws.close(); } catch { /* ignore */ }
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
           resolve(v);
         };
-        const timer = setTimeout(() => { try { ws.close(); } catch { /* ignore */ } reject(new Error('ws timeout')); }, 15000);
-        ws.onerror = () => { clearTimeout(timer); reject(new Error('ws error')); };
+        const timer = setTimeout(() => {
+          try {
+            ws.close();
+          } catch {
+            /* ignore */
+          }
+          reject(new Error('ws timeout'));
+        }, 15000);
+        ws.onerror = () => {
+          clearTimeout(timer);
+          reject(new Error('ws error'));
+        };
         ws.onmessage = (ev) => {
           const msg = JSON.parse(ev.data);
           if (msg.type === 'auth_required') {
@@ -158,7 +172,9 @@ let page = null;
 
 try {
   page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-  page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
+  page.on('console', (m) => {
+    if (m.type() === 'error') consoleErrors.push(m.text());
+  });
   page.on('pageerror', (e) => pageErrors.push(String(e)));
 
   await page.addInitScript(
@@ -236,7 +252,9 @@ try {
   if (createdId && page) {
     try {
       await wsCommand(page, { type: 'haventory/item/delete', item_id: createdId });
-    } catch { /* container is disposable; ignore */ }
+    } catch {
+      /* container is disposable; ignore */
+    }
   }
   await browser.close();
 }
@@ -248,7 +266,8 @@ const cardConsoleErrors = consoleErrors.filter((t) => /haventory/i.test(t));
 const problems = [];
 if (failure) problems.push(`assertion: ${failure.message}`);
 if (pageErrors.length) problems.push(`uncaught page errors: ${pageErrors.slice(0, 5).join(' | ')}`);
-if (cardConsoleErrors.length) problems.push(`card console errors: ${cardConsoleErrors.slice(0, 5).join(' | ')}`);
+if (cardConsoleErrors.length)
+  problems.push(`card console errors: ${cardConsoleErrors.slice(0, 5).join(' | ')}`);
 
 if (problems.length) {
   console.error('\nFAIL: live-update smoke test');

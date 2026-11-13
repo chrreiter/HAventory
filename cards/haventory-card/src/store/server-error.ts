@@ -38,7 +38,8 @@ export function serverErrorText(err: unknown, fallback: string): string {
     const key = `hv.serverError.${raw}`;
     if (key in en) {
       const placeholders = e?.translation_placeholders;
-      const params = placeholders && typeof placeholders === 'object' ? (placeholders as TranslationParams) : {};
+      const params =
+        placeholders && typeof placeholders === 'object' ? (placeholders as TranslationParams) : {};
       return t(key as TranslationKey, params);
     }
   }

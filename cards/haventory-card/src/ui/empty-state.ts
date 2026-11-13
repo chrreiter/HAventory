@@ -22,11 +22,16 @@ export interface EmptyOffer {
  * in-flight fetch outranks the filters, which have matched nothing yet. A lone
  * location filter is "nothing filed here", with its own offers.
  */
-export function emptyKindFor(state: {
-  degraded: { connectionLost: boolean };
-  filters: StoreFilters;
-  loading: boolean;
-} | null | undefined): EmptyKind {
+export function emptyKindFor(
+  state:
+    | {
+        degraded: { connectionLost: boolean };
+        filters: StoreFilters;
+        loading: boolean;
+      }
+    | null
+    | undefined,
+): EmptyKind {
   if (state?.degraded.connectionLost) return 'connection-lost';
   if (state?.loading) return 'loading';
   const filters = state?.filters ?? defaultFilters();
@@ -87,8 +92,9 @@ export function renderEmptyState(
   return html`<div class="empty" role="status" data-testid="empty-state" data-kind=${kind}>
     <span class="headline">${copy.headline}</span>
     ${copy.detail ? html`<span>${copy.detail}</span>` : null}
-    ${copy.offers.length
-      ? html`<div class="offers">
+    ${
+      copy.offers.length
+        ? html`<div class="offers">
           ${copy.offers.map(
             (offer, i) => html`<button
               class=${i === 0 ? 'hv-pill' : 'hv-pill outline'}
@@ -100,6 +106,7 @@ export function renderEmptyState(
             </button>`,
           )}
         </div>`
-      : null}
+        : null
+    }
   </div>`;
 }

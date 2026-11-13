@@ -128,7 +128,11 @@ export class Modal implements ReactiveController {
 
   hostUpdated(): void {
     const open = this._opts.open();
-    this._focus.sync(open, () => this._panel, () => this._opts.onOpenerGone?.());
+    this._focus.sync(
+      open,
+      () => this._panel,
+      () => this._opts.onOpenerGone?.(),
+    );
     if (!open) {
       this._landed = false;
       return;

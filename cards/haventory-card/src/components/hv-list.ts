@@ -224,11 +224,13 @@ export class HVList extends LitElement {
           (it) =>
             this.editingItemId === it.id && this.editorTemplate
               ? // The expander's header names the item, so the row stands down.
-                html`${it.id === pinnedId
-                  ? html`<p class="pinned-hint" data-testid="pinned-editor-hint">
+                html`${
+                  it.id === pinnedId
+                    ? html`<p class="pinned-hint" data-testid="pinned-editor-hint">
                       ${t('hv.list.noLongerMatches')}
                     </p>`
-                  : nothing}${this.editorTemplate(it.id)}`
+                    : nothing
+                }${this.editorTemplate(it.id)}`
               : html`<hv-list-row
                   .statuses=${this.statuses}
                   .item=${it}

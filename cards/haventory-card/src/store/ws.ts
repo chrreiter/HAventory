@@ -169,12 +169,7 @@ export class WSClient {
    * Renumber one kind's attachments; the first id named takes position 0, the
    * cover for pictures. The backend refuses a list that misses one.
    */
-  reorderAttachments(
-    itemId: string,
-    kind: AttachmentKind,
-    attachmentIds: string[],
-    expectedVersion?: number,
-  ) {
+  reorderAttachments(itemId: string, kind: AttachmentKind, attachmentIds: string[], expectedVersion?: number) {
     const fields = { kind, attachment_ids: attachmentIds };
     return this.itemCommand('item/attachment/reorder', itemId, fields, expectedVersion);
   }

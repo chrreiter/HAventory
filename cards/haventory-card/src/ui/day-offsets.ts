@@ -97,8 +97,9 @@ export function renderDayOffsets(state: DayOffsetsState, opts: DayOffsetsOptions
         ${t('hv.editor.customDaysOffset')}
       </button>
     </div>
-    ${state.customOpen
-      ? html`<label class="day-box" data-testid=${`${prefix}-custom`}>
+    ${
+      state.customOpen
+        ? html`<label class="day-box" data-testid=${`${prefix}-custom`}>
           <input
             type="number"
             min="1"
@@ -113,6 +114,7 @@ export function renderDayOffsets(state: DayOffsetsState, opts: DayOffsetsOptions
           />
           <span>${t('hv.editor.daysFromToday')}</span>
         </label>`
-      : null}
+        : null
+    }
   `;
 }

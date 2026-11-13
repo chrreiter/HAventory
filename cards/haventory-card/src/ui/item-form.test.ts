@@ -145,9 +145,7 @@ describe('validateForm', () => {
       },
       {
         model: {
-          customFields: Array.from({ length: 51 }, (_, i) =>
-            newCustomFieldRow({ key: `k${i}`, value: 'v' }),
-          ),
+          customFields: Array.from({ length: 51 }, (_, i) => newCustomFieldRow({ key: `k${i}`, value: 'v' })),
         },
         field: 'customFields',
       },
@@ -207,16 +205,10 @@ describe('validateForm', () => {
 
     it('still refuses what the edit adds past the stored value', () => {
       const item = legacy();
-      const grown = validateForm(
-        { ...formFromItem(item), description: legacyDescription + 'x' },
-        item,
-      );
+      const grown = validateForm({ ...formFromItem(item), description: legacyDescription + 'x' }, item);
       expect(grown.map((e) => e.field)).toEqual(['description']);
 
-      const moreTags = validateForm(
-        { ...formFromItem(item), tags: [...legacyTags, 'one-more'] },
-        item,
-      );
+      const moreTags = validateForm({ ...formFromItem(item), tags: [...legacyTags, 'one-more'] }, item);
       expect(moreTags.map((e) => e.field)).toEqual(['tags']);
 
       const newLongTag = validateForm(
@@ -235,26 +227,19 @@ describe('validateForm', () => {
         row.key === 'note' ? { ...row, value: 'v'.repeat(1300) } : row,
       );
       expect(
-        validateForm({ ...model, customFields: grownValue }, item).some((e) =>
-          e.field.startsWith('custom:'),
-        ),
+        validateForm({ ...model, customFields: grownValue }, item).some((e) => e.field.startsWith('custom:')),
       ).toBe(true);
 
-      const newLongKey = [
-        ...model.customFields,
-        newCustomFieldRow({ key: 'n'.repeat(65), value: 'v' }),
-      ];
+      const newLongKey = [...model.customFields, newCustomFieldRow({ key: 'n'.repeat(65), value: 'v' })];
       expect(
-        validateForm({ ...model, customFields: newLongKey }, item).some((e) =>
-          e.field.startsWith('custom:'),
-        ),
+        validateForm({ ...model, customFields: newLongKey }, item).some((e) => e.field.startsWith('custom:')),
       ).toBe(true);
     });
 
     it('applies the caps absolutely on the add-item form', () => {
-      expect(
-        validateForm({ ...base(), name: 'A', description: 'd'.repeat(4001) }).map((e) => e.field),
-      ).toEqual(['description']);
+      expect(validateForm({ ...base(), name: 'A', description: 'd'.repeat(4001) }).map((e) => e.field)).toEqual(
+        ['description'],
+      );
     });
   });
 });
@@ -513,9 +498,7 @@ describe('reminders', () => {
     // The repeat is disabled without a date and dropped from the payload, so
     // refusing the save would trap the one edit that clears it.
     expect(validateForm({ ...base(), name: 'A', reminderCount: 3 })).toEqual([]);
-    expect(toCreatePayload({ ...base(), name: 'A', reminderCount: 3 }).reminder_interval).toBe(
-      null,
-    );
+    expect(toCreatePayload({ ...base(), name: 'A', reminderCount: 3 }).reminder_interval).toBe(null);
   });
 
   it.each([0, -1, 1001, 1.5])('refuses a repeat of %s', (count) => {
@@ -530,9 +513,7 @@ describe('reminders', () => {
 
   it('accepts a date with no repeat, and a date with a valid one', () => {
     expect(validateForm({ ...base(), name: 'A', reminderDate: '2026-09-01' })).toEqual([]);
-    expect(
-      validateForm({ ...base(), name: 'A', reminderDate: '2026-09-01', reminderCount: 3 }),
-    ).toEqual([]);
+    expect(validateForm({ ...base(), name: 'A', reminderDate: '2026-09-01', reminderCount: 3 })).toEqual([]);
   });
 
   it('counts a changed reminder as dirty', () => {

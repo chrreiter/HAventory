@@ -188,10 +188,7 @@ export class HostSurfaces {
         id: 'export-all',
         label: t('hv.surfaces.menu.exportAll'),
         glyph: 'download',
-        sub:
-          total === null
-            ? t('hv.surfaces.menu.exportAllSub')
-            : tn('hv.surfaces.menu.exportAllCount', total),
+        sub: total === null ? t('hv.surfaces.menu.exportAllSub') : tn('hv.surfaces.menu.exportAllCount', total),
       },
       // Unfiltered, the current view is the whole inventory offered above.
       ...(filtersOn

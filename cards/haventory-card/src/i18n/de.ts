@@ -42,8 +42,7 @@ export const de: CompleteDictionary = {
   'hv.empty.emptyLocation.addAction': 'Hier hinzufügen',
   'hv.empty.emptyLocation.clearAction': 'Alles anzeigen',
   'hv.empty.noItems.headline': 'Noch keine Gegenstände',
-  'hv.empty.noItems.detail':
-    'Füge deinen ersten Gegenstand hinzu oder stelle ein Backup wieder her.',
+  'hv.empty.noItems.detail': 'Füge deinen ersten Gegenstand hinzu oder stelle ein Backup wieder her.',
   'hv.empty.noItems.addAction': 'Ersten Gegenstand hinzufügen',
 
   'hv.banner.connectionLost.heading': 'Verbindung unterbrochen',
@@ -54,8 +53,7 @@ export const de: CompleteDictionary = {
   'hv.banner.liveUpdates.cause.unavailable': 'HAventory ist nicht verfügbar',
   'hv.banner.liveUpdates.retrying':
     ' · {cause}. Es wird automatisch erneut versucht; bis dahin kann diese Liste veraltet sein.',
-  'hv.banner.liveUpdates.stalled':
-    ' · {cause}. Diese Liste kann veraltet sein, bis du aktualisierst.',
+  'hv.banner.liveUpdates.stalled': ' · {cause}. Diese Liste kann veraltet sein, bis du aktualisierst.',
   'hv.banner.reloading.heading': 'Das Inventar wurde durch einen Import ersetzt',
   'hv.banner.reloading.message': ' · wird neu geladen …',
   'hv.banner.conflict.heading': 'Jemand anderes hat diesen Gegenstand geändert.',
@@ -134,12 +132,10 @@ export const de: CompleteDictionary = {
   'hv.form.error.descriptionTooLong': 'Die Beschreibung darf höchstens {max} Zeichen lang sein.',
   'hv.form.error.categoryTooLong': 'Die Kategorie darf höchstens {max} Zeichen lang sein.',
   'hv.form.error.quantityNegative': 'Die Menge darf nicht negativ sein.',
-  'hv.form.error.lowStockRange':
-    'Die Bestandsschwelle muss 0 oder größer sein – oder leer bleiben.',
+  'hv.form.error.lowStockRange': 'Die Bestandsschwelle muss 0 oder größer sein – oder leer bleiben.',
   'hv.form.error.tooManyTags': 'Ein Gegenstand kann höchstens {max} Labels tragen.',
   'hv.form.error.tagTooLong': 'Jedes Label darf höchstens {max} Zeichen lang sein.',
-  'hv.form.error.reminderRange':
-    'Wiederholung von 1 bis {max}, oder leer lassen für einen einmaligen Termin.',
+  'hv.form.error.reminderRange': 'Wiederholung von 1 bis {max}, oder leer lassen für einen einmaligen Termin.',
   'hv.form.error.customFieldDuplicate': '„{key}“ kommt zweimal vor.',
   'hv.form.error.customFieldKeyTooLong': 'Feldnamen dürfen höchstens {max} Zeichen lang sein.',
   'hv.form.error.customFieldNotNumber': '„{key}“ muss eine Zahl sein.',
@@ -228,8 +224,7 @@ export const de: CompleteDictionary = {
   'hv.sheet.openPhoto': '{photo} öffnen',
   'hv.sheet.updatedValue': '{when} · v{version}',
   'hv.sheet.markDone': 'Erledigen',
-  'hv.sheet.markDoneTitle':
-    'Diese Erinnerung als erledigt markieren und auf ihren nächsten Termin setzen',
+  'hv.sheet.markDoneTitle': 'Diese Erinnerung als erledigt markieren und auf ihren nächsten Termin setzen',
   'hv.sheet.editDetails': 'Bearbeiten',
 
   'hv.editor.heading.new': 'Neuer Gegenstand',
@@ -249,8 +244,7 @@ export const de: CompleteDictionary = {
   'hv.editor.reminderDate': 'Erinnerungsdatum',
   'hv.editor.repeatEvery': 'Wiederholen alle',
   'hv.editor.repeatUnit': 'Einheit der Wiederholung',
-  'hv.editor.reminderHint':
-    'Wähle zuerst ein Datum; lass die Wiederholung leer für einen einmaligen Termin.',
+  'hv.editor.reminderHint': 'Wähle zuerst ein Datum; lass die Wiederholung leer für einen einmaligen Termin.',
   'hv.editor.unit.days': 'Tage',
   'hv.editor.unit.weeks': 'Wochen',
   'hv.editor.unit.months': 'Monate',
@@ -288,8 +282,7 @@ export const de: CompleteDictionary = {
   'hv.editor.removeNamed': '{name} entfernen',
   'hv.editor.titleFor': 'Titel für {filename}',
   'hv.editor.attachmentsLater': 'Fotos und Dokumente',
-  'hv.editor.attachmentsHint':
-    'Speichere den Gegenstand zuerst, um Fotos und Anleitungen hinzuzufügen.',
+  'hv.editor.attachmentsHint': 'Speichere den Gegenstand zuerst, um Fotos und Anleitungen hinzuzufügen.',
   'hv.editor.upload.retryNamed': '{name} erneut versuchen',
   'hv.editor.upload.dismissNamed': 'Fehlermeldung zu {name} schließen',
   'hv.editor.upload.progress': '{name}: {state}',
@@ -307,18 +300,15 @@ export const de: CompleteDictionary = {
   'hv.editor.preflight.badDocumentType': '{type} ist kein zulässiger Dokumenttyp.',
   'hv.editor.preflight.badImageType': '{type} ist kein zulässiger Bildtyp.',
   'hv.editor.removePhoto.heading': 'Dieses Foto entfernen?',
-  'hv.editor.removePhoto.message':
-    'Die Fotodatei wird mit entfernt, und es gibt keinen Weg zurück.',
+  'hv.editor.removePhoto.message': 'Die Fotodatei wird mit entfernt, und es gibt keinen Weg zurück.',
   'hv.editor.removeDocument.heading': 'Dieses Dokument entfernen?',
-  'hv.editor.removeDocument.message':
-    'Die Dokumentdatei wird mit entfernt, und es gibt keinen Weg zurück.',
+  'hv.editor.removeDocument.message': 'Die Dokumentdatei wird mit entfernt, und es gibt keinen Weg zurück.',
   'hv.editor.keyHint': 'Esc schließt · {chord} speichert',
 
   'hv.checkout.setDueDate': 'Rückgabedatum setzen',
   'hv.checkout.setADueDate': 'Ein Rückgabedatum setzen',
   'hv.checkout.checkOutNamed': '{name} ausleihen',
-  'hv.checkout.sub':
-    'Ein Rückgabedatum ist optional – erst damit greift die Überfällig-Markierung.',
+  'hv.checkout.sub': 'Ein Rückgabedatum ist optional – erst damit greift die Überfällig-Markierung.',
   'hv.checkout.noDueDate': 'Kein Rückgabedatum',
   'hv.checkout.clearDueDate': 'Rückgabedatum entfernen',
   'hv.checkout.withoutDueDate': 'Ohne Rückgabedatum ausleihen',
@@ -403,8 +393,7 @@ export const de: CompleteDictionary = {
   'hv.status.missing': 'Fehlt',
   'hv.status.needs_repair': 'Reparatur nötig',
 
-  'hv.store.transportError':
-    'Home Assistant war nicht erreichbar – die letzte Aktion ist nicht durchgegangen.',
+  'hv.store.transportError': 'Home Assistant war nicht erreichbar – die letzte Aktion ist nicht durchgegangen.',
   'hv.store.unknownError': 'Unbekannter Fehler',
   'hv.store.operationFailed': 'Aktion fehlgeschlagen',
   'hv.store.batchFailed': 'Sammelaktion fehlgeschlagen',
@@ -412,16 +401,21 @@ export const de: CompleteDictionary = {
   'hv.store.cannotUpload': 'Über diese Home-Assistant-Verbindung lassen sich keine Dateien hochladen.',
   'hv.store.uploadFailed': 'Hochladen fehlgeschlagen ({status})',
 
-  'hv.serverError.not_loaded': 'HAventory ist gerade nicht geladen. Warte, bis es fertig gestartet ist, oder aktiviere die Integration erneut.',
+  'hv.serverError.not_loaded':
+    'HAventory ist gerade nicht geladen. Warte, bis es fertig gestartet ist, oder aktiviere die Integration erneut.',
   'hv.serverError.item_not_found': 'Diesen Gegenstand gibt es nicht mehr. Vielleicht hat ihn jemand gelöscht.',
-  'hv.serverError.version_conflict': 'Dieser Gegenstand wurde zwischenzeitlich geändert (erwartete Version {expected}, aktuell {actual}). Lade ihn neu und wiederhole die Änderung.',
+  'hv.serverError.version_conflict':
+    'Dieser Gegenstand wurde zwischenzeitlich geändert (erwartete Version {expected}, aktuell {actual}). Lade ihn neu und wiederhole die Änderung.',
   'hv.serverError.location_not_found': 'Diesen Ort gibt es nicht mehr. Vielleicht hat ihn jemand gelöscht.',
   'hv.serverError.parent_not_found': 'Den übergeordneten Ort gibt es nicht mehr.',
   'hv.serverError.location_under_itself': 'Ein Ort kann nicht unter sich selbst verschoben werden.',
-  'hv.serverError.location_under_descendant': 'Ein Ort kann nicht unter einen seiner eigenen Unterorte verschoben werden.',
+  'hv.serverError.location_under_descendant':
+    'Ein Ort kann nicht unter einen seiner eigenen Unterorte verschoben werden.',
   'hv.serverError.location_has_children': 'Dieser Ort hat noch Unterorte. Verschiebe oder lösche sie zuerst.',
-  'hv.serverError.location_has_items': 'An diesem Ort befinden sich noch Gegenstände. Verschiebe oder lösche sie zuerst.',
-  'hv.serverError.area_blank': 'Der Bereich darf nicht leer sein. Lass ihn weg oder setze ihn auf null, um ihn zu entfernen.',
+  'hv.serverError.location_has_items':
+    'An diesem Ort befinden sich noch Gegenstände. Verschiebe oder lösche sie zuerst.',
+  'hv.serverError.area_blank':
+    'Der Bereich darf nicht leer sein. Lass ihn weg oder setze ihn auf null, um ihn zu entfernen.',
   'hv.serverError.area_not_found': 'Home Assistant kennt keinen Bereich mit dieser ID.',
   'hv.serverError.item_id_required': 'Eine Gegenstands-ID ist erforderlich.',
   'hv.serverError.invalid_uuid': '{field} ist keine gültige ID.',
@@ -434,20 +428,27 @@ export const de: CompleteDictionary = {
   'hv.serverError.tags_too_many': 'Ein Gegenstand kann höchstens {max} Labels tragen.',
   'hv.serverError.custom_fields_too_many': 'Ein Gegenstand kann höchstens {max} eigene Felder tragen.',
   'hv.serverError.custom_field_key_blank': 'Ein eigenes Feld braucht einen Namen.',
-  'hv.serverError.custom_field_key_too_long': 'Der Name eines eigenen Feldes darf höchstens {max} Zeichen lang sein.',
-  'hv.serverError.custom_field_value_too_long': 'Der Wert eines eigenen Feldes darf höchstens {max} Zeichen lang sein.',
+  'hv.serverError.custom_field_key_too_long':
+    'Der Name eines eigenen Feldes darf höchstens {max} Zeichen lang sein.',
+  'hv.serverError.custom_field_value_too_long':
+    'Der Wert eines eigenen Feldes darf höchstens {max} Zeichen lang sein.',
   'hv.serverError.date_format': '{field} muss ein Datum im Format JJJJ-MM-TT sein.',
   'hv.serverError.date_invalid': '{field} ist kein gültiges Kalenderdatum.',
-  'hv.serverError.due_date_not_checked_out': 'Ein Rückgabedatum kann nur bei einem ausgeliehenen Gegenstand gesetzt werden.',
+  'hv.serverError.due_date_not_checked_out':
+    'Ein Rückgabedatum kann nur bei einem ausgeliehenen Gegenstand gesetzt werden.',
   'hv.serverError.status_unknown': 'Diesen Status gibt es nicht. Verfügbar: {statuses}.',
   'hv.serverError.status_label_required': 'Ein Status braucht eine Bezeichnung.',
-  'hv.serverError.status_label_too_long': 'Die Bezeichnung eines Status darf höchstens {max} Zeichen lang sein.',
+  'hv.serverError.status_label_too_long':
+    'Die Bezeichnung eines Status darf höchstens {max} Zeichen lang sein.',
   'hv.serverError.status_exists': 'Einen Status „{slug}“ gibt es schon.',
   'hv.serverError.status_not_found': 'Den Status „{slug}“ gibt es nicht mehr.',
-  'hv.serverError.status_in_use': 'Der Status „{slug}“ wird noch von Gegenständen verwendet (Anzahl: {count}). Wähle zuerst einen Status, auf den sie verschoben werden.',
-  'hv.serverError.status_order_stale': 'Die Liste der Status hat sich zwischenzeitlich geändert. Lade neu und sortiere erneut.',
+  'hv.serverError.status_in_use':
+    'Der Status „{slug}“ wird noch von Gegenständen verwendet (Anzahl: {count}). Wähle zuerst einen Status, auf den sie verschoben werden.',
+  'hv.serverError.status_order_stale':
+    'Die Liste der Status hat sich zwischenzeitlich geändert. Lade neu und sortiere erneut.',
   'hv.serverError.reminder_missing': 'Dieser Gegenstand hat keine Erinnerung.',
-  'hv.serverError.reminder_without_interval': 'Eine einmalige Erinnerung hat kein nächstes Datum. Entferne sie stattdessen.',
+  'hv.serverError.reminder_without_interval':
+    'Eine einmalige Erinnerung hat kein nächstes Datum. Entferne sie stattdessen.',
   'hv.serverError.reminder_unit_invalid': 'Die Einheit der Wiederholung muss eine der folgenden sein: {units}.',
   'hv.serverError.reminder_count_too_small': 'Die Wiederholung der Erinnerung muss mindestens 1 sein.',
   'hv.serverError.reminder_count_too_large': 'Die Wiederholung der Erinnerung darf höchstens {max} sein.',
@@ -455,11 +456,15 @@ export const de: CompleteDictionary = {
   'hv.serverError.attachment_too_large': 'Die Datei ist zu groß (Größe: {size} Byte, Grenze: {max} Byte).',
   'hv.serverError.attachment_empty': 'Die Datei ist leer.',
   'hv.serverError.attachment_type': 'Dieser Dateityp wird hier nicht akzeptiert. Akzeptiert: {types}.',
-  'hv.serverError.attachment_limit': 'Mehr Anhänge dieser Art sind bei diesem Gegenstand nicht möglich (Höchstzahl: {max}).',
-  'hv.serverError.attachment_not_found': 'Diesen Anhang gibt es nicht mehr. Vielleicht hat ihn jemand entfernt.',
-  'hv.serverError.attachment_order_stale': 'Die Anhänge haben sich zwischenzeitlich geändert. Lade neu und sortiere erneut.',
+  'hv.serverError.attachment_limit':
+    'Mehr Anhänge dieser Art sind bei diesem Gegenstand nicht möglich (Höchstzahl: {max}).',
+  'hv.serverError.attachment_not_found':
+    'Diesen Anhang gibt es nicht mehr. Vielleicht hat ihn jemand entfernt.',
+  'hv.serverError.attachment_order_stale':
+    'Die Anhänge haben sich zwischenzeitlich geändert. Lade neu und sortiere erneut.',
   'hv.serverError.upload_not_found': 'Die hochgeladene Datei ist nicht mehr da. Lade sie erneut hoch.',
-  'hv.serverError.import_document_invalid': 'Die Importdatei ist nicht gültig. Die Liste darunter nennt jedes Problem.',
+  'hv.serverError.import_document_invalid':
+    'Die Importdatei ist nicht gültig. Die Liste darunter nennt jedes Problem.',
 
   'hv.menu.label': 'Weitere Aktionen',
   'hv.columns.heading': 'Spalten',
@@ -535,12 +540,10 @@ export const de: CompleteDictionary = {
   'hv.bulk.succeeded': '{done} von {total} erfolgreich.',
   'hv.bulk.selectionKept': 'Auswahl auf {rows} eingegrenzt',
   'hv.bulk.retryFailed': '{count} fehlgeschlagene wiederholen',
-  'hv.bulk.failure.conflict':
-    'Konflikt – seit dem Laden von einem anderen Client geändert.',
+  'hv.bulk.failure.conflict': 'Konflikt – seit dem Laden von einem anderen Client geändert.',
   'hv.bulk.failure.notFound': 'Nicht gefunden – vor diesem Lauf gelöscht.',
   'hv.bulk.failure.rejected': 'Abgelehnt – {message}',
-  'hv.bulk.failure.storage':
-    'Nicht gespeichert – die Integration konnte nicht in den Speicher schreiben.',
+  'hv.bulk.failure.storage': 'Nicht gespeichert – die Integration konnte nicht in den Speicher schreiben.',
   'hv.bulk.failure.fallback': 'Fehlgeschlagen.',
   'hv.bulk.label.move': 'Verschieben',
   'hv.bulk.label.addTags': 'Labels setzen',
@@ -624,15 +627,13 @@ export const de: CompleteDictionary = {
   'hv.import.copyErrors': 'Fehler kopieren',
   'hv.import.backToInput': 'Zurück zur Eingabe',
   'hv.import.previewTitle': 'Backup importieren · Vorschau',
-  'hv.import.step2':
-    'Schritt 2 von 2 · auf dem Server geprüft, noch nichts geschrieben · Vorgehen',
+  'hv.import.step2': 'Schritt 2 von 2 · auf dem Server geprüft, noch nichts geschrieben · Vorgehen',
   'hv.import.tableItems': 'Gegenstände',
   'hv.import.bucket.add': 'Hinzufügen',
   'hv.import.bucket.update': 'Aktualisieren',
   'hv.import.bucket.conflict': 'Konflikt',
   'hv.import.bucket.unchanged': 'Unverändert',
-  'hv.import.conflicts.one':
-    '{conflicts} – die Datei und dieses Inventar haben diesen Eintrag beide geändert.',
+  'hv.import.conflicts.one': '{conflicts} – die Datei und dieses Inventar haben diesen Eintrag beide geändert.',
   'hv.import.conflicts.other':
     '{conflicts} – die Datei und dieses Inventar haben diese Einträge beide geändert.',
   'hv.import.conflictsMerge': 'Zusammenführen behält die Werte aus der Datei.',
@@ -655,8 +656,7 @@ export const de: CompleteDictionary = {
   'hv.import.buttonBare': 'Importieren',
   'hv.import.nothingToDo': 'Nichts in dieser Datei würde das Inventar ändern',
   'hv.import.completeTitle': 'Import abgeschlossen',
-  'hv.import.nothingChanged':
-    'Es war nichts zu ändern – das Inventar entsprach der Datei bereits.',
+  'hv.import.nothingChanged': 'Es war nichts zu ändern – das Inventar entsprach der Datei bereits.',
   'hv.import.added': '{what} hinzugefügt',
   'hv.import.updated': '{what} aktualisiert',
   'hv.import.and': ' und ',
@@ -709,8 +709,7 @@ export const de: CompleteDictionary = {
   'hv.organize.locationStillHolds':
     '„{name}“ enthält noch {contents}. Verschiebe oder lösche den Inhalt zuerst.',
   'hv.organize.locationReadFailed': 'Die Gegenstände dieses Ortes konnten nicht gelesen werden.',
-  'hv.organize.mergeKeptSource':
-    '„{name}“ wurde behalten – nicht verschoben: {items}.',
+  'hv.organize.mergeKeptSource': '„{name}“ wurde behalten – nicht verschoben: {items}.',
   'hv.organize.mergeMovedNotRemoved':
     'Die Gegenstände wurden verschoben, aber „{name}“ ließ sich nicht entfernen.',
   'hv.organize.locationArea': 'Bereich (HA)',
@@ -746,8 +745,7 @@ export const de: CompleteDictionary = {
   'hv.organize.customColourHint':
     '{hex} wird genau so verwendet, wie es eingegeben wurde – dieser Chip sieht also in jedem Home-Assistant-Theme gleich aus, anders als die zehn Farben daneben, die dem Theme folgen. Die Schrift darauf ist schwarz oder weiß, je nachdem, was besser lesbar ist.',
   'hv.organize.icon': 'Symbol',
-  'hv.organize.statusInUse':
-    '„{label}“ betrifft {items}. Wähle, wohin diese Gegenstände sollen.',
+  'hv.organize.statusInUse': '„{label}“ betrifft {items}. Wähle, wohin diese Gegenstände sollen.',
   'hv.organize.statusUnused':
     '„{label}“ löschen? Kein Gegenstand trägt diesen Status, es ändert sich also sonst nichts.',
   'hv.organize.moveThoseItemsTo': 'Diese Gegenstände umstellen auf',

@@ -65,18 +65,16 @@ describe('hv-data-table: area', () => {
       sort_key: '',
     });
     for (const path of ['Kitchen', 'Kitchen / Pantry']) {
-      const el = await mount(
-        [{ id: '1', effective_area_id: 'area-kitchen', location_path: rooted(path) }],
-        { columns: ['location'], areas: AREAS },
-      );
+      const el = await mount([{ id: '1', effective_area_id: 'area-kitchen', location_path: rooted(path) }], {
+        columns: ['location'],
+        areas: AREAS,
+      });
       const cell = q(el, '[data-testid="cell-location"]');
 
       expect(cell?.querySelector('[data-testid="area-chip"]'), path).toBe(null);
       expect(cell?.textContent?.replace(/\s+/g, ' ').trim(), path).toBe(path.replace(' / ', ' › '));
       // The pairing is still readable in full where the cell keeps it.
-      expect(cell?.getAttribute('title'), path).toBe(
-        `Area: Kitchen · ${path.replace(' / ', ' › ')}`,
-      );
+      expect(cell?.getAttribute('title'), path).toBe(`Area: Kitchen · ${path.replace(' / ', ' › ')}`);
       el.remove();
     }
   });
@@ -94,9 +92,9 @@ describe('hv-data-table: area', () => {
       ],
       { columns: ['location'], areas: AREAS },
     );
-    expect(
-      q(el, '[data-testid="cell-location"]')?.querySelector('.hv-area-chip')?.textContent,
-    ).toContain('Kitchen');
+    expect(q(el, '[data-testid="cell-location"]')?.querySelector('.hv-area-chip')?.textContent).toContain(
+      'Kitchen',
+    );
   });
 });
 
@@ -123,13 +121,7 @@ describe('hv-data-table: a path too long for its column', () => {
     const el = await mountPath(DEEP);
     const names = segments(el).map((s) => s.replace(' › ', ''));
 
-    expect(names).toEqual([
-      'Küche',
-      'Hochschrank',
-      'Oberstes Fach',
-      'Vorratsbox',
-      'Backzutaten',
-    ]);
+    expect(names).toEqual(['Küche', 'Hochschrank', 'Oberstes Fach', 'Vorratsbox', 'Backzutaten']);
   });
 
   // The separator rides inside the segment ahead of it, so a wrap can never
@@ -164,7 +156,6 @@ describe('hv-data-table: a path too long for its column', () => {
       'Area: Küche · Küche › Hochschrank › Oberstes Fach › Vorratsbox › Backzutaten',
     );
   });
-
 });
 
 describe('hv-data-table: narrow screens', () => {
@@ -228,9 +219,9 @@ describe('hv-data-table: narrow screens', () => {
     el.narrow = false;
     await el.updateComplete;
 
-    expect([...cellOf(el).querySelectorAll('.hv-path-seg')].map((s) => s.textContent?.replace(' › ', ''))).toEqual(
-      ['Küche', 'Hochschrank', 'Oberstes Fach', 'Vorratsbox', 'Backzutaten'],
-    );
+    expect(
+      [...cellOf(el).querySelectorAll('.hv-path-seg')].map((s) => s.textContent?.replace(' › ', '')),
+    ).toEqual(['Küche', 'Hochschrank', 'Oberstes Fach', 'Vorratsbox', 'Backzutaten']);
   });
 
   // jsdom lays nothing out, so the rule that clamps the cell is only assertable
@@ -382,9 +373,7 @@ describe('hv-data-table: the checked-out chip names an overdue loan', () => {
   // nobody has taken — the chip only exists for the first of those.
   it('leaves a dateless loan calm, and draws nothing for an item on the shelf', async () => {
     const dateless = await mount([{ id: '1', checked_out: true, due_date: null }]);
-    expect(q(dateless, '[data-testid="table-checked-out"]')?.textContent?.trim()).toBe(
-      'Checked out',
-    );
+    expect(q(dateless, '[data-testid="table-checked-out"]')?.textContent?.trim()).toBe('Checked out');
 
     const shelved = await mount([{ id: '1', checked_out: false, due_date: '2020-01-01' }]);
     expect(q(shelved, '[data-testid="table-checked-out"]')).toBe(null);
@@ -397,10 +386,9 @@ describe('hv-data-table: the checked-out chip names an overdue loan', () => {
       const el = await mount([{ id: '1', checked_out: true, due_date: '2020-01-01' }], {
         columns: [...columns],
       });
-      expect(
-        q(el, '[data-testid="table-checked-out"]')?.textContent?.trim(),
-        `columns=${columns.join()}`,
-      ).toBe('Overdue');
+      expect(q(el, '[data-testid="table-checked-out"]')?.textContent?.trim(), `columns=${columns.join()}`).toBe(
+        'Overdue',
+      );
     }
   });
 });
@@ -434,7 +422,6 @@ describe('hv-data-table: the name cell picks one chip', () => {
     expect(q(el, '[data-testid="table-status"]')?.textContent?.trim()).toBe('Missing');
     expect(q(el, '.name-cell')?.textContent).toContain('Checked out');
   });
-
 });
 
 describe('hv-data-table: row thumbnail', () => {
@@ -454,9 +441,9 @@ describe('hv-data-table: row thumbnail', () => {
     // download per row. The parameter is signed with the path, so it has to be
     // on the URL before signing rather than appended to a signed one.
     expect(img?.getAttribute('src')).toBe(
-      `/api/haventory/media/i-thumb/att-1?${MEDIA_NAME_TOKEN_PARAM}=`
-        + `${attachmentNameToken(makeAttachment({ id: 'att-1' }))}`
-        + `&${MEDIA_SIZE_PARAM}=thumb&authSig=test`,
+      `/api/haventory/media/i-thumb/att-1?${MEDIA_NAME_TOKEN_PARAM}=` +
+        `${attachmentNameToken(makeAttachment({ id: 'att-1' }))}` +
+        `&${MEDIA_SIZE_PARAM}=thumb&authSig=test`,
     );
     expect(img?.getAttribute('alt')).toBe('Photo of Cordless drill');
     // A tile is small but there is still one per row, so the browser is told
@@ -685,23 +672,17 @@ describe('hv-data-table: rows', () => {
     (q(el, '[data-testid="table-edit"]') as HTMLButtonElement).click();
     (q(el, '[data-testid="table-row"]') as HTMLElement).click();
 
-    expect(seen).toEqual([
-      'increment:item-1',
-      'decrement:item-1',
-      'edit:item-1',
-      'open-item:item-1',
-    ]);
+    expect(seen).toEqual(['increment:item-1', 'decrement:item-1', 'edit:item-1', 'open-item:item-1']);
   });
 
   it('disables the stepper for a checked-out row and at zero', async () => {
-    const el = await mount([{ id: '1', checked_out: true }, { id: '2', quantity: 0 }]);
+    const el = await mount([
+      { id: '1', checked_out: true },
+      { id: '2', quantity: 0 },
+    ]);
     const rows = all(el, '[data-testid="table-row"]');
-    expect(
-      (rows[0].querySelector('[data-testid="table-increment"]') as HTMLButtonElement).disabled,
-    ).toBe(true);
-    expect(
-      (rows[1].querySelector('[data-testid="table-decrement"]') as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect((rows[0].querySelector('[data-testid="table-increment"]') as HTMLButtonElement).disabled).toBe(true);
+    expect((rows[1].querySelector('[data-testid="table-decrement"]') as HTMLButtonElement).disabled).toBe(true);
   });
 
   // The host is the box that scrolls, so the host is where the position can be
@@ -764,12 +745,7 @@ describe('hv-data-table: keyboard', () => {
 
     for (const key of ['Enter', 'Delete', '+', '-']) press(row, key);
 
-    expect(seen).toEqual([
-      'open-item:item-1',
-      'request-delete:item-1',
-      'increment:item-1',
-      'decrement:item-1',
-    ]);
+    expect(seen).toEqual(['open-item:item-1', 'request-delete:item-1', 'increment:item-1', 'decrement:item-1']);
   });
 
   it('takes the numpad and shifted spellings of the same two keys', async () => {
@@ -882,12 +858,7 @@ describe('hv-data-table: status column', () => {
   it('chips every value and paints each from its own definition', async () => {
     const el = await mount(mixed, { columns: ['status'] });
     const cells = all(el, '[data-testid="cell-status"]');
-    expect(cells.map((c) => !!c.querySelector('.hv-status-chip'))).toEqual([
-      true,
-      true,
-      true,
-      true,
-    ]);
+    expect(cells.map((c) => !!c.querySelector('.hv-status-chip'))).toEqual([true, true, true, true]);
     expect(cells.map((c) => !!c.querySelector('.hv-status-chip.tone-amber'))).toEqual([
       true,
       true,
@@ -901,12 +872,7 @@ describe('hv-data-table: status column', () => {
       true,
     ]);
     // The semantic vocabulary stays for the marks that do carry a fixed meaning.
-    expect(cells.map((c) => !!c.querySelector('.hv-chip.warning'))).toEqual([
-      false,
-      false,
-      false,
-      false,
-    ]);
+    expect(cells.map((c) => !!c.querySelector('.hv-chip.warning'))).toEqual([false, false, false, false]);
   });
 
   it('stands the name-cell chip down, so no row says it twice', async () => {
@@ -1067,7 +1033,9 @@ describe('hv-data-table: row menu', () => {
     const el = await mount([{ id: '1' }]);
     expect(menu(el).closest('.actions')).toBeTruthy();
     expect(componentCss('hv-data-table')).toMatch(/\.actions \{[^}]*visibility: hidden/);
-    expect(componentCss('hv-data-table')).toMatch(/\.row:hover \.actions, \.row:focus-within \.actions \{ visibility: visible/);
+    expect(componentCss('hv-data-table')).toMatch(
+      /\.row:hover \.actions, \.row:focus-within \.actions \{ visibility: visible/,
+    );
   });
 
   // 26px outlined here against 30px borderless on the card's rows: two answers

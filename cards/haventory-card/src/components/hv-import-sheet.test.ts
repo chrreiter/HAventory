@@ -164,7 +164,10 @@ describe('hv-import-sheet: preview', () => {
   it('breaks the plan down by items and locations', async () => {
     const el = await mount({ preview: preview() });
     const counts = Object.fromEntries(
-      all(el, '[data-testid="import-count"]').map((c) => [c.dataset.key, c.textContent?.replace(/\s+/g, ' ').trim()]),
+      all(el, '[data-testid="import-count"]').map((c) => [
+        c.dataset.key,
+        c.textContent?.replace(/\s+/g, ' ').trim(),
+      ]),
     );
     expect(counts['items-add']).toContain('+128');
     expect(counts['items-update']).toContain('64');
@@ -185,8 +188,12 @@ describe('hv-import-sheet: preview', () => {
   });
 
   it('explains what the chosen policy does with conflicts', async () => {
-    const merge = await mount({ preview: preview({ items: { add: [], update: [], conflict: ['x'], unchanged: [] } }) });
-    expect(q(merge, '[data-testid="import-conflicts"]')?.textContent).toContain("Merge keeps the file's values");
+    const merge = await mount({
+      preview: preview({ items: { add: [], update: [], conflict: ['x'], unchanged: [] } }),
+    });
+    expect(q(merge, '[data-testid="import-conflicts"]')?.textContent).toContain(
+      "Merge keeps the file's values",
+    );
 
     const skip = await mount({
       preview: preview({ policy: 'skip', items: { add: [], update: [], conflict: ['x'], unchanged: [] } }),
@@ -271,8 +278,7 @@ describe('hv-import-sheet: preview', () => {
 
   it('counts a single missing attachment in the singular', async () => {
     const el = await mount({ preview: preview({ attachments: { referenced: 3, missing: 1 } }) });
-    const text =
-      q(el, '[data-testid="import-attachments-missing"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
+    const text = q(el, '[data-testid="import-attachments-missing"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
     expect(text).toContain('1 of 3 attachments names a file this install does not have');
     expect(text).toContain('that photo or manual');
   });
@@ -309,9 +315,7 @@ describe('hv-import-sheet: preview', () => {
 
   it('labels the import button with what will actually be written', async () => {
     const el = await mount({ preview: preview() });
-    expect(q(el, '[data-testid="import-execute"]')?.textContent).toContain(
-      'Import 192 items · 6 locations',
-    );
+    expect(q(el, '[data-testid="import-execute"]')?.textContent).toContain('Import 192 items · 6 locations');
   });
 
   it('names only the kind a document actually writes', async () => {
@@ -323,9 +327,7 @@ describe('hv-import-sheet: preview', () => {
         },
       }),
     });
-    expect(q(locationsOnly, '[data-testid="import-execute"]')?.textContent).toContain(
-      'Import 4 locations',
-    );
+    expect(q(locationsOnly, '[data-testid="import-execute"]')?.textContent).toContain('Import 4 locations');
     expect(q(locationsOnly, '[data-testid="import-execute"]')?.textContent).not.toContain('item');
 
     const itemsOnly = await mount({
@@ -517,7 +519,9 @@ describe('hv-import-sheet: keyboard and focus', () => {
   it('closes on Escape', async () => {
     const el = await mount();
     let cancels = 0;
-    el.addEventListener('cancel', () => { cancels += 1; });
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
 
     (q(el, '[data-testid="import-sheet"]') as HTMLElement).dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),

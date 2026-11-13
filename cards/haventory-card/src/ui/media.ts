@@ -71,9 +71,7 @@ export function mediaPath(
     encodeURIComponent(attachmentId),
   );
   const query = [
-    nameToken === undefined
-      ? null
-      : `${MEDIA_NAME_TOKEN_PARAM}=${encodeURIComponent(nameToken)}`,
+    nameToken === undefined ? null : `${MEDIA_NAME_TOKEN_PARAM}=${encodeURIComponent(nameToken)}`,
     variant === undefined ? null : `${MEDIA_SIZE_PARAM}=${encodeURIComponent(variant)}`,
   ].filter((part): part is string => part !== null);
   return query.length ? `${path}?${query.join('&')}` : path;
@@ -190,12 +188,7 @@ export class MediaUrls {
    * `nameToken` the held URL was not signed for re-signs it. Entries are keyed
    * by ids and variant, so what is known about the bytes survives a re-sign.
    */
-  get(
-    itemId: string,
-    attachmentId: string,
-    nameToken?: string,
-    variant?: MediaVariant,
-  ): string | null {
+  get(itemId: string, attachmentId: string, nameToken?: string, variant?: MediaVariant): string | null {
     const key = urlKey(itemId, attachmentId, variant);
     const entry = this.entries.get(key);
     // No token means no opinion about the name (the presence probe), not a mismatch.

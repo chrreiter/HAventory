@@ -73,8 +73,7 @@ export function registerBrandIcon(): void {
 
   registry[HAVENTORY_ICONSET] = {
     // Every name answers with the mark: HA does not handle a rejection here.
-    getIcon: () =>
-      Promise.resolve({ path: HAVENTORY_MARK_PATH, viewBox: HAVENTORY_MARK_VIEW_BOX }),
+    getIcon: () => Promise.resolve({ path: HAVENTORY_MARK_PATH, viewBox: HAVENTORY_MARK_VIEW_BOX }),
     getIconList: () => Promise.resolve([{ name: HAVENTORY_ICON_NAME }]),
   };
 }

@@ -83,11 +83,13 @@ export class HVConfirm extends LitElement {
       html`
         <h2>${this.heading}</h2>
         ${this.message ? html`<div class="message" data-testid="confirm-message">${this.message}</div>` : null}
-        ${this.warning
-          ? html`<div class="warning">
+        ${
+          this.warning
+            ? html`<div class="warning">
               <hv-banner kind="error" .message=${this.warning} data-testid="confirm-warning"></hv-banner>
             </div>`
-          : null}
+            : null
+        }
         <div class="actions">
           <button class="hv-text-button" data-testid="confirm-cancel" @click=${this._cancel}>
             ${t('hv.action.cancel')}

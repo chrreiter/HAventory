@@ -145,11 +145,14 @@ export function makeMockHass(initial?: MockConfig): MockHass {
       switch (type) {
         // ---- statuses ----
         case 'haventory/status/list': {
-          return [...statuses].sort((a, b) => a.order - b.order || a.slug.localeCompare(b.slug)) as unknown as T;
+          return [...statuses].sort(
+            (a, b) => a.order - b.order || a.slug.localeCompare(b.slug),
+          ) as unknown as T;
         }
         case 'haventory/status/create': {
           const slug = String(msg.slug);
-          if (statuses.some((d) => d.slug === slug)) throw { code: 'validation_error', message: 'status already exists' };
+          if (statuses.some((d) => d.slug === slug))
+            throw { code: 'validation_error', message: 'status already exists' };
           const created: StatusDefinition = {
             slug,
             label: String(msg.label),
@@ -182,7 +185,8 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         }
         case 'haventory/status/delete': {
           const slug = String(msg.slug);
-          if (slug === 'ok') throw { code: 'validation_error', message: 'the default status cannot be deleted' };
+          if (slug === 'ok')
+            throw { code: 'validation_error', message: 'the default status cannot be deleted' };
           const index = statuses.findIndex((d) => d.slug === slug);
           if (index < 0) throw { code: 'not_found', message: 'status not found' };
           const carrying = items.filter((i) => (i.status ?? 'ok') === slug);
@@ -197,7 +201,10 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         case 'haventory/stats': {
           const counts: StatsCounts = {
             items_total: items.length,
-            low_stock_count: items.filter((i) => typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number)).length,
+            low_stock_count: items.filter(
+              (i) =>
+                typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number),
+            ).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
             overdue_count: items.filter((i) => isMockOverdue(i)).length,
             checked_out_due_count: items.filter((i) => isMockCheckedOutDue(i)).length,
@@ -243,12 +250,23 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           const itemIds = (doc.items ?? []).map((i) => i.id);
           const locIds = (doc.locations ?? []).map((l) => l.id);
           const bucket = (ids: string[]) => ({ add: ids, update: [], conflict: [], unchanged: [] });
-          const counts = (ids: string[]) => ({ total: ids.length, add: ids.length, update: 0, conflict: 0, unchanged: 0 });
+          const counts = (ids: string[]) => ({
+            total: ids.length,
+            add: ids.length,
+            update: 0,
+            conflict: 0,
+            unchanged: 0,
+          });
           const report: ImportPreview = {
             valid: true,
             errors: [],
             policy: policy as ImportPreview['policy'],
-            document: { haventory_export_version: 1, schema_version: 4, exported_at: null, integration_version: null },
+            document: {
+              haventory_export_version: 1,
+              schema_version: 4,
+              exported_at: null,
+              integration_version: null,
+            },
             items: bucket(itemIds),
             locations: bucket(locIds),
             counts: { items: counts(itemIds), locations: counts(locIds) },
@@ -327,8 +345,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           const directCount = (id: string) => items.filter((i) => i.location_id === id).length;
           const treeFilter = (msg as any).filter as unknown;
           const matched = treeFilter ? applyMockFilter(items, treeFilter) : null;
-          const matchingDirect = (id: string) =>
-            (matched ?? []).filter((i) => i.location_id === id).length;
+          const matchingDirect = (id: string) => (matched ?? []).filter((i) => i.location_id === id).length;
           // Guard against a fixture that parents a location to itself: the real
           // backend rejects cycles, but a test can hand us one.
           const seen = new Set<string>();
@@ -493,7 +510,12 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           }
           const it = items.find((i) => i.id === itemId);
           if (!it) throw { code: 'not_found', message: 'not found' };
-          const updated = { ...it, ...Object.fromEntries(Object.entries(msg).filter(([k]) => !['id', 'type', 'item_id', 'expected_version'].includes(k))) } as Item;
+          const updated = {
+            ...it,
+            ...Object.fromEntries(
+              Object.entries(msg).filter(([k]) => !['id', 'type', 'item_id', 'expected_version'].includes(k)),
+            ),
+          } as Item;
           updated.updated_at = new Date().toISOString();
           const idx = items.findIndex((i) => i.id === itemId);
           items[idx] = updated;
@@ -520,7 +542,10 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         case 'haventory/reminder/bump': {
           const it = findItem(msg);
           if (!it.reminder_interval) {
-            throw { code: 'validation_error', message: 'a reminder with no interval has no next occurrence; clear it instead' };
+            throw {
+              code: 'validation_error',
+              message: 'a reminder with no interval has no next occurrence; clear it instead',
+            };
           }
           // The real backend counts the next occurrence from the series anchor;
           // the stand-in only has to move the date and leave the anchor alone,
@@ -577,9 +602,9 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         case 'haventory/items/bulk': {
           // Mirror the backend: run each op independently, key results by op_id,
           // never roll back. Note the per-op error key is `context`, not `data`.
-          const operations = ((msg as any).operations as
-            | { op_id: string; kind: string; payload: Record<string, unknown> }[]
-            | undefined) ?? [];
+          const operations =
+            ((msg as any).operations as
+              { op_id: string; kind: string; payload: Record<string, unknown> }[] | undefined) ?? [];
           const results: Record<string, unknown> = {};
           for (const op of operations) {
             const kind = String(op.kind || '');
@@ -664,7 +689,13 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     __emit(topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>) {
       const callbacks = subs[topic] || [];
       // Deliver the inner payload exactly as real Home Assistant does.
-      const event = { domain: 'haventory', topic, action, ts: new Date().toISOString(), ...payload } as AnyEventPayload;
+      const event = {
+        domain: 'haventory',
+        topic,
+        action,
+        ts: new Date().toISOString(),
+        ...payload,
+      } as AnyEventPayload;
       callbacks.forEach((cb) => cb(event));
     },
     __emitHaEvent(eventType: string, data: Record<string, unknown> = {}) {
@@ -678,7 +709,9 @@ export function makeMockHass(initial?: MockConfig): MockHass {
       if (topic) return (subs[topic] || []).length;
       return Object.values(subs).reduce((open, cbs) => open + cbs.length, 0);
     },
-    __setAreas(next: AreaRef[]) { areas = [...next]; },
+    __setAreas(next: AreaRef[]) {
+      areas = [...next];
+    },
     __reconnect() {
       hass.__disconnect();
       hass.__connectionReady();
@@ -689,9 +722,15 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     __connectionReady() {
       (lifecycleListeners.ready || []).forEach((cb) => cb());
     },
-    __setConflict(on: boolean) { conflictOnUpdate = on; },
-    __setItems(it: Item[]) { items = [...it]; },
-    __setLocations(locs: Location[]) { locations = [...locs]; },
+    __setConflict(on: boolean) {
+      conflictOnUpdate = on;
+    },
+    __setItems(it: Item[]) {
+      items = [...it];
+    },
+    __setLocations(locs: Location[]) {
+      locations = [...locs];
+    },
     __failNext(n: number, err?: unknown) {
       failRemaining = n;
       if (err !== undefined) failError = err;
@@ -779,8 +818,7 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
   ].filter(Boolean);
   return list.filter((it) => {
     // Category equals + tags_any (case-insensitive), used by the browser views.
-    if (categories.length && !categories.includes((it.category ?? '').trim().toLowerCase()))
-      return false;
+    if (categories.length && !categories.includes((it.category ?? '').trim().toLowerCase())) return false;
     if (Array.isArray(filter.tags_any) && filter.tags_any.length) {
       const wanted = filter.tags_any.map((t) => t.toLowerCase());
       if (!(it.tags ?? []).some((t) => wanted.includes(t.toLowerCase()))) return false;
@@ -793,7 +831,9 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
         it.category ?? '',
         (it.tags ?? []).join(' '),
         it.location_path?.display_path ?? '',
-      ].join(' ').toLowerCase();
+      ]
+        .join(' ')
+        .toLowerCase();
       if (!blob.includes(q)) return false;
     }
     if (filter.status && (it.status ?? 'ok') !== filter.status) return false;
@@ -842,18 +882,27 @@ function applyMockSort(list: Item[], rawSort: unknown): Item[] {
   const pathKey = (v: string) => v || (order === 'asc' ? '\u{10FFFF}' : '');
   const key = (it: Item): string | number => {
     switch (sort.field) {
-      case 'name': return it.name.toLowerCase();
-      case 'quantity': return it.quantity;
-      case 'due_date': return dateKey(it.due_date);
-      case 'inspection_date': return dateKey(it.inspection_date);
-      case 'reminder_date': return dateKey(it.reminder_date ?? null);
-      case 'location': return pathKey(it.location_path?.sort_key ?? '');
-      case 'created_at': return it.created_at;
-      default: return it.updated_at;
+      case 'name':
+        return it.name.toLowerCase();
+      case 'quantity':
+        return it.quantity;
+      case 'due_date':
+        return dateKey(it.due_date);
+      case 'inspection_date':
+        return dateKey(it.inspection_date);
+      case 'reminder_date':
+        return dateKey(it.reminder_date ?? null);
+      case 'location':
+        return pathKey(it.location_path?.sort_key ?? '');
+      case 'created_at':
+        return it.created_at;
+      default:
+        return it.updated_at;
     }
   };
   return list.slice().sort((a, b) => {
-    const ka = key(a), kb = key(b);
+    const ka = key(a),
+      kb = key(b);
     if (ka < kb) return -1 * dir;
     if (ka > kb) return 1 * dir;
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0; // id asc tie-break in both orders
@@ -900,16 +949,12 @@ export function makeItem(partial?: Partial<Item>): Item {
     location_path: partial?.location_path ?? { id_path: [], name_path: [], display_path: '', sort_key: '' },
     // Optional on the wire, so it stays off the object unless a caller asks for
     // it — an item built without one looks exactly like an older backend's.
-    ...(partial?.effective_area_id === undefined
-      ? {}
-      : { effective_area_id: partial.effective_area_id }),
+    ...(partial?.effective_area_id === undefined ? {} : { effective_area_id: partial.effective_area_id }),
     ...(partial?.status === undefined ? {} : { status: partial.status }),
     ...(partial?.attachments === undefined ? {} : { attachments: partial.attachments }),
     ...(partial?.reminder_date === undefined ? {} : { reminder_date: partial.reminder_date }),
     ...(partial?.reminder_anchor === undefined ? {} : { reminder_anchor: partial.reminder_anchor }),
-    ...(partial?.reminder_interval === undefined
-      ? {}
-      : { reminder_interval: partial.reminder_interval }),
+    ...(partial?.reminder_interval === undefined ? {} : { reminder_interval: partial.reminder_interval }),
   };
 }
 
@@ -1226,10 +1271,7 @@ export function q<T extends Element = HTMLElement>(
 }
 
 /** Every match for a selector, in document order. */
-export function all<T extends Element = HTMLElement>(
-  root: Element | DocumentFragment,
-  selector: string,
-): T[] {
+export function all<T extends Element = HTMLElement>(root: Element | DocumentFragment, selector: string): T[] {
   return [...queryRoot(root).querySelectorAll(selector)] as T[];
 }
 

@@ -747,9 +747,7 @@ export class HVOrganizeDialog extends LitElement {
   protected updated() {
     // A touched native select stops following its options' `selected`, so an
     // area chosen in the parent tree is written to the live element.
-    const areaSelect = this.renderRoot.querySelector<HTMLSelectElement>(
-      '[data-testid="location-area"]',
-    );
+    const areaSelect = this.renderRoot.querySelector<HTMLSelectElement>('[data-testid="location-area"]');
     if (areaSelect) areaSelect.value = this._locArea ?? '';
     this._opening = false;
   }
@@ -796,8 +794,9 @@ export class HVOrganizeDialog extends LitElement {
     onNew: () => void;
   }) {
     return html`<div class="toolbar">
-      ${opts.search
-        ? html`<label class="hv-search">
+      ${
+        opts.search
+          ? html`<label class="hv-search">
             ${icon('magnify', 17)}
             <span class="hv-sr-only">${opts.search.label}</span>
             <input
@@ -809,7 +808,8 @@ export class HVOrganizeDialog extends LitElement {
               }}
             />
           </label>`
-        : null}
+          : null
+      }
       <span class="toolbar-count" data-testid=${opts.countTestid}>${opts.count}</span>
       <button class="hv-pill" data-testid=${opts.newTestid} @click=${opts.onNew}>
         ${icon('plus', 15)}${opts.newLabel}
@@ -1002,7 +1002,9 @@ export class HVOrganizeDialog extends LitElement {
     );
     this._progress('merge', 0, ops.length);
     const outcome = ops.length
-      ? await this.store?.bulkExecute(ops, { onProgress: (done, total) => this._progress('merge', done, total) })
+      ? await this.store?.bulkExecute(ops, {
+          onProgress: (done, total) => this._progress('merge', done, total),
+        })
       : undefined;
     const failed = outcome?.failed ?? [];
 
@@ -1163,9 +1165,7 @@ export class HVOrganizeDialog extends LitElement {
         ? html`${around('hv.organize.areaAssignTree', {
             root: preview.rootName ?? '',
             size,
-          })}${preview.editsRoot
-            ? ''
-            : t('hv.organize.areaStoredOnRoot', { root: preview.rootName ?? '' })}`
+          })}${preview.editsRoot ? '' : t('hv.organize.areaStoredOnRoot', { root: preview.rootName ?? '' })}`
         : around('hv.organize.areaAssignOne');
     } else if (preview.kind === 'clear-tree') {
       line = wholeTree
@@ -1185,9 +1185,7 @@ export class HVOrganizeDialog extends LitElement {
   private _parentLabel(parent: LocationTreeNode | null, areas: readonly AreaRef[]): string {
     if (parent) return parent.name;
     const areaName = areaNameById(areas, this._locArea);
-    return areaName
-      ? t('hv.organize.topLevelIn', { area: areaName })
-      : t('hv.organize.topLevel');
+    return areaName ? t('hv.organize.topLevelIn', { area: areaName }) : t('hv.organize.topLevel');
   }
 
   private _renderLocationEditor(nodeId: string | 'new') {
@@ -1196,9 +1194,7 @@ export class HVOrganizeDialog extends LitElement {
     const parent = this._locParent ? this._findNode(tree, this._locParent) : null;
     const areas = this.st?.areasCache?.areas ?? [];
     // A nested location inherits from its tree's root; a top-level one has no area.
-    const areaDefaultLabel = parent
-      ? t('hv.organize.areaInherit')
-      : t('hv.term.noArea');
+    const areaDefaultLabel = parent ? t('hv.organize.areaInherit') : t('hv.term.noArea');
     const preview = areaChangePreview(
       this.st?.locationsFlatCache ?? [],
       { id: nodeId === 'new' ? null : nodeId, parentId: this._locParent },
@@ -1221,7 +1217,8 @@ export class HVOrganizeDialog extends LitElement {
               }}
             />
           </div>
-          ${areas.length
+          ${
+            areas.length
               ? html`<div class="cell">
                   <label class="hv-label" for="org-loc-area">${t('hv.organize.locationArea')}</label>
                   <select
@@ -1239,7 +1236,8 @@ export class HVOrganizeDialog extends LitElement {
                   </select>
                   ${this._renderAreaPreview(preview)}
                 </div>`
-              : null}
+              : null
+          }
           <div class="cell wide">
             <span class="hv-label">
               ${t('hv.organize.parentLocation')}
@@ -1390,18 +1388,18 @@ export class HVOrganizeDialog extends LitElement {
         ></hv-location-tree>`,
       )}
       <span class="note" data-testid="merge-effect">
-        ${target
-          ? t('hv.organize.mergeEffect', {
-              contents: parts.join(t('hv.import.and')),
-              target: target.name,
-              source: source.name,
-            })
-          : // An area cannot take a merge; the note points at editing instead.
-            `${t('hv.organize.mergePickLocation')}${
-              (this.st?.areasCache?.areas?.length ?? 0) > 0
-                ? t('hv.organize.mergeAreasNote')
-                : ''
-            }`}
+        ${
+          target
+            ? t('hv.organize.mergeEffect', {
+                contents: parts.join(t('hv.import.and')),
+                target: target.name,
+                source: source.name,
+              })
+            : // An area cannot take a merge; the note points at editing instead.
+              `${t('hv.organize.mergePickLocation')}${
+                (this.st?.areasCache?.areas?.length ?? 0) > 0 ? t('hv.organize.mergeAreasNote') : ''
+              }`
+        }
       </span>
       ${this._renderFooter({
         cancelTestid: 'merge-cancel',
@@ -1465,18 +1463,22 @@ export class HVOrganizeDialog extends LitElement {
         ></hv-location-tree>
         ${sheeted ? this._renderLocationSheet(sheeted) : null}
         ${merging ? this._renderLocationMerge(merging) : null}
-        ${this._editingLocation && this._editingLocation !== 'new'
-          ? this._renderLocationEditor(this._editingLocation)
-          : null}
-        ${this._guard
-          ? keyed(
-              this._guard.locationId,
-              html`<div class="guard" role="alert" data-testid="location-guard" ${ref(this._reveal)}>
+        ${
+          this._editingLocation && this._editingLocation !== 'new'
+            ? this._renderLocationEditor(this._editingLocation)
+            : null
+        }
+        ${
+          this._guard
+            ? keyed(
+                this._guard.locationId,
+                html`<div class="guard" role="alert" data-testid="location-guard" ${ref(this._reveal)}>
                 <span class="guard-mark">${icon('alert', 17)}</span>
                 <span>${this._guard.message}</span>
               </div>`,
-            )
-          : null}
+              )
+            : null
+        }
       </div>
     `;
   }
@@ -1492,8 +1494,7 @@ export class HVOrganizeDialog extends LitElement {
     const done = rewrite.total - rewrite.failed.length;
     const total = counted(rewrite.total, 'item');
     // The partial case is the only one that needs both numbers.
-    if (rewrite.failed.length)
-      return t(`hv.organize.rewrite.partial.${rewrite.kind}`, { done, total });
+    if (rewrite.failed.length) return t(`hv.organize.rewrite.partial.${rewrite.kind}`, { done, total });
     return t(`hv.organize.rewrite.done.${rewrite.kind}`, { total });
   }
 
@@ -1503,18 +1504,22 @@ export class HVOrganizeDialog extends LitElement {
     return html`<div class="expander" data-testid="rewrite-status">
       <div style="display:flex;gap:8px;font-size:12.5px">
         <span data-testid="rewrite-label">${this._rewriteSummary(rewrite)}</span>
-        ${rewrite.failed.length
-          ? html`<span style="margin-left:auto" data-testid="rewrite-failed"
+        ${
+          rewrite.failed.length
+            ? html`<span style="margin-left:auto" data-testid="rewrite-failed"
               >${t('hv.bulk.progressFailed', { count: rewrite.failed.length })}</span
             >`
-          : null}
+            : null
+        }
       </div>
       ${rewrite.finished ? null : html`<div class="track"><div class="fill" style="width:${pct}%"></div></div>`}
-      ${rewrite.error
-        ? html`<div class="failure" role="alert" data-testid="rewrite-error">
+      ${
+        rewrite.error
+          ? html`<div class="failure" role="alert" data-testid="rewrite-error">
             ${icon('alertCircle', 16)}<span>${rewrite.error}</span>
           </div>`
-        : null}
+          : null
+      }
       ${rewrite.failed.map(
         (f) => html`<div class="failure" data-testid="rewrite-failure">
           ${icon('alertCircle', 16)}<span
@@ -1577,8 +1582,9 @@ export class HVOrganizeDialog extends LitElement {
     return this._valuePicker.renderHolder(
       { holderId: MERGE_VALUE_LIST_ID },
       () => html`
-        ${others.length > VALUE_FILTER_FROM
-          ? html`<label class="list-filter">
+        ${
+          others.length > VALUE_FILTER_FROM
+            ? html`<label class="list-filter">
               <span class="hv-sr-only">${t('hv.organize.filterValues', { values: this._plural })}</span>
               <input
                 class="control"
@@ -1590,10 +1596,12 @@ export class HVOrganizeDialog extends LitElement {
                 }}
               />
             </label>`
-          : null}
-        ${shown.length
-          ? shown.map(
-              (v) => html`<button
+            : null
+        }
+        ${
+          shown.length
+            ? shown.map(
+                (v) => html`<button
                 class="option"
                 data-testid="value-target-option"
                 data-value=${v}
@@ -1606,10 +1614,11 @@ export class HVOrganizeDialog extends LitElement {
                 <span class="label">${this._valueText(v)}</span>
                 ${v === picked ? icon('check', 15) : null}
               </button>`,
-            )
-          : html`<div class="option-empty" data-testid="value-target-none">
+              )
+            : html`<div class="option-empty" data-testid="value-target-none">
               ${t('hv.organize.noValuesMatch', { values: this._plural })}
-            </div>`}
+            </div>`
+        }
       `,
     );
   }
@@ -1632,9 +1641,10 @@ export class HVOrganizeDialog extends LitElement {
         <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
           ${this._valueChip(value, { style: merging ? 'text-decoration: line-through' : undefined })}
           <span style="font-size:12.5px;color:var(--hv-text-secondary)">${counted(count, 'item')}</span>
-          ${merging
-            ? html`${icon('arrowRight', 18)}${this._renderValueTargetTrigger(others)}`
-            : html`<label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
+          ${
+            merging
+              ? html`${icon('arrowRight', 18)}${this._renderValueTargetTrigger(others)}`
+              : html`<label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
                 <span class="hv-sr-only">${t('hv.organize.newName')}</span>
                 <input
                   class="control"
@@ -1645,15 +1655,18 @@ export class HVOrganizeDialog extends LitElement {
                     this._valueDraft = (e.target as HTMLInputElement).value;
                   }}
                 />
-              </label>`}
+              </label>`
+          }
         </div>
         ${merging ? this._renderValueTargetList(others) : null}
         <span class="note" data-testid="value-effect">
-          ${merging && !others.length
-            ? t('hv.organize.mergeNoOther', { values: this._plural })
-            : target
-              ? describeRewrite(this._kind, count, value, target)
-              : t('hv.organize.pickNameToContinue')}
+          ${
+            merging && !others.length
+              ? t('hv.organize.mergeNoOther', { values: this._plural })
+              : target
+                ? describeRewrite(this._kind, count, value, target)
+                : t('hv.organize.pickNameToContinue')
+          }
         </span>
         ${this._renderFooter({
           cancelTestid: 'value-cancel',
@@ -1851,16 +1864,17 @@ export class HVOrganizeDialog extends LitElement {
                 </button>
               </span>
               ${renderStatusChip(d.slug, defs, { testid: 'status-chip' })}
-              <button class="count-link" data-testid="status-count" @click=${() =>
-                this._showStatus(d.slug)}>
+              <button class="count-link" data-testid="status-count" @click=${() => this._showStatus(d.slug)}>
                 ${counted(count, 'item')}
               </button>
               <span class="row-actions">
-                ${isDefault
-                  ? html`<span class="hv-chip quiet" data-testid="status-default"
+                ${
+                  isDefault
+                    ? html`<span class="hv-chip quiet" data-testid="status-default"
                       >${t('hv.organize.statusDefault')}</span
                     >`
-                  : null}
+                    : null
+                }
                 <button
                   data-testid="status-edit"
                   aria-label=${t('hv.organize.statusEdit', { label: shown })}
@@ -1869,9 +1883,10 @@ export class HVOrganizeDialog extends LitElement {
                 >
                   ${icon('pencil', 16)}
                 </button>
-                ${isDefault
-                  ? null
-                  : html`
+                ${
+                  isDefault
+                    ? null
+                    : html`
                       <button
                         class="danger"
                         data-testid="status-remove"
@@ -1881,7 +1896,8 @@ export class HVOrganizeDialog extends LitElement {
                       >
                         ${icon('del', 16)}
                       </button>
-                    `}
+                    `
+                }
               </span>
             </div>
             ${this._editingStatus === d.slug ? this._renderStatusEditor(d.slug) : null}
@@ -1910,8 +1926,7 @@ export class HVOrganizeDialog extends LitElement {
     // so the English is not "corrected" into a rename for everyone.
     const stored = creating ? undefined : this._statusDefs.find((d) => d.slug === slug);
     const shown = stored ? displayLabel(stored) : null;
-    const printsAs =
-      stored && this._statusLabel === stored.label && shown !== stored.label ? shown : null;
+    const printsAs = stored && this._statusLabel === stored.label && shown !== stored.label ? shown : null;
     return keyed(
       slug,
       html`<div class="expander" data-testid="status-editor" data-field="status-label" ${ref(this._reveal)}>
@@ -1933,23 +1948,25 @@ export class HVOrganizeDialog extends LitElement {
           <span class="status-slug" data-testid="status-slug-preview" title=${derived}
             >${derived}</span
           >
-          ${printsAs === null
-            ? null
-            : html`<span class="hv-chip quiet" data-testid="status-shown">${printsAs}</span>`}
+          ${
+            printsAs === null
+              ? null
+              : html`<span class="hv-chip quiet" data-testid="status-shown">${printsAs}</span>`
+          }
         </label>
-        ${duplicate
-          ? html`<div class="hint" data-testid="status-duplicate-hint">
+        ${
+          duplicate
+            ? html`<div class="hint" data-testid="status-duplicate-hint">
               ${t('hv.organize.statusDuplicate', { label: duplicate })}
             </div>`
-          : null}
+            : null
+        }
 
         <span class="hv-label">${t('hv.organize.colour')}</span>
         <div class="swatches" data-testid="status-colors">
           ${STATUS_COLORS.map(
             (c) => html`<button
-              class="swatch hv-status-chip tone-${c.replace(/_/g, '-')} ${this._statusColor === c
-                ? 'on'
-                : ''}"
+              class="swatch hv-status-chip tone-${c.replace(/_/g, '-')} ${this._statusColor === c ? 'on' : ''}"
               data-testid="status-color"
               data-value=${c}
               aria-label=${c.replace(/_/g, ' ')}
@@ -1978,11 +1995,13 @@ export class HVOrganizeDialog extends LitElement {
             ${face}
           </label>
         </div>
-        ${custom
-          ? html`<div class="hint" data-testid="status-color-custom-hint">
+        ${
+          custom
+            ? html`<div class="hint" data-testid="status-color-custom-hint">
               ${t('hv.organize.customColourHint', { hex: custom })}
             </div>`
-          : null}
+            : null
+        }
 
         <span class="hv-label">${t('hv.organize.icon')}</span>
         <div class="swatches" data-testid="status-icons">
@@ -2028,12 +2047,15 @@ export class HVOrganizeDialog extends LitElement {
         ${ref(this._reveal)}
       >
         <span class="guard-message" data-testid="status-guard-message"
-          >${inUse
-            ? t('hv.organize.statusInUse', { label, items: counted(guard.count, 'item') })
-            : t('hv.organize.statusUnused', { label })}</span
+          >${
+            inUse
+              ? t('hv.organize.statusInUse', { label, items: counted(guard.count, 'item') })
+              : t('hv.organize.statusUnused', { label })
+          }</span
         >
-        ${inUse
-          ? html`<label class="guard-target">
+        ${
+          inUse
+            ? html`<label class="guard-target">
               <span>${t('hv.organize.moveThoseItemsTo')}</span>
               <select
                 class="control"
@@ -2046,7 +2068,8 @@ export class HVOrganizeDialog extends LitElement {
                 ${targets.map((d) => html`<option value=${d.slug}>${displayLabel(d)}</option>`)}
               </select>
             </label>`
-          : null}
+            : null
+        }
         ${this._renderFooter({
           cancelTestid: 'status-guard-cancel',
           onCancel: () => {
@@ -2084,25 +2107,29 @@ export class HVOrganizeDialog extends LitElement {
       <div class="body">
         ${this._creatingValue ? this._renderValueCreator() : null}
         ${this._rewrite ? this._renderRewrite(this._rewrite) : null}
-        ${values.length
-          ? values.map(
-              (v) => html`
+        ${
+          values.length
+            ? values.map(
+                (v) => html`
                 <div class="value-row" data-testid="value-row" data-value=${v.value}>
                   ${this._valueChip(v.value)}
-                  ${this._isDraft(v.value)
-                    ? html`<span class="draft-note" data-testid="value-draft">
+                  ${
+                    this._isDraft(v.value)
+                      ? html`<span class="draft-note" data-testid="value-draft">
                         ${t('hv.organize.draftBadge')}
                       </span>`
-                    : html`<button
+                      : html`<button
                         class="count-link"
                         data-testid="value-count"
                         @click=${() => this._showValue(v.value)}
                       >
                         ${counted(v.count, 'item')}
-                      </button>`}
+                      </button>`
+                  }
                   <span class="row-actions">
-                    ${this._isDraft(v.value)
-                      ? html`<button
+                    ${
+                      this._isDraft(v.value)
+                        ? html`<button
                           class="danger"
                           data-testid="value-discard"
                           aria-label=${t('hv.organize.discardValue', { value: v.value })}
@@ -2111,8 +2138,8 @@ export class HVOrganizeDialog extends LitElement {
                         >
                           ${icon('del', 16)}
                         </button>`
-                      : this.mobile
-                      ? html`<button
+                        : this.mobile
+                          ? html`<button
                           data-testid="value-more"
                           aria-label=${t('hv.organize.actionsFor', { value: v.value })}
                           @click=${() => {
@@ -2121,7 +2148,7 @@ export class HVOrganizeDialog extends LitElement {
                         >
                           ${icon('dotsVertical', 17)}
                         </button>`
-                      : html`
+                          : html`
                           <button
                             data-testid="value-rename"
                             aria-label=${t('hv.organize.renameValue', { value: v.value })}
@@ -2149,18 +2176,22 @@ export class HVOrganizeDialog extends LitElement {
                           >
                             ${icon('del', 16)}
                           </button>
-                        `}
+                        `
+                    }
                   </span>
                 </div>
                 ${this._editingValue?.value === v.value ? this._renderValueEditor(v.value, v.count) : null}
                 ${this._sheetValue === v.value ? this._renderValueSheet(v.value, v.count) : null}
               `,
-            )
-          : html`<div class="empty" data-testid="organize-empty">
-              ${this._filter.trim()
-                ? t('hv.organize.noValuesMatch', { values: noun })
-                : t('hv.organize.noValuesYet', { values: noun })}
-            </div>`}
+              )
+            : html`<div class="empty" data-testid="organize-empty">
+              ${
+                this._filter.trim()
+                  ? t('hv.organize.noValuesMatch', { values: noun })
+                  : t('hv.organize.noValuesYet', { values: noun })
+              }
+            </div>`
+        }
       </div>
     `;
   }
@@ -2216,9 +2247,9 @@ export class HVOrganizeDialog extends LitElement {
     const row =
       value === null
         ? null
-        : (Array.from(
-            this.renderRoot.querySelectorAll<HTMLElement>('[data-testid="value-row"]'),
-          ).find((r) => r.dataset.value === value) ?? null);
+        : (Array.from(this.renderRoot.querySelectorAll<HTMLElement>('[data-testid="value-row"]')).find(
+            (r) => r.dataset.value === value,
+          ) ?? null);
     const target = row ?? this.renderRoot.querySelector<HTMLElement>('[data-testid="organize-dialog"]');
     if (!target) return;
     if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
@@ -2234,8 +2265,9 @@ export class HVOrganizeDialog extends LitElement {
         { label: t('hv.organize.title'), testid: 'organize-dialog', onClose: this._close },
         html`
           <div class="head">
-            ${this.mobile
-              ? html`<button
+            ${
+              this.mobile
+                ? html`<button
                   class="hv-icon-button"
                   data-testid="organize-back"
                   aria-label=${t('hv.action.back')}
@@ -2243,18 +2275,21 @@ export class HVOrganizeDialog extends LitElement {
                 >
                   ${icon('arrowLeft', 21)}
                 </button>`
-              : null}
+                : null
+            }
             <h2>${t('hv.organize.title')}</h2>
-            ${this.mobile
-              ? null
-              : html`<button
+            ${
+              this.mobile
+                ? null
+                : html`<button
                   class="hv-icon-button"
                   data-testid="organize-close"
                   aria-label=${t('hv.action.close')}
                   @click=${this._close}
                 >
                   ${icon('close', 20)}
-                </button>`}
+                </button>`
+            }
           </div>
           <div class="tabs" role="tablist">
             ${(['locations', 'categories', 'tags', 'statuses'] as OrganizeTab[]).map(
@@ -2272,11 +2307,13 @@ export class HVOrganizeDialog extends LitElement {
               </button>`,
             )}
           </div>
-          ${this.tab === 'locations'
-            ? this._renderLocationsTab()
-            : this.tab === 'statuses'
-              ? this._renderStatusesTab()
-              : this._renderValuesTab()}
+          ${
+            this.tab === 'locations'
+              ? this._renderLocationsTab()
+              : this.tab === 'statuses'
+                ? this._renderStatusesTab()
+                : this._renderValuesTab()
+          }
         `,
       )}
 

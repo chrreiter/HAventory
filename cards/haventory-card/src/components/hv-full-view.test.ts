@@ -692,7 +692,9 @@ describe('hv-full-view: sidebar facets', () => {
       expect(row.querySelector('.hv-browse-row-label')?.textContent).toBe(row.dataset.value);
     }
 
-    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    rows(sr, 'categories')
+      .find((r) => r.dataset.value === 'Tools')
+      ?.click();
     await settle(el);
     const picked = rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')!;
     // Picked, the same slot holds the check — the label does not move sideways.
@@ -738,7 +740,9 @@ describe('hv-full-view: sidebar facets', () => {
     expect(tally('categories', 'Tools')).toBe('2');
 
     store.setFilters({ checkedOutOnly: true });
-    await vi.waitUntil(() => store.state.value.distinctValuesCache?.categories[0]?.matching_count !== undefined);
+    await vi.waitUntil(
+      () => store.state.value.distinctValuesCache?.categories[0]?.matching_count !== undefined,
+    );
     await settle(el);
 
     expect(tally('categories', 'Tools')).toBe('1 / 2');
@@ -759,14 +763,16 @@ describe('hv-full-view: sidebar facets', () => {
   it('filters to one category and clears it on a second press', async () => {
     const { el, store, sr } = await mount({ items: faceted });
 
-    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    rows(sr, 'categories')
+      .find((r) => r.dataset.value === 'Tools')
+      ?.click();
     await settle(el);
     expect(store.state.value.filters.categories).toEqual(['Tools']);
-    expect(rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.classList).toContain(
-      'selected',
-    );
+    expect(rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.classList).toContain('selected');
 
-    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    rows(sr, 'categories')
+      .find((r) => r.dataset.value === 'Tools')
+      ?.click();
     await settle(el);
     expect(store.state.value.filters.categories).toEqual([]);
   });
@@ -777,19 +783,23 @@ describe('hv-full-view: sidebar facets', () => {
   it('accumulates categories rather than replacing the selection', async () => {
     const { el, store, sr } = await mount({ items: faceted });
 
-    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    rows(sr, 'categories')
+      .find((r) => r.dataset.value === 'Tools')
+      ?.click();
     await settle(el);
-    rows(sr, 'categories').find((r) => r.dataset.value === 'Cleaning')?.click();
+    rows(sr, 'categories')
+      .find((r) => r.dataset.value === 'Cleaning')
+      ?.click();
     await settle(el);
     expect(store.state.value.filters.categories).toEqual(['Tools', 'Cleaning']);
     // Both rows read as picked, and the list keeps every row it had.
     for (const value of ['Tools', 'Cleaning']) {
-      expect(rows(sr, 'categories').find((r) => r.dataset.value === value)?.classList).toContain(
-        'selected',
-      );
+      expect(rows(sr, 'categories').find((r) => r.dataset.value === value)?.classList).toContain('selected');
     }
 
-    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    rows(sr, 'categories')
+      .find((r) => r.dataset.value === 'Tools')
+      ?.click();
     await settle(el);
     expect(store.state.value.filters.categories).toEqual(['Cleaning']);
   });
@@ -798,9 +808,13 @@ describe('hv-full-view: sidebar facets', () => {
   // carries one of each, so a selection of several can only mean OR.
   it('offers no match mode for categories, however many are picked', async () => {
     const { el, store, sr } = await mount({ items: faceted });
-    rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.click();
+    rows(sr, 'categories')
+      .find((r) => r.dataset.value === 'Tools')
+      ?.click();
     await settle(el);
-    rows(sr, 'categories').find((r) => r.dataset.value === 'Cleaning')?.click();
+    rows(sr, 'categories')
+      .find((r) => r.dataset.value === 'Cleaning')
+      ?.click();
     await settle(el);
 
     expect(store.state.value.filters.categories).toHaveLength(2);
@@ -812,13 +826,19 @@ describe('hv-full-view: sidebar facets', () => {
   it('accumulates tags rather than replacing the selection', async () => {
     const { el, store, sr } = await mount({ items: faceted });
 
-    rows(sr, 'tags').find((r) => r.dataset.value === 'metric')?.click();
+    rows(sr, 'tags')
+      .find((r) => r.dataset.value === 'metric')
+      ?.click();
     await settle(el);
-    rows(sr, 'tags').find((r) => r.dataset.value === 'heavy')?.click();
+    rows(sr, 'tags')
+      .find((r) => r.dataset.value === 'heavy')
+      ?.click();
     await settle(el);
     expect(store.state.value.filters.tags).toEqual(['metric', 'heavy']);
 
-    rows(sr, 'tags').find((r) => r.dataset.value === 'metric')?.click();
+    rows(sr, 'tags')
+      .find((r) => r.dataset.value === 'metric')
+      ?.click();
     await settle(el);
     expect(store.state.value.filters.tags).toEqual(['heavy']);
   });
@@ -830,11 +850,15 @@ describe('hv-full-view: sidebar facets', () => {
     const { el, store, sr } = await mount({ items: faceted });
     expect(q(sr, '[data-testid="sidebar-tags-mode"]')).toBe(null);
 
-    rows(sr, 'tags').find((r) => r.dataset.value === 'metric')?.click();
+    rows(sr, 'tags')
+      .find((r) => r.dataset.value === 'metric')
+      ?.click();
     await settle(el);
     expect(q(sr, '[data-testid="sidebar-tags-mode"]'), 'one tag needs no mode').toBe(null);
 
-    rows(sr, 'tags').find((r) => r.dataset.value === 'heavy')?.click();
+    rows(sr, 'tags')
+      .find((r) => r.dataset.value === 'heavy')
+      ?.click();
     await settle(el);
     const modes = [...sr.querySelectorAll('[data-testid="sidebar-tags-mode"]')] as HTMLElement[];
     expect(modes.map((m) => m.dataset.mode)).toEqual(['any', 'all']);
@@ -852,8 +876,7 @@ describe('hv-full-view: sidebar facets', () => {
   // opened was left to whatever happened to follow the heading in reading order.
   it('names the panel each heading discloses, open or shut', async () => {
     const { el, sr } = await mount({ items: faceted, locations: [loc('garage', 'Garage')] });
-    const toggle = (section: string) =>
-      q(sr, `[data-testid="sidebar-toggle-${section}"]`) as HTMLButtonElement;
+    const toggle = (section: string) => q(sr, `[data-testid="sidebar-toggle-${section}"]`) as HTMLButtonElement;
 
     for (const section of ['locations', 'status', 'categories', 'tags']) {
       const id = `sidebar-section-${section}`;
@@ -1019,9 +1042,13 @@ describe('hv-full-view: sidebar status', () => {
   it('replaces the selection rather than accumulating it', async () => {
     const { el, store, sr } = await mount({ items: flagged });
 
-    rows(sr).find((r) => r.dataset.value === 'missing')?.click();
+    rows(sr)
+      .find((r) => r.dataset.value === 'missing')
+      ?.click();
     await settle(el);
-    rows(sr).find((r) => r.dataset.value === 'needs_repair')?.click();
+    rows(sr)
+      .find((r) => r.dataset.value === 'needs_repair')
+      ?.click();
     await settle(el);
 
     expect(store.state.value.filters.status).toBe('needs_repair');
@@ -1406,9 +1433,9 @@ describe('hv-full-view: editing', () => {
 
     expect(q(sr, '[data-testid="full-editor"]')).toBe(editor);
     expect(editor.item?.name).toBe('Wood Glue');
-    expect(
-      (editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value,
-    ).toBe('Wood Glue EDITED');
+    expect((editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe(
+      'Wood Glue EDITED',
+    );
     expect(q(sr, '[data-testid="pinned-editor-hint"]')?.textContent).toContain(
       'No longer matches the current filters',
     );
@@ -1450,7 +1477,9 @@ describe('hv-full-view: editing', () => {
       expect(errorText(sr)).toContain('the store is read-only');
       expect(editor.busy).toBe(false);
       expect(
-        (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).textContent?.trim(),
+        (
+          editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement
+        ).textContent?.trim(),
       ).toBe('Save');
     });
 
@@ -1534,7 +1563,6 @@ describe('hv-full-view: editing', () => {
     expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
     expect(q(sr, '[data-testid="pinned-editor-hint"]')).toBe(null);
   });
-
 });
 
 // Switching rows, the backdrop and Escape all wiped a form mid-sentence. The
@@ -1601,8 +1629,6 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
     },
   );
 
-
-
   it('opens the other row once the discard is confirmed', async () => {
     const { el, sr, host } = await dirtyEditor(two());
 
@@ -1615,24 +1641,21 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
     expect(editorName(sr)).toBe('Second');
   });
 
-  it.each(['backdrop', 'escape', 'close'] as const)(
-    'closes the view once %s is confirmed',
-    async (how) => {
-      const { el, sr, host } = await dirtyEditor(two());
-      let closes = 0;
-      el.addEventListener('close', () => {
-        closes += 1;
-      });
+  it.each(['backdrop', 'escape', 'close'] as const)('closes the view once %s is confirmed', async (how) => {
+    const { el, sr, host } = await dirtyEditor(two());
+    let closes = 0;
+    el.addEventListener('close', () => {
+      closes += 1;
+    });
 
-      leave[how](sr);
-      await settle(el);
-      host.answer('discard');
-      await settle(el);
+    leave[how](sr);
+    await settle(el);
+    host.answer('discard');
+    await settle(el);
 
-      expect(closes).toBe(1);
-      expect(el.open).toBe(false);
-    },
-  );
+    expect(closes).toBe(1);
+    expect(el.open).toBe(false);
+  });
 
   it('leaves a clean form without a word', async () => {
     const { el, sr, host } = await mount({ items: two() });
@@ -1739,7 +1762,9 @@ describe('hv-full-view: phone-width children', () => {
   it('stages the phone filter panel behind a commit row', async () => {
     const restore = stubViewport(true);
     try {
-      const { el, store, sr } = await mount({ items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })] });
+      const { el, store, sr } = await mount({
+        items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })],
+      });
       (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
       await settle(el);
 
@@ -1800,7 +1825,9 @@ describe('hv-full-view: phone-width children', () => {
   it('keeps the desktop panel live-applying, with no commit row', async () => {
     const restore = stubViewport(false);
     try {
-      const { el, store, sr } = await mount({ items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })] });
+      const { el, store, sr } = await mount({
+        items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })],
+      });
       (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
       await settle(el);
 
@@ -2111,10 +2138,14 @@ describe('hv-full-view: selection and bulk actions', () => {
     await settle(el);
 
     const bar = bulkBar(sr);
-    (bar.shadowRoot?.querySelector('[data-testid="bulk-action"][data-action="move"]') as HTMLButtonElement).click();
+    (
+      bar.shadowRoot?.querySelector('[data-testid="bulk-action"][data-action="move"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     const tree = bar.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="workshop"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="workshop"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     await settle(el);
 
@@ -2196,10 +2227,7 @@ describe('hv-full-view: selection and bulk actions', () => {
           expect(popover.open, where).toBe(true);
           expect(popover.inline, where).toBe(false);
           expect(popover.touch, where).toBe(narrow);
-          expect(
-            popover.shadowRoot?.querySelector('.scrim')?.classList.contains('dim'),
-            where,
-          ).toBe(true);
+          expect(popover.shadowRoot?.querySelector('.scrim')?.classList.contains('dim'), where).toBe(true);
           el.remove();
         } finally {
           restore();
@@ -2217,9 +2245,7 @@ describe('hv-full-view: selection and bulk actions', () => {
       // Nothing has run yet.
       expect(store.state.value.items.some((i) => i.checked_out)).toBe(false);
 
-      const date = popover.shadowRoot?.querySelector(
-        '[data-testid="checkout-date"] input',
-      ) as HTMLInputElement;
+      const date = popover.shadowRoot?.querySelector('[data-testid="checkout-date"] input') as HTMLInputElement;
       date.value = '2031-04-05';
       date.dispatchEvent(new Event('input', { bubbles: true }));
       await settle(el);
@@ -2385,7 +2411,10 @@ describe('hv-full-view: failures are visible here too', () => {
 
   it('carries the error queue with its conflict actions', async () => {
     const { el, store, hass, sr } = await mount({ items: [makeItem({ id: '1', name: 'A' })] });
-    store['pushError']({ code: 'conflict', message: 'version conflict' }, { itemId: '1', changes: { name: 'B' } });
+    store['pushError'](
+      { code: 'conflict', message: 'version conflict' },
+      { itemId: '1', changes: { name: 'B' } },
+    );
     await settle(el);
 
     expect((banner(sr, 'banner-entry') as HTMLElement).dataset.code).toBe('conflict');
@@ -2611,8 +2640,7 @@ describe('hv-full-view: table row actions', () => {
 describe('hv-full-view: the detail sheet is the narrow read view', () => {
   const sheet = (sr: ShadowRoot) =>
     q(sr, '[data-testid="full-detail-sheet"]') as
-      | (HTMLElement & { open: boolean; item: Item | null; updateComplete: Promise<unknown> })
-      | null;
+      (HTMLElement & { open: boolean; item: Item | null; updateComplete: Promise<unknown> }) | null;
   const openRow = async (el: HVFullView, sr: ShadowRoot, index = 0) => {
     const rows = [
       ...((q(sr, '[data-testid="full-table"]') as HTMLElement).shadowRoot?.querySelectorAll(
@@ -2736,9 +2764,7 @@ describe('hv-full-view: one tab stop per facet list', () => {
       .map((r) => r.dataset.value);
   const focused = (sr: ShadowRoot) => (sr.activeElement as HTMLElement | null)?.dataset.value;
   const press = async (el: HTMLElement, sr: ShadowRoot, key: string) => {
-    sr.activeElement?.dispatchEvent(
-      new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
-    );
+    sr.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
     await settle(el);
   };
 
@@ -2749,10 +2775,7 @@ describe('hv-full-view: one tab stop per facet list', () => {
       const list = rows(sr, section);
       expect(list.length, section).toBeGreaterThan(2);
       expect(stops(sr, section), section).toHaveLength(1);
-      expect(
-        list.filter((r) => r.getAttribute('tabindex') === '-1').length,
-        section,
-      ).toBe(list.length - 1);
+      expect(list.filter((r) => r.getAttribute('tabindex') === '-1').length, section).toBe(list.length - 1);
     }
   });
 
@@ -2874,8 +2897,7 @@ describe('hv-full-view: one tab stop per facet list', () => {
       );
     const small = await mount({ items: vocabulary(3) });
     const large = await mount({ items: vocabulary(40) });
-    const walk = (sr: ShadowRoot) =>
-      deepFocusables(q(sr, '[data-testid="full-sidebar"]')).length;
+    const walk = (sr: ShadowRoot) => deepFocusables(q(sr, '[data-testid="full-sidebar"]')).length;
 
     expect(rows(large.sr, 'tags')).toHaveLength(40);
     expect(walk(large.sr)).toBe(walk(small.sr));

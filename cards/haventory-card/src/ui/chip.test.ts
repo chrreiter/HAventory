@@ -35,5 +35,4 @@ describe('ui/chip: the shared fragment', () => {
       expect(sheetsOf(tag), tag).toContain(chip);
     }
   });
-
 });

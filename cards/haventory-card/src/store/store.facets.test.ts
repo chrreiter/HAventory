@@ -48,9 +48,7 @@ describe('Store', () => {
     });
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(store.state.value.distinctValuesCache?.categories).toEqual([
-      { value: 'Tools', count: 1 },
-    ]);
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([{ value: 'Tools', count: 1 }]);
   });
 
   // A category or tag exists only through the items carrying it — the backend
@@ -97,9 +95,7 @@ describe('Store', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     // One entry, with the server's count — not a duplicate sitting at zero.
-    expect(store.state.value.distinctValuesCache?.categories).toEqual([
-      { value: 'Consumables', count: 1 },
-    ]);
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([{ value: 'Consumables', count: 1 }]);
   });
 
   it('discards a draft again', async () => {
@@ -121,9 +117,7 @@ describe('Store', () => {
     expect(sent[0].filter).toBeUndefined();
     // No key at all rather than a matching_count equal to count: the two say
     // different things, and only one of them is a report.
-    expect(store.state.value.distinctValuesCache?.categories).toEqual([
-      { value: 'Tools', count: 1 },
-    ]);
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([{ value: 'Tools', count: 1 }]);
   });
 
   it('prices the facets against the active filter, minus category and tags', async () => {
@@ -139,9 +133,7 @@ describe('Store', () => {
     // A category and a tag are picked alongside the narrowing filter; neither
     // may reach the wire, or every other row would be priced at zero.
     store.setFilters({ checkedOutOnly: true, categories: ['Tools'], tags: ['red'] });
-    await vi.waitUntil(
-      () => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length > 1,
-    );
+    await vi.waitUntil(() => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length > 1);
 
     const sent = hass.__messages.filter((m) => m.type === 'haventory/distinct_values');
     const filter = sent[sent.length - 1].filter as Record<string, unknown>;
@@ -225,8 +217,7 @@ describe('Store', () => {
 
       // Nothing has been asked yet on the last millisecond of the window...
       await vi.advanceTimersByTimeAsync(249);
-      const facetCalls = () =>
-        hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length;
+      const facetCalls = () => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length;
       expect(facetCalls()).toBe(before);
 
       // ...and the three patches then produce exactly one answer, with nothing
@@ -267,17 +258,13 @@ describe('Store', () => {
     const first = store.refreshDistinctValues();
     const second = store.refreshDistinctValues();
     await second;
-    expect(store.state.value.distinctValuesCache?.categories).toEqual([
-      { value: 'Fresh', count: 1 },
-    ]);
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([{ value: 'Fresh', count: 1 }]);
 
     await vi.waitUntil(() => release !== null);
     release!();
     await first;
     // The late answer belongs to a superseded request and must not land.
-    expect(store.state.value.distinctValuesCache?.categories).toEqual([
-      { value: 'Fresh', count: 1 },
-    ]);
+    expect(store.state.value.distinctValuesCache?.categories).toEqual([{ value: 'Fresh', count: 1 }]);
   });
 
   // The per-location counts ride the tree, so it has the same overlap and gets
@@ -336,9 +323,7 @@ describe('Store', () => {
     await store.init();
 
     store.setFilters({ checkedOutOnly: true });
-    await vi.waitUntil(
-      () => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length > 1,
-    );
+    await vi.waitUntil(() => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length > 1);
     store.addDraftValue('category', 'Consumables');
 
     // A draft has no items, so it matches nothing — said in the same shape the

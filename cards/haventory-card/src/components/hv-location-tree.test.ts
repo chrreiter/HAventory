@@ -26,10 +26,16 @@ function node(
 }
 
 const tree: LocationTreeNode[] = [
-  node('garage', 'Garage', null, [1, 64], [
-    node('shelf-a', 'Shelf A', 'garage', [38, 38]),
-    node('shelf-b', 'Shelf B', 'garage', [25, 25], [node('bin-3', 'Bin 3', 'shelf-b', [0, 0])]),
-  ]),
+  node(
+    'garage',
+    'Garage',
+    null,
+    [1, 64],
+    [
+      node('shelf-a', 'Shelf A', 'garage', [38, 38]),
+      node('shelf-b', 'Shelf B', 'garage', [25, 25], [node('bin-3', 'Bin 3', 'shelf-b', [0, 0])]),
+    ],
+  ),
   node('kitchen', 'Kitchen', null, [57, 57]),
 ];
 
@@ -90,7 +96,9 @@ describe('hv-location-tree: the shared browse row', () => {
   it('puts every row on it, with the twisty in the shared slot', async () => {
     const el = await mount({ showAll: true, showOrphans: true });
     const every = [
-      ...(el.shadowRoot?.querySelectorAll('[data-testid="tree-row"], [data-testid="tree-all"], [data-testid="tree-orphans"]') ?? []),
+      ...(el.shadowRoot?.querySelectorAll(
+        '[data-testid="tree-row"], [data-testid="tree-all"], [data-testid="tree-orphans"]',
+      ) ?? []),
     ] as HTMLElement[];
 
     expect(every.length).toBeGreaterThan(2);
@@ -116,8 +124,8 @@ describe('hv-location-tree: the shared browse row', () => {
 describe('hv-location-tree: counts and decorations', () => {
   it('renders the backend subtree counts, not a client-side sum', async () => {
     const el = await mount({ showCounts: true });
-    const counts = [...(el.shadowRoot?.querySelectorAll('[data-testid="tree-count"]') ?? [])].map(
-      (c) => c.textContent?.trim(),
+    const counts = [...(el.shadowRoot?.querySelectorAll('[data-testid="tree-count"]') ?? [])].map((c) =>
+      c.textContent?.trim(),
     );
     expect(counts).toEqual(['64', '57']);
   });
@@ -139,7 +147,13 @@ describe('hv-location-tree: counts and decorations', () => {
   });
 
   it('adds All items and No location rows on request', async () => {
-    const el = await mount({ showAll: true, showOrphans: true, showCounts: true, totalCount: 250, orphanCount: 3 });
+    const el = await mount({
+      showAll: true,
+      showOrphans: true,
+      showCounts: true,
+      totalCount: 250,
+      orphanCount: 3,
+    });
     expect(q(el, '[data-testid="tree-all"]')?.textContent).toContain('All items');
     expect(q(el, '[data-testid="tree-all"]')?.textContent).toContain('250');
     expect(q(el, '[data-testid="tree-orphans"]')?.textContent).toContain('No location');
@@ -179,8 +193,8 @@ describe('hv-location-tree: counts under a filter', () => {
 
   it('reads "matching / total" on every row once the backend sends both', async () => {
     const el = await mount({ nodes: matched, showCounts: true });
-    const counts = [...(el.shadowRoot?.querySelectorAll('[data-testid="tree-count"]') ?? [])].map(
-      (c) => c.textContent?.trim(),
+    const counts = [...(el.shadowRoot?.querySelectorAll('[data-testid="tree-count"]') ?? [])].map((c) =>
+      c.textContent?.trim(),
     );
     expect(counts).toEqual(['4 / 64', '2 / 57']);
   });
@@ -229,11 +243,19 @@ describe('hv-location-tree: selection', () => {
 
   it('marks the selected row, and never marks a location while orphans are selected', async () => {
     const el = await mount({ selectedId: 'garage' });
-    expect(rows(el).find((r) => r.dataset.id === 'garage')?.classList.contains('selected')).toBe(true);
+    expect(
+      rows(el)
+        .find((r) => r.dataset.id === 'garage')
+        ?.classList.contains('selected'),
+    ).toBe(true);
 
     el.orphansSelected = true;
     await el.updateComplete;
-    expect(rows(el).find((r) => r.dataset.id === 'garage')?.classList.contains('selected')).toBe(false);
+    expect(
+      rows(el)
+        .find((r) => r.dataset.id === 'garage')
+        ?.classList.contains('selected'),
+    ).toBe(false);
   });
 
   it('emits a distinct event for the orphans row', async () => {
@@ -547,7 +569,8 @@ describe('hv-location-tree: area grouping', () => {
 
   it('totals its members on the header, matching half included', async () => {
     const el = await mountAreas({ showCounts: true });
-    const headCount = (i: number) => heads(el)[i].querySelector('[data-testid="tree-area-count"]')?.textContent?.trim();
+    const headCount = (i: number) =>
+      heads(el)[i].querySelector('[data-testid="tree-area-count"]')?.textContent?.trim();
     expect(headCount(1)).toBe('9');
 
     el.nodes = areaTree.map((n) => ({ ...n, matching_subtree_count: n.id === 'fridge' ? 4 : 1 }));
@@ -585,7 +608,11 @@ describe('hv-location-tree: area grouping', () => {
   it('never disables a header, whatever subtree the picker excludes', async () => {
     const el = await mountAreas({ excludeSubtreeOf: 'fridge' });
     expect(heads(el).some((h) => h.hasAttribute('disabled'))).toBe(false);
-    expect(rows(el).find((r) => r.dataset.id === 'fridge')?.hasAttribute('disabled')).toBe(true);
+    expect(
+      rows(el)
+        .find((r) => r.dataset.id === 'fridge')
+        ?.hasAttribute('disabled'),
+    ).toBe(true);
   });
 
   it('tells assistive tech the header is a level above its members', async () => {
@@ -701,7 +728,12 @@ describe('hv-location-tree: the first location', () => {
     (q(el, '[data-testid="tree-create"]') as HTMLButtonElement).click();
     await el.updateComplete;
 
-    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true, cancelable: true });
+    const event = new KeyboardEvent('keydown', {
+      key: 'Escape',
+      bubbles: true,
+      composed: true,
+      cancelable: true,
+    });
     let escaped = false;
     document.addEventListener('keydown', () => (escaped = true), { once: true });
     (q(el, '[data-testid="tree-create-name"]') as HTMLInputElement).dispatchEvent(event);
@@ -994,9 +1026,7 @@ describe('hv-location-tree: one tab stop across area bands', () => {
 
   const walk = (el: HVLocationTree) =>
     [
-      ...(el.shadowRoot?.querySelectorAll(
-        '[data-testid="tree-area-head"], [data-testid="tree-row"]',
-      ) ?? []),
+      ...(el.shadowRoot?.querySelectorAll('[data-testid="tree-area-head"], [data-testid="tree-row"]') ?? []),
     ] as HTMLElement[];
 
   it('walks heads and rows together, so Up from a first root reaches its area', async () => {

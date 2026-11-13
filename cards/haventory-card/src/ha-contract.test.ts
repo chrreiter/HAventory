@@ -32,8 +32,7 @@ const relative = (path: string) => path.slice(SRC.length + 1).replace(/\\/g, '/'
  * instead, which is the rule being kept rather than broken. The `[^:]` guard
  * keeps a `https://` inside a string from swallowing the rest of its line.
  */
-const code = (source: string) =>
-  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
 describe('the Home Assistant contact surface', () => {
   // The value of this row of the contract is that it is empty. HA's frontend
@@ -99,9 +98,7 @@ describe('registerCustomCard', () => {
 
   it("adds the entry Home Assistant's picker reads", () => {
     registerCustomCard({ type: 'haventory-card', name: 'HAventory', description: 'x' });
-    expect(window.customCards).toEqual([
-      { type: 'haventory-card', name: 'HAventory', description: 'x' },
-    ]);
+    expect(window.customCards).toEqual([{ type: 'haventory-card', name: 'HAventory', description: 'x' }]);
   });
 
   // The bundle can be evaluated twice on one page — a Lovelace resource and an

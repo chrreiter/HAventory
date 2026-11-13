@@ -190,23 +190,26 @@ export class HVLightbox extends LitElement {
       }}
       @click=${this._close}
     >
-      ${missing
-        ? html`<div class="missing" data-testid="lightbox-missing">
+      ${
+        missing
+          ? html`<div class="missing" data-testid="lightbox-missing">
             ${icon('camera', 48)}
             <span>${t('hv.term.fileMissing')}</span>
           </div>`
-        : src
-        ? html`<img
+          : src
+            ? html`<img
             src=${src}
             alt=${pictureAlt(item.name, index, shots.length)}
             @error=${() => this._pictures.noteError(item.id, shot.id)}
           />`
-        : null}
+            : null
+      }
       <button class="close" data-testid="lightbox-close" aria-label=${t('hv.lightbox.close')} @click=${this._close}>
         ${icon('close', 22)}
       </button>
-      ${many
-        ? html`<button class="nav prev" data-testid="lightbox-prev" aria-label=${t('hv.lightbox.previous')} @click=${nav(-1)}>
+      ${
+        many
+          ? html`<button class="nav prev" data-testid="lightbox-prev" aria-label=${t('hv.lightbox.previous')} @click=${nav(-1)}>
               ${icon('chevronLeft', 26)}
             </button>
             <button class="nav next" data-testid="lightbox-next" aria-label=${t('hv.lightbox.next')} @click=${nav(1)}>
@@ -217,7 +220,8 @@ export class HVLightbox extends LitElement {
             <span class="counter" data-testid="lightbox-counter" aria-live="polite"
               >${t('hv.lightbox.counter', { index: index + 1, total: shots.length })}</span
             >`
-        : null}
+          : null
+      }
     </div>`;
   }
 }

@@ -22,13 +22,7 @@ export interface ColumnDef {
   /** grid-template-columns sizing for the full-view table. */
   tableSize: string;
   /** The backend sort field, when there is one; a header without it is not clickable. */
-  sortField?:
-    | 'quantity'
-    | 'due_date'
-    | 'inspection_date'
-    | 'reminder_date'
-    | 'updated_at'
-    | 'location';
+  sortField?: 'quantity' | 'due_date' | 'inspection_date' | 'reminder_date' | 'updated_at' | 'location';
 }
 
 /** Headers on a track too narrow for the full word take the short spelling. */
@@ -93,9 +87,10 @@ export function moveColumn(keys: ColumnKey[], key: ColumnKey, delta: -1 | 1): Co
   return next;
 }
 
-const COLUMN_TABLE_SIZE = Object.fromEntries(
-  COLUMN_DEFS.map((c) => [c.key, c.tableSize]),
-) as Record<ColumnKey, string>;
+const COLUMN_TABLE_SIZE = Object.fromEntries(COLUMN_DEFS.map((c) => [c.key, c.tableSize])) as Record<
+  ColumnKey,
+  string
+>;
 
 /**
  * The name track. Its floor outranks every flexible column: with the full set

@@ -15,21 +15,21 @@ export default [
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
-        project: false
+        project: false,
       },
       globals: {
         window: 'readonly',
         document: 'readonly',
         HTMLElement: 'readonly',
-        customElements: 'readonly'
-      }
+        customElements: 'readonly',
+      },
     },
     plugins: { '@typescript-eslint': tsPlugin },
     rules: {
       ...(tsPlugin.configs.recommended?.rules ?? {}),
       // TypeScript handles undefined variables; avoid false positives in TS code
-      'no-undef': 'off'
-    }
+      'no-undef': 'off',
+    },
   },
 
   {
@@ -44,21 +44,21 @@ export default [
         window: 'readonly',
         document: 'readonly',
         HTMLElement: 'readonly',
-        customElements: 'readonly'
-      }
+        customElements: 'readonly',
+      },
     },
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }]
-    }
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    },
   },
 
   {
     files: ['src/test.utils.ts'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }]
-    }
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    },
   },
 
   // Opt-in browser smoke scripts: mixed Node + in-page (browser) globals. These run
@@ -68,6 +68,6 @@ export default [
   {
     files: ['e2e/**/*.mjs'],
     languageOptions: { ecmaVersion: 'latest', sourceType: 'module' },
-    rules: { 'no-undef': 'off' }
-  }
+    rules: { 'no-undef': 'off' },
+  },
 ];

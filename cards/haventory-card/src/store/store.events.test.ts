@@ -25,13 +25,16 @@ describe('Store', () => {
     // Count item/list calls from here on via the callWS wrapper
     let listCalls = 0;
     const origCallWS = hass.callWS.bind(hass);
-    hass.callWS = async <T,>(msg: Record<string, unknown>): Promise<T> => {
+    hass.callWS = async <T>(msg: Record<string, unknown>): Promise<T> => {
       if (msg.type === 'haventory/item/list') listCalls += 1;
       return origCallWS<T>(msg);
     };
 
     const loc = {
-      id: 'locX', parent_id: null, name: 'Moved', area_id: null,
+      id: 'locX',
+      parent_id: null,
+      name: 'Moved',
+      area_id: null,
       path: { id_path: ['locX'], name_path: ['Moved'], display_path: 'Moved', sort_key: 'moved' },
     };
     hass.__emit('locations', 'moved', { location: loc });
@@ -88,7 +91,9 @@ describe('Store', () => {
     const counts = { items_total: 42, low_stock_count: 3, checked_out_count: 1, locations_total: 7 };
     hass.__emit('stats', 'counts', { counts });
     await new Promise((r) => setTimeout(r, 0));
-    expect(store.state.value.statsCounts).toEqual(expect.objectContaining({ items_total: 42, locations_total: 7 }));
+    expect(store.state.value.statsCounts).toEqual(
+      expect.objectContaining({ items_total: 42, locations_total: 7 }),
+    );
   });
 });
 

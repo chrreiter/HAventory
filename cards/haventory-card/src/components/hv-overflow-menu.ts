@@ -21,10 +21,7 @@ export interface OverflowMenuItem {
   disabled?: boolean;
 }
 
-export type OverflowMenuEntry =
-  | OverflowMenuItem
-  | { divider: true }
-  | { caption: string };
+export type OverflowMenuEntry = OverflowMenuItem | { divider: true } | { caption: string };
 
 /** The sides of the trigger's rect that the placement reads. */
 export interface MenuAnchorRect {
@@ -307,9 +304,7 @@ export class HVOverflowMenu extends LitElement {
   private _choose(item: OverflowMenuItem) {
     if (item.disabled) return;
     this.close();
-    this.dispatchEvent(
-      new CustomEvent('select', { detail: { id: item.id }, bubbles: true, composed: true }),
-    );
+    this.dispatchEvent(new CustomEvent('select', { detail: { id: item.id }, bubbles: true, composed: true }));
   }
 
   render() {
@@ -328,8 +323,9 @@ export class HVOverflowMenu extends LitElement {
       >
         ${icon('dotsVertical', 20)}
       </button>
-      ${this._open
-        ? html`<div class="scrim" role="presentation" data-testid="overflow-scrim" style="z-index: ${z};"></div>
+      ${
+        this._open
+          ? html`<div class="scrim" role="presentation" data-testid="overflow-scrim" style="z-index: ${z};"></div>
           <div
             class="menu"
             role="menu"
@@ -357,7 +353,8 @@ export class HVOverflowMenu extends LitElement {
               </button>`;
             })}
           </div>`
-        : null}
+          : null
+      }
     `;
   }
 }

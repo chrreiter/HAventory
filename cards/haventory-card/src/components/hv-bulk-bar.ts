@@ -13,14 +13,7 @@ import './hv-location-tree';
 
 /** A bulk action the bar can start. */
 export type BulkAction =
-  | 'move'
-  | 'add-tags'
-  | 'remove-tags'
-  | 'set-category'
-  | 'adjust-qty'
-  | 'check-out'
-  | 'check-in'
-  | 'delete';
+  'move' | 'add-tags' | 'remove-tags' | 'set-category' | 'adjust-qty' | 'check-out' | 'check-in' | 'delete';
 
 export interface BulkRunDetail {
   action: BulkAction;
@@ -292,7 +285,10 @@ export class HVBulkBar extends LitElement {
               .areas=${this.areas}
               showAll
               @select=${(e: CustomEvent) =>
-                this._run({ action: 'move', locationId: (e.detail as { locationId: string | null }).locationId })}
+                this._run({
+                  action: 'move',
+                  locationId: (e.detail as { locationId: string | null }).locationId,
+                })}
             ></hv-location-tree>
           </div>
         </div>`;
@@ -387,11 +383,13 @@ export class HVBulkBar extends LitElement {
           })}</span
         >
         <span class="spacer"></span>
-        ${progress.failed > 0
-          ? html`<span class="failed" data-testid="bulk-progress-failed"
+        ${
+          progress.failed > 0
+            ? html`<span class="failed" data-testid="bulk-progress-failed"
               >${t('hv.bulk.progressFailed', { count: progress.failed })}</span
             >`
-          : null}
+            : null
+        }
         <button
           class="band-button"
           data-testid="bulk-cancel"
@@ -427,8 +425,9 @@ export class HVBulkBar extends LitElement {
           </div>
         </div>
       </div>
-      ${failedCount
-        ? html`<div class="failures">
+      ${
+        failedCount
+          ? html`<div class="failures">
             ${result.failed.map(
               (f) => html`<div class="failure" data-testid="bulk-failure" data-item-id=${f.itemId ?? ''}>
                 <span class="glyph">${icon('alertCircle', 17)}</span>
@@ -439,12 +438,11 @@ export class HVBulkBar extends LitElement {
               </div>`,
             )}
           </div>`
-        : null}
+          : null
+      }
       <div class="result-foot">
         <span class="hint">
-          ${failedCount
-            ? t('hv.bulk.selectionKept', { rows: counted(failedCount, 'failedRow') })
-            : ''}
+          ${failedCount ? t('hv.bulk.selectionKept', { rows: counted(failedCount, 'failedRow') }) : ''}
         </span>
         <button
           class="hv-text-button"
@@ -453,15 +451,17 @@ export class HVBulkBar extends LitElement {
         >
           ${t('hv.action.close')}
         </button>
-        ${failedCount
-          ? html`<button
+        ${
+          failedCount
+            ? html`<button
               class="hv-pill"
               data-testid="bulk-retry"
               @click=${() => this._emit('retry-failed')}
             >
               ${t('hv.bulk.retryFailed', { count: failedCount })}
             </button>`
-          : null}
+            : null
+        }
       </div>
     </div>`;
   }

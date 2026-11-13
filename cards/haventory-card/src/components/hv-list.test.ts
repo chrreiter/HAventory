@@ -88,7 +88,6 @@ describe('hv-list: editing', () => {
     const el = await mount({ editorEpoch: 7 });
     expect(el.hasAttribute('editing')).toBe(false);
   });
-
 });
 
 // The three render branches are mutually exclusive and only the row branch was
