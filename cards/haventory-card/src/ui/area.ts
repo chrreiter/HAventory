@@ -3,19 +3,13 @@ import type { AreaRef, Location } from '../store/types';
 /** Resolving the HA area behind a location, the way the backend does. */
 
 /** An area's name, or the raw id for one HA dropped: a blank would read as "no area". */
-export function areaNameById(
-  areas: readonly AreaRef[],
-  id: string | null | undefined,
-): string | null {
+export function areaNameById(areas: readonly AreaRef[], id: string | null | undefined): string | null {
   if (!id) return null;
   return areas.find((a) => a.id === id)?.name ?? id;
 }
 
 /** The first non-null `area_id` from the location up through its ancestors. */
-export function effectiveAreaIdForLocation(
-  locations: readonly Location[],
-  id: string | null,
-): string | null {
+export function effectiveAreaIdForLocation(locations: readonly Location[], id: string | null): string | null {
   if (!id) return null;
   const byId = new Map(locations.map((l) => [l.id, l]));
   let cursor: string | null = id;
@@ -115,9 +109,7 @@ export function areaChangePreview(
     treeSize: rootId === null ? 1 : subtreeSize(childrenOf, rootId) + pending,
     // With nothing selected and nothing to change, the tree's existing area.
     effectiveAreaId:
-      kind === 'clear-tree'
-        ? null
-        : (selectedAreaId ?? effectiveAreaIdForLocation(locations, edited.parentId)),
+      kind === 'clear-tree' ? null : (selectedAreaId ?? effectiveAreaIdForLocation(locations, edited.parentId)),
     editsRoot: edited.id !== null && rootId === edited.id,
   };
 }

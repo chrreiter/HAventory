@@ -137,9 +137,7 @@ describe('activeFilterCount', () => {
   it('counts each date bound and the overdue toggle', () => {
     expect(activeFilterCount({ ...defaultFilters(), overdueOnly: true })).toBe(1);
     // The two date filters answer different questions, so they narrow twice.
-    expect(
-      activeFilterCount({ ...defaultFilters(), overdueOnly: true, inspectionDueOnly: true }),
-    ).toBe(2);
+    expect(activeFilterCount({ ...defaultFilters(), overdueOnly: true, inspectionDueOnly: true })).toBe(2);
     // A window is two separate bounds, each separately clearable.
     expect(
       activeFilterCount({
@@ -251,7 +249,7 @@ describe('Store', () => {
 
     const listFilters: any[] = [];
     const origCallWS = hass.callWS.bind(hass);
-    hass.callWS = async <T,>(msg: Record<string, unknown>): Promise<T> => {
+    hass.callWS = async <T>(msg: Record<string, unknown>): Promise<T> => {
       if (msg.type === 'haventory/item/list') listFilters.push(msg.filter);
       return origCallWS<T>(msg);
     };
@@ -268,7 +266,9 @@ describe('Store', () => {
 
   it('orphans filter narrows the visible items end-to-end through the mock', async () => {
     const placed = makeItem({
-      id: 'p1', name: 'Placed', location_id: 'loc1',
+      id: 'p1',
+      name: 'Placed',
+      location_id: 'loc1',
       location_path: { id_path: ['loc1'], name_path: ['Garage'], display_path: 'Garage', sort_key: 'garage' },
     });
     const orphan = makeItem({ id: 'o1', name: 'Orphan' });
@@ -330,9 +330,19 @@ describe('Store', () => {
       sort_key: display.toLowerCase(),
     });
     const items = [
-      makeItem({ id: '1', name: 'Deep', location_id: 'shelf', location_path: path('Garage / Shelf A', ['garage', 'shelf']) }),
+      makeItem({
+        id: '1',
+        name: 'Deep',
+        location_id: 'shelf',
+        location_path: path('Garage / Shelf A', ['garage', 'shelf']),
+      }),
       makeItem({ id: '2', name: 'Loose' }),
-      makeItem({ id: '3', name: 'Elsewhere', location_id: 'cellar', location_path: path('Cellar', ['cellar']) }),
+      makeItem({
+        id: '3',
+        name: 'Elsewhere',
+        location_id: 'cellar',
+        location_path: path('Cellar', ['cellar']),
+      }),
       makeItem({ id: '4', name: 'Shallow', location_id: 'garage', location_path: path('Garage', ['garage']) }),
     ];
     const hass = makeMockHass({ items });
@@ -341,22 +351,12 @@ describe('Store', () => {
 
     store.setFilters({ sort: { field: 'location', order: 'asc' } });
     await vi.waitUntil(() => store.state.value.items[0]?.name === 'Elsewhere');
-    expect(store.state.value.items.map((i) => i.name)).toEqual([
-      'Elsewhere',
-      'Shallow',
-      'Deep',
-      'Loose',
-    ]);
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['Elsewhere', 'Shallow', 'Deep', 'Loose']);
 
     // Reversed, the located items flip and the unlocated one stays at the end.
     store.setFilters({ sort: { field: 'location', order: 'desc' } });
     await vi.waitUntil(() => store.state.value.items[0]?.name === 'Deep');
-    expect(store.state.value.items.map((i) => i.name)).toEqual([
-      'Deep',
-      'Shallow',
-      'Elsewhere',
-      'Loose',
-    ]);
+    expect(store.state.value.items.map((i) => i.name)).toEqual(['Deep', 'Shallow', 'Elsewhere', 'Loose']);
 
     const sent = hass.__messages.filter((m) => m.type === 'haventory/item/list');
     expect(sent[sent.length - 1].sort).toEqual({ field: 'location', order: 'desc' });

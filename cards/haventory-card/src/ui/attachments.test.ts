@@ -29,8 +29,7 @@ function draw(content: unknown) {
   return box;
 }
 
-const q = (box: HTMLElement, testid: string) =>
-  box.querySelector<HTMLElement>(`[data-testid="${testid}"]`);
+const q = (box: HTMLElement, testid: string) => box.querySelector<HTMLElement>(`[data-testid="${testid}"]`);
 
 const photo = (patch: Record<string, unknown> = {}) => ({
   src: '/media/1?sig=x',

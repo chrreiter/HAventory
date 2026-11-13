@@ -451,15 +451,15 @@ export interface ItemsEventPayload extends BaseEventPayload {
   // Absent when the dataset moved wholesale, which is a refetch signal.
   item?: Item;
   action:
-  | 'created'
-  | 'updated'
-  | 'moved'
-  | 'deleted'
-  | 'checked_out'
-  | 'checked_in'
-  | 'quantity_changed'
-  | 'reloaded'
-  | TeardownAction;
+    | 'created'
+    | 'updated'
+    | 'moved'
+    | 'deleted'
+    | 'checked_out'
+    | 'checked_in'
+    | 'quantity_changed'
+    | 'reloaded'
+    | TeardownAction;
 }
 
 export interface LocationsEventPayload extends BaseEventPayload {

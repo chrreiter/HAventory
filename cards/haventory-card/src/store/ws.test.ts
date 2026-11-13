@@ -37,7 +37,12 @@ describe('WSClient payload shaping', () => {
     await ws.updateItem('i1', { name: 'x' }, 7);
     await ws.updateItem('i2', { name: 'y' });
 
-    expect(hass.sent[0]).toMatchObject({ type: 'haventory/item/update', item_id: 'i1', name: 'x', expected_version: 7 });
+    expect(hass.sent[0]).toMatchObject({
+      type: 'haventory/item/update',
+      item_id: 'i1',
+      name: 'x',
+      expected_version: 7,
+    });
     expect(hass.sent[1]).not.toHaveProperty('expected_version');
   });
 
@@ -302,9 +307,7 @@ describe('WSClient attachments', () => {
     const hass = makeUploadHass({ ok: false, status: 413 });
     const ws = new WSClient(hass);
 
-    await expect(
-      ws.uploadAttachment('i-1', new File(['x'], 'huge.png')),
-    ).rejects.toThrow(/413/);
+    await expect(ws.uploadAttachment('i-1', new File(['x'], 'huge.png'))).rejects.toThrow(/413/);
     expect(hass.sent).toEqual([]);
   });
 
@@ -312,9 +315,7 @@ describe('WSClient attachments', () => {
     const hass = makeSpyHass();
     const ws = new WSClient(hass);
 
-    await expect(ws.uploadAttachment('i-1', new File(['x'], 'a.png'))).rejects.toThrow(
-      /cannot upload files/,
-    );
+    await expect(ws.uploadAttachment('i-1', new File(['x'], 'a.png'))).rejects.toThrow(/cannot upload files/);
   });
 
   it('names the kind the file is being attached as', async () => {

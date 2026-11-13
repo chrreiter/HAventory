@@ -169,16 +169,19 @@ export class HVColumnPicker extends LitElement {
                   <span class="box ${r.on ? 'on' : ''}">${r.on ? icon('check', 12) : null}</span>
                   <span>${r.label}</span>
                 </button>
-                ${r.on
-                  ? html`<span class="move">
+                ${
+                  r.on
+                    ? html`<span class="move">
                       ${([-1, 1] as const).map((delta) => {
                         const up = delta === -1;
                         return html`<button
                           data-testid=${up ? 'column-up' : 'column-down'}
                           data-key=${r.key}
-                          aria-label=${up
-                            ? t('hv.columns.moveUp', { column: r.label })
-                            : t('hv.columns.moveDown', { column: r.label })}
+                          aria-label=${
+                            up
+                              ? t('hv.columns.moveUp', { column: r.label })
+                              : t('hv.columns.moveDown', { column: r.label })
+                          }
                           title=${up ? t('hv.term.moveUp') : t('hv.term.moveDown')}
                           ?disabled=${up ? index === 0 : index === shown - 1}
                           @click=${() => this._emit(moveColumn(this.columns, r.key, delta))}
@@ -187,10 +190,11 @@ export class HVColumnPicker extends LitElement {
                         </button>`;
                       })}
                     </span>`
-                  : null}
+                    : null
+                }
               </li>
               `,
-            )}
+          )}
           </ul>
           <div class="actions">
             <button

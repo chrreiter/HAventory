@@ -1,12 +1,12 @@
 import { html, render } from 'lit';
+import { isLowStock, renderNameChips, renderRowThumb, rowKeyAction, rowMenuEntries } from './row-chrome';
 import {
-  isLowStock,
-  renderNameChips,
-  renderRowThumb,
-  rowKeyAction,
-  rowMenuEntries,
-} from './row-chrome';
-import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, MediaUrls, PictureFallback, attachmentNameToken } from './media';
+  MEDIA_NAME_TOKEN_PARAM,
+  MEDIA_SIZE_PARAM,
+  MediaUrls,
+  PictureFallback,
+  attachmentNameToken,
+} from './media';
 import { makeAttachment, makeItem } from '../test.utils';
 import type { NameChipOptions } from './row-chrome';
 import type { Item, StatusDefinition } from '../store/types';
@@ -50,9 +50,7 @@ describe('isLowStock', () => {
 describe('rowMenuEntries', () => {
   const ids = (item: Item) =>
     rowMenuEntries(item)
-      .filter((e): e is Extract<ReturnType<typeof rowMenuEntries>[number], { id: string }> =>
-        'id' in e,
-      )
+      .filter((e): e is Extract<ReturnType<typeof rowMenuEntries>[number], { id: string }> => 'id' in e)
       .map((e) => e.id);
 
   it('offers the way out of a loan for an item that is out', () => {
@@ -67,9 +65,7 @@ describe('rowMenuEntries', () => {
   it('names the due-date entry for what pressing it would do', () => {
     const labels = (item: Item) =>
       rowMenuEntries(item)
-        .filter((e): e is Extract<ReturnType<typeof rowMenuEntries>[number], { id: string }> =>
-          'id' in e,
-        )
+        .filter((e): e is Extract<ReturnType<typeof rowMenuEntries>[number], { id: string }> => 'id' in e)
         .find((e) => e.id === 'set-due-date')?.label;
 
     expect(labels(makeItem({ checked_out: true }))).toBe('Set due date…');
@@ -167,9 +163,7 @@ describe('renderNameChips', () => {
     );
 
     const bare = draw(renderNameChips(overdue, flagged, tableOptions()));
-    expect(bare.querySelector('[data-testid="table-checked-out"]')?.textContent?.trim()).toBe(
-      'Overdue',
-    );
+    expect(bare.querySelector('[data-testid="table-checked-out"]')?.textContent?.trim()).toBe('Overdue');
   });
 
   it('leaves a loan that still has time to run in the calm tone', () => {
@@ -232,8 +226,8 @@ describe('renderRowThumb', () => {
     const img = draw(renderRowThumb(item, urls, thumbs)).querySelector('img');
     expect(img?.getAttribute('data-testid')).toBe('row-thumb');
     expect(img?.getAttribute('src')).toBe(
-      `/api/haventory/media/i-1/att-1?${MEDIA_NAME_TOKEN_PARAM}=${attachmentNameToken(picture)}`
-        + `&${MEDIA_SIZE_PARAM}=thumb&authSig=test`,
+      `/api/haventory/media/i-1/att-1?${MEDIA_NAME_TOKEN_PARAM}=${attachmentNameToken(picture)}` +
+        `&${MEDIA_SIZE_PARAM}=thumb&authSig=test`,
     );
     expect(img?.getAttribute('alt')).toBe('Photo of Cordless drill');
     expect(img?.getAttribute('loading')).toBe('lazy');
@@ -243,9 +237,7 @@ describe('renderRowThumb', () => {
     const { urls, thumbs } = signed(async () => ({ ok: false, status: 404 }));
     thumbs.noteError('i-1', 'att-1');
 
-    const mark = (await settled(urls, thumbs)).querySelector(
-      '[data-testid="row-thumb-missing"]',
-    );
+    const mark = (await settled(urls, thumbs)).querySelector('[data-testid="row-thumb-missing"]');
     expect(mark?.classList.contains('missing')).toBe(true);
     expect(mark?.getAttribute('aria-label')).toBe('File missing');
   });

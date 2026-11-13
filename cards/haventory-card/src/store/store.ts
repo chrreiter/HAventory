@@ -190,7 +190,9 @@ export interface Observable<T> {
   onChange(cb: () => void): () => void;
 }
 
-export function createObservable<T extends object>(initial: T): Observable<T> & { set(patch: Partial<T>): void } {
+export function createObservable<T extends object>(
+  initial: T,
+): Observable<T> & { set(patch: Partial<T>): void } {
   const listeners = new Set<() => void>();
   const state = { ...initial };
   return {
@@ -415,7 +417,7 @@ export class Store {
     const catchUp = this.areaRegistryAttempt > 0;
     const current = this.latestAreaWatch.claim();
     this.areaRegistryUnsub?.();
-    this.areaRegistryUnsub =this.ws.subscribeAreaRegistry(() => this.scheduleAreasRefresh(), {
+    this.areaRegistryUnsub = this.ws.subscribeAreaRegistry(() => this.scheduleAreasRefresh(), {
       onOpen: () => {
         if (catchUp && current()) this.scheduleAreasRefresh();
       },
@@ -459,19 +461,35 @@ export class Store {
     const { locationIds, areaId } = this.state.value.filters;
 
     this.itemsUnsub?.();
-    this.itemsUnsub = this.ws.subscribe('items', onEvent((evt) => this.onItemsEvent(evt)), {
-      location_ids: locationIds.length ? [...locationIds] : undefined,
-      area_id: areaId ?? undefined,
-      include_subtree: true,
-      ...opts,
-    });
+    this.itemsUnsub = this.ws.subscribe(
+      'items',
+      onEvent((evt) => this.onItemsEvent(evt)),
+      {
+        location_ids: locationIds.length ? [...locationIds] : undefined,
+        area_id: areaId ?? undefined,
+        include_subtree: true,
+        ...opts,
+      },
+    );
     this.statsUnsub?.();
-    this.statsUnsub = this.ws.subscribe('stats', onEvent((evt) => this.onStatsEvent(evt)), opts);
+    this.statsUnsub = this.ws.subscribe(
+      'stats',
+      onEvent((evt) => this.onStatsEvent(evt)),
+      opts,
+    );
     this.locationsUnsub?.();
-    this.locationsUnsub = this.ws.subscribe('locations', onEvent((evt) => this.onLocationsEvent(evt)), opts);
+    this.locationsUnsub = this.ws.subscribe(
+      'locations',
+      onEvent((evt) => this.onLocationsEvent(evt)),
+      opts,
+    );
     this.statusesUnsub?.();
     // Any event re-reads the whole (small) vocabulary rather than patching it.
-    this.statusesUnsub = this.ws.subscribe('statuses', onEvent(() => void this.refreshStatuses()), opts);
+    this.statusesUnsub = this.ws.subscribe(
+      'statuses',
+      onEvent(() => void this.refreshStatuses()),
+      opts,
+    );
   }
 
   /**
@@ -620,9 +638,7 @@ export class Store {
     // only, so with any filter on the server is asked for the real count.
     const total = this.state.value.total;
     const delta = items.length - loadedBefore;
-    this.stateObs.set(
-      total !== null && delta !== 0 ? { items, total: Math.max(0, total + delta) } : { items },
-    );
+    this.stateObs.set(total !== null && delta !== 0 ? { items, total: Math.max(0, total + delta) } : { items });
     if (activeFilterCount(this.state.value.filters) > 0) this.scheduleTotalRefresh();
     if (evt.action === 'created' || evt.action === 'updated' || evt.action === 'deleted') {
       void this.refreshDistinctValues().catch(() => undefined);
@@ -816,9 +832,7 @@ export class Store {
     title: string,
     expectedVersion?: number,
   ): Promise<Item> {
-    return this.applyResult(
-      this.ws.updateAttachment(itemId, attachmentId, title, expectedVersion),
-    );
+    return this.applyResult(this.ws.updateAttachment(itemId, attachmentId, title, expectedVersion));
   }
 
   /** Renumber one kind's attachments; the first id named becomes position 0. */
@@ -828,9 +842,7 @@ export class Store {
     attachmentIds: string[],
     expectedVersion?: number,
   ): Promise<Item> {
-    return this.applyResult(
-      this.ws.reorderAttachments(itemId, kind, attachmentIds, expectedVersion),
-    );
+    return this.applyResult(this.ws.reorderAttachments(itemId, kind, attachmentIds, expectedVersion));
   }
 
   /** Detach one file; the backend deletes the bytes with it. */
@@ -868,9 +880,9 @@ export class Store {
 
   async refreshLocationsFlat() {
     const locs = await this.run(() => this.ws.listLocations());
-    const list = locs.slice().sort((a, b) =>
-      a.path.sort_key.localeCompare(b.path.sort_key, undefined, { sensitivity: 'base' }),
-    );
+    const list = locs
+      .slice()
+      .sort((a, b) => a.path.sort_key.localeCompare(b.path.sort_key, undefined, { sensitivity: 'base' }));
     this.stateObs.set({ locationsFlatCache: list });
   }
 
@@ -1155,9 +1167,7 @@ export class Store {
   }
 
   async createLocation(name: string, parentId?: string | null, areaId?: string | null): Promise<Location> {
-    return this.afterLocationChange(() =>
-      this.ws.createLocation(name, parentId ?? null, areaId ?? undefined),
-    );
+    return this.afterLocationChange(() => this.ws.createLocation(name, parentId ?? null, areaId ?? undefined));
   }
 
   async updateLocation(
@@ -1174,9 +1184,7 @@ export class Store {
 
   /** Move a whole subtree under a new parent (null = top level). Descendant paths update live. */
   async moveLocationSubtree(locationId: string, newParentId: string | null): Promise<Location> {
-    const moved = await this.afterLocationChange(() =>
-      this.ws.moveLocationSubtree(locationId, newParentId),
-    );
+    const moved = await this.afterLocationChange(() => this.ws.moveLocationSubtree(locationId, newParentId));
     // Denormalized item location_path values changed for the whole subtree.
     await this.listItems(true);
     return moved;
@@ -1215,9 +1223,7 @@ export class Store {
    * carry it and no target is given. A reassignment re-reads items and counts.
    */
   async deleteStatus(slug: string, reassignTo?: string): Promise<number> {
-    const { reassigned } = await this.afterStatusChange(() =>
-      this.ws.deleteStatus(slug, reassignTo),
-    );
+    const { reassigned } = await this.afterStatusChange(() => this.ws.deleteStatus(slug, reassignTo));
     if (reassigned > 0) await Promise.all([this.listItems(true), this.refreshStats()]);
     return reassigned;
   }
@@ -1372,7 +1378,8 @@ export class Store {
   private applyOptimistic(item: Item) {
     const items = this.state.value.items.slice();
     const idx = items.findIndex((x) => x.id === item.id);
-    if (idx >= 0) items[idx] = item; else items.unshift(item);
+    if (idx >= 0) items[idx] = item;
+    else items.unshift(item);
     // A rolled-back delete puts the row back, so it is no longer gone.
     this.forgetRemoved(item.id);
     this.stateObs.set({ items });
@@ -1410,10 +1417,7 @@ export class Store {
 let bulkOpSeq = 0;
 
 /** Build a batch operation with an `op_id` unique for the process: the backend keeps only the last duplicate. */
-export function makeBulkOp(
-  kind: BulkOperation['kind'],
-  payload: Record<string, unknown>,
-): BulkOperation {
+export function makeBulkOp(kind: BulkOperation['kind'], payload: Record<string, unknown>): BulkOperation {
   bulkOpSeq += 1;
   const target = typeof payload.item_id === 'string' ? payload.item_id : 'op';
   return { op_id: `${kind}:${target}:${bulkOpSeq}`, kind, payload };

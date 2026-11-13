@@ -209,7 +209,9 @@ describe('Store', () => {
   // the filtered page, and one that is gone. Only the second closes an editor.
   describe('wasRemoved', () => {
     it('reports nothing removed for a row that is merely filtered out', async () => {
-      const hass = makeMockHass({ items: [makeItem({ id: 'a', name: 'Alpha' }), makeItem({ id: 'b', name: 'Beta' })] });
+      const hass = makeMockHass({
+        items: [makeItem({ id: 'a', name: 'Alpha' }), makeItem({ id: 'b', name: 'Beta' })],
+      });
       const store = new Store(hass, fast);
       await store.init();
 
@@ -233,7 +235,7 @@ describe('Store', () => {
       const store = new Store(hass, fast);
       await store.init();
       const passthrough = hass.callWS.bind(hass);
-      hass.callWS = async <T,>(msg: Record<string, unknown>): Promise<T> => {
+      hass.callWS = async <T>(msg: Record<string, unknown>): Promise<T> => {
         if (msg.type === 'haventory/item/delete') throw new Error('nope');
         return passthrough<T>(msg);
       };
@@ -264,7 +266,7 @@ describe('Store', () => {
     const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
     const store = new Store(hass, fast);
     await store.init();
-    hass.callWS = async <T,>(): Promise<T> => {
+    hass.callWS = async <T>(): Promise<T> => {
       throw {
         code: 'not_found',
         message: 'item not found',
@@ -579,9 +581,7 @@ describe('Store: bulk operations', () => {
     await store.init();
     hass.__failNext(1, { code: 'storage_error', message: 'disk full' });
 
-    const outcome = await store.bulkExecute(
-      three.map((i) => makeBulkOp('item_check_in', { item_id: i.id })),
-    );
+    const outcome = await store.bulkExecute(three.map((i) => makeBulkOp('item_check_in', { item_id: i.id })));
 
     expect(outcome.succeeded).toEqual([]);
     expect(outcome.failed).toHaveLength(3);
@@ -625,7 +625,10 @@ describe('Store: location tree and diagnostics data', () => {
   // so nodes come back without the matching pair.
   it('leaves the tree unfiltered until something is actually narrowing', async () => {
     const locations = [loc('garage', 'Garage')];
-    const store = new Store(makeMockHass({ items: [makeItem({ id: '1', location_id: 'garage' })], locations }), fast);
+    const store = new Store(
+      makeMockHass({ items: [makeItem({ id: '1', location_id: 'garage' })], locations }),
+      fast,
+    );
     await store.init();
 
     expect(store.state.value.locationTreeCache![0].matching_subtree_count).toBeUndefined();
@@ -775,7 +778,7 @@ describe('Store: export scopes', () => {
     const hass = makeMockHass({ items });
     const calls: unknown[] = [];
     const originalCallWS = hass.callWS.bind(hass);
-    hass.callWS = async <T,>(msg: Record<string, unknown>): Promise<T> => {
+    hass.callWS = async <T>(msg: Record<string, unknown>): Promise<T> => {
       if (msg.type === 'haventory/export') calls.push(msg.filter ?? null);
       return originalCallWS<T>(msg);
     };

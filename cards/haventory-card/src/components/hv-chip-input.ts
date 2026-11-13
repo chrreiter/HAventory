@@ -152,8 +152,9 @@ export class HVChipInput extends LitElement {
           @blur=${() => this._add(this._draft)}
         />
       </div>
-      ${suggestions.length
-        ? html`<div class="suggestions" data-testid="chip-suggestions">
+      ${
+        suggestions.length
+          ? html`<div class="suggestions" data-testid="chip-suggestions">
             ${suggestions.map(
               (s) => html`<button
                 class="suggestion"
@@ -166,7 +167,8 @@ export class HVChipInput extends LitElement {
               </button>`,
             )}
           </div>`
-        : null}
+          : null
+      }
     `;
   }
 }

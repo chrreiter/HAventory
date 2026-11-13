@@ -11,7 +11,16 @@ import { LocationPicker } from '../ui/location-picker';
 import { counted } from '../ui/plural';
 import { activeFilterCount, defaultFilters } from '../store/store';
 import { DEFAULT_STATUS, statusCount, statusLabel, statusList, statusTone } from '../ui/status';
-import type { DistinctValue, DistinctValues, Location, LocationTreeNode, SortField, StatsCounts, StatusDefinition, StoreFilters } from '../store/types';
+import type {
+  DistinctValue,
+  DistinctValues,
+  Location,
+  LocationTreeNode,
+  SortField,
+  StatsCounts,
+  StatusDefinition,
+  StoreFilters,
+} from '../store/types';
 
 /** Sort fields the backend supports, in the order the menu lists them. */
 const SORT_FIELDS: readonly SortField[] = [
@@ -416,9 +425,11 @@ export class HVFilterPanel extends LitElement {
     >
       <span class="mark">${on ? icon('check', this.mobile ? 15 : 12) : null}</span>
       <span>${label}</span>
-      ${opts.tally !== undefined && opts.tally !== null
-        ? html`<span class="hv-tally tally-right">${opts.tally}</span>`
-        : null}
+      ${
+        opts.tally !== undefined && opts.tally !== null
+          ? html`<span class="hv-tally tally-right">${opts.tally}</span>`
+          : null
+      }
     </button>`;
   }
 
@@ -620,16 +631,17 @@ export class HVFilterPanel extends LitElement {
             const on = f[key];
             const tally = this.counts?.[countKey] as number | null | undefined;
             const toggle = () => this._patch({ [key]: !on });
-            if (this.mobile) return this._renderCheckbox(t(label), on, toggle, { warning: !!tone, tally, testid });
+            if (this.mobile)
+              return this._renderCheckbox(t(label), on, toggle, { warning: !!tone, tally, testid });
             return html`<button
               class="hv-chip toggle chip ${on ? `on ${tone}` : ''}"
               data-testid=${testid}
               aria-pressed=${String(on)}
               @click=${toggle}
             >
-              ${on ? icon('check', 12) : null}${t(label)}${tally === null || tally === undefined
-                ? null
-                : html`<span class="hv-tally">${tally}</span>`}
+              ${on ? icon('check', 12) : null}${t(label)}${
+                tally === null || tally === undefined ? null : html`<span class="hv-tally">${tally}</span>`
+              }
             </button>`;
           })}
         </div>
@@ -698,9 +710,9 @@ export class HVFilterPanel extends LitElement {
         class="direction"
         data-testid=${`filter-${field}-direction`}
         data-direction=${before ? 'before' : 'after'}
-        aria-label=${before
-          ? t('hv.filter.dateFlipToSince', { noun })
-          : t('hv.filter.dateFlipToBefore', { noun })}
+        aria-label=${
+          before ? t('hv.filter.dateFlipToSince', { noun }) : t('hv.filter.dateFlipToBefore', { noun })
+        }
         title=${before ? t('hv.filter.dateTitleBefore') : t('hv.filter.dateTitleSince')}
         @click=${() => {
           this._dateDirection = { ...this._dateDirection, [field]: before ? 'after' : 'before' };
@@ -712,9 +724,7 @@ export class HVFilterPanel extends LitElement {
       </button>
       <input
         type="date"
-        aria-label=${before
-          ? t('hv.filter.dateBefore', { noun })
-          : t('hv.filter.dateSince', { noun })}
+        aria-label=${before ? t('hv.filter.dateBefore', { noun }) : t('hv.filter.dateSince', { noun })}
         .value=${dateOf(value)}
         @change=${(e: Event) => this._patch({ [activeKey]: toIso((e.target as HTMLInputElement).value) })}
       />
@@ -790,22 +800,26 @@ export class HVFilterPanel extends LitElement {
         ${this._renderShowOnlyGroup()} ${this._renderStatusGroup()} ${this._renderDateGroup()}
         <!-- Sort sits above the tag cloud, which grows without limit. -->
         ${this._renderSortGroup()} ${this._renderTagGroup()}
-        ${this.mobile
-          ? null
-          : html`<div class="footer">
+        ${
+          this.mobile
+            ? null
+            : html`<div class="footer">
               <span data-testid="filter-summary">
-                ${this.total !== null && this.grandTotal !== null
-                  ? t('hv.filter.summaryMatching', {
-                      filters: counted(count, 'filter'),
-                      total: this.total,
-                      grandTotal: this.grandTotal,
-                    })
-                  : t('hv.filter.summary', { filters: counted(count, 'filter') })}
+                ${
+                  this.total !== null && this.grandTotal !== null
+                    ? t('hv.filter.summaryMatching', {
+                        filters: counted(count, 'filter'),
+                        total: this.total,
+                        grandTotal: this.grandTotal,
+                      })
+                    : t('hv.filter.summary', { filters: counted(count, 'filter') })
+                }
               </span>
               <button class="hv-text-button" data-testid="filter-clear-all" @click=${() => this.clearAll()}>
                 ${t('hv.action.clearAll')}
               </button>
-            </div>`}
+            </div>`
+        }
       </div>
     `;
   }

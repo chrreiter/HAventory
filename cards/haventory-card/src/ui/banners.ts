@@ -55,21 +55,25 @@ export function renderDegradedBanners(st: StoreState | null, hooks: BannerHooks)
       kind="warning"
       glyph="clock"
       heading=${t('hv.banner.liveUpdates.heading')}
-      message=${retrying
-        ? t('hv.banner.liveUpdates.retrying', { cause })
-        : t('hv.banner.liveUpdates.stalled', { cause })}
+      message=${
+        retrying
+          ? t('hv.banner.liveUpdates.retrying', { cause })
+          : t('hv.banner.liveUpdates.stalled', { cause })
+      }
       data-testid="degraded-live-updates"
     >
-      ${retrying
-        ? null
-        : html`<button
+      ${
+        retrying
+          ? null
+          : html`<button
             slot="actions"
             class="hv-pill outline"
             data-testid="degraded-live-refresh"
             @click=${hooks.onRefresh}
           >
             ${t('hv.action.refresh')}
-          </button>`}
+          </button>`
+      }
     </hv-banner>`);
   }
 
@@ -105,8 +109,9 @@ export function renderErrorBanners(st: StoreState | null, hooks: BannerHooks): T
           data-testid="banner-entry"
           data-code=${e.code}
         >
-          ${recoverable
-            ? html`<span slot="below">
+          ${
+            recoverable
+              ? html`<span slot="below">
                 <button
                   class="hv-pill outline"
                   data-testid="banner-view-latest"
@@ -117,8 +122,9 @@ export function renderErrorBanners(st: StoreState | null, hooks: BannerHooks): T
                 >
                   ${t('hv.banner.conflict.viewLatest')}
                 </button>
-                ${e.changes
-                  ? html`<button
+                ${
+                  e.changes
+                    ? html`<button
                       class="hv-pill"
                       data-testid="banner-reapply"
                       @click=${() => {
@@ -128,9 +134,11 @@ export function renderErrorBanners(st: StoreState | null, hooks: BannerHooks): T
                     >
                       ${t('hv.banner.conflict.reapply')}
                     </button>`
-                  : null}
+                    : null
+                }
               </span>`
-            : null}
+              : null
+          }
           <button
             slot="actions"
             class="hv-icon-button"

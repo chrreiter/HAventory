@@ -203,9 +203,7 @@ export class HVDiagnosticsPanel extends LitElement {
             ?disabled=${this.busy}
             @click=${() => this.dispatchEvent(new CustomEvent('refresh', { bubbles: true, composed: true }))}
           >
-            ${icon('refresh', 15)}${this.busy
-              ? t('hv.diagnostics.refreshing')
-              : t('hv.action.refresh')}
+            ${icon('refresh', 15)}${this.busy ? t('hv.diagnostics.refreshing') : t('hv.action.refresh')}
           </button>
         </div>
 
@@ -213,11 +211,13 @@ export class HVDiagnosticsPanel extends LitElement {
           <div class="status ${live ? 'ok' : 'bad'}" data-testid="diagnostics-status">
             <span class="dot"></span>
             <span>
-              ${live
-                ? html`<strong>${t('hv.diagnostics.noIssues')}</strong
+              ${
+                live
+                  ? html`<strong>${t('hv.diagnostics.noIssues')}</strong
                     >${t('hv.diagnostics.noIssuesDetail')}`
-                : html`<strong>${t('hv.diagnostics.notLive')}</strong
-                    >${t('hv.diagnostics.notLiveDetail')}`}
+                  : html`<strong>${t('hv.diagnostics.notLive')}</strong
+                    >${t('hv.diagnostics.notLiveDetail')}`
+              }
             </span>
           </div>
 
@@ -234,9 +234,7 @@ export class HVDiagnosticsPanel extends LitElement {
             <div class="fact">
               <span>${t('hv.diagnostics.subscriptions')}</span>
               <span class="value ${live ? 'live' : 'stale'}" data-testid="diagnostics-subscriptions">
-                ${live
-                  ? t('hv.diagnostics.subscriptionsLive')
-                  : t('hv.diagnostics.subscriptionsDown')}
+                ${live ? t('hv.diagnostics.subscriptionsLive') : t('hv.diagnostics.subscriptionsDown')}
               </span>
             </div>
             <div class="fact">

@@ -16,7 +16,9 @@ async function mount(props: Partial<Picker>): Promise<Picker> {
   return el;
 }
 
-afterEach(() => { document.body.innerHTML = ''; });
+afterEach(() => {
+  document.body.innerHTML = '';
+});
 
 const option = (el: Picker, key: string) =>
   el.shadowRoot?.querySelector(`[data-testid="column-option"][data-key="${key}"]`) as HTMLButtonElement;
@@ -150,7 +152,9 @@ describe('hv-column-picker', () => {
     const el = await mount({ columns: [] });
     const sr = el.shadowRoot as ShadowRoot;
     let cancels = 0;
-    el.addEventListener('cancel', () => { cancels += 1; });
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
     (sr.querySelector('[data-testid="column-picker-done"]') as HTMLButtonElement).click();
     expect(cancels).toBe(1);
   });
@@ -159,7 +163,9 @@ describe('hv-column-picker', () => {
     const el = await mount({ columns: [] });
     const sr = el.shadowRoot as ShadowRoot;
     let cancels = 0;
-    el.addEventListener('cancel', () => { cancels += 1; });
+    el.addEventListener('cancel', () => {
+      cancels += 1;
+    });
 
     (sr.querySelector('[role="dialog"]') as HTMLElement).dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),

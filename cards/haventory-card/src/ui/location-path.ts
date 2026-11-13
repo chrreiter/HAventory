@@ -68,9 +68,9 @@ export function renderPathSegments(path: string): TemplateResult[] {
   return segments.map(
     (segment, i) =>
       html`<span class="hv-path-seg"
-        >${segment}${i < segments.length - 1
-          ? html`<span class="hv-path-sep">${PATH_SEPARATOR}</span>`
-          : null}</span
+        >${segment}${
+          i < segments.length - 1 ? html`<span class="hv-path-sep">${PATH_SEPARATOR}</span>` : null
+        }</span
       >`,
   );
 }
@@ -90,10 +90,7 @@ export function elidePath(path: string, maxSegments = 2): string {
  * back off for the caller to mark rather than punctuate. An area name containing
  * ` › ` cannot be taken off safely, so the whole string comes back as `rest`.
  */
-export function elideMobilePath(
-  areaName: string | null,
-  path: string,
-): { area: string | null; rest: string } {
+export function elideMobilePath(areaName: string | null, path: string): { area: string | null; rest: string } {
   const composed = elidePath([areaName, path].filter(Boolean).join(PATH_SEPARATOR));
   if (!areaName) return { area: null, rest: composed };
   if (composed === areaName) return { area: areaName, rest: '' };

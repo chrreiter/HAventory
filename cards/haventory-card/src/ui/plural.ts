@@ -22,11 +22,7 @@ export function counted(count: number, noun: CountNoun): string {
  * priced. A total behind the loaded rows (an event added one since) cannot be
  * true, so then only the rows on screen are counted.
  */
-export function showingCount(
-  loaded: number,
-  total: number | null | undefined,
-  filtered = false,
-): string {
+export function showingCount(loaded: number, total: number | null | undefined, filtered = false): string {
   if (total === null || total === undefined || total < loaded) {
     return tn('hv.list.showingAll', loaded);
   }

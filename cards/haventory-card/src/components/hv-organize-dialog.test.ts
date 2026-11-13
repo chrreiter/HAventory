@@ -135,16 +135,16 @@ describe('hv-organize-dialog: locations', () => {
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
 
     // The count names its unit here, exactly as the category and tag rows do.
-    expect(tree.shadowRoot?.querySelector('[data-testid="tree-count"]')?.textContent?.trim()).toBe(
-      '1 item',
-    );
+    expect(tree.shadowRoot?.querySelector('[data-testid="tree-count"]')?.textContent?.trim()).toBe('1 item');
     expect(tree.shadowRoot?.querySelector('[data-testid="tree-edit"]')).toBeTruthy();
   });
 
   it('edits a location in place and saves name, area and parent in one call', async () => {
     const { el, store, sr } = await mount({ locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
 
     const editor = q(sr, '[data-testid="location-editor"]') as HTMLElement;
@@ -230,7 +230,9 @@ describe('hv-organize-dialog: locations', () => {
     it('reads as "No area" when editing a location that has no parent', async () => {
       const { el, sr } = await mount({ locations });
       const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-      (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+      (
+        tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement
+      ).click();
       await settle(el);
 
       expect(areaDefault(sr)).toBe('No area');
@@ -273,7 +275,9 @@ describe('hv-organize-dialog: locations', () => {
         ).click();
         await settle(ctx.el);
       }
-      (tree.shadowRoot?.querySelector(`[data-testid="tree-edit"][data-id="${id}"]`) as HTMLButtonElement).click();
+      (
+        tree.shadowRoot?.querySelector(`[data-testid="tree-edit"][data-id="${id}"]`) as HTMLButtonElement
+      ).click();
       await settle(ctx.el);
       return ctx;
     }
@@ -311,7 +315,9 @@ describe('hv-organize-dialog: locations', () => {
     it('drops the tree wording for a location that is a tree of one', async () => {
       const { el, sr } = await mount({ locations: [loc('attic', 'Attic')] });
       const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-      (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="attic"]') as HTMLButtonElement).click();
+      (
+        tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="attic"]') as HTMLButtonElement
+      ).click();
       await settle(el);
       await pickArea(el, sr, 'area-kitchen');
 
@@ -349,7 +355,9 @@ describe('hv-organize-dialog: locations', () => {
       ['tree-edit', 'location-parent', 'location-parent-tree-holder'],
       ['tree-merge', 'merge-target', 'merge-target-tree-holder'],
     ]) {
-      (tree.shadowRoot?.querySelector(`[data-testid="${action}"][data-id="garage"]`) as HTMLButtonElement).click();
+      (
+        tree.shadowRoot?.querySelector(`[data-testid="${action}"][data-id="garage"]`) as HTMLButtonElement
+      ).click();
       await settle(el);
       const control = () => q(sr, `[data-testid="${picker}"]`) as HTMLButtonElement;
 
@@ -371,8 +379,7 @@ describe('hv-organize-dialog: locations', () => {
       // as another item inside that row: the merge row is a flex line carrying
       // the source, the arrow and the target, and a 200px box would join it.
       const holder = sr.getElementById(id) as HTMLElement;
-      const after =
-        control().parentElement === holder.parentElement ? control() : control().parentElement;
+      const after = control().parentElement === holder.parentElement ? control() : control().parentElement;
       expect(holder.previousElementSibling, `${picker} placement`).toBe(after);
     }
   });
@@ -380,7 +387,9 @@ describe('hv-organize-dialog: locations', () => {
   it('excludes the location itself from its own parent picker, so no cycle is possible', async () => {
     const { el, sr } = await mount({ locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
 
     (q(sr, '[data-testid="location-parent"]') as HTMLButtonElement).click();
@@ -501,9 +510,9 @@ describe('hv-organize-dialog: locations', () => {
 
     it('offers every area, including the one nothing is filed under yet', async () => {
       const { picker } = await openParentPicker();
-      const offered = [
-        ...(picker.shadowRoot?.querySelectorAll('[data-testid="tree-area-select"]') ?? []),
-      ].map((b) => (b as HTMLElement).dataset.area);
+      const offered = [...(picker.shadowRoot?.querySelectorAll('[data-testid="tree-area-select"]') ?? [])].map(
+        (b) => (b as HTMLElement).dataset.area,
+      );
       expect(offered).toEqual(['area-garage', 'area-kitchen']);
     });
 
@@ -530,9 +539,9 @@ describe('hv-organize-dialog: locations', () => {
 
     it('calls the row that clears the parent what it does in a parent picker', async () => {
       const { picker } = await openParentPicker();
-      expect(
-        picker.shadowRoot?.querySelector('[data-testid="tree-all"]')?.textContent?.trim(),
-      ).toContain('Top level');
+      expect(picker.shadowRoot?.querySelector('[data-testid="tree-all"]')?.textContent?.trim()).toContain(
+        'Top level',
+      );
     });
   });
 
@@ -541,7 +550,9 @@ describe('hv-organize-dialog: locations', () => {
     store.updateLocation = () => Promise.reject(new Error('Location is busy'));
 
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     (q(sr, '[data-testid="location-save"]') as HTMLButtonElement).click();
     await settle(el);
@@ -562,7 +573,9 @@ describe('hv-organize-dialog: locations', () => {
     const { el, store, sr } = await mount({ items, locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
 
-    (tree.shadowRoot?.querySelector('[data-testid="tree-delete"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-delete"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
 
     const guard = q(sr, '[data-testid="location-guard"]');
@@ -580,7 +593,9 @@ describe('hv-organize-dialog: locations', () => {
     const { el, sr } = await mount({ items, locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
 
-    (tree.shadowRoot?.querySelector('[data-testid="tree-delete"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-delete"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
 
     const guard = q(sr, '[data-testid="location-guard"]');
@@ -596,7 +611,9 @@ describe('hv-organize-dialog: locations', () => {
     const { el, store, sr } = await mount({ locations: [loc('spare', 'Spare')] });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
 
-    (tree.shadowRoot?.querySelector('[data-testid="tree-delete"][data-id="spare"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-delete"][data-id="spare"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     await settle(el);
 
@@ -621,7 +638,9 @@ describe('hv-organize-dialog: locations', () => {
         dismissed += 1;
       });
 
-      (tree.shadowRoot?.querySelector(`[data-testid="${testid}"][data-id="garage"]`) as HTMLButtonElement).click();
+      (
+        tree.shadowRoot?.querySelector(`[data-testid="${testid}"][data-id="garage"]`) as HTMLButtonElement
+      ).click();
       await settle(el);
 
       expect(store.state.value.filters.locationIds, testid).toEqual(['garage']);
@@ -640,7 +659,9 @@ describe('hv-organize-dialog: locations', () => {
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
     expect(tree.shadowRoot?.querySelector('[data-testid="tree-edit"]')).toBe(null);
 
-    (tree.shadowRoot?.querySelector('[data-testid="tree-more"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-more"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
 
     const sheet = q(sr, '[data-testid="location-sheet"]') as HTMLElement;
@@ -653,17 +674,16 @@ describe('hv-organize-dialog: locations', () => {
   });
 
   it('merges a location: items move, children re-parent, the husk is deleted', async () => {
-    const items = [
-      makeItem({ id: '1', location_id: 'garage' }),
-      makeItem({ id: '2', location_id: 'garage' }),
-    ];
+    const items = [makeItem({ id: '1', location_id: 'garage' }), makeItem({ id: '2', location_id: 'garage' })];
     const { el, store, sr } = await mount({
       items,
       locations: [...locations, loc('workshop', 'Workshop')],
     });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
 
-    (tree.shadowRoot?.querySelector('[data-testid="tree-merge"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-merge"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     expect(q(sr, '[data-testid="merge-effect"]')?.textContent).toContain('Pick a location');
     // The one row in that picker a merge cannot land on, and why.
@@ -683,7 +703,9 @@ describe('hv-organize-dialog: locations', () => {
     await settle(el);
     expect(disabled()).toEqual(expect.arrayContaining(['garage', 'shelf-a']));
 
-    (picker.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="workshop"]') as HTMLButtonElement).click();
+    (
+      picker.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="workshop"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     expect(q(sr, '[data-testid="merge-effect"]')?.textContent).toContain('2 items and 1 sub-location');
 
@@ -716,12 +738,16 @@ describe('hv-organize-dialog: locations', () => {
     });
 
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-merge"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-merge"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     (q(sr, '[data-testid="merge-target"]') as HTMLButtonElement).click();
     await settle(el);
     const picker = q(sr, '[data-testid="merge-target-tree"]') as HTMLElement;
-    (picker.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="workshop"]') as HTMLButtonElement).click();
+    (
+      picker.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="workshop"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     (q(sr, '[data-testid="merge-apply"]') as HTMLButtonElement).click();
     for (let i = 0; i < 4; i += 1) await settle(el);
@@ -904,9 +930,7 @@ describe('hv-organize-dialog: tags and categories', () => {
 
     (q(sr, '[data-testid="value-target"]') as HTMLButtonElement).click();
     await settle(el);
-    const option = all(sr, '[data-testid="value-target-option"]').find(
-      (o) => o.dataset.value === 'battery',
-    )!;
+    const option = all(sr, '[data-testid="value-target-option"]').find((o) => o.dataset.value === 'battery')!;
     option.click();
     await settle(el);
 
@@ -1289,12 +1313,9 @@ describe('hv-organize-dialog: statuses', () => {
     const { sr } = await mount({ tab: 'statuses' });
 
     const rows = all(sr, '[data-testid="status-row"]');
-    expect((rows[0].querySelector('[data-testid="status-up"]') as HTMLButtonElement).disabled).toBe(
-      true,
-    );
+    expect((rows[0].querySelector('[data-testid="status-up"]') as HTMLButtonElement).disabled).toBe(true);
     expect(
-      (rows[rows.length - 1].querySelector('[data-testid="status-down"]') as HTMLButtonElement)
-        .disabled,
+      (rows[rows.length - 1].querySelector('[data-testid="status-down"]') as HTMLButtonElement).disabled,
     ).toBe(true);
   });
 
@@ -1504,9 +1525,7 @@ describe('hv-organize-dialog: statuses', () => {
     expect(custom.style.getPropertyValue('--hv-status-bg')).toBe('#ffe082');
     expect(custom.style.getPropertyValue('--hv-status-fg')).toBe('#000000');
     // None of the ten reads as chosen while a literal colour is in force.
-    expect(all(sr, '[data-testid="status-color"]').some((b) => b.classList.contains('on'))).toBe(
-      false,
-    );
+    expect(all(sr, '[data-testid="status-color"]').some((b) => b.classList.contains('on'))).toBe(false);
   });
 
   // The one element on the card that ignores the Home Assistant theme, so the
@@ -1659,7 +1678,6 @@ describe('hv-organize-dialog: statuses', () => {
       expect(glyph?.getAttribute('width'), dir).toBe('18');
     }
   });
-
 });
 
 // Every disclosure renders after the row that opened it, inside a `.body` that
@@ -1713,7 +1731,9 @@ describe('hv-organize-dialog: disclosures come into view', () => {
   it('brings the location delete guard into view', async () => {
     const { el, sr } = await mount({ items, locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-delete"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-delete"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
 
     expect(scrolled()).toEqual([q(sr, '[data-testid="location-guard"]')]);
@@ -1723,7 +1743,9 @@ describe('hv-organize-dialog: disclosures come into view', () => {
   it('brings the location editor into view and puts the caret in its name field', async () => {
     const { el, sr } = await mount({ locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
 
     expect(scrolled()).toEqual([q(sr, '[data-testid="location-editor"]')]);
@@ -1755,7 +1777,9 @@ describe('hv-organize-dialog: disclosures come into view', () => {
   it('scrolls once per open, not on the re-renders that follow', async () => {
     const { el, sr } = await mount({ locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     expect(scrolls).toHaveLength(1);
 
@@ -1790,7 +1814,9 @@ describe('hv-organize-dialog: disclosures come into view', () => {
   it('scrolls again when a second row opens the same kind of disclosure', async () => {
     const { el, sr } = await mount({ locations: [loc('garage', 'Garage'), loc('attic', 'Attic')] });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     (tree.shadowRoot?.querySelector('[data-testid="tree-edit"][data-id="attic"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1823,7 +1849,9 @@ describe('hv-organize-dialog: disclosures come into view', () => {
   it('brings the location ⋮ sheet into view', async () => {
     const { el, sr } = await mount({ items, locations, mobile: true });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-more"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-more"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
 
     expect(scrolled()).toEqual([q(sr, '[data-testid="location-sheet"]')]);
@@ -1848,7 +1876,9 @@ describe('hv-organize-dialog: disclosures come into view', () => {
   it('follows the ⋮ sheet to the editor it opens', async () => {
     const { el, sr } = await mount({ items, locations, mobile: true });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-more"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree.shadowRoot?.querySelector('[data-testid="tree-more"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     (q(sr, '[data-testid="location-sheet-edit"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1868,9 +1898,7 @@ describe('hv-organize-dialog: the id an automation names', () => {
   async function editing(id: string) {
     const { el, sr } = await mount({ locations });
     const tree = q(sr, '[data-testid="organize-tree"]') as HTMLElement;
-    (
-      tree.shadowRoot?.querySelector(`[data-testid="tree-edit"][data-id="${id}"]`) as HTMLButtonElement
-    ).click();
+    (tree.shadowRoot?.querySelector(`[data-testid="tree-edit"][data-id="${id}"]`) as HTMLButtonElement).click();
     await settle(el);
     return { el, sr };
   }
@@ -1923,9 +1951,7 @@ describe('hv-organize-dialog: the language in force', () => {
   it('names its four tabs in German', async () => {
     setLanguage('de');
     const { el } = await mount();
-    const tabs = all<HTMLElement>(el, '[data-testid="organize-tab"]').map((b) =>
-      (b.textContent ?? '').trim(),
-    );
+    const tabs = all<HTMLElement>(el, '[data-testid="organize-tab"]').map((b) => (b.textContent ?? '').trim());
     expect(tabs).toEqual(['Orte', 'Kategorien', 'Labels', 'Status']);
   });
 
@@ -2048,10 +2074,7 @@ describe('hv-organize-dialog: the statuses tab in German', () => {
     await settle(el);
 
     const select = q(sr, '[data-testid="status-reassign"]') as HTMLSelectElement;
-    expect([...select.options].map((o) => o.textContent?.trim())).toEqual([
-      'OK',
-      'Reparatur nötig',
-    ]);
+    expect([...select.options].map((o) => o.textContent?.trim())).toEqual(['OK', 'Reparatur nötig']);
   });
 
   // A rename is the household saying what it wants these called, and it holds
@@ -2067,9 +2090,7 @@ describe('hv-organize-dialog: the statuses tab in German', () => {
     });
 
     const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
-    expect(row?.querySelector('[data-testid="status-chip"]')?.textContent?.trim()).toBe(
-      'Verschollen',
-    );
+    expect(row?.querySelector('[data-testid="status-chip"]')?.textContent?.trim()).toBe('Verschollen');
     (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
     await settle(el);
 

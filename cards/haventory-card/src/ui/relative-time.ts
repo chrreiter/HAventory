@@ -28,8 +28,14 @@ function relativeFormatter(): Intl.RelativeTimeFormat {
 
 function dateFormatter(withYear: boolean): Intl.DateTimeFormat {
   const lang = language();
-  return cached(`date:${lang}:${withYear}`, () =>
-    new Intl.DateTimeFormat(lang, { month: 'short', day: 'numeric', ...(withYear ? { year: 'numeric' } : {}) }),
+  return cached(
+    `date:${lang}:${withYear}`,
+    () =>
+      new Intl.DateTimeFormat(lang, {
+        month: 'short',
+        day: 'numeric',
+        ...(withYear ? { year: 'numeric' } : {}),
+      }),
   );
 }
 

@@ -31,7 +31,15 @@ import type { MediaBindings } from '../ui/media';
 import { docIcon, renderDocumentRow, renderLightboxHost, renderPhotoFigure } from '../ui/attachments';
 import type { ConfirmDiscard } from '../ui/discard';
 import { CopyFlash } from '../ui/clipboard';
-import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, ScalarValue, StatusDefinition } from '../store/types';
+import type {
+  AreaRef,
+  Item,
+  Location,
+  LocationTreeNode,
+  MediaConfig,
+  ScalarValue,
+  StatusDefinition,
+} from '../store/types';
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
 import './hv-item-editor';
@@ -419,8 +427,7 @@ export class HVDetailSheet extends LitElement {
   @property({ attribute: false }) tagSuggestions: string[] = [];
   @property({ attribute: false }) customFieldKeys: string[] = [];
   /** Passed straight to the editor: creating a first location from its picker. */
-  @property({ attribute: false }) createLocation: ((name: string) => Promise<Location>) | null =
-    null;
+  @property({ attribute: false }) createLocation: ((name: string) => Promise<Location>) | null = null;
   /**
    * The host's discard question for this sheet and its form. It outlives a
    * confirmed dismissal, so it is the host's; null asks nothing.
@@ -528,11 +535,13 @@ export class HVDetailSheet extends LitElement {
     const on = value === true;
     return html`<div class="fact" data-testid="sheet-fact" data-key=${key}>
       <span>${customFieldLabel(key)}</span>
-      ${type === 'boolean'
-        ? html`<span class="value ${on ? 'yes' : 'unset'}">
+      ${
+        type === 'boolean'
+          ? html`<span class="value ${on ? 'yes' : 'unset'}">
             ${on ? html`${icon('check', 15)} ${t('hv.term.yes')}` : t('hv.term.no')}
           </span>`
-        : html`<span class="value">${type === 'date' ? formatDate(String(value)) : String(value)}</span>`}
+          : html`<span class="value">${type === 'date' ? formatDate(String(value)) : String(value)}</span>`
+      }
     </div>`;
   }
 
@@ -638,32 +647,40 @@ export class HVDetailSheet extends LitElement {
       <div class="title">
         <h2 data-testid="sheet-name">${item.name}</h2>
         <div class="chips">
-          ${low
-            ? html`<span
+          ${
+            low
+              ? html`<span
                 class="hv-chip warning"
                 data-testid="sheet-low"
                 aria-label=${t('hv.term.lowStock')}
                 >${t('hv.term.low')}</span
               >`
-            : null}
-          ${itemStatus(item) !== DEFAULT_STATUS
-            ? renderStatusChip(itemStatus(item), this.statuses, { testid: 'sheet-status' })
-            : null}
-          ${item.checked_out
-            ? html`<span
+              : null
+          }
+          ${
+            itemStatus(item) !== DEFAULT_STATUS
+              ? renderStatusChip(itemStatus(item), this.statuses, { testid: 'sheet-status' })
+              : null
+          }
+          ${
+            item.checked_out
+              ? html`<span
                 class="hv-chip ${overdue ? 'error' : 'state'}"
                 data-testid="sheet-out"
               >
-                ${overdue ? t('hv.term.overdue') : t('hv.term.checkedOut')}${item.due_date
-                  ? ` · ${t('hv.term.due', { date: formatDate(item.due_date) })}`
-                  : ''}
+                ${overdue ? t('hv.term.overdue') : t('hv.term.checkedOut')}${
+                  item.due_date ? ` · ${t('hv.term.due', { date: formatDate(item.due_date) })}` : ''
+                }
               </span>`
-            : null}
-          ${inspectionDue
-            ? html`<span class="hv-chip warning" data-testid="sheet-inspection-due">
+              : null
+          }
+          ${
+            inspectionDue
+              ? html`<span class="hv-chip warning" data-testid="sheet-inspection-due">
                 ${t('hv.term.inspectionDueOn', { date: formatDate(item.inspection_date) })}
               </span>`
-            : null}
+              : null
+          }
           ${item.category ? html`<span class="hv-chip" data-testid="sheet-category">${item.category}</span>` : null}
           ${item.tags.map((t) => renderTagChip(t, 'sheet-tag'))}
         </div>
@@ -695,9 +712,11 @@ export class HVDetailSheet extends LitElement {
 
       ${this._renderGallery(item)} ${this._renderDocuments(item)}
 
-      ${item.description
-        ? html`<div class="description" data-testid="sheet-description">${item.description}</div>`
-        : null}
+      ${
+        item.description
+          ? html`<div class="description" data-testid="sheet-description">${item.description}</div>`
+          : null
+      }
 
       <div class="facts">
         <div class="fact location" data-testid="sheet-fact" data-key="location">
@@ -720,8 +739,9 @@ export class HVDetailSheet extends LitElement {
             data-testid="sheet-reminder"
             >${reminderSummary(item) ?? t('hv.term.notSet')}</span
           >
-          ${canBumpReminder(item)
-            ? html`<button
+          ${
+            canBumpReminder(item)
+              ? html`<button
                 class="text-action"
                 data-testid="sheet-reminder-bump"
                 title=${t('hv.sheet.markDoneTitle')}
@@ -730,7 +750,8 @@ export class HVDetailSheet extends LitElement {
               >
                 ${t('hv.sheet.markDone')}
               </button>`
-            : null}
+              : null
+          }
         </div>
         <div class="fact" data-testid="sheet-fact" data-key="threshold">
           <span>${t('hv.field.lowStock')}</span>
@@ -764,8 +785,9 @@ export class HVDetailSheet extends LitElement {
         </div>
       </div>
 
-      ${this._checkoutOpen
-        ? html`<div style="padding: 0 14px 14px">
+      ${
+        this._checkoutOpen
+          ? html`<div style="padding: 0 14px 14px">
             <hv-checkout-popover
               inline
               touch
@@ -790,15 +812,17 @@ export class HVDetailSheet extends LitElement {
               }}
             ></hv-checkout-popover>
           </div>`
-        : null}
+          : null
+      }
 
       <div class="actions">
         <div class="pair">
-          ${item.checked_out
-            ? html`<button class="outline" data-testid="sheet-check-in" @click=${() => this._emit('check-in')}>
+          ${
+            item.checked_out
+              ? html`<button class="outline" data-testid="sheet-check-in" @click=${() => this._emit('check-in')}>
                 ${icon('account', 18)}${t('hv.action.checkIn')}
               </button>`
-            : html`<button
+              : html`<button
                 class="outline"
                 data-testid="sheet-check-out"
                 @click=${() => {
@@ -806,7 +830,8 @@ export class HVDetailSheet extends LitElement {
                 }}
               >
                 ${icon('account', 18)}${t('hv.action.checkOut')}
-              </button>`}
+              </button>`
+          }
           <button class="hv-pill large" data-testid="sheet-edit-details" @click=${this._edit}>
             ${icon('pencil', 18)}${t('hv.sheet.editDetails')}
           </button>

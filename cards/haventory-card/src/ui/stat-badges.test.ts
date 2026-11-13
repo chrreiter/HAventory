@@ -71,9 +71,7 @@ describe('renderStatBadges', () => {
 
   it('says nothing at all until the store has counted something', () => {
     expect(renderStatBadges(null, null, cardOptions())).toBe(null);
-    expect(renderStatBadges({ statsCounts: null, filters: defaultFilters() }, null, cardOptions())).toBe(
-      null,
-    );
+    expect(renderStatBadges({ statsCounts: null, filters: defaultFilters() }, null, cardOptions())).toBe(null);
   });
 
   // The pills are filter toggles, not decoration; a dashboard that never checks
@@ -152,12 +150,11 @@ describe('renderStatBadges', () => {
 
     // The card's checked-out badge is its one blue one; the bar paints its own
     // fills and has no blue to spare on a blue bar.
-    expect([...(card.querySelector('[data-testid="badge-out"]') as HTMLElement).classList]).toContain(
-      'state',
-    );
-    expect([
-      ...(bar.querySelector('[data-testid="full-badge-out"]') as HTMLElement).classList,
-    ]).toEqual(['hv-chip', 'pill']);
+    expect([...(card.querySelector('[data-testid="badge-out"]') as HTMLElement).classList]).toContain('state');
+    expect([...(bar.querySelector('[data-testid="full-badge-out"]') as HTMLElement).classList]).toEqual([
+      'hv-chip',
+      'pill',
+    ]);
   });
 
   // The total reports rather than filters, so it is the one chip a surface can
@@ -168,9 +165,6 @@ describe('renderStatBadges', () => {
       'badge-out',
     ]);
     expect(testids(draw(stocked(), ['low_stock'], cardOptions()).host)).toEqual(['badge-low']);
-    expect(testids(draw(stocked(), null, barOptions()).host)).toEqual([
-      'full-badge-low',
-      'full-badge-out',
-    ]);
+    expect(testids(draw(stocked(), null, barOptions()).host)).toEqual(['full-badge-low', 'full-badge-out']);
   });
 });

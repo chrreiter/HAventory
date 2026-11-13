@@ -17,5 +17,4 @@ describe('ui/browse-row: one row in two shadow roots', () => {
   it('reaches both roots that draw one', () => {
     for (const tag of BROWSERS) expect(sheetsOf(tag), tag).toContain(browseRow);
   });
-
 });

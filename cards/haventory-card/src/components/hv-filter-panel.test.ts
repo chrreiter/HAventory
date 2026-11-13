@@ -2,7 +2,14 @@ import { setLanguage } from '../i18n';
 import './hv-filter-panel';
 import type { HVFilterPanel } from './hv-filter-panel';
 import { defaultFilters } from '../store/store';
-import type { DistinctValue, DistinctValues, Location, LocationTreeNode, StatusDefinition, StoreFilters } from '../store/types';
+import type {
+  DistinctValue,
+  DistinctValues,
+  Location,
+  LocationTreeNode,
+  StatusDefinition,
+  StoreFilters,
+} from '../store/types';
 import { all, componentCss, mountComponent, q } from '../test.utils';
 
 const distinct: DistinctValues = {
@@ -236,9 +243,9 @@ describe('hv-filter-panel: status', () => {
     const chip = q(el, '[data-testid="filter-status"][data-value="needs_repair"]')!;
     expect(chip.classList.contains('on')).toBe(true);
     expect(chip.classList.contains('tone-amber')).toBe(true);
-    expect(
-      q(el, '[data-testid="filter-status"][data-value="ok"]')!.classList.contains('tone-green'),
-    ).toBe(false);
+    expect(q(el, '[data-testid="filter-status"][data-value="ok"]')!.classList.contains('tone-green')).toBe(
+      false,
+    );
   });
 
   // #536: the three the backend seeds are stored in English because they are
@@ -388,16 +395,7 @@ describe('hv-filter-panel: the label cap', () => {
     const el = await mount({}, withTags(30));
     const shown = all(el, '[data-testid="filter-tag"]').map((c) => c.dataset.value);
 
-    expect(shown).toEqual([
-      'tag-00',
-      'tag-01',
-      'tag-02',
-      'tag-03',
-      'tag-04',
-      'tag-05',
-      'tag-06',
-      'tag-07',
-    ]);
+    expect(shown).toEqual(['tag-00', 'tag-01', 'tag-02', 'tag-03', 'tag-04', 'tag-05', 'tag-06', 'tag-07']);
     const more = q(el, '[data-testid="filter-tag-more"]')!;
     expect(more.textContent).toContain('22');
 
@@ -688,9 +686,7 @@ describe('hv-filter-panel: dates and location', () => {
   it('turns a date input into the ISO instant the backend compares against', async () => {
     const el = await mount();
     const seen = changes(el);
-    const input = q(el, '[data-testid="filter-updated-date"]')!.querySelector(
-      'input',
-    ) as HTMLInputElement;
+    const input = q(el, '[data-testid="filter-updated-date"]')!.querySelector('input') as HTMLInputElement;
 
     input.value = '2026-07-01';
     input.dispatchEvent(new Event('change'));
@@ -710,7 +706,9 @@ describe('hv-filter-panel: dates and location', () => {
     await el.updateComplete;
 
     const tree = () => el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement | null;
-    (tree()?.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement).click();
+    (
+      tree()?.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement
+    ).click();
     expect(seen[0]).toEqual({ locationIds: ['garage'] });
 
     // Adding to a selection means picking again, so the tree stays open.
@@ -927,7 +925,6 @@ describe('hv-filter-panel: footer and staging', () => {
 });
 
 describe('hv-filter-panel: native control affordances', () => {
-
   // The drawn chevron sits over a select that fills the field: beside a select
   // only as wide as its own text, clicking the arrow — the obvious target —
   // does nothing at all.
@@ -943,7 +940,6 @@ describe('hv-filter-panel: native control affordances', () => {
     const chevronRule = cssText.slice(cssText.indexOf('.field .chevron'));
     expect(chevronRule).toContain('pointer-events: none');
   });
-
 });
 
 describe('hv-filter-panel: changed', () => {
@@ -1038,8 +1034,8 @@ describe('hv-filter-panel: inspection due', () => {
   // so it has to carry the same forward-looking wording as the editor.
   it('names the inspection sort field for the date it holds', async () => {
     const el = await mount();
-    const labels = [...q(el, '[data-testid="filter-sort-field"]')!.querySelectorAll('option')].map(
-      (o) => (o as HTMLOptionElement).textContent?.trim(),
+    const labels = [...q(el, '[data-testid="filter-sort-field"]')!.querySelectorAll('option')].map((o) =>
+      (o as HTMLOptionElement).textContent?.trim(),
     );
     expect(labels).toContain('Next inspection');
     expect(labels).not.toContain('Inspection date');
@@ -1072,9 +1068,7 @@ describe('hv-filter-panel: inspection due', () => {
       // desktop one applies straight away.
       const applied: Partial<StoreFilters>[] = [];
       el.addEventListener('change', (e) => applied.push((e as CustomEvent).detail));
-      el.addEventListener('stage', (e) =>
-        applied.push((e as CustomEvent).detail.filters as StoreFilters),
-      );
+      el.addEventListener('stage', (e) => applied.push((e as CustomEvent).detail.filters as StoreFilters));
       (chip as HTMLButtonElement).click();
       expect(applied[0], `mobile=${mobile}`).toMatchObject({ inspectionDueOnly: true });
       el.remove();
@@ -1114,17 +1108,13 @@ describe('hv-filter-panel: pressed state', () => {
     for (const mobile of [false, true]) {
       for (const chip of STATEFUL_CHIPS) {
         const off = await mount({}, { mobile });
-        expect(
-          q(off, chip.sel)!.getAttribute('aria-pressed'),
-          `${chip.name} off, mobile=${mobile}`,
-        ).toBe('false');
+        expect(q(off, chip.sel)!.getAttribute('aria-pressed'), `${chip.name} off, mobile=${mobile}`).toBe(
+          'false',
+        );
         off.remove();
 
         const on = await mount(chip.on, { mobile });
-        expect(
-          q(on, chip.sel)!.getAttribute('aria-pressed'),
-          `${chip.name} on, mobile=${mobile}`,
-        ).toBe('true');
+        expect(q(on, chip.sel)!.getAttribute('aria-pressed'), `${chip.name} on, mobile=${mobile}`).toBe('true');
         on.remove();
       }
     }
@@ -1226,9 +1216,7 @@ describe('hv-filter-panel: pressed state', () => {
   it('presses a selected tag no item currently carries', async () => {
     const el = await mount({ tags: ['nobody-uses-this'] });
     expect(
-      q(el, '[data-testid="filter-tag"][data-value="nobody-uses-this"]')!.getAttribute(
-        'aria-pressed',
-      ),
+      q(el, '[data-testid="filter-tag"][data-value="nobody-uses-this"]')!.getAttribute('aria-pressed'),
     ).toBe('true');
   });
 

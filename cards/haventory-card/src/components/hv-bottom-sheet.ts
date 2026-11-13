@@ -171,9 +171,10 @@ export class HVBottomSheet extends LitElement {
         style="z-index: ${z + 1};${drag}"
         @keydown=${onEscape(() => this._cancel())}
       >
-        ${this.noHandle
-          ? null
-          : html`<div
+        ${
+          this.noHandle
+            ? null
+            : html`<div
               class="grip"
               data-testid="sheet-grip"
               aria-hidden="true"
@@ -183,7 +184,8 @@ export class HVBottomSheet extends LitElement {
               @pointercancel=${this._onGripUp}
             >
               <div class="handle" data-testid="sheet-handle"></div>
-            </div>`}
+            </div>`
+        }
         <div class="body"><slot></slot></div>
         <slot name="footer"></slot>
       </div>

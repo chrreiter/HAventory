@@ -241,18 +241,16 @@ export class HVCheckoutPopover extends LitElement {
         class="card"
         role="dialog"
         aria-modal="true"
-        aria-label=${settingOnly
-          ? t('hv.checkout.setDueDate')
-          : t('hv.checkout.checkOutNamed', { name: subject })}
+        aria-label=${
+          settingOnly ? t('hv.checkout.setDueDate') : t('hv.checkout.checkOutNamed', { name: subject })
+        }
         data-testid="checkout-popover"
         style=${this.inline ? '' : `z-index:${z + 1}; ${this._position}`}
         @keydown=${onEscape(() => this._cancel())}
       >
         <div class="head">
           <div class="title" data-testid="checkout-title">
-            ${settingOnly
-              ? t('hv.checkout.setADueDate')
-              : t('hv.checkout.checkOutNamed', { name: subject })}
+            ${settingOnly ? t('hv.checkout.setADueDate') : t('hv.checkout.checkOutNamed', { name: subject })}
           </div>
           <div class="sub">${t('hv.checkout.sub')}</div>
         </div>
@@ -310,9 +308,7 @@ export class HVCheckoutPopover extends LitElement {
             ?disabled=${!this._due}
             @click=${() => this._commit(this._due)}
           >
-            ${this._due
-              ? t('hv.checkout.confirmWithDate', { action, date: formatDate(this._due) })
-              : action}
+            ${this._due ? t('hv.checkout.confirmWithDate', { action, date: formatDate(this._due) }) : action}
           </button>
         </div>
       </div>

@@ -35,9 +35,7 @@ const BUILT_IN_LABEL_KEYS: ReadonlyMap<string, TranslationKey> = new Map<string,
 ]);
 
 /** The English seeded per built-in slug, which is what a rename is measured against. */
-const SEEDED_LABELS: ReadonlyMap<string, string> = new Map(
-  BUILT_IN_STATUSES.map((d) => [d.slug, d.label]),
-);
+const SEEDED_LABELS: ReadonlyMap<string, string> = new Map(BUILT_IN_STATUSES.map((d) => [d.slug, d.label]));
 
 /**
  * Every colour a status may take, hue-major so a hue's two strengths stay
@@ -72,9 +70,7 @@ export const STATUS_ICONS: readonly IconName[] = [
 ];
 
 /** Definitions to render from: the backend's, or the built-ins until it answers. */
-export function statusList(
-  defs: readonly StatusDefinition[] | null | undefined,
-): readonly StatusDefinition[] {
+export function statusList(defs: readonly StatusDefinition[] | null | undefined): readonly StatusDefinition[] {
   return defs && defs.length > 0 ? defs : BUILT_IN_STATUSES;
 }
 
@@ -102,10 +98,7 @@ export function displayLabel(def: StatusDefinition): string {
 }
 
 /** Display label for a slug, or the slug itself for a status the card has not been told about. */
-export function statusLabel(
-  slug: string,
-  defs: readonly StatusDefinition[] | null | undefined,
-): string {
+export function statusLabel(slug: string, defs: readonly StatusDefinition[] | null | undefined): string {
   const def = definitionOf(slug, defs);
   return def ? displayLabel(def) : slug;
 }
@@ -115,10 +108,7 @@ export function statusLabel(
  * means no number to show, never zero: a slug the map lacks is one the counts
  * do not define yet. Without the map, only the two flagged built-ins are known.
  */
-export function statusCount(
-  counts: StatsCounts | null | undefined,
-  slug: string,
-): number | null {
+export function statusCount(counts: StatsCounts | null | undefined, slug: string): number | null {
   const perSlug = counts?.status_counts;
   if (perSlug) return perSlug[slug] ?? null;
   if (slug === 'missing') return counts?.missing_count ?? null;
@@ -162,10 +152,7 @@ export interface StatusTone {
  * How to paint a slug: a kebab-cased `tone-*` class for a token, or an inline
  * style for a `#rrggbb` literal. A caller must apply both halves.
  */
-export function statusTone(
-  slug: string,
-  defs: readonly StatusDefinition[] | null | undefined,
-): StatusTone {
+export function statusTone(slug: string, defs: readonly StatusDefinition[] | null | undefined): StatusTone {
   const color = definitionOf(slug, defs)?.color ?? 'neutral';
   if (isHexColor(color)) return { toneClass: '', toneStyle: hexToneStyle(color) };
   return { toneClass: `tone-${color.replace(/_/g, '-')}`, toneStyle: undefined };
@@ -188,10 +175,7 @@ export function statusIconName(
  * A slug from a label: lowercase ASCII letters, digits and underscores, with a
  * numeric suffix when the vocabulary already carries it.
  */
-export function slugFromLabel(
-  label: string,
-  defs: readonly StatusDefinition[] | null | undefined,
-): string {
+export function slugFromLabel(label: string, defs: readonly StatusDefinition[] | null | undefined): string {
   const base =
     label
       .normalize('NFKD')

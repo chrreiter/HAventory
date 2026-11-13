@@ -24,10 +24,10 @@ function draw(state: Partial<DayOffsetsState>, opts: Partial<DayOffsetsOptions> 
   return { host, picked, custom, typed };
 }
 
-const all = (host: HTMLElement, testid: string) =>
-  [...host.querySelectorAll<HTMLElement>(`[data-testid="${testid}"]`)];
-const q = (host: HTMLElement, testid: string) =>
-  host.querySelector<HTMLElement>(`[data-testid="${testid}"]`);
+const all = (host: HTMLElement, testid: string) => [
+  ...host.querySelectorAll<HTMLElement>(`[data-testid="${testid}"]`),
+];
+const q = (host: HTMLElement, testid: string) => host.querySelector<HTMLElement>(`[data-testid="${testid}"]`);
 
 describe('renderDayOffsets', () => {
   it('offers the three round spans and the way past them', () => {
@@ -46,11 +46,7 @@ describe('renderDayOffsets', () => {
 
   it('marks the preset that computes the date the field holds', () => {
     const { host } = draw({ current: addDays(30) });
-    expect(all(host, 'checkout-offset').map((b) => b.classList.contains('on'))).toEqual([
-      false,
-      true,
-      false,
-    ]);
+    expect(all(host, 'checkout-offset').map((b) => b.classList.contains('on'))).toEqual([false, true, false]);
   });
 
   it('hands back the date a preset stands for', () => {

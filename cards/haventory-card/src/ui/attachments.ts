@@ -118,12 +118,13 @@ export function renderDocumentRow(
   return html`<li class=${doc.missing ? 'missing' : ''} data-testid=${style.testid}>
     <span class="doc-icon">${icon('fileDocument', style.glyph)}</span>
     ${body}
-    ${doc.missing
-      ? html`<span class="hv-chip warning" data-testid=${`${style.testid}-missing`}
+    ${
+      doc.missing
+        ? html`<span class="hv-chip warning" data-testid=${`${style.testid}-missing`}
           >${t('hv.term.fileMissing')}</span
         >`
-      : doc.src
-        ? html`<a
+        : doc.src
+          ? html`<a
             class="doc-open"
             data-testid=${`${style.testid}-open`}
             href=${doc.src}
@@ -133,7 +134,8 @@ export function renderDocumentRow(
             title=${ifDefined(style.openTitle)}
             >${icon('openInNew', 15)}${style.openText}</a
           >`
-        : null}
+          : null
+    }
     ${tail}
   </li>`;
 }

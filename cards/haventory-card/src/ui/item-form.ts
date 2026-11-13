@@ -336,8 +336,7 @@ export function isDirty(model: ItemFormModel, original: Item | null): boolean {
     model.inspectionDate !== baseline.inspectionDate ||
     model.reminderDate !== baseline.reminderDate ||
     // Through the built interval: a unit changed without a count is still a one-off.
-    JSON.stringify(reminderIntervalFrom(model)) !==
-      JSON.stringify(reminderIntervalFrom(baseline))
+    JSON.stringify(reminderIntervalFrom(model)) !== JSON.stringify(reminderIntervalFrom(baseline))
   ) {
     return true;
   }

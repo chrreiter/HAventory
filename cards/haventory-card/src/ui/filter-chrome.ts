@@ -104,9 +104,7 @@ export function priceStaged(
   set: (count: number | null) => void,
 ): (filters: StoreFilters) => void {
   return debounce((filters: StoreFilters) => {
-    void getStore()
-      ?.countMatching(filters)
-      .then(set);
+    void getStore()?.countMatching(filters).then(set);
   }, STAGED_PRICE_MS);
 }
 
@@ -133,9 +131,9 @@ export function renderSearch(opts: SearchOptions): TemplateResult {
     <input
       type="search"
       data-testid=${opts.testid}
-      placeholder=${opts.total === null
-        ? t('hv.card.searchPlaceholder')
-        : tn('hv.card.searchAllPlaceholder', opts.total)}
+      placeholder=${
+        opts.total === null ? t('hv.card.searchPlaceholder') : tn('hv.card.searchAllPlaceholder', opts.total)
+      }
       .value=${opts.draft}
       @input=${(e: Event) => opts.onInput((e.target as HTMLInputElement).value)}
     />
@@ -149,8 +147,7 @@ export function renderFilterChips(st: StoreState | null, opts: FilterActions): T
     .filters=${st?.filters ?? defaultFilters()}
     .locations=${st?.locationsFlatCache ?? null}
     .areas=${st?.areasCache?.areas ?? []}
-    @remove-filter=${(e: CustomEvent) =>
-      opts.setFilters((e.detail as { patch: Partial<StoreFilters> }).patch)}
+    @remove-filter=${(e: CustomEvent) => opts.setFilters((e.detail as { patch: Partial<StoreFilters> }).patch)}
     @clear-filters=${opts.clearFilters}
   ></hv-filter-chips>`;
 }
@@ -245,9 +242,7 @@ export function renderStagedFooter(opts: StagedFooterOptions): TemplateResult {
       data-testid=${`${opts.prefix}-apply`}
       @click=${() => opts.panel()?.apply()}
     >
-      ${opts.stagedCount === null
-        ? t('hv.card.showItems')
-        : tn('hv.card.showCount', opts.stagedCount)}
+      ${opts.stagedCount === null ? t('hv.card.showItems') : tn('hv.card.showCount', opts.stagedCount)}
     </button>
   </div>`;
 }

@@ -228,14 +228,7 @@ describe('hv-card-shell: overflow menu', () => {
     const ids = [...(menu.shadowRoot?.querySelectorAll('[data-testid="overflow-item"]') ?? [])].map(
       (b) => (b as HTMLElement).dataset.id,
     );
-    expect(ids).toEqual([
-      'select-items',
-      'organize',
-      'refresh',
-      'diagnostics',
-      'export-all',
-      'import',
-    ]);
+    expect(ids).toEqual(['select-items', 'organize', 'refresh', 'diagnostics', 'export-all', 'import']);
   });
 
   // Two meta lines sit one above the other in the same menu, so a lower-cased
@@ -479,9 +472,7 @@ describe('hv-card-shell: search and filters', () => {
         expect(sr.getElementById(id), `${where}, still there`).toBeTruthy();
         // The button reports the surface its own width uses, so the press
         // shows in the announcement at either width.
-        expect(toggle().getAttribute('aria-expanded'), `${where}, flipped`).toBe(
-          String(!was.showing),
-        );
+        expect(toggle().getAttribute('aria-expanded'), `${where}, flipped`).toBe(String(!was.showing));
       }
       el.remove();
     }
@@ -590,9 +581,7 @@ describe('hv-card-shell: list and footer', () => {
   it('says the total is the matching one only when a filter is on', async () => {
     const items = [makeItem({ id: '1', category: 'Tools' }), makeItem({ id: '2', category: 'Other' })];
     const { el, store, sr } = await mountShell({ items });
-    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent?.trim()).toBe(
-      'Showing 2 of 2 items',
-    );
+    expect(sr.querySelector('[data-testid="showing-count"]')?.textContent?.trim()).toBe('Showing 2 of 2 items');
 
     store.setFilters({ categories: ['Tools'] });
     await settle(el);
@@ -672,9 +661,11 @@ describe('hv-card-shell: list and footer', () => {
     // "nothing matched", because clearing a filter would not bring the list back.
     const { el, store, hass, sr } = await mountShell({ items: [], locations: [] });
     const kind = () =>
-      ((sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector(
-        '[data-testid="empty-state"]',
-      ) as HTMLElement)?.dataset.kind;
+      (
+        (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector(
+          '[data-testid="empty-state"]',
+        ) as HTMLElement
+      )?.dataset.kind;
 
     store.setFilters({ q: 'nothing' });
     await settle(el);
@@ -742,9 +733,9 @@ describe('hv-card-shell: list and footer', () => {
 
 /** The treatment the first queued entry is drawn with. */
 const bannerKind = (sr: ShadowRoot) =>
-  (sr.querySelector('[data-testid="banner-entry"]') as HTMLElement).shadowRoot?.querySelector(
-    '[data-testid="banner"]',
-  )?.getAttribute('data-kind');
+  (sr.querySelector('[data-testid="banner-entry"]') as HTMLElement).shadowRoot
+    ?.querySelector('[data-testid="banner"]')
+    ?.getAttribute('data-kind');
 
 describe('hv-card-shell: banners', () => {
   it('offers both recovery paths on a conflict', async () => {
@@ -875,7 +866,6 @@ describe('hv-card-shell: banners', () => {
 });
 
 describe('hv-card-shell: narrow header', () => {
-
   it('renders no badge row at all when a phone has nothing to badge', async () => {
     const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
     // Otherwise the empty wrapper still claims a full-width row under the title.
@@ -992,16 +982,15 @@ describe('hv-card-shell: adding an item on a phone', () => {
       sr.querySelector('[data-testid="host-confirm"]') as HTMLElement & { open: boolean };
     const typed = (sr: ShadowRoot) =>
       (
-        sr.querySelector('hv-item-editor')?.shadowRoot?.querySelector(
-          '[data-testid="editor-name"]',
-        ) as HTMLInputElement | null
+        sr
+          .querySelector('hv-item-editor')
+          ?.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement | null
       )?.value;
 
     const dismiss = {
       'close button': (sr: ShadowRoot) =>
         (sr.querySelector('[data-testid="add-sheet-close"]') as HTMLButtonElement).click(),
-      scrim: (sr: ShadowRoot) =>
-        (addSheet(sr)?.shadowRoot?.querySelector('.scrim') as HTMLElement).click(),
+      scrim: (sr: ShadowRoot) => (addSheet(sr)?.shadowRoot?.querySelector('.scrim') as HTMLElement).click(),
     } as const;
 
     it.each(Object.keys(dismiss) as (keyof typeof dismiss)[])(
@@ -1023,8 +1012,6 @@ describe('hv-card-shell: adding an item on a phone', () => {
         expect(addSheet(sr)?.open).toBe(false);
       },
     );
-
-
 
     it('asks the same question every other surface asks', async () => {
       const { el, sr } = await dirtyAddSheet();
@@ -1226,8 +1213,7 @@ describe('hv-card-shell: mobile', () => {
 describe('hv-card-shell: inline editing', () => {
   const editor = (sr: ShadowRoot) =>
     (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector('hv-item-editor') as
-      | (HTMLElement & { dirty: boolean })
-      | null;
+      (HTMLElement & { dirty: boolean }) | null;
   const row = (sr: ShadowRoot, id: string) =>
     [...((sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelectorAll('hv-list-row') ?? [])]
       .map((r) => r as HTMLElement & { item: Item })
@@ -1326,9 +1312,7 @@ describe('hv-card-shell: inline editing', () => {
     (row(sr, '2')!.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const editors = (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelectorAll(
-      'hv-item-editor',
-    );
+    const editors = (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelectorAll('hv-item-editor');
     expect(editors).toHaveLength(1);
     expect(editor(sr)?.shadowRoot?.textContent).toContain('Two — editing');
   });
@@ -1456,9 +1440,9 @@ describe('hv-card-shell: the open editor survives a refetch', () => {
     expect(store.state.value.items.map((i) => i.id)).toEqual(['2']);
     expect(editor(sr)).toBe(before);
     expect(nameField(sr).value).toBe('Target EDITED');
-    expect(
-      list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')?.textContent,
-    ).toContain('No longer matches the current filters');
+    expect(list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')?.textContent).toContain(
+      'No longer matches the current filters',
+    );
   });
 
   it('releases the pin on cancel', async () => {
@@ -1602,7 +1586,9 @@ describe('hv-card-shell: inline editor reactivity', () => {
     expect(banner?.textContent).toContain('the store is read-only');
     expect(editor(sr)?.busy).toBe(false);
     expect(
-      (editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).textContent?.trim(),
+      (
+        editor(sr)?.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement
+      ).textContent?.trim(),
     ).toBe('Save');
   });
 
@@ -1715,9 +1701,7 @@ describe('hv-card-shell: mobile detail sheet', () => {
     expect(sheet(sr).open).toBe(true);
     expect(sheet(sr).item?.id).toBe('1');
     // No inline expander on touch.
-    expect(
-      (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector('hv-item-editor'),
-    ).toBe(null);
+    expect((sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector('hv-item-editor')).toBe(null);
   });
 
   it('is not rendered at all on desktop', async () => {
@@ -1820,7 +1804,10 @@ describe('hv-card-shell: mobile detail sheet', () => {
   });
 
   it('deletes through the same confirmation and closes the sheet', async () => {
-    const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Doomed' })], mobile: true });
+    const { el, store, sr } = await mountShell({
+      items: [makeItem({ id: '1', name: 'Doomed' })],
+      mobile: true,
+    });
     (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
     await settle(el);
 
@@ -1941,7 +1928,11 @@ describe('hv-card-shell: full view', () => {
       sr.querySelector('[data-testid="host-organize"]') as HTMLElement & { open: boolean; tab: string };
 
     fullView(sr).dispatchEvent(
-      new CustomEvent('menu-action', { detail: { id: 'organize', tab: 'tags' }, bubbles: true, composed: true }),
+      new CustomEvent('menu-action', {
+        detail: { id: 'organize', tab: 'tags' },
+        bubbles: true,
+        composed: true,
+      }),
     );
     await settle(el);
     expect(organize().open).toBe(true);
@@ -1956,7 +1947,7 @@ describe('hv-card-shell: full view', () => {
 
   // The button and the sidebar heading are new front doors onto the surface the
   // ⋮ already reached; both have to arrive at the dialog, on the tab they name.
-  it('opens organize from the expanded view\'s app bar and Status heading', async () => {
+  it("opens organize from the expanded view's app bar and Status heading", async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     const organize = () =>
       sr.querySelector('[data-testid="host-organize"]') as HTMLElement & { open: boolean; tab: string };
@@ -2081,7 +2072,7 @@ describe('hv-card-shell: check-out with a due date', () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1', checked_out: true })] });
     const menu = await openRowMenu(el, sr);
     const items = [...(menu.shadowRoot?.querySelectorAll('[data-testid="overflow-item"]') ?? [])].map(
-      (b) => (b as HTMLElement),
+      (b) => b as HTMLElement,
     );
     expect(items.map((b) => b.dataset.id)).toEqual(['check-in', 'set-due-date', 'delete']);
     expect(items[1].textContent).toContain('Set due date');
@@ -2173,7 +2164,6 @@ describe('hv-card-shell: degraded states', () => {
     expect(store.state.value.degraded.connectionLost).toBe(false);
   });
 
-
   it('says live updates are paused while a refused subscribe is being retried', async () => {
     const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     // One round refused, so the store is mid-backoff when the card renders.
@@ -2253,9 +2243,9 @@ describe('hv-card-shell: diagnostics and import', () => {
   it('badges Diagnostics only when there is something wrong', async () => {
     const { el, hass, store, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     let menu = await openMenu(el, sr);
-    expect((menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLElement).textContent).not.toContain(
-      'offline',
-    );
+    expect(
+      (menu.shadowRoot?.querySelector('[data-id="diagnostics"]') as HTMLElement).textContent,
+    ).not.toContain('offline');
 
     hass.__failNext(2, new Error('socket closed'));
     await store.refreshStats().catch(() => undefined);

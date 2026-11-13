@@ -70,7 +70,6 @@ describe('hv-overflow-menu', () => {
 });
 
 describe('hv-overflow-menu: narrow screens', () => {
-
   // The scrim was a ::before on the menu. A negative-z-index child paints after
   // the background of the element establishing the stacking context and before
   // its content, so the wash landed on top of the menu's own white surface and
@@ -149,7 +148,6 @@ describe('hv-overflow-menu: narrow screens', () => {
 // sliver. The menu is viewport-fixed instead, so no ancestor's overflow can cut
 // it.
 describe('hv-overflow-menu: escaping ancestor clips', () => {
-
   it('carries live placement coordinates while open', async () => {
     const el = await mount([{ id: 'refresh', label: 'Refresh data' }]);
     // jsdom has no layout — every rect is zero — so both axes clamp to the

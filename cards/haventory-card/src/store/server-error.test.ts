@@ -22,7 +22,11 @@ describe('serverErrorText', () => {
 
   it('shows the server message for a key this catalog does not know, never the key', () => {
     setLanguage('de');
-    const err = { message: 'something new', translation_domain: 'haventory', translation_key: 'from_a_newer_build' };
+    const err = {
+      message: 'something new',
+      translation_domain: 'haventory',
+      translation_key: 'from_a_newer_build',
+    };
     expect(serverErrorText(err, 'fallback')).toBe('something new');
   });
 

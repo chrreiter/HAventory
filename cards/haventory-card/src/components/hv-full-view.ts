@@ -47,14 +47,7 @@ import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
-import type {
-  DistinctValue,
-  Item,
-  LocationTreeNode,
-  Sort,
-  StoreFilters,
-  StoreState,
-} from '../store/types';
+import type { DistinctValue, Item, LocationTreeNode, Sort, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import { makeBulkOp } from '../store/store';
 import type { BulkOperation, BulkOutcome } from '../store/types';
@@ -78,8 +71,7 @@ type FacetSection = Exclude<SidebarSection, 'locations'>;
 const FACET_SECTIONS: FacetSection[] = ['status', 'categories', 'tags'];
 
 /** Names a facet row by its value, so a tab stop survives a redraw that keeps the row. */
-const facetRowKey = (section: FacetSection, value: string | undefined) =>
-  `${section}:${value ?? ''}`;
+const facetRowKey = (section: FacetSection, value: string | undefined) => `${section}:${value ?? ''}`;
 
 /**
  * The element a section heading discloses. It stays in the tree while shut so
@@ -838,9 +830,7 @@ export class HVFullView extends LitElement {
 
   /** The rows of one facet list, in the order they are drawn. */
   private _facetRows(section: FacetSection): HTMLElement[] {
-    return [
-      ...this.renderRoot.querySelectorAll<HTMLElement>(`[data-testid="sidebar-${section}-row"]`),
-    ];
+    return [...this.renderRoot.querySelectorAll<HTMLElement>(`[data-testid="sidebar-${section}-row"]`)];
   }
 
   /** Leave one row of `section` in the tab order, read off the rendered rows. */
@@ -948,10 +938,14 @@ export class HVFullView extends LitElement {
     const table: Record<BulkAction, [TranslationKey, (i: Item) => BulkOperation]> = {
       move: [
         'hv.bulk.label.move',
-        (i) => makeBulkOp('item_move', { item_id: i.id, location_id: detail.locationId ?? null, ...version(i) }),
+        (i) =>
+          makeBulkOp('item_move', { item_id: i.id, location_id: detail.locationId ?? null, ...version(i) }),
       ],
       'add-tags': ['hv.bulk.label.addTags', (i) => makeBulkOp('item_add_tags', { item_id: i.id, tags })],
-      'remove-tags': ['hv.bulk.label.removeTags', (i) => makeBulkOp('item_remove_tags', { item_id: i.id, tags })],
+      'remove-tags': [
+        'hv.bulk.label.removeTags',
+        (i) => makeBulkOp('item_remove_tags', { item_id: i.id, tags }),
+      ],
       'set-category': [
         'hv.bulk.label.setCategory',
         (i) => makeBulkOp('item_update', { item_id: i.id, category: detail.category ?? null, ...version(i) }),
@@ -1093,11 +1087,12 @@ export class HVFullView extends LitElement {
         ?hidden=${!this._sections.status}
         @keydown=${(e: KeyboardEvent) => this._onFacetKeydown('status', e)}
       >
-        ${this._sections.status
-          ? statusList(this.st?.statuses).map(({ slug: s }) => {
-              const on = filters.status === s;
-              const tally = statusCount(counts, s);
-              return html`<button
+        ${
+          this._sections.status
+            ? statusList(this.st?.statuses).map(({ slug: s }) => {
+                const on = filters.status === s;
+                const tally = statusCount(counts, s);
+                return html`<button
                 class="value-row hv-browse-row ${on ? 'selected' : ''}"
                 data-testid="sidebar-status-row"
                 data-value=${s}
@@ -1112,8 +1107,9 @@ export class HVFullView extends LitElement {
                 <span class="label hv-browse-row-label">${statusLabel(s, this.st?.statuses)}</span>
                 ${tally === null ? null : html`<span class="hv-tally">${tally}</span>`}
               </button>`;
-            })
-          : null}
+              })
+            : null
+        }
       </div>
     `;
   }
@@ -1146,10 +1142,11 @@ export class HVFullView extends LitElement {
         ?hidden=${!open}
         @keydown=${(e: KeyboardEvent) => this._onFacetKeydown(section, e)}
       >
-        ${open
-          ? values.length
-            ? values.map(
-                (v) => html`<button
+        ${
+          open
+            ? values.length
+              ? values.map(
+                  (v) => html`<button
                   class="value-row hv-browse-row ${isOn(v.value) ? 'selected' : ''}"
                   data-testid=${`sidebar-${section}-row`}
                   data-value=${v.value}
@@ -1167,18 +1164,15 @@ export class HVFullView extends LitElement {
                   <span class="label hv-browse-row-label" title=${v.value}>${v.value}</span>
                   <!-- With a filter on, matches over total, as the location rows read. -->
                   <span class="hv-tally"
-                    >${v.matching_count === undefined
-                      ? v.count
-                      : `${v.matching_count} / ${v.count}`}</span
+                    >${v.matching_count === undefined ? v.count : `${v.matching_count} / ${v.count}`}</span
                   >
                 </button>`,
-              )
-            : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>
-                ${section === 'tags'
-                  ? t('hv.fullView.noTagsYet')
-                  : t('hv.fullView.noCategoriesYet')}
+                )
+              : html`<div class="section-empty" data-testid=${`sidebar-${section}-empty`}>
+                ${section === 'tags' ? t('hv.fullView.noTagsYet') : t('hv.fullView.noCategoriesYet')}
               </div>`
-          : null}
+            : null
+        }
       </div>
     `;
   }
@@ -1245,8 +1239,9 @@ export class HVFullView extends LitElement {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
     return html`
-        ${this._creatingLocation
-          ? html`<div class="new-location">
+        ${
+          this._creatingLocation
+            ? html`<div class="new-location">
               <input
                 data-testid="sidebar-new-location-name"
                 placeholder=${t('hv.fullView.newLocationName')}
@@ -1269,12 +1264,15 @@ export class HVFullView extends LitElement {
                 ${t('hv.card.addShort')}
               </button>
             </div>`
-          : null}
-        ${this._locationError
-          ? html`<div class="inline-error" role="alert" data-testid="sidebar-location-error">
+            : null
+        }
+        ${
+          this._locationError
+            ? html`<div class="inline-error" role="alert" data-testid="sidebar-location-error">
               ${this._locationError}
             </div>`
-          : null}
+            : null
+        }
         <hv-location-tree
           data-testid="sidebar-tree"
           .nodes=${(st?.locationTreeCache ?? []) as LocationTreeNode[]}
@@ -1370,28 +1368,29 @@ export class HVFullView extends LitElement {
         <span class="crumb hv-chip-line" data-testid="full-breadcrumb" title=${pathTitle(parts)}>
           ${renderAreaChip(areaMarkName(parts.areaName, parts.path))}
           <span class="hv-chip-line-text">
-            ${filters.orphansOnly
-              ? html`<span class="current">${t('hv.term.noLocation')}</span>`
-              : segments.length
-                ? segments.map((seg, i) =>
-                    i === segments.length - 1
-                      ? html`<span class="current">${seg}</span>`
-                      : html`<span>${seg} › </span>`,
-                  )
-                : html`<span class="current">${t('hv.tree.allItems')}</span>`}${st?.total !== null &&
-            st?.total !== undefined
-              ? html` · ${counted(st.total, 'item')}`
-              : null}
+            ${
+              filters.orphansOnly
+                ? html`<span class="current">${t('hv.term.noLocation')}</span>`
+                : segments.length
+                  ? segments.map((seg, i) =>
+                      i === segments.length - 1
+                        ? html`<span class="current">${seg}</span>`
+                        : html`<span>${seg} › </span>`,
+                    )
+                  : html`<span class="current">${t('hv.tree.allItems')}</span>`
+            }${st?.total !== null && st?.total !== undefined ? html` · ${counted(st.total, 'item')}` : null}
           </span>
         </span>
         <!-- One flex item, so the chips and buttons wrap to the next line together. -->
         <span class="context-actions">
-          ${filterCount > 0
-            ? renderFilterChips(st, {
-                setFilters: (patch) => this.store?.setFilters(patch),
-                clearFilters: () => this.store?.clearFilters(),
-              })
-            : null}
+          ${
+            filterCount > 0
+              ? renderFilterChips(st, {
+                  setFilters: (patch) => this.store?.setFilters(patch),
+                  clearFilters: () => this.store?.clearFilters(),
+                })
+              : null
+          }
           <button
             class="filters-button ${this._filtersOpen ? 'on' : ''}"
             data-testid="full-filters-toggle"
@@ -1407,9 +1406,10 @@ export class HVFullView extends LitElement {
             ${icon('tune', 16)}${t('hv.card.filters')}
           </button>
           <!-- Not on a phone, where the row has no room and the ⋮ menu offers Columns. -->
-          ${this._viewport.narrow
-            ? null
-            : html`<button
+          ${
+            this._viewport.narrow
+              ? null
+              : html`<button
                 class="hv-icon-button"
                 data-testid="columns-expanded"
                 aria-label=${t('hv.fullView.chooseColumns')}
@@ -1417,7 +1417,8 @@ export class HVFullView extends LitElement {
                 @click=${() => this._menuAction({ id: 'columns' })}
               >
                 ${icon('viewColumn', 20)}
-              </button>`}
+              </button>`
+          }
         </span>
       </div>
     `;
@@ -1429,14 +1430,16 @@ export class HVFullView extends LitElement {
     const modal = !this.embedded;
 
     return html`
-      ${modal
-        ? html`<div
+      ${
+        modal
+          ? html`<div
             class="backdrop"
             role="presentation"
             style="z-index: ${z};"
             @click=${() => this._leaveEditor('close')}
           ></div>`
-        : null}
+          : null
+      }
       <div
         class="shell"
         role=${ifDefined(modal ? 'dialog' : undefined)}
@@ -1474,13 +1477,16 @@ export class HVFullView extends LitElement {
         <span class="count" data-testid="selection-count"
           >${t('hv.fullView.selectedCount', { count: selected })}</span
         >
-        ${total !== null
-          ? html`<span class="subcount" data-testid="selection-subcount"
+        ${
+          total !== null
+            ? html`<span class="subcount" data-testid="selection-subcount"
               >${t('hv.fullView.ofMatching', { total })}</span
             >`
-          : null}
-        ${canLoadMore
-          ? html`<button
+            : null
+        }
+        ${
+          canLoadMore
+            ? html`<button
               class="ghost load-all"
               data-testid="selection-load-all"
               ?disabled=${this._loadingAll}
@@ -1493,11 +1499,10 @@ export class HVFullView extends LitElement {
                 }
               }}
             >
-              ${this._loadingAll
-                ? t('hv.fullView.loading')
-                : t('hv.fullView.loadAll', { total })}
+              ${this._loadingAll ? t('hv.fullView.loading') : t('hv.fullView.loadAll', { total })}
             </button>`
-          : null}
+            : null
+        }
         <button
           class="ghost plain clear"
           data-testid="selection-clear"
@@ -1547,16 +1552,18 @@ export class HVFullView extends LitElement {
     });
     return html`
         <div class="appbar ${steps}">
-          ${this.embedded
-            ? this._renderMenuButton()
-            : html`<button
+          ${
+            this.embedded
+              ? this._renderMenuButton()
+              : html`<button
                 class="tap"
                 data-testid="expand-toggle"
                 aria-label=${t('hv.fullView.close')}
                 @click=${() => this._leaveEditor('close')}
               >
                 ${icon('close', 20)}
-              </button>`}
+              </button>`
+          }
           <h2>${this.heading}</h2>
           ${renderSearch({
             testid: 'full-search',
@@ -1568,9 +1575,7 @@ export class HVFullView extends LitElement {
             },
           })}
           <!-- No strip when nothing is flagged: an empty one still takes a gap. -->
-          ${badges?.any
-            ? html`<div class="pills" data-testid="full-pills">${badges.pills}</div>`
-            : null}
+          ${badges?.any ? html`<div class="pills" data-testid="full-pills">${badges.pills}</div>` : null}
           <!-- A phone's first row only fits the short label, and a tight bar
                draws the icon alone; the accessible name is always the full one. -->
           <button
@@ -1620,8 +1625,9 @@ export class HVFullView extends LitElement {
             <!-- A save failure is the open form's to say; everything else is this queue's. -->
             ${renderDegradedBanners(st, this._bannerHooks)} ${renderErrorBanners(st, this._bannerHooks)}
             <div class="panel-holder" id=${FILTER_PANEL_ID} ?hidden=${!this._filtersOpen}>
-              ${this._filtersOpen
-                ? html`
+              ${
+                this._filtersOpen
+                  ? html`
                   ${this._viewport.narrow ? this._renderPanelHead(filters) : null}
                   <div class="panel-scroll">
                   ${renderFilterPanel(st, {
@@ -1642,28 +1648,35 @@ export class HVFullView extends LitElement {
                   </div>
                   ${this._viewport.narrow ? this._renderPanelFoot() : null}
                 `
-                : null}
+                  : null
+              }
             </div>
-            ${this._workspace.editing !== null
-              ? html`<div class="editor-holder">
-                  ${this._workspace.editing !== 'new' &&
-                  !st?.items.some((i) => i.id === this._workspace.editing)
-                    ? html`<p class="pinned-hint" data-testid="pinned-editor-hint">
+            ${
+              this._workspace.editing !== null
+                ? html`<div class="editor-holder">
+                  ${
+                    this._workspace.editing !== 'new' &&
+                    !st?.items.some((i) => i.id === this._workspace.editing)
+                      ? html`<p class="pinned-hint" data-testid="pinned-editor-hint">
                         ${t('hv.list.noLongerMatches')}
                       </p>`
-                    : null}
+                      : null
+                  }
                   ${this._workspace.renderEditor({
                     testid: 'full-editor',
                     mobile: this._viewport.narrow,
                   })}
                 </div>`
-              : null}
+                : null
+            }
 
-            ${this._selecting && st?.total !== null && st?.total !== undefined && loaded < st.total
-              ? html`<div class="honesty" data-testid="selection-honesty">
+            ${
+              this._selecting && st?.total !== null && st?.total !== undefined && loaded < st.total
+                ? html`<div class="honesty" data-testid="selection-honesty">
                   ${t('hv.fullView.selectionHonesty', { loaded, total: st.total })}
                 </div>`
-              : null}
+                : null
+            }
 
             <hv-data-table
               .statuses=${this.st?.statuses ?? null}
@@ -1692,8 +1705,9 @@ export class HVFullView extends LitElement {
               <div slot="empty">${this._renderEmpty()}</div>
             </hv-data-table>
 
-            ${this._selecting
-              ? html`<hv-bulk-bar
+            ${
+              this._selecting
+                ? html`<hv-bulk-bar
                   data-testid="full-bulk-bar"
                   .areas=${st?.areasCache?.areas ?? []}
                   .selectedCount=${selection.size}
@@ -1719,12 +1733,13 @@ export class HVFullView extends LitElement {
                     });
                   }}
                 ></hv-bulk-bar>`
-              : null}
+                : null
+            }
 
             <div class="footer" data-testid="full-footer">
-              ${showingCount(loaded, st?.total, activeFilterCount(filters) > 0)}${st?.cursor
-                ? t('hv.fullView.scrollToLoadMore')
-                : ''}
+              ${showingCount(loaded, st?.total, activeFilterCount(filters) > 0)}${
+                st?.cursor ? t('hv.fullView.scrollToLoadMore') : ''
+              }
             </div>
           </div>
         </div>
@@ -1749,9 +1764,7 @@ export class HVFullView extends LitElement {
           }}
         ></hv-confirm>
 
-        ${this._viewport.narrow
-          ? this._workspace.renderDetailSheet({ testid: 'full-detail-sheet' })
-          : null}
+        ${this._viewport.narrow ? this._workspace.renderDetailSheet({ testid: 'full-detail-sheet' }) : null}
 
         ${this._workspace.renderCheckoutPopover({
           testid: 'full-checkout',

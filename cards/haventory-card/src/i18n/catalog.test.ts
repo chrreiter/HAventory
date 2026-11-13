@@ -92,9 +92,7 @@ describe.each(Object.entries(DICTIONARIES).filter(([tag]) => tag !== 'en'))(
       // A rename leaves the old key behind in every other dictionary, where it
       // is dead weight nothing reads and nothing else notices. A counted form
       // English has no word for — Polish `few` — is not one of those.
-      const orphans = Object.keys(dictionary).filter(
-        (key) => !enKeys.has(key) && !pluralForm(key),
-      );
+      const orphans = Object.keys(dictionary).filter((key) => !enKeys.has(key) && !pluralForm(key));
       expect(orphans).toEqual([]);
     });
 

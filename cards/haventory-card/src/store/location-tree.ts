@@ -22,16 +22,14 @@ export function locationMatches(node: LocationTreeNode, filterText: string): boo
   const needle = filterText.trim().toLowerCase();
   if (!needle) return true;
   return (
-    node.name.toLowerCase().includes(needle) ||
-    (node.path?.display_path ?? '').toLowerCase().includes(needle)
+    node.name.toLowerCase().includes(needle) || (node.path?.display_path ?? '').toLowerCase().includes(needle)
   );
 }
 
 /** How many locations a tree holds at every depth, matching `filterText` when given. */
 export function countLocations(nodes: readonly LocationTreeNode[], filterText = ''): number {
   return nodes.reduce(
-    (sum, n) =>
-      sum + (locationMatches(n, filterText) ? 1 : 0) + countLocations(n.children ?? [], filterText),
+    (sum, n) => sum + (locationMatches(n, filterText) ? 1 : 0) + countLocations(n.children ?? [], filterText),
     0,
   );
 }

@@ -85,9 +85,7 @@ describe('tn', () => {
   });
 
   it('carries extra parameters into the chosen form', () => {
-    expect(tn('hv.rewrite.tag.remove', 2, { from: 'winter' })).toBe(
-      'Removes "winter" from 2 items.',
-    );
+    expect(tn('hv.rewrite.tag.remove', 2, { from: 'winter' })).toBe('Removes "winter" from 2 items.');
   });
 
   it('renders every counted string the way a one/other split rendered it', () => {
@@ -109,11 +107,7 @@ describe('tn', () => {
           const before = (dictionary[half as keyof Dictionary] ??
             dictionary[`${base}.other` as keyof Dictionary] ??
             en[half as keyof typeof en]) as string;
-          expect([tag, half, tn(base, count)]).toEqual([
-            tag,
-            half,
-            before.replace('{count}', String(count)),
-          ]);
+          expect([tag, half, tn(base, count)]).toEqual([tag, half, before.replace('{count}', String(count))]);
         }
       }
     }

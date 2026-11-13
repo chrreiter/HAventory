@@ -4,13 +4,7 @@ import { t } from '../i18n';
 import { icon } from './icons';
 import { formatDate, isOverdue } from './relative-time';
 import { DEFAULT_STATUS, itemStatus, renderStatusChip } from './status';
-import {
-  MEDIA_VARIANT_THUMB,
-  ROW_THUMB_SIZE,
-  attachmentNameToken,
-  pictureAlt,
-  pictures,
-} from './media';
+import { MEDIA_VARIANT_THUMB, ROW_THUMB_SIZE, attachmentNameToken, pictureAlt, pictures } from './media';
 import type { MediaUrls, PictureFallback } from './media';
 import type { Item, StatusDefinition } from '../store/types';
 import type { OverflowMenuEntry } from '../components/hv-overflow-menu';
@@ -83,11 +77,7 @@ export const rowChrome = css`
  * backend falls back to the original). A missing file is detected from the
  * failure; see `PictureFallback`.
  */
-export function renderRowThumb(
-  item: Item,
-  urls: MediaUrls,
-  thumbs: PictureFallback,
-): TemplateResult | null {
+export function renderRowThumb(item: Item, urls: MediaUrls, thumbs: PictureFallback): TemplateResult | null {
   const first = pictures(item.attachments)[0];
   if (!first) return null;
   const state = thumbs.state(item.id, first.id);
@@ -160,24 +150,32 @@ export function renderNameChips(
 ): TemplateResult {
   const status = itemStatus(item);
   const overdue = isOverdue(item.due_date);
-  return html`${opts.lowChip !== false && isLowStock(item)
-    ? html`<span
+  return html`${
+    opts.lowChip !== false && isLowStock(item)
+      ? html`<span
         class="hv-chip warning"
         data-testid=${`${opts.prefix}-low`}
         aria-label=${t('hv.term.lowStock')}
         >${t('hv.term.low')}</span
       >`
-    : null}${opts.statusChip !== false && status !== DEFAULT_STATUS
-    ? renderStatusChip(status, statuses, { testid: `${opts.prefix}-status` })
-    : null}${item.checked_out
-    ? html`<span
+      : null
+  }${
+    opts.statusChip !== false && status !== DEFAULT_STATUS
+      ? renderStatusChip(status, statuses, { testid: `${opts.prefix}-status` })
+      : null
+  }${
+    item.checked_out
+      ? html`<span
         class="hv-chip ${overdue ? 'error' : 'state'}"
         data-testid=${`${opts.prefix}-checked-out`}
-        >${overdue
-          ? opts.overdueText === 'overdueOn'
-            ? t('hv.term.overdueOn', { date: formatDate(item.due_date) })
-            : t('hv.term.overdue')
-          : t('hv.term.checkedOut')}</span
+        >${
+          overdue
+            ? opts.overdueText === 'overdueOn'
+              ? t('hv.term.overdueOn', { date: formatDate(item.due_date) })
+              : t('hv.term.overdue')
+            : t('hv.term.checkedOut')
+        }</span
       >`
-    : null}`;
+      : null
+  }`;
 }

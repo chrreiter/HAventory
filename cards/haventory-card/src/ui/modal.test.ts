@@ -27,7 +27,8 @@ const mount = async (tag: string, props: Partial<Dialog> = {}) => {
   return el;
 };
 
-const panelOf = (el: Dialog) => el.shadowRoot?.querySelector('[role="dialog"], [role="alertdialog"]') as HTMLElement;
+const panelOf = (el: Dialog) =>
+  el.shadowRoot?.querySelector('[role="dialog"], [role="alertdialog"]') as HTMLElement;
 
 afterEach(() => {
   document.body.innerHTML = '';

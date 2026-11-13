@@ -397,8 +397,7 @@ export class HVCardShell extends LitElement {
   }
 
   /** The expander `hv-list` draws in the row order, on the workspace's `editing` row. */
-  private _renderEditor = () =>
-    this._workspace.renderEditor({ testid: 'inline-editor', mobile: this.mobile });
+  private _renderEditor = () => this._workspace.renderEditor({ testid: 'inline-editor', mobile: this.mobile });
 
   // ---------- Overflow menu ----------
   /** The card's own ⋮: the full-view menu minus "Columns…", which only the table uses. */
@@ -532,19 +531,23 @@ export class HVCardShell extends LitElement {
         </button>
       </div>
 
-      ${filterCount > 0
-        ? html`<div class="chips-row">
+      ${
+        filterCount > 0
+          ? html`<div class="chips-row">
             ${renderFilterChips(st, {
               setFilters: (patch) => this.store?.setFilters(patch),
               clearFilters: () => this.store?.clearFilters(),
             })}
           </div>`
-        : null}
-      ${mobile
-        ? null
-        : html`<div class="panel-holder" id=${FILTER_SURFACE_ID} ?hidden=${!this._filterPanelOpen}>
+          : null
+      }
+      ${
+        mobile
+          ? null
+          : html`<div class="panel-holder" id=${FILTER_SURFACE_ID} ?hidden=${!this._filterPanelOpen}>
             ${this._filterPanelOpen ? this._renderFilterPanel(false) : null}
-          </div>`}
+          </div>`
+      }
       ${renderDegradedBanners(st, this._bannerHooks)} ${renderErrorBanners(st, this._bannerHooks)}
 
       <hv-list
@@ -561,8 +564,9 @@ export class HVCardShell extends LitElement {
         .pinnedItem=${this._workspace.pinnedItem}
         .addingNew=${!mobile && this._workspace.editing === 'new'}
         .emptyKind=${emptyKindFor(this.st)}
-        .emptyLocationName=${(st?.locationsFlatCache ?? []).find((l) => l.id === soleLocationId(filters))?.name ??
-        null}
+        .emptyLocationName=${
+          (st?.locationsFlatCache ?? []).find((l) => l.id === soleLocationId(filters))?.name ?? null
+        }
         @near-end=${(e: CustomEvent) =>
           void this.store?.prefetchIfNeeded((e.detail as { ratio: number }).ratio)}
         @empty-action=${this._onEmptyAction}
@@ -575,16 +579,20 @@ export class HVCardShell extends LitElement {
         @row-action=${(e: CustomEvent) => this._workspace.onRowEvent('row-action', e.detail)}
       ></hv-list>
 
-      ${loaded > 0
-        ? html`<div class="footer">
+      ${
+        loaded > 0
+          ? html`<div class="footer">
             <span data-testid="showing-count">${showingCount(loaded, total, filterCount > 0)}</span>
-            ${mobile
-              ? null
-              : html`<button class="link" data-testid="open-full-view" @click=${this._openFullView}>
+            ${
+              mobile
+                ? null
+                : html`<button class="link" data-testid="open-full-view" @click=${this._openFullView}>
                   ${t('hv.card.openFullView')}${icon('openInNew', 15)}
-                </button>`}
+                </button>`
+            }
           </div>`
-        : null}
+          : null
+      }
 
       <hv-full-view
         id=${FULL_VIEW_ID}
@@ -604,8 +612,9 @@ export class HVCardShell extends LitElement {
         @menu-action=${this._onMenuSelect}
         @request-delete=${(e: CustomEvent) => this._workspace.onRowEvent('request-delete', e.detail)}
       ></hv-full-view>
-      ${mobile
-        ? html`<hv-bottom-sheet
+      ${
+        mobile
+          ? html`<hv-bottom-sheet
             id=${FILTER_SURFACE_ID}
             label=${t('hv.card.filters')}
             ?open=${this._filterSheetOpen}
@@ -630,10 +639,12 @@ export class HVCardShell extends LitElement {
               onCancel: this._closeFilterSheet,
             })}
           </hv-bottom-sheet>`
-        : null}
+          : null
+      }
 
-      ${mobile
-        ? html`<hv-bottom-sheet
+      ${
+        mobile
+          ? html`<hv-bottom-sheet
             label=${t('hv.editor.heading.new')}
             ?open=${this._workspace.editing === 'new'}
             data-testid="add-sheet"
@@ -651,11 +662,14 @@ export class HVCardShell extends LitElement {
                 ${icon('close', 18)}
               </button>
             </div>
-            ${this._workspace.editing === 'new'
-              ? this._workspace.renderEditor({ testid: 'inline-editor', mobile, noHeader: true })
-              : null}
+            ${
+              this._workspace.editing === 'new'
+                ? this._workspace.renderEditor({ testid: 'inline-editor', mobile, noHeader: true })
+                : null
+            }
           </hv-bottom-sheet>`
-        : null}
+          : null
+      }
 
       ${mobile ? this._workspace.renderDetailSheet({ testid: 'card-detail-sheet' }) : null}
       ${this._workspace.renderCheckoutPopover({ testid: 'card-checkout', mobile })}

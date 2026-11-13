@@ -54,9 +54,7 @@ describe('resolveColorScheme', () => {
     expect(resolveColorScheme(styleOf({ '--primary-background-color': '#fafafa' }))).toBe('light');
     // the most specific usable value wins
     expect(
-      resolveColorScheme(
-        styleOf({ '--card-background-color': '#fff', '--primary-background-color': '#111' }),
-      ),
+      resolveColorScheme(styleOf({ '--card-background-color': '#fff', '--primary-background-color': '#111' })),
     ).toBe('light');
   });
 

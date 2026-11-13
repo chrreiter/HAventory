@@ -39,7 +39,6 @@ describe('hv-banner', () => {
     expect(conn.shadowRoot?.querySelector('svg')?.dataset.icon).toBe('wifiOff');
   });
 
-
   it('exposes slots for trailing and stacked actions', async () => {
     const el = await mount(
       { message: 'Someone changed this while you were editing.' },

@@ -76,11 +76,7 @@ export class DialogFocus {
    * never pull focus. `onOpenerGone` handles a close whose opener cannot take
    * focus back (deleted, or not drawn) and left it stranded.
    */
-  sync(
-    open: boolean,
-    panel: () => HTMLElement | null | undefined,
-    onOpenerGone?: () => void,
-  ): void {
+  sync(open: boolean, panel: () => HTMLElement | null | undefined, onOpenerGone?: () => void): void {
     if (open) {
       if (this._active) return;
       // The opener is read before focus moves; the panel may only exist on a

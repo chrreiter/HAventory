@@ -202,7 +202,10 @@ describe('hv-detail-sheet: read view', () => {
       custom_fields: { serial: '44210-887', purchase_price: 189, calibrated: true, checked: '2019-02-01' },
     });
     const facts = Object.fromEntries(
-      all(el, '[data-testid="sheet-fact"]').map((f) => [f.dataset.key, f.textContent?.replace(/\s+/g, ' ').trim()]),
+      all(el, '[data-testid="sheet-fact"]').map((f) => [
+        f.dataset.key,
+        f.textContent?.replace(/\s+/g, ' ').trim(),
+      ]),
     );
     expect(facts.serial).toContain('44210-887');
     expect(facts.purchase_price).toContain('189');
@@ -215,8 +218,7 @@ describe('hv-detail-sheet: read view', () => {
   // "purchase_price" read as debug output rather than as a fact about the item.
   it('writes a custom field key for reading and keeps the key on the row', async () => {
     const el = await mount({ custom_fields: { purchase_price: 64.57, serial_number: 'SN-363905' } });
-    const fact = (key: string) =>
-      all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === key);
+    const fact = (key: string) => all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === key);
 
     expect(fact('purchase_price')?.textContent?.replace(/\s+/g, ' ')).toContain('Purchase price');
     expect(fact('purchase_price')?.textContent).not.toContain('purchase_price');
@@ -255,8 +257,7 @@ describe('hv-detail-sheet: read view', () => {
       reminder_date: null,
       low_stock_threshold: null,
     });
-    const fact = (key: string) =>
-      all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === key);
+    const fact = (key: string) => all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === key);
 
     for (const key of ['due', 'inspection', 'reminder', 'threshold']) {
       expect(fact(key)?.textContent, key).toContain('Not set');
@@ -285,9 +286,7 @@ describe('hv-detail-sheet: read view', () => {
     const fact = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'location');
     const value = fact?.querySelector('[data-testid="sheet-location"]');
 
-    expect(value?.textContent?.replace(/\s+/g, ' ')).toContain(
-      'Workshop › Parts Cabinet › Drawer A',
-    );
+    expect(value?.textContent?.replace(/\s+/g, ' ')).toContain('Workshop › Parts Cabinet › Drawer A');
     expect(value?.querySelectorAll('.hv-path-seg')).toHaveLength(3);
     expect(componentCss('hv-detail-sheet')).toMatch(
       /\.fact\.location \.value, \.fact\.location \.hv-chip-line-text \{[^}]*flex-wrap: wrap/,
@@ -336,9 +335,7 @@ describe('hv-detail-sheet: read view', () => {
     // Today as well as behind us: the day the date names is the day it asks.
     for (const date of ['2020-05-06', toIsoDate()]) {
       const el = await mount({ inspection_date: date });
-      expect(q(el, '[data-testid="sheet-inspection-due"]')?.textContent, date).toContain(
-        'Inspection due',
-      );
+      expect(q(el, '[data-testid="sheet-inspection-due"]')?.textContent, date).toContain('Inspection due');
       const fact = all(el, '[data-testid="sheet-fact"]').find((f) => f.dataset.key === 'inspection');
       expect(fact?.querySelector('.value')?.classList.contains('late'), date).toBe(true);
       el.remove();
@@ -557,10 +554,7 @@ describe('hv-detail-sheet: edit view', () => {
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const editor = q<HTMLElement & { updateComplete: Promise<unknown> }>(
-      el,
-      '[data-testid="sheet-editor"]',
-    )!;
+    const editor = q<HTMLElement & { updateComplete: Promise<unknown> }>(el, '[data-testid="sheet-editor"]')!;
     const field = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
     field.value = name;
     field.dispatchEvent(new Event('input'));
@@ -781,8 +775,6 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     expect(el.open).toBe(false);
   });
 
-
-
   // The grip is hidden in edit mode, so the drag is exercised on the read view:
   // clean there, and it must not start asking about nothing.
   it('dismisses a clean read view on a swipe without a question', async () => {
@@ -886,19 +878,13 @@ describe('hv-detail-sheet: pictures', () => {
   const shots = () => [makeAttachment({ id: 'att-1' }), makeAttachment({ id: 'att-2' })];
 
   it('renders one figure per picture', async () => {
-    const el = await mount(
-      { id: 'i-1', name: 'Drill', attachments: shots() },
-      { media: makeMediaBindings() },
-    );
+    const el = await mount({ id: 'i-1', name: 'Drill', attachments: shots() }, { media: makeMediaBindings() });
     await settle(el);
 
     const figures = all(el, '[data-testid="sheet-photo"]');
     expect(figures).toHaveLength(2);
     const images = all(el, '[data-testid="sheet-gallery"] img') as HTMLImageElement[];
-    expect(images.map((i) => i.getAttribute('alt'))).toEqual([
-      'Drill — photo 1 of 2',
-      'Drill — photo 2 of 2',
-    ]);
+    expect(images.map((i) => i.getAttribute('alt'))).toEqual(['Drill — photo 1 of 2', 'Drill — photo 2 of 2']);
   });
 
   it('renders no gallery at all for an item with no pictures', async () => {
@@ -918,10 +904,7 @@ describe('hv-detail-sheet: pictures', () => {
   });
 
   it('opens the lightbox on the picture that was tapped', async () => {
-    const el = await mount(
-      { id: 'i-1', name: 'Drill', attachments: shots() },
-      { media: makeMediaBindings() },
-    );
+    const el = await mount({ id: 'i-1', name: 'Drill', attachments: shots() }, { media: makeMediaBindings() });
     await settle(el);
 
     all(el, '[data-testid="sheet-photo-open"]')[1].click();
@@ -933,10 +916,7 @@ describe('hv-detail-sheet: pictures', () => {
   });
 
   it('closes the lightbox on Escape and returns focus to the opener', async () => {
-    const el = await mount(
-      { id: 'i-1', name: 'Drill', attachments: shots() },
-      { media: makeMediaBindings() },
-    );
+    const el = await mount({ id: 'i-1', name: 'Drill', attachments: shots() }, { media: makeMediaBindings() });
     await settle(el);
 
     const opener = all(el, '[data-testid="sheet-photo-open"]')[0];
@@ -945,9 +925,7 @@ describe('hv-detail-sheet: pictures', () => {
     await settle(el);
     expect(lightbox(el)).toBeTruthy();
 
-    lightbox(el)?.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-    );
+    lightbox(el)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await settle(el);
 
     expect(lightbox(el)).toBeNull();
@@ -957,28 +935,20 @@ describe('hv-detail-sheet: pictures', () => {
   // The bottom sheet under it closes on Escape too; without stopping the event
   // the photo and the whole item would go at once.
   it('does not let the sheet close on the Escape that closes the lightbox', async () => {
-    const el = await mount(
-      { id: 'i-1', attachments: shots() },
-      { media: makeMediaBindings() },
-    );
+    const el = await mount({ id: 'i-1', attachments: shots() }, { media: makeMediaBindings() });
     await settle(el);
     const seen = captured(el, ['cancel']);
 
     all(el, '[data-testid="sheet-photo-open"]')[0].click();
     await settle(el);
-    lightbox(el)?.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
-    );
+    lightbox(el)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await settle(el);
 
     expect(seen).toEqual([]);
   });
 
   it('closes the lightbox from its own close button', async () => {
-    const el = await mount(
-      { id: 'i-1', attachments: shots() },
-      { media: makeMediaBindings() },
-    );
+    const el = await mount({ id: 'i-1', attachments: shots() }, { media: makeMediaBindings() });
     await settle(el);
 
     all(el, '[data-testid="sheet-photo-open"]')[0].click();
@@ -990,10 +960,7 @@ describe('hv-detail-sheet: pictures', () => {
   });
 
   it('drops the lightbox when the sheet moves to another item', async () => {
-    const el = await mount(
-      { id: 'i-1', attachments: shots() },
-      { media: makeMediaBindings() },
-    );
+    const el = await mount({ id: 'i-1', attachments: shots() }, { media: makeMediaBindings() });
     await settle(el);
     all(el, '[data-testid="sheet-photo-open"]')[0].click();
     await settle(el);
@@ -1110,9 +1077,7 @@ describe('hv-detail-sheet: lightbox navigation', () => {
   }
 
   const press = async (el: HVDetailSheet, key: string) => {
-    lightbox(el)?.dispatchEvent(
-      new KeyboardEvent('keydown', { key, bubbles: true }),
-    );
+    lightbox(el)?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
     await settle(el);
   };
 
@@ -1230,9 +1195,7 @@ describe('hv-detail-sheet: documents', () => {
     const el = await mount({ id: 'i-1', attachments: docs() }, { media: makeMediaBindings() });
     await settle(el);
 
-    const [titled, untitled] = all(el, '[data-testid="sheet-document-meta"]').map((n) =>
-      n.textContent?.trim(),
-    );
+    const [titled, untitled] = all(el, '[data-testid="sheet-document-meta"]').map((n) => n.textContent?.trim());
     expect(titled).toContain('bosch.pdf');
     expect(untitled).not.toContain('warranty.pdf');
     // What the filename was standing beside is still there.
@@ -1242,10 +1205,7 @@ describe('hv-detail-sheet: documents', () => {
 
   it('renders no section at all for an item with no documents', async () => {
     serve(206);
-    const el = await mount(
-      { attachments: [makeAttachment({ id: 'att-1' })] },
-      { media: makeMediaBindings() },
-    );
+    const el = await mount({ attachments: [makeAttachment({ id: 'att-1' })] }, { media: makeMediaBindings() });
     await settle(el);
 
     expect(q(el, '[data-testid="sheet-documents"]')).toBeNull();
@@ -1276,9 +1236,7 @@ describe('hv-detail-sheet: documents', () => {
     expect(all(el, '[data-testid="sheet-document-missing"]')).toHaveLength(2);
     expect(q(el, '[data-testid="sheet-document-open"]')).toBeNull();
     // The row still names the document: it is a record of what was attached.
-    expect(all(el, '[data-testid="sheet-document-title"]')[0].textContent).toContain(
-      'Dishwasher manual (EN)',
-    );
+    expect(all(el, '[data-testid="sheet-document-title"]')[0].textContent).toContain('Dishwasher manual (EN)');
   });
 
   it('keeps the link when the probe cannot reach the backend at all', async () => {
@@ -1309,9 +1267,10 @@ describe('hv-detail-sheet: documents', () => {
     );
     await settle(el);
 
-    expect(all(el, '[data-testid="sheet-document-title"]').map((n) => n.textContent?.trim())).toEqual(
-      ['First', 'Second'],
-    );
+    expect(all(el, '[data-testid="sheet-document-title"]').map((n) => n.textContent?.trim())).toEqual([
+      'First',
+      'Second',
+    ]);
   });
   // A reminder was set-only before: the editor could write one and no surface
   // read it back, so a household could not see which of its things had one.

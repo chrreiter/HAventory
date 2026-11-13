@@ -23,9 +23,7 @@ function countedKinds(items: number, locations: number): string[] {
 /** What the execute button promises to write. */
 function importButtonLabel(itemWrites: number, locationWrites: number): string {
   const parts = countedKinds(itemWrites, locationWrites);
-  return parts.length
-    ? t('hv.import.button', { parts: parts.join(' · ') })
-    : t('hv.import.buttonBare');
+  return parts.length ? t('hv.import.button', { parts: parts.join(' · ') }) : t('hv.import.buttonBare');
 }
 
 /** What the completed import did, as one sentence naming only what moved. */
@@ -34,8 +32,7 @@ export function importSummaryLine(summary: ImportSummary): string {
   const updated = countedKinds(summary.items.update, summary.locations.update);
   const parts: string[] = [];
   if (added.length) parts.push(t('hv.import.added', { what: added.join(t('hv.import.and')) }));
-  if (updated.length)
-    parts.push(t('hv.import.updated', { what: updated.join(t('hv.import.and')) }));
+  if (updated.length) parts.push(t('hv.import.updated', { what: updated.join(t('hv.import.and')) }));
   if (!parts.length) return t('hv.import.nothingChanged');
   const sentence = parts.join(', ');
   return `${sentence.charAt(0).toUpperCase()}${sentence.slice(1)}.`;
@@ -413,8 +410,9 @@ export class HVImportSheet extends LitElement {
             </button>`,
           )}
         </div>
-        ${this._source === 'file'
-          ? html`<div class="file-row">
+        ${
+          this._source === 'file'
+            ? html`<div class="file-row">
               <label class="hv-pill outline">
                 ${icon('upload', 15)} ${t('hv.import.chooseFile')}
                 <input class="reveal" type="file" accept="application/json,.json" data-testid="import-file" @change=${(e: Event) => void this._onFile(e)} />
@@ -423,7 +421,8 @@ export class HVImportSheet extends LitElement {
                 ${this._fileName ?? t('hv.import.noFileChosen')}
               </span>
             </div>`
-          : null}
+            : null
+        }
         <textarea
           data-testid="import-text"
           aria-label=${t('hv.import.textareaLabel')}
@@ -480,12 +479,8 @@ export class HVImportSheet extends LitElement {
     `;
   }
 
-  private _countTable(
-    captionKey: 'items' | 'locations',
-    counts: ImportBucketCounts | undefined,
-  ) {
-    const caption =
-      captionKey === 'items' ? t('hv.import.tableItems') : t('hv.field.locations');
+  private _countTable(captionKey: 'items' | 'locations', counts: ImportBucketCounts | undefined) {
+    const caption = captionKey === 'items' ? t('hv.import.tableItems') : t('hv.field.locations');
     const rows: [string, keyof ImportBucketCounts][] = [
       [t('hv.import.bucket.add'), 'add'],
       [t('hv.import.bucket.update'), 'update'],
@@ -496,7 +491,10 @@ export class HVImportSheet extends LitElement {
       <div class="caption">${caption}</div>
       <div class="rows">
         ${rows.map(
-          ([label, key]) => html`<div class="r ${key}" data-testid="import-count" data-key=${`${captionKey}-${key}`}>
+          ([
+            label,
+            key,
+          ]) => html`<div class="r ${key}" data-testid="import-count" data-key=${`${captionKey}-${key}`}>
             <span>${label}</span><span>${key === 'add' ? '+' : ''}${counts?.[key] ?? 0}</span>
           </div>`,
         )}
@@ -565,41 +563,51 @@ export class HVImportSheet extends LitElement {
         <div class="tables">
           ${this._countTable('items', items)}${this._countTable('locations', locations)}
         </div>
-        ${conflicts
-          ? this._alert(
-              'import-conflicts',
-              html`${tn('hv.import.conflicts', conflicts, { conflicts: counted(conflicts, 'conflict') })}
-              ${preview.policy === 'merge'
-                ? t('hv.import.conflictsMerge')
-                : preview.policy === 'skip'
-                  ? t('hv.import.conflictsSkip')
-                  : t('hv.import.conflictsReplace')}`,
-            )
-          : null}
-        ${warnings.length
-          ? this._alert(
-              'import-warnings',
-              html`${tn('hv.import.warnings', warnings.length, { clashes: counted(warnings.length, 'nameClash') })}
+        ${
+          conflicts
+            ? this._alert(
+                'import-conflicts',
+                html`${tn('hv.import.conflicts', conflicts, { conflicts: counted(conflicts, 'conflict') })}
+              ${
+                preview.policy === 'merge'
+                  ? t('hv.import.conflictsMerge')
+                  : preview.policy === 'skip'
+                    ? t('hv.import.conflictsSkip')
+                    : t('hv.import.conflictsReplace')
+              }`,
+              )
+            : null
+        }
+        ${
+          warnings.length
+            ? this._alert(
+                'import-warnings',
+                html`${tn('hv.import.warnings', warnings.length, { clashes: counted(warnings.length, 'nameClash') })}
                 <ul class="warn-list">
                   ${warnings.slice(0, WARNING_LIST_LIMIT).map((w) => html`<li>${w.message}</li>`)}
                 </ul>
-                ${warnings.length > WARNING_LIST_LIMIT
-                  ? html`<span class="hint"
+                ${
+                  warnings.length > WARNING_LIST_LIMIT
+                    ? html`<span class="hint"
                       >${t('hv.import.warningsMore', { count: warnings.length - WARNING_LIST_LIMIT })}</span
                     >`
-                  : null}`,
-            )
-          : null}
-        ${files.missing
-          ? this._alert(
-              'import-attachments-missing',
-              html`${tn('hv.import.attachmentsMissing', files.missing, {
+                    : null
+                }`,
+              )
+            : null
+        }
+        ${
+          files.missing
+            ? this._alert(
+                'import-attachments-missing',
+                html`${tn('hv.import.attachmentsMissing', files.missing, {
                   missing: files.missing,
                   referenced: files.referenced,
                 })}
                 <span class="hint">${t('hv.import.attachmentsMissingHint')}</span>`,
-            )
-          : null}
+              )
+            : null
+        }
         ${this._errorAlert()}
         <div class="fine">${t('hv.import.allOrNothing')}</div>
       </div>
@@ -624,13 +632,15 @@ export class HVImportSheet extends LitElement {
           ${this.busy ? t('hv.import.importing') : importButtonLabel(itemWrites, locationWrites)}
         </button>
       </div>
-      ${willWrite === 0
-        ? html`<div class="foot" style="padding-top:0">
+      ${
+        willWrite === 0
+          ? html`<div class="foot" style="padding-top:0">
             <span class="hint" data-testid="import-nothing-to-do">
               ${t('hv.import.nothingToDo')}
             </span>
           </div>`
-        : null}
+          : null
+      }
     `;
   }
 

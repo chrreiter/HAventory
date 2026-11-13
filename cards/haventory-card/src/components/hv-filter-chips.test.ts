@@ -36,7 +36,9 @@ async function mount(props: Partial<Chips>): Promise<Chips> {
   return el;
 }
 
-afterEach(() => { document.body.innerHTML = ''; });
+afterEach(() => {
+  document.body.innerHTML = '';
+});
 
 const chipKeys = (el: Chips) =>
   [...(el.shadowRoot?.querySelectorAll('[data-testid="filter-chip"]') ?? [])].map(
@@ -251,7 +253,14 @@ describe('clearedValueFor', () => {
   });
 
   it('clears the nullable filters to null', () => {
-    for (const key of ['areaId', 'status', 'updatedAfter', 'createdAfter', 'updatedBefore', 'createdBefore'] as const) {
+    for (const key of [
+      'areaId',
+      'status',
+      'updatedAfter',
+      'createdAfter',
+      'updatedBefore',
+      'createdBefore',
+    ] as const) {
       expect(clearedValueFor(key)).toEqual({ [key]: null });
     }
   });
@@ -264,7 +273,14 @@ describe('clearedValueFor', () => {
   });
 
   it('clears the boolean toggles to false', () => {
-    for (const key of ['checkedOutOnly', 'orphansOnly', 'lowStockOnly', 'lowStockFirst', 'overdueOnly', 'inspectionDueOnly'] as const) {
+    for (const key of [
+      'checkedOutOnly',
+      'orphansOnly',
+      'lowStockOnly',
+      'lowStockFirst',
+      'overdueOnly',
+      'inspectionDueOnly',
+    ] as const) {
       expect(clearedValueFor(key)).toEqual({ [key]: false });
     }
   });
@@ -305,7 +321,9 @@ describe('hv-filter-chips', () => {
   it('asks the host to clear everything', async () => {
     const el = await mount({ filters: { ...defaultFilters(), q: 'x' } });
     let fired = 0;
-    el.addEventListener('clear-filters', () => { fired += 1; });
+    el.addEventListener('clear-filters', () => {
+      fired += 1;
+    });
 
     (el.shadowRoot?.querySelector('[data-testid="filter-chips-clear"]') as HTMLButtonElement).click();
 
@@ -385,9 +403,7 @@ describe('hv-filter-chips', () => {
     expect(label.textContent).toBe(`"${term}"`);
     expect(chip.getAttribute('title')).toBe(`"${term}"`);
     expect(chip.getAttribute('aria-label')).toBe(`Clear filter "${term}"`);
-    expect(componentCss('hv-filter-chips')).toMatch(
-      /\.chip > \.hv-chip-text \{[^}]*text-overflow: ellipsis/,
-    );
+    expect(componentCss('hv-filter-chips')).toMatch(/\.chip > \.hv-chip-text \{[^}]*text-overflow: ellipsis/);
     expect(componentCss('hv-filter-chips')).toMatch(/\.chip > \.hv-chip-text \{[^}]*max-width:/);
   });
 

@@ -228,8 +228,7 @@ describe('haventory-card: host surfaces through the real element', () => {
   it('opens the column picker from the full view, and persists the choice', async () => {
     const { el, sr } = await mountCard();
     const shell = shellOf(sr);
-    const picker = () =>
-      shell.shadowRoot.querySelector('hv-column-picker') as HTMLElement & { open: boolean };
+    const picker = () => shell.shadowRoot.querySelector('hv-column-picker') as HTMLElement & { open: boolean };
     expect(picker().open).toBe(false);
 
     raise(shell, 'columns');
@@ -268,9 +267,9 @@ describe('haventory-card: host surfaces through the real element', () => {
       .dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
     await settle(el);
 
-    expect(
-      (shell.shadowRoot.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open,
-    ).toBe(false);
+    expect((shell.shadowRoot.querySelector('hv-column-picker') as HTMLElement & { open: boolean }).open).toBe(
+      false,
+    );
     expect(shell.surfaces.columns).toEqual([...DEFAULT_COLUMNS]);
   });
 
@@ -326,8 +325,7 @@ describe('haventory-card: host surfaces through the real element', () => {
     await settle(el);
 
     expect(
-      (shell.shadowRoot.querySelector('[data-testid="host-organize"]') as HTMLElement & { open: boolean })
-        .open,
+      (shell.shadowRoot.querySelector('[data-testid="host-organize"]') as HTMLElement & { open: boolean }).open,
     ).toBe(true);
   });
 });

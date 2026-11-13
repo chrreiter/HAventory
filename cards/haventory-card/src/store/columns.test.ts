@@ -24,8 +24,11 @@ describe('columns model', () => {
   // The order is the user's: the picker moves a column and stores where it
   // landed, so normalizing can only validate and dedupe, never re-sort.
   it('keeps the given order, dedupes, and drops unknown keys', () => {
-    expect(normalizeColumns(['location', 'quantity', 'quantity', 'bogus', 'tags']))
-      .toEqual(['location', 'quantity', 'tags']);
+    expect(normalizeColumns(['location', 'quantity', 'quantity', 'bogus', 'tags'])).toEqual([
+      'location',
+      'quantity',
+      'tags',
+    ]);
     expect(normalizeColumns('nope')).toEqual([]);
     expect(normalizeColumns(undefined)).toEqual([]);
   });
@@ -37,16 +40,8 @@ describe('columns model', () => {
 
   describe('moveColumn', () => {
     it('swaps a column with its neighbour', () => {
-      expect(moveColumn(['quantity', 'status', 'tags'], 'status', -1)).toEqual([
-        'status',
-        'quantity',
-        'tags',
-      ]);
-      expect(moveColumn(['quantity', 'status', 'tags'], 'status', 1)).toEqual([
-        'quantity',
-        'tags',
-        'status',
-      ]);
+      expect(moveColumn(['quantity', 'status', 'tags'], 'status', -1)).toEqual(['status', 'quantity', 'tags']);
+      expect(moveColumn(['quantity', 'status', 'tags'], 'status', 1)).toEqual(['quantity', 'tags', 'status']);
     });
 
     it('refuses to move past either end, or to move a column that is off', () => {
@@ -65,9 +60,7 @@ describe('columns model', () => {
   // already spent, and one more fixed track puts Location and Tags on their
   // floors. Every other column is on, which is what makes them discoverable.
   it('defaults to every column but Reminder', () => {
-    expect(DEFAULT_COLUMNS).toEqual(
-      COLUMN_DEFS.map((c) => c.key).filter((key) => key !== 'reminder_date'),
-    );
+    expect(DEFAULT_COLUMNS).toEqual(COLUMN_DEFS.map((c) => c.key).filter((key) => key !== 'reminder_date'));
     expect(DEFAULT_COLUMNS).not.toContain('reminder_date');
   });
 
@@ -228,10 +221,7 @@ function resolveTracks(template: string, contentWidth: number, gap = 8): number[
 /** The resolved width of one column of the default table. */
 function widthOf(contentWidth: number, key: ColumnKey): number {
   const columns = [...DEFAULT_COLUMNS];
-  const widths = resolveTracks(
-    tableTemplateFor(columns, { selectable: false }),
-    contentWidth,
-  );
+  const widths = resolveTracks(tableTemplateFor(columns, { selectable: false }), contentWidth);
   // 0 is the name; the chosen columns follow it in order, then the gutter.
   return widths[1 + columns.indexOf(key)];
 }
@@ -350,18 +340,13 @@ describe('table column widths', () => {
   it('leaves Location and Tags growing while the name takes its floor', () => {
     expect(widthOf(PANEL_GRID_AT_1920, 'location')).toBeGreaterThan(150);
     expect(widthOf(PANEL_GRID_AT_1920, 'tags')).toBeGreaterThan(150);
-    expect(widthOf(PANEL_GRID_AT_1920, 'category')).toBeLessThan(
-      widthOf(PANEL_GRID_AT_1920, 'location'),
-    );
+    expect(widthOf(PANEL_GRID_AT_1920, 'category')).toBeLessThan(widthOf(PANEL_GRID_AT_1920, 'location'));
   });
 
   // Between the two the name is still served before either of them grows: it
   // reaches its floor while they are still on theirs.
   it('serves the name to its floor before the surplus moves on', () => {
-    const tracks = resolveTracks(
-      tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }),
-      1400,
-    );
+    const tracks = resolveTracks(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: false }), 1400);
     expect(tracks[0]).toBeGreaterThanOrEqual(220);
     expect(widthOf(1400, 'location')).toBeGreaterThan(170);
     expect(widthOf(1400, 'tags')).toBeGreaterThan(170);
@@ -382,9 +367,7 @@ describe('table column widths', () => {
   // that disagreed with the template would sit over the checkboxes or short of
   // them.
   it('leads a selectable table with the track the sticky offset is built from', () => {
-    expect(tableTemplateFor([], { selectable: true }).startsWith(`${SELECT_COLUMN_WIDTH} `)).toBe(
-      true,
-    );
+    expect(tableTemplateFor([], { selectable: true }).startsWith(`${SELECT_COLUMN_WIDTH} `)).toBe(true);
     expect(tableTemplateFor([], { selectable: false }).startsWith('minmax(')).toBe(true);
   });
 });

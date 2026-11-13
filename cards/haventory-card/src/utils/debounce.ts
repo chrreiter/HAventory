@@ -4,7 +4,7 @@
  */
 export function debounce<TArgs extends unknown[]>(
   fn: (...args: TArgs) => void,
-  ms: number
+  ms: number,
 ): (...args: TArgs) => void {
   let timeoutId: number | undefined;
   return (...args: TArgs) => {

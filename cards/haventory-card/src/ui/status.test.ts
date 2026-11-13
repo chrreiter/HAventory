@@ -103,9 +103,7 @@ describe('ui/status: rendering a slug', () => {
 
   it('returns null for a glyph the bundle does not carry', () => {
     // The chip keeps its label and colour; only the mark is missing.
-    const exotic: StatusDefinition[] = [
-      { slug: 'x', label: 'X', order: 0, color: 'red', icon: 'not-a-glyph' },
-    ];
+    const exotic: StatusDefinition[] = [{ slug: 'x', label: 'X', order: 0, color: 'red', icon: 'not-a-glyph' }];
     expect(statusIconName('x', exotic)).toBeNull();
     expect(statusIconName('mystery', CUSTOM)).toBeNull();
   });
@@ -153,10 +151,7 @@ describe('ui/status: the built-in three in the reader’s language', () => {
     ];
     for (const tag of LANGUAGES) {
       setLanguage(tag);
-      expect([tag, renamed.map((d) => displayLabel(d))]).toEqual([
-        tag,
-        ['Alles gut', 'Verschollen', 'Kaputt'],
-      ]);
+      expect([tag, renamed.map((d) => displayLabel(d))]).toEqual([tag, ['Alles gut', 'Verschollen', 'Kaputt']]);
     }
   });
 
@@ -164,21 +159,15 @@ describe('ui/status: the built-in three in the reader’s language', () => {
   // only the exact stored English means "nobody chose this".
   it('takes any difference from the seed as the household’s own words', () => {
     setLanguage('de');
-    expect(displayLabel({ slug: 'missing', label: 'missing', order: 1, color: 'amber' })).toBe(
-      'missing',
-    );
-    expect(displayLabel({ slug: 'missing', label: 'Missing ', order: 1, color: 'amber' })).toBe(
-      'Missing ',
-    );
+    expect(displayLabel({ slug: 'missing', label: 'missing', order: 1, color: 'amber' })).toBe('missing');
+    expect(displayLabel({ slug: 'missing', label: 'Missing ', order: 1, color: 'amber' })).toBe('Missing ');
   });
 
   // A household's own status carries its own words whatever they are — even a
   // slug that looks built-in on a store this card has been told nothing about.
   it('leaves a household’s own status exactly as stored', () => {
     setLanguage('de');
-    expect(
-      displayLabel({ slug: 'lent_out', label: 'Missing', order: 3, color: 'blue' }),
-    ).toBe('Missing');
+    expect(displayLabel({ slug: 'lent_out', label: 'Missing', order: 3, color: 'blue' })).toBe('Missing');
   });
 
   // Rule three. The stand-in stands in for a fresh store, so a chip drawn
