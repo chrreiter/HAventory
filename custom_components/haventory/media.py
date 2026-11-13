@@ -218,7 +218,7 @@ def _encode_thumbnail_blocking(source: Path, target: Path) -> bool:
     except Exception:
         LOGGER.debug(
             "Serving the original: this picture could not be thumbnailed",
-            extra={"domain": DOMAIN, "op": "attachment_thumbnail", "path": str(source)},
+            extra={"op": "attachment_thumbnail", "path": str(source)},
             exc_info=True,
         )
         return False
@@ -325,7 +325,7 @@ def _delete_blocking(root: Path, targets: Iterable[Path]) -> None:
         except OSError:
             LOGGER.warning(
                 "Could not remove an attachment file",
-                extra={"domain": DOMAIN, "op": "attachment_delete", "path": str(target)},
+                extra={"op": "attachment_delete", "path": str(target)},
                 exc_info=True,
             )
     _prune_emptied_blocking(root, emptied)
@@ -355,7 +355,7 @@ def _sweep_blocking(
         if resolved_root not in resolved.parents:
             LOGGER.warning(
                 "Refusing to sweep a media path resolving outside the media root",
-                extra={"domain": DOMAIN, "op": "attachment_sweep", "path": str(candidate)},
+                extra={"op": "attachment_sweep", "path": str(candidate)},
             )
             continue
         if str(resolved) in referenced or str(resolved.parent) in held_dirs:
@@ -365,7 +365,7 @@ def _sweep_blocking(
         except OSError:  # pragma: no cover - defensive
             LOGGER.warning(
                 "Could not remove an orphaned attachment file",
-                extra={"domain": DOMAIN, "op": "attachment_sweep", "path": str(resolved)},
+                extra={"op": "attachment_sweep", "path": str(resolved)},
                 exc_info=True,
             )
             continue
@@ -392,7 +392,7 @@ async def async_report_unswept(hass: HomeAssistant) -> int:
         LOGGER.warning(
             "Kept every attachment file: the inventory holds no items, so nothing here "
             "can be told apart from a file whose metadata was lost",
-            extra={"domain": DOMAIN, "op": "attachment_sweep", "files": count},
+            extra={"op": "attachment_sweep", "files": count},
         )
     return count
 
@@ -413,7 +413,7 @@ def referenced_paths(root: Path, pairs: Iterable[tuple[str, AttachmentMeta]]) ->
         except ValidationError:  # pragma: no cover - ids come from validated metadata
             LOGGER.warning(
                 "Ignoring attachment metadata whose path escapes the media root",
-                extra={"domain": DOMAIN, "op": "attachment_sweep", "item_id": item_id},
+                extra={"op": "attachment_sweep", "item_id": item_id},
             )
     return frozenset(paths)
 
@@ -493,7 +493,7 @@ async def async_sweep_orphans(
     if removed:
         LOGGER.info(
             "Removed orphaned attachment files",
-            extra={"domain": DOMAIN, "op": "attachment_sweep", "removed": len(removed)},
+            extra={"op": "attachment_sweep", "removed": len(removed)},
         )
     return removed
 

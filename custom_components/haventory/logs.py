@@ -12,7 +12,8 @@ signs are doubled exactly when there are args for `logging` to format, so a
 contributor keeps writing ordinary `%`-arg calls and no context value can be
 read as a format directive.
 
-`domain` is left out of the text: the logger name already carries it.
+No call passes `domain`: the logger name already says which integration wrote
+the line.
 """
 
 from __future__ import annotations
@@ -24,9 +25,6 @@ from typing import Any
 # Long enough for a path, a URL or a store key; short enough that one field
 # cannot push the message itself off the readable part of a line.
 _MAX_VALUE_CHARS = 160
-
-# Rendered from the logger name on every record already.
-_SKIPPED_FIELDS = frozenset({"domain"})
 
 # What a value has to contain before it needs quoting: anything that would break
 # a reader splitting the tail on spaces and then on the first `=`.
@@ -45,7 +43,7 @@ def _render_value(value: Any) -> str:
 def render_context(context: Mapping[str, Any]) -> str:
     """The `key=value` tail for one record's context, `op` first."""
 
-    fields = [(key, value) for key, value in context.items() if key not in _SKIPPED_FIELDS]
+    fields = list(context.items())
     fields.sort(key=lambda pair: pair[0] != "op")
     return " ".join(f"{key}={_render_value(value)}" for key, value in fields)
 

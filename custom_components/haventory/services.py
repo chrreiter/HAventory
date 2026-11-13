@@ -197,7 +197,7 @@ async def _run_service(hass: HomeAssistant, name: str, data: dict[str, Any]) -> 
         LOGGER.log(
             log_severity(code, exc),
             str(exc),
-            extra={"domain": DOMAIN, "op": name, **_context(name, data)},
+            extra={"op": name, **_context(name, data)},
             exc_info=log_exc_info(code, exc),
         )
         raise

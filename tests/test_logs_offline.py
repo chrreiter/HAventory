@@ -8,6 +8,7 @@ survive it, and the sweep that keeps a new module from quietly opting out.
 
 from __future__ import annotations
 
+import ast
 import inspect
 import logging
 from pathlib import Path
@@ -26,7 +27,7 @@ GREPPABLE = ("op", "elapsed_ms", "storage_key", "schema_version", "from_version"
 
 
 def test_the_context_becomes_key_value_pairs_after_the_message() -> None:
-    rendered = render_context({"domain": "haventory", "op": "persist_complete", "elapsed_ms": 12})
+    rendered = render_context({"op": "persist_complete", "elapsed_ms": 12})
 
     assert rendered == "op=persist_complete elapsed_ms=12"
 
@@ -34,13 +35,9 @@ def test_the_context_becomes_key_value_pairs_after_the_message() -> None:
 def test_op_leads_wherever_it_was_written() -> None:
     """It is the field a maintainer greps for, and it says what the rest is about."""
 
-    rendered = render_context({"generation": 7, "op": "persist_start", "domain": "haventory"})
+    rendered = render_context({"generation": 7, "op": "persist_start"})
 
     assert rendered.startswith("op=persist_start")
-
-
-def test_the_domain_is_left_out_because_the_logger_name_already_says_it() -> None:
-    assert render_context({"domain": "haventory"}) == ""
 
 
 def test_a_value_that_would_break_the_scan_is_quoted() -> None:
@@ -76,12 +73,12 @@ def test_the_extra_mapping_is_handed_on_untouched(caplog) -> None:
     caplog.set_level(logging.DEBUG)
     logger = context_logger("custom_components.haventory.test")
 
-    logger.debug("Persisted", extra={"domain": "haventory", "op": "persist_complete", "ms": 3})
+    logger.debug("Persisted", extra={"op": "persist_complete", "ms": "3"})
 
     record = caplog.records[-1]
     assert record.getMessage() == "Persisted op=persist_complete ms=3"
     assert record.op == "persist_complete"
-    assert record.domain == "haventory"
+    assert record.ms == "3"
 
 
 def test_a_percent_in_a_value_survives_a_call_with_args(caplog) -> None:
@@ -210,6 +207,26 @@ def test_no_module_takes_a_logger_around_the_adapter() -> None:
     assert offenders == [], "take the logger from logs.context_logger(__name__) instead"
 
 
+def test_no_log_context_carries_the_domain() -> None:
+    """The logger name already says which integration wrote the line.
+
+    A log context is told apart by its `op` key, which every one carries and no
+    WebSocket event payload does: those name their domain on the wire, as part
+    of the contract.
+    """
+
+    offenders = []
+    for path in sorted(PACKAGE.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not isinstance(node, ast.Dict):
+                continue
+            keys = {key.value for key in node.keys if isinstance(key, ast.Constant)}
+            if {"op", "domain"} <= keys:
+                offenders.append(f"{path.name}:{node.lineno}")
+
+    assert offenders == [], "drop `domain` from the context; the logger name carries it"
+
+
 def test_every_module_that_logs_has_a_logger_from_the_adapter() -> None:
     """The other half: a module that logs at all takes its logger from here."""
 
@@ -235,4 +252,4 @@ def test_the_logger_keeps_the_module_name_it_was_asked_for() -> None:
 def test_the_fields_a_bug_report_is_asked_for_render(field: str) -> None:
     """Named one by one, so dropping one from the rendering is a failure."""
 
-    assert f"{field}=" in render_context({"domain": "haventory", field: "value"})
+    assert f"{field}=" in render_context({field: "value"})

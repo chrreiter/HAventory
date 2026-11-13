@@ -21,7 +21,6 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
-    DOMAIN,
     EVENT_ITEM_CHANGED,
     EVENT_LOW_STOCK,
     SIGNAL_INVENTORY_CHANGED,
@@ -94,7 +93,7 @@ def notify_mutation(
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a mutation",
-            extra={"domain": DOMAIN, "op": "notify_mutation", "action": action},
+            extra={"op": "notify_mutation", "action": action},
         )
 
 
@@ -133,7 +132,7 @@ def notify_bulk_mutation(
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a bulk mutation",
-            extra={"domain": DOMAIN, "op": "notify_bulk_mutation", "action": action},
+            extra={"op": "notify_bulk_mutation", "action": action},
         )
 
 
