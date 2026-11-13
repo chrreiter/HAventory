@@ -258,3 +258,34 @@ async def test_a_location_rename_reaches_the_calendar_at_once(
     await hass.async_block_till_done()
 
     assert hass.states.get(ENTITY_ID).attributes["description"] == "Workshop"
+
+
+async def test_a_write_repaints_the_calendar_without_sorting_the_inventory(
+    hass: HomeAssistant, setup_entry, monkeypatch
+) -> None:
+    """Home Assistant reads `event` several times per state write, once per write.
+
+    The projection orders its own events, so a sorted copy of the inventory on
+    each read would be a name sort over every item, several times per write.
+    """
+
+    from custom_components.haventory import repository as repository_mod  # noqa: PLC0415
+
+    await setup_entry()
+    sorts: list[None] = []
+    original = repository_mod.sort_items
+
+    def _counted(*args, **kwargs):  # type: ignore[no-untyped-def]
+        sorts.append(None)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(repository_mod, "sort_items", _counted)
+    today = dt_util.now().date().isoformat()
+
+    await hass.services.async_call(
+        DOMAIN, "item_create", {"name": "Harness", "inspection_date": today}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert sorts == []
+    assert hass.states.get(ENTITY_ID).attributes["message"] == "Harness inspection"

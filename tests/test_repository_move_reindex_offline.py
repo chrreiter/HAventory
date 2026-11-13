@@ -10,6 +10,8 @@ These tests pin the invariants that must survive:
 - effective-area buckets follow the subtree to its new ancestry
 - an edit that changes neither the name nor the parent link rebuilds nothing,
   and each edit that does leaves the derived state a full rebuild would leave
+- only a move rebuilds the subtree index: creating or deleting a leaf and a
+  rename leave every item in the subtrees it was in
 - an item that moves under its own power walks both ancestor chains itself:
   nothing rebuilds the subtree index behind an item write
 """
@@ -223,6 +225,31 @@ def test_an_area_only_edit_rebuilds_no_path_and_no_subtree_index() -> None:
     assert repo.get_location(t["garage"].id).area_id == "area-garage"
     res = repo.list_items(flt=ItemFilter(area_id="area-garage"))
     assert {i.name for i in res["items"]} == {"Hammer", "Garage opener"}
+
+
+@pytest.mark.parametrize("kind", ["create", "delete", "rename"])
+def test_an_edit_that_moves_no_item_leaves_the_subtree_index_alone(kind: str) -> None:
+    """Identity is the assertion a rebuild would fail, as for an area edit.
+
+    The index's agreement with the tree after each of these is checked for
+    every repository a test builds, by the invariant fixture in `conftest.py`.
+    """
+
+    repo, t = _build_tree()
+    spare = repo.create_location(name="Spare", parent_id=t["box"].id)
+    subtrees_before = dict(internal_indexes(repo)["items_in_subtree"])
+
+    if kind == "create":
+        repo.create_location(name="Drawer", parent_id=t["box"].id)
+    elif kind == "delete":
+        repo.delete_location(spare.id)
+    else:
+        repo.update_location(t["garage"].id, name="Workshop")
+
+    subtrees_after = internal_indexes(repo)["items_in_subtree"]
+    assert subtrees_after.keys() == subtrees_before.keys()
+    assert all(subtrees_after[key] is bucket for key, bucket in subtrees_before.items())
+    assert repo.get_location_item_counts(t["garage"].id) == {"direct": 0, "subtree": 2}
 
 
 @pytest.mark.parametrize("kind", ["rename", "move", "area"])

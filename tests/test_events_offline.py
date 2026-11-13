@@ -41,6 +41,26 @@ def _hass() -> tuple[HomeAssistant, Repository]:
     return hass, repo
 
 
+def _signals(hass: HomeAssistant) -> list[str]:
+    """The dispatcher signals sent, without the counts each one carries."""
+
+    return [signal for signal, _args in hass.dispatcher_sends]
+
+
+def _count_passes(monkeypatch: pytest.MonkeyPatch) -> list[None]:
+    """Record every `Repository.get_counts` call; each walks the whole inventory."""
+
+    calls: list[None] = []
+    original = Repository.get_counts
+
+    def _counted(self: Repository):  # type: ignore[no-untyped-def]
+        calls.append(None)
+        return original(self)
+
+    monkeypatch.setattr(Repository, "get_counts", _counted)
+    return calls
+
+
 def _create(repo: Repository, hass: HomeAssistant, **payload):
     item = repo.create_item({"quantity": 10, **payload})  # type: ignore[arg-type]
     return item, serialize_item(hass, item)
@@ -113,7 +133,7 @@ def test_a_mutation_fires_one_item_changed_with_the_documented_keys() -> None:
     assert "description" not in payload
 
     # The sensors repaint off the dispatcher, not off the bus event.
-    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert _signals(hass) == [SIGNAL_INVENTORY_CHANGED]
 
 
 def test_a_bulk_style_notification_carries_no_item_event() -> None:
@@ -125,7 +145,7 @@ def test_a_bulk_style_notification_carries_no_item_event() -> None:
     events_mod.notify_mutation(hass, action="reloaded")
 
     assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
-    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert _signals(hass) == [SIGNAL_INVENTORY_CHANGED]
 
 
 def test_crossing_the_threshold_fires_entered_once() -> None:
@@ -275,7 +295,7 @@ def test_a_bulk_notification_repaints_once_however_many_items_it_names() -> None
     events_mod.notify_bulk_mutation(hass, action="updated", items=serialized)
 
     assert len(hass.bus.events_of(EVENT_ITEM_CHANGED)) == len(serialized)
-    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert _signals(hass) == [SIGNAL_INVENTORY_CHANGED]
 
 
 @pytest.mark.asyncio
@@ -301,7 +321,7 @@ async def test_renaming_a_location_repaints_without_announcing_an_item_change() 
     )
 
     assert res["success"] is True, res
-    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert _signals(hass) == [SIGNAL_INVENTORY_CHANGED]
     assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
 
 
@@ -320,7 +340,7 @@ async def test_a_location_save_that_changes_no_path_repaints_nothing() -> None:
     )
 
     assert res["success"] is True, res
-    assert hass.dispatcher_sends == []
+    assert _signals(hass) == []
 
 
 @pytest.mark.asyncio
@@ -344,7 +364,7 @@ async def test_moving_a_subtree_repaints_the_paths_it_rewrote() -> None:
     )
 
     assert res["success"] is True, res
-    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert _signals(hass) == [SIGNAL_INVENTORY_CHANGED]
     assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
 
 
@@ -363,7 +383,7 @@ async def test_the_location_service_repaints_the_same_way_the_command_does() -> 
         hass, {"location_id": str(garage.id), "name": "Workshop"}
     )
 
-    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert _signals(hass) == [SIGNAL_INVENTORY_CHANGED]
     assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
 
 
@@ -382,14 +402,14 @@ async def test_creating_and_deleting_a_location_repaints_the_count() -> None:
 
     created = await ws_send(hass, 1, "haventory/location/create", name="Garage")
     assert created["success"] is True, created
-    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert _signals(hass) == [SIGNAL_INVENTORY_CHANGED]
 
     hass.dispatcher_sends.clear()
     deleted = await ws_send(
         hass, 2, "haventory/location/delete", location_id=created["result"]["id"]
     )
     assert deleted["success"] is True, deleted
-    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert _signals(hass) == [SIGNAL_INVENTORY_CHANGED]
     assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
 
 
@@ -403,11 +423,11 @@ async def test_the_location_services_repaint_the_count_too() -> None:
     hass.dispatcher_sends.clear()
 
     created = await services_mod.service_location_create(hass, {"name": "Garage"})
-    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert _signals(hass) == [SIGNAL_INVENTORY_CHANGED]
 
     hass.dispatcher_sends.clear()
     await services_mod.service_location_delete(hass, {"location_id": created["location"]["id"]})
-    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, ())]
+    assert _signals(hass) == [SIGNAL_INVENTORY_CHANGED]
     assert hass.bus.events_of(EVENT_ITEM_CHANGED) == []
 
 
@@ -493,3 +513,84 @@ def test_nothing_but_events_py_reaches_the_broadcaster() -> None:
                 offenders.append(f"{path.name}:{number}: {line.strip()}")
 
     assert offenders == [], "announce through events.py: it covers the bus and the entities too"
+
+
+@pytest.mark.asyncio
+async def test_one_write_walks_the_inventory_for_its_counts_once(monkeypatch) -> None:
+    """The repaint carries the set the `stats` topic gets, so neither recomputes it.
+
+    The sensors read their value off the signal's argument; a sensor computing
+    its own would cost one pass per entity per write.
+    """
+
+    hass = ws_hass()
+    conn = RecordingConn()
+    await ws_send(hass, 1, "haventory/subscribe", conn=conn, topic="stats")
+    calls = _count_passes(monkeypatch)
+
+    await ws_send(hass, 2, "haventory/item/create", conn=conn, name="Hammer", quantity=1)
+
+    assert len(calls) == 1
+    counts = repo_of(hass).get_counts()
+    assert hass.dispatcher_sends == [(SIGNAL_INVENTORY_CHANGED, (counts,))]
+    assert [e["counts"] for e in conn.events(topic="stats")] == [counts]
+
+
+@pytest.mark.asyncio
+async def test_a_bulk_batch_repaints_once_and_counts_once(monkeypatch) -> None:
+    """Each row keeps its `items` event and its low-stock crossing; the batch repaints once."""
+
+    hass = ws_hass()
+    conn = RecordingConn()
+    await ws_send(hass, 1, "haventory/subscribe", conn=conn, topic="items")
+    await ws_send(hass, 2, "haventory/subscribe", conn=conn, topic="stats")
+    rows = 25
+    ids = []
+    for n in range(rows):
+        created = await ws_send(
+            hass,
+            10 + n,
+            "haventory/item/create",
+            name=f"Battery {n}",
+            quantity=10,
+            low_stock_threshold=LOW_THRESHOLD,
+        )
+        ids.append(created["result"]["id"])
+    hass.dispatcher_sends.clear()
+    conn.messages.clear()
+    calls = _count_passes(monkeypatch)
+
+    operations = [
+        {
+            "op_id": str(n),
+            "kind": "item_set_quantity",
+            "payload": {"item_id": item_id, "quantity": 1 if n < 2 else 5},  # noqa: PLR2004
+        }
+        for n, item_id in enumerate(ids)
+    ]
+    res = await ws_send(hass, 99, "haventory/items/bulk", conn=conn, operations=operations)
+
+    assert res["success"] is True
+    assert _signals(hass) == [SIGNAL_INVENTORY_CHANGED]
+    assert len(calls) == 1
+    item_events = conn.events(topic="items")
+    assert [e["item"]["id"] for e in item_events] == ids
+    assert len(conn.events(topic="stats")) == 1
+    entered = [e for e in hass.bus.events_of(EVENT_LOW_STOCK) if e["action"] == "entered"]
+    # The rows are announced after the shared save, so the first row's diff
+    # already sees both crossings; each is announced once, with its own name.
+    assert sorted((e["item_id"], e["name"]) for e in entered) == sorted(
+        [(ids[0], "Battery 0"), (ids[1], "Battery 1")]
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_bulk_batch_with_no_successful_row_announces_nothing() -> None:
+    hass = ws_hass()
+    hass.dispatcher_sends.clear()
+
+    operations = [{"op_id": "a", "kind": "item_set_quantity", "payload": {"item_id": "nope"}}]
+    res = await ws_send(hass, 1, "haventory/items/bulk", operations=operations)
+
+    assert res["result"]["results"]["a"]["success"] is False
+    assert _signals(hass) == []

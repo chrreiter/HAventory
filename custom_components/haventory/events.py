@@ -8,6 +8,10 @@ disk must not fail over something downstream of it.
 
 `async_track_day_rollover` is the one announcement that follows no mutation:
 five counts are derived from today's date and move at local midnight.
+
+Each announcement computes the counts once and hands that one set both to the
+`stats` topic and, as the dispatcher signal's argument, to the sensors, so a
+write costs one pass over the inventory however many entities repaint.
 """
 
 from __future__ import annotations
@@ -65,13 +69,15 @@ def notify_mutation(
     action: str,
     item: dict[str, Any] | None = None,
     counts: bool = True,
+    repaint: bool = True,
 ) -> None:
     """Announce one item mutation: `items` event, bus event, low-stock diff, repaint, counts.
 
     ``item`` is the serialized item, or for a delete the body as it last stood.
     Without one, nothing goes on the `items` topic or the bus, but the rest
-    still runs. ``counts`` False is for a batch that sends one counts event at
-    the end through ``notify_counts``.
+    still runs. ``counts`` False is for a write that moves no count. A batch
+    row passes both ``counts`` and ``repaint`` False, and the batch sends them
+    once at the end through ``notify_batch_settled``.
     """
 
     try:
@@ -86,10 +92,7 @@ def notify_mutation(
 
         _fire_low_stock_transitions(hass, runtime, item=item)
 
-        async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
-
-        if counts:
-            broadcast_counts(hass)
+        _repaint_and_count(hass, runtime, repaint=repaint, counts=counts)
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a mutation",
@@ -98,9 +101,17 @@ def notify_mutation(
 
 
 def notify_counts(hass: HomeAssistant) -> None:
-    """Broadcast the counts alone, for a batch that suppressed them per row."""
+    """Broadcast the counts alone, for a save that changed nothing."""
 
     broadcast_counts(hass)
+
+
+def notify_batch_settled(hass: HomeAssistant) -> None:
+    """The one repaint and counts event for a batch whose rows held them back."""
+
+    runtime = find_runtime(hass)
+    if runtime is not None:
+        _repaint_and_count(hass, runtime, repaint=True, counts=True)
 
 
 def notify_bulk_mutation(
@@ -127,8 +138,7 @@ def notify_bulk_mutation(
         # No single row is the one a crossing should be attributed to.
         _fire_low_stock_transitions(hass, runtime, item=None)
 
-        async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
-        broadcast_counts(hass)
+        _repaint_and_count(hass, runtime, repaint=True, counts=True)
     except Exception:  # pragma: no cover - defensive
         LOGGER.exception(
             "Failed to notify a bulk mutation",
@@ -164,9 +174,9 @@ def notify_location_mutation(
     """
 
     broadcast_event(hass, topic="locations", action=action, payload={"location": location})
-    if repaint and find_runtime(hass) is not None:
-        async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED)
-    broadcast_counts(hass)
+    runtime = find_runtime(hass)
+    if runtime is not None:
+        _repaint_and_count(hass, runtime, repaint=repaint, counts=True)
 
 
 def notify_status_mutation(
@@ -184,6 +194,24 @@ def notify_status_mutation(
 
     payload = {"statuses": statuses} if statuses is not None else {"status": status}
     broadcast_event(hass, topic="statuses", action=action, payload=payload)
+
+
+def _repaint_and_count(
+    hass: HomeAssistant, runtime: HAventoryRuntime, *, repaint: bool, counts: bool
+) -> None:
+    """Send the repaint and the counts event from one computed set of counts.
+
+    The set rides the dispatcher signal, so a sensor reads its value off it
+    rather than walking the inventory again.
+    """
+
+    if not (repaint or counts):
+        return
+    snapshot = runtime.repository.get_counts()
+    if repaint:
+        async_dispatcher_send(hass, SIGNAL_INVENTORY_CHANGED, snapshot)
+    if counts:
+        broadcast_counts(hass, snapshot)
 
 
 def _fire_item_changed(hass: HomeAssistant, action: str, item: dict[str, Any]) -> None:

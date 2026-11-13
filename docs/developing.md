@@ -201,8 +201,9 @@ announces. The surface answers once it returns, so the order is always:
 2. **Announce.** `events.py` has one function per kind of change, and each covers every
    surface at once: the WebSocket topics (fanned out by `subscriptions.py`), the Home
    Assistant bus events, the low-stock diff, and the dispatcher signal the sensors and the
-   calendar repaint on. It is the only module that broadcasts, so the two write surfaces
-   cannot announce the same change differently.
+   calendar repaint on. The signal carries the counts, computed once per command, so the
+   sensors never walk the inventory themselves. It is the only module that broadcasts, so
+   the two write surfaces cannot announce the same change differently.
 3. **Answer.** Entities go out through `serialization.py`, shared by both surfaces.
 
 The API contract's "What an event guarantees" is what this order buys.

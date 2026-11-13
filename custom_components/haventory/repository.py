@@ -528,8 +528,9 @@ class Repository:
 
         ``version`` and ``updated_at`` stay put: the path is derived, and bumping
         ``version`` would invalidate every optimistic-concurrency token in the
-        subtree. The caller rebuilds the subtree index; the area buckets move
-        here, once per location, only when the effective area changed.
+        subtree. A caller that moved the tree rebuilds the subtree index; the
+        area buckets move here, once per location, only when the effective area
+        changed.
         """
 
         for loc_id in affected_location_ids:
@@ -1056,7 +1057,7 @@ class Repository:
             "Location created",
             extra={"op": "create_location", "location_id": new_key},
         )
-        self._rebuild_location_hierarchy_indexes()
+        # A new leaf holds no item, so no subtree bucket changes.
         return self._locations_by_id[new_key]
 
     def get_location(self, location_id: str | uuid.UUID) -> Location:
@@ -1067,6 +1068,11 @@ class Repository:
 
     def iter_locations(self) -> Iterator[Location]:
         return iter(self._locations_by_id.values())
+
+    def iter_items(self) -> Iterator[Item]:
+        """Every item, in no particular order, for a reader that orders its own output."""
+
+        return iter(self._items_by_id.values())
 
     def children_of(self, parent_id: str | uuid.UUID | None) -> frozenset[str]:
         """The ids directly under ``parent_id`` (``None`` for the roots), as a copy."""
@@ -1118,6 +1124,9 @@ class Repository:
             self._update_items_location_paths_for_locations(
                 {key, *self._collect_descendant_ids(key)}
             )
+        # A rename keeps every item in the subtrees it was in; only a move
+        # changes which ancestors count it.
+        if parent_changed:
             self._rebuild_location_hierarchy_indexes()
 
         if area_change_requested:
@@ -1161,7 +1170,8 @@ class Repository:
             "Location deleted",
             extra={"op": "delete_location", "location_id": key},
         )
-        self._rebuild_location_hierarchy_indexes()
+        # The refusals above leave only an empty leaf, which no subtree bucket
+        # counts and which has no bucket of its own.
 
     def export_state(self) -> dict[str, Any]:
         """The storage payload: ``items``, ``locations`` and ``statuses``, id-keyed.
