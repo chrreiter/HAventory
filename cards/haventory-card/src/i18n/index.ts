@@ -69,7 +69,7 @@ export function t(key: TranslationKey, params?: TranslationParams): string {
  * the number anywhere or leave it out.
  */
 export function tn(key: PluralKey, count: number, params?: TranslationParams): string {
-  const form = `${key}.${new Intl.PluralRules(language()).select(count)}` as PluralForm;
+  const form: PluralForm = `${key}.${new Intl.PluralRules(language()).select(count)}`;
   const other = `${key}.other` as const;
   const template = active[form] ?? active[other] ?? (en as Dictionary)[form] ?? en[other];
   return interpolate(template, { count, ...params });

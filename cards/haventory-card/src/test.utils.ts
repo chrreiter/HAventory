@@ -135,7 +135,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
     __subscribeCalls: subscribeCalls,
     __subscribeMessages: subscribeMessages,
     async callWS<T>(msg: Record<string, unknown>): Promise<T> {
-      const type = String(msg.type || '');
+      const type = typeof msg.type === 'string' ? msg.type : '';
       calls.push(type);
       messages.push({ ...msg });
       if (failRemaining > 0) {
@@ -167,7 +167,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           const found = statuses.find((d) => d.slug === msg.slug);
           if (!found) throw { code: 'not_found', message: 'status not found' };
           if (typeof msg.label === 'string') found.label = msg.label;
-          if (typeof msg.color === 'string') found.color = msg.color as StatusDefinition['color'];
+          if (typeof msg.color === 'string') found.color = msg.color;
           if (typeof msg.icon === 'string') found.icon = msg.icon;
           return { ...found } as unknown as T;
         }
@@ -202,8 +202,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           const counts: StatsCounts = {
             items_total: items.length,
             low_stock_count: items.filter(
-              (i) =>
-                typeof i.low_stock_threshold === 'number' && i.quantity <= (i.low_stock_threshold as number),
+              (i) => typeof i.low_stock_threshold === 'number' && i.quantity <= i.low_stock_threshold,
             ).length,
             checked_out_count: items.filter((i) => i.checked_out).length,
             overdue_count: items.filter((i) => isMockOverdue(i)).length,
@@ -453,7 +452,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           return moved as unknown as T;
         }
         case 'haventory/item/list': {
-          const limit = (typeof msg.limit === 'number' ? (msg.limit as number) : 50) || 50;
+          const limit = (typeof msg.limit === 'number' ? msg.limit : 50) || 50;
           const cursor = (msg.cursor as string | undefined) || undefined;
           // Mirror the backend: filter, then sort, then paginate.
           const listed = applyMockSort(applyMockFilter(items, msg.filter), msg.sort);
@@ -515,7 +514,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             ...Object.fromEntries(
               Object.entries(msg).filter(([k]) => !['id', 'type', 'item_id', 'expected_version'].includes(k)),
             ),
-          } as Item;
+          };
           updated.updated_at = new Date().toISOString();
           const idx = items.findIndex((i) => i.id === itemId);
           items[idx] = updated;
@@ -655,7 +654,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         // Home Assistant's own event bus, not a `haventory/subscribe` topic:
         // core events are not part of a subscribe round, so they stay out of
         // `__subscribeCalls` too.
-        if (String(msg.type || '') === 'subscribe_events') {
+        if ((typeof msg.type === 'string' ? msg.type : '') === 'subscribe_events') {
           const eventType = String((msg as any).event_type || '');
           haEventSubs[eventType] ||= [];
           haEventSubs[eventType].push(cb);
@@ -782,7 +781,7 @@ function isMockInspectionDue(item: Item): boolean {
 
 /** Faithful-but-small mirror of the backend ItemFilter semantics (AND of all predicates). */
 function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
-  const filter = (rawFilter ?? null) as {
+  const filter: {
     q?: string;
     status?: string;
     checked_out?: boolean;
@@ -802,7 +801,7 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
     updated_before?: string;
     created_after?: string;
     created_before?: string;
-  } | null;
+  } | null = rawFilter ?? null;
   if (!filter) return list;
   // The scalar and the list are one selection, unioned — an item has one
   // category and one location, so requiring both keys would match nothing.
@@ -871,7 +870,7 @@ function applyMockFilter(list: Item[], rawFilter: unknown): Item[] {
 
 /** Mirror of backend sort_items: supported fields, nullable dates last in both orders, id-asc tie-break. */
 function applyMockSort(list: Item[], rawSort: unknown): Item[] {
-  const sort = (rawSort ?? null) as { field?: string; order?: string } | null;
+  const sort: { field?: string; order?: string } | null = rawSort ?? null;
   if (!sort?.field) return list;
   const order = sort.order === 'desc' ? 'desc' : 'asc';
   const dir = order === 'desc' ? -1 : 1;
@@ -1106,11 +1105,11 @@ export function stubElementWidth(width: number): () => void {
     constructor(private readonly callback: ResizeObserverCallback) {}
     observe(target: Element) {
       const entry = { target, contentRect: { width } } as unknown as ResizeObserverEntry;
-      this.callback([entry], this as unknown as ResizeObserver);
+      this.callback([entry], this);
     }
     unobserve() {}
     disconnect() {}
-  } as unknown as typeof ResizeObserver;
+  };
   return () => {
     globalThis.ResizeObserver = original;
   };
@@ -1267,7 +1266,7 @@ export function q<T extends Element = HTMLElement>(
   root: Element | DocumentFragment,
   selector: string,
 ): T | null {
-  return queryRoot(root).querySelector(selector) as T | null;
+  return queryRoot(root).querySelector<T>(selector);
 }
 
 /** Every match for a selector, in document order. */

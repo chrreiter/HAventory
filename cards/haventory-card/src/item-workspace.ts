@@ -17,6 +17,13 @@ interface SurfaceOptions {
   mobile: boolean;
 }
 
+/** The detail a row, table or read sheet event carries; `action` and `anchor` ride on `row-action`. */
+export interface RowEventDetail {
+  itemId?: string;
+  action?: string;
+  anchor?: DOMRect;
+}
+
 /** The ways a host differs; everything else in this workspace is identical. */
 export interface WorkspaceHooks {
   /** The host's discard question; `null` leaves a form without one. */
@@ -233,7 +240,7 @@ export class ItemWorkspace implements ReactiveController {
   };
 
   /** What a row's ⋮ entry means, the same wherever it was reached. */
-  onRowAction(detail: { itemId?: string; action?: string; anchor?: DOMRect }): void {
+  onRowAction(detail: RowEventDetail): void {
     const item = this.itemById(detail.itemId);
     if (!item) return;
     switch (detail.action) {
@@ -255,7 +262,7 @@ export class ItemWorkspace implements ReactiveController {
   }
 
   /** Everything a row or the read sheet can raise about one item; others are re-raised on the host. */
-  onRowEvent(name: string, detail: { itemId?: string }): void {
+  onRowEvent(name: string, detail: RowEventDetail): void {
     const item = this.itemById(detail.itemId);
     if (!item) return;
     const store = this.getStore();
@@ -276,7 +283,7 @@ export class ItemWorkspace implements ReactiveController {
         this.hooks.requestDelete({ itemId: item.id });
         break;
       case 'row-action':
-        this.onRowAction(detail as { itemId?: string; action?: string; anchor?: DOMRect });
+        this.onRowAction(detail);
         break;
       case 'edit':
       case 'open-item':
@@ -338,11 +345,11 @@ export class ItemWorkspace implements ReactiveController {
       .busy=${this.editorBusy}
       .errorMessage=${this.editorError}
       @cancel=${() => this.closeDetail()}
-      @increment=${(e: CustomEvent) => this.onRowEvent('increment', e.detail)}
-      @decrement=${(e: CustomEvent) => this.onRowEvent('decrement', e.detail)}
-      @check-in=${(e: CustomEvent) => this.onRowEvent('check-in', e.detail)}
-      @reminder-bump=${(e: CustomEvent) => this.onRowEvent('reminder-bump', e.detail)}
-      @request-delete=${(e: CustomEvent) => this.onRowEvent('request-delete', e.detail)}
+      @increment=${(e: CustomEvent<RowEventDetail>) => this.onRowEvent('increment', e.detail)}
+      @decrement=${(e: CustomEvent<RowEventDetail>) => this.onRowEvent('decrement', e.detail)}
+      @check-in=${(e: CustomEvent<RowEventDetail>) => this.onRowEvent('check-in', e.detail)}
+      @reminder-bump=${(e: CustomEvent<RowEventDetail>) => this.onRowEvent('reminder-bump', e.detail)}
+      @request-delete=${(e: CustomEvent<RowEventDetail>) => this.onRowEvent('request-delete', e.detail)}
       @check-out-confirmed=${(e: CustomEvent) => this.onCheckOut(e)}
       @set-due-date=${(e: CustomEvent) => this.onSetDueDate(e)}
       @save=${this.onEditorSave}

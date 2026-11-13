@@ -34,7 +34,7 @@ async function mount(item: Partial<Item>, props: Partial<HVDetailSheet> = {}) {
  * host — so its panel sits one shadow root below this sheet's.
  */
 const lightbox = (el: HVDetailSheet, sel = '[data-testid="lightbox"]') =>
-  (q(el, 'hv-lightbox')?.shadowRoot?.querySelector(sel) ?? null) as HTMLElement | null;
+  q(el, 'hv-lightbox')?.shadowRoot?.querySelector<HTMLElement>(sel) ?? null;
 /**
  * A host's own update does not carry its children's, and the sheet renders the
  * lightbox as a child — so anything that opens or moves it needs the child's
@@ -883,7 +883,7 @@ describe('hv-detail-sheet: pictures', () => {
 
     const figures = all(el, '[data-testid="sheet-photo"]');
     expect(figures).toHaveLength(2);
-    const images = all(el, '[data-testid="sheet-gallery"] img') as HTMLImageElement[];
+    const images = all<HTMLImageElement>(el, '[data-testid="sheet-gallery"] img');
     expect(images.map((i) => i.getAttribute('alt'))).toEqual(['Drill — photo 1 of 2', 'Drill — photo 2 of 2']);
   });
 

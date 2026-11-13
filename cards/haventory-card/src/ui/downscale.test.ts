@@ -21,7 +21,7 @@ const big = (type = 'image/jpeg') => file('IMG_0042.jpg', type, DOWNSCALE_THRESH
 
 /** A stand-in bitmap: `prepareForUpload` only reads the two dimensions. */
 function bitmap(width: number, height: number): ImageBitmap {
-  return { width, height, close: () => undefined } as unknown as ImageBitmap;
+  return { width, height, close: () => undefined };
 }
 
 function deps(overrides: Partial<DownscaleDeps> = {}): DownscaleDeps {

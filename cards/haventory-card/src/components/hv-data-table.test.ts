@@ -435,7 +435,7 @@ describe('hv-data-table: row thumbnail', () => {
     await el.updateComplete;
     await el.updateComplete;
 
-    const img = q(el, '[data-testid="row-thumb"]') as HTMLImageElement | null;
+    const img = q<HTMLImageElement>(el, '[data-testid="row-thumb"]');
     expect(img).toBeTruthy();
     // `size=thumb`: a 36px tile served the stored file was up to 8 MB of
     // download per row. The parameter is signed with the path, so it has to be

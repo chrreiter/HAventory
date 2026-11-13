@@ -495,7 +495,7 @@ describe('hv-location-tree: area grouping', () => {
     const fired: string[] = [];
     el.addEventListener('select', () => fired.push('select'));
     el.addEventListener('select-area', () => fired.push('select-area'));
-    (heads(el)[0].querySelector('[data-testid="tree-area-select"]') as HTMLElement | null)?.click();
+    heads(el)[0].querySelector<HTMLElement>('[data-testid="tree-area-select"]')?.click();
     heads(el)[0].click();
     expect(fired).toEqual([]);
   });
@@ -553,7 +553,7 @@ describe('hv-location-tree: area grouping', () => {
       fired += 1;
     });
     const tail = heads(el)[2];
-    (tail.querySelector('[data-testid="tree-area-select"]') as HTMLElement | null)?.click();
+    tail.querySelector<HTMLElement>('[data-testid="tree-area-select"]')?.click();
     tail.click();
     expect(fired).toBe(0);
   });

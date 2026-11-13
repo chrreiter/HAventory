@@ -2028,7 +2028,7 @@ export class HVOrganizeDialog extends LitElement {
           testid: 'status-save',
           label: creating ? t('hv.action.create') : t('hv.action.save'),
           disabled: !this._statusLabel.trim(),
-          onCommit: () => this._saveStatus(),
+          onCommit: () => void this._saveStatus(),
         })}
       </div>`,
     );

@@ -651,7 +651,7 @@ describe('hv-filter-panel: show only vs sort', () => {
   it('offers every sort field the backend supports', async () => {
     const el = await mount();
     const options = [...q(el, '[data-testid="filter-sort-field"]')!.querySelectorAll('option')].map(
-      (o) => (o as HTMLOptionElement).value,
+      (o) => o.value,
     );
     expect(options).toEqual([
       'updated_at',
@@ -1035,7 +1035,7 @@ describe('hv-filter-panel: inspection due', () => {
   it('names the inspection sort field for the date it holds', async () => {
     const el = await mount();
     const labels = [...q(el, '[data-testid="filter-sort-field"]')!.querySelectorAll('option')].map((o) =>
-      (o as HTMLOptionElement).textContent?.trim(),
+      o.textContent?.trim(),
     );
     expect(labels).toContain('Next inspection');
     expect(labels).not.toContain('Inspection date');

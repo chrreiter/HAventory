@@ -414,7 +414,7 @@ describe('hv-organize-dialog: locations', () => {
       const calls: { id: string; changes: Record<string, unknown> }[] = [];
       const real = ctx.store.updateLocation.bind(ctx.store);
       ctx.store.updateLocation = (id, changes) => {
-        calls.push({ id, changes: changes as Record<string, unknown> });
+        calls.push({ id, changes });
         return real(id, changes);
       };
 
@@ -487,7 +487,7 @@ describe('hv-organize-dialog: locations', () => {
       const calls: { id: string; changes: Record<string, unknown> }[] = [];
       const real = ctx.store.updateLocation.bind(ctx.store);
       ctx.store.updateLocation = (id, changes) => {
-        calls.push({ id, changes: changes as Record<string, unknown> });
+        calls.push({ id, changes });
         return real(id, changes);
       };
 
@@ -1437,13 +1437,11 @@ describe('hv-organize-dialog: statuses', () => {
     await settle(el);
     (
       all(sr, '[data-testid="status-color"]').find(
-        (b) => (b as HTMLElement).dataset.value === 'blue_strong',
+        (b) => b.dataset.value === 'blue_strong',
       ) as HTMLButtonElement
     ).click();
     (
-      all(sr, '[data-testid="status-icon"]').find(
-        (b) => (b as HTMLElement).dataset.value === 'hand',
-      ) as HTMLButtonElement
+      all(sr, '[data-testid="status-icon"]').find((b) => b.dataset.value === 'hand') as HTMLButtonElement
     ).click();
     await settle(el);
     (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();

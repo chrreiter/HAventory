@@ -45,7 +45,6 @@ import type {
   AreaRef,
   AttachmentKind,
   Item,
-  ItemStatus,
   Location,
   LocationTreeNode,
   MediaConfig,
@@ -1085,8 +1084,12 @@ export class HVItemEditor extends LitElement {
   }
 
   // ---------- Field renderers ----------
-  private _text(field: keyof ItemFormModel, label: string, opts: { type?: string; testid: string }) {
-    const error = this._errorFor(field as string);
+  private _text(
+    field: 'name' | 'quantity' | 'lowStock',
+    label: string,
+    opts: { type?: string; testid: string },
+  ) {
+    const error = this._errorFor(field);
     return html`<div class="cell ${error ? 'invalid' : ''}">
       <label class="hv-label" for=${opts.testid}>${label}</label>
       <input
@@ -1098,7 +1101,7 @@ export class HVItemEditor extends LitElement {
         @input=${(e: Event) => {
           const raw = (e.target as HTMLInputElement).value;
           const value = opts.type !== 'number' ? raw : raw === '' ? null : Number(raw);
-          this._patch({ [field]: value } as Partial<ItemFormModel>);
+          this._patch({ [field]: value });
         }}
       />
       ${error ? html`<span class="field-error" data-testid=${`${opts.testid}-error`}>${error}</span>` : null}
@@ -1385,7 +1388,7 @@ export class HVItemEditor extends LitElement {
         id="editor-status"
         class="hv-input"
         data-testid="editor-status"
-        @change=${(e: Event) => this._patch({ status: (e.target as HTMLSelectElement).value as ItemStatus })}
+        @change=${(e: Event) => this._patch({ status: (e.target as HTMLSelectElement).value })}
       >
         <!-- An <option> cannot hold an SVG, so the picker carries labels
              alone; the colour and glyph appear wherever the status is shown. -->

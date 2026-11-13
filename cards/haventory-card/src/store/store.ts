@@ -914,7 +914,7 @@ export class Store {
       .finally(() => this.inflight.delete(key));
 
     this.inflight.set(key, p);
-    return p as Promise<void>;
+    return p;
   }
 
   /** How many items a filter would match: one row asked for, `total` read off it. */

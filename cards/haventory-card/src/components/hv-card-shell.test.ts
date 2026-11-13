@@ -451,7 +451,7 @@ describe('hv-card-shell: search and filters', () => {
       // What the surface holds while it is shut. On a phone that surface is the
       // sheet, which is slotted whether or not it shows, so its own state tells.
       const showing = () => {
-        const surface = sr.getElementById(id) as (HTMLElement & { open?: boolean }) | null;
+        const surface: (HTMLElement & { open?: boolean }) | null = sr.getElementById(id);
         return mobile ? !!surface?.open : !!surface?.querySelector('hv-filter-panel');
       };
 
@@ -901,7 +901,7 @@ describe('hv-card-shell: narrow header', () => {
 
 describe('hv-card-shell: adding an item on a phone', () => {
   const addSheet = (sr: ShadowRoot) =>
-    sr.querySelector('[data-testid="add-sheet"]') as (HTMLElement & { open: boolean }) | null;
+    sr.querySelector<HTMLElement & { open: boolean }>('[data-testid="add-sheet"]');
 
   // Filters and item detail both get sheets on mobile; the add form was the odd
   // one out, expanding inline and putting the list into a nested scroller with
@@ -2020,7 +2020,7 @@ describe('hv-card-shell: host dialogs follow the viewport, not the card', () => 
   it('stops listening to the viewport once the card is gone', async () => {
     const removed: string[] = [];
     const original = window.matchMedia;
-    window.matchMedia = ((media: string) => ({
+    window.matchMedia = (media: string) => ({
       matches: true,
       media,
       onchange: null,
@@ -2029,7 +2029,7 @@ describe('hv-card-shell: host dialogs follow the viewport, not the card', () => 
       addListener: () => {},
       removeListener: () => {},
       dispatchEvent: () => false,
-    })) as unknown as typeof window.matchMedia;
+    });
     try {
       const { el } = await mountShell({ items: [] });
       el.remove();
@@ -2142,8 +2142,7 @@ describe('hv-card-shell: check-out with a due date', () => {
 });
 
 describe('hv-card-shell: degraded states', () => {
-  const banner = (sr: ShadowRoot, testid: string) =>
-    sr.querySelector(`[data-testid="${testid}"]`) as HTMLElement | null;
+  const banner = (sr: ShadowRoot, testid: string) => sr.querySelector<HTMLElement>(`[data-testid="${testid}"]`);
 
   it('shows nothing while everything is fine', async () => {
     const { sr } = await mountShell({ items: [makeItem({ id: '1' })] });

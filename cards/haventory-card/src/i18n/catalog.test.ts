@@ -100,7 +100,7 @@ describe.each(Object.entries(DICTIONARIES).filter(([tag]) => tag !== 'en'))(
       // A typo'd placeholder renders literally in the middle of a sentence,
       // and a dropped one silently loses the number the sentence is about.
       for (const [key, value] of Object.entries(dictionary)) {
-        expect([key, [...placeholders(value as string)].sort()]).toEqual([
+        expect([key, [...placeholders(value)].sort()]).toEqual([
           key,
           [...placeholders(englishFor(key) ?? '')].sort(),
         ]);

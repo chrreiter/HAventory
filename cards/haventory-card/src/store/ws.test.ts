@@ -23,7 +23,7 @@ function makeSpyHass(): HassLike & { sent: Record<string, unknown>[] } {
         return () => undefined;
       },
     },
-  } as unknown as HassLike & { sent: Record<string, unknown>[] };
+  };
 }
 
 describe('WSClient payload shaping', () => {

@@ -1461,7 +1461,7 @@ describe('hv-full-view: editing', () => {
       await settle(el);
     };
     const errorText = (sr: ShadowRoot) =>
-      (q(sr, '[data-testid="full-editor"]') as HTMLElement | null)?.shadowRoot?.querySelector(
+      q<HTMLElement>(sr, '[data-testid="full-editor"]')?.shadowRoot?.querySelector(
         '[data-testid="editor-error"]',
       )?.textContent;
 
@@ -1585,7 +1585,7 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
 
   const editorName = (sr: ShadowRoot) =>
     (
-      (q(sr, '[data-testid="full-editor"]') as HTMLElement | null)?.shadowRoot?.querySelector(
+      q<HTMLElement>(sr, '[data-testid="full-editor"]')?.shadowRoot?.querySelector(
         '[data-testid="editor-name"]',
       ) as HTMLInputElement | null
     )?.value;
@@ -2639,8 +2639,10 @@ describe('hv-full-view: table row actions', () => {
 // all — the table it would have been is off the side of the screen.
 describe('hv-full-view: the detail sheet is the narrow read view', () => {
   const sheet = (sr: ShadowRoot) =>
-    q(sr, '[data-testid="full-detail-sheet"]') as
-      (HTMLElement & { open: boolean; item: Item | null; updateComplete: Promise<unknown> }) | null;
+    q<HTMLElement & { open: boolean; item: Item | null; updateComplete: Promise<unknown> }>(
+      sr,
+      '[data-testid="full-detail-sheet"]',
+    );
   const openRow = async (el: HVFullView, sr: ShadowRoot, index = 0) => {
     const rows = [
       ...((q(sr, '[data-testid="full-table"]') as HTMLElement).shadowRoot?.querySelectorAll(

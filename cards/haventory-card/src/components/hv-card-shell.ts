@@ -27,6 +27,7 @@ import {
 import { renderStatBadges } from '../ui/stat-badges';
 import { HostSurfaces } from '../host-surfaces';
 import { ItemWorkspace } from '../item-workspace';
+import type { RowEventDetail } from '../item-workspace';
 import type { Store } from '../store/store';
 import type { StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
@@ -570,13 +571,13 @@ export class HVCardShell extends LitElement {
         @near-end=${(e: CustomEvent) =>
           void this.store?.prefetchIfNeeded((e.detail as { ratio: number }).ratio)}
         @empty-action=${this._onEmptyAction}
-        @increment=${(e: CustomEvent) => this._workspace.onRowEvent('increment', e.detail)}
-        @decrement=${(e: CustomEvent) => this._workspace.onRowEvent('decrement', e.detail)}
-        @check-in=${(e: CustomEvent) => this._workspace.onRowEvent('check-in', e.detail)}
-        @request-delete=${(e: CustomEvent) => this._workspace.onRowEvent('request-delete', e.detail)}
-        @edit=${(e: CustomEvent) => this._workspace.onRowEvent('edit', e.detail)}
-        @open-item=${(e: CustomEvent) => this._workspace.onRowEvent('open-item', e.detail)}
-        @row-action=${(e: CustomEvent) => this._workspace.onRowEvent('row-action', e.detail)}
+        @increment=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('increment', e.detail)}
+        @decrement=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('decrement', e.detail)}
+        @check-in=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('check-in', e.detail)}
+        @request-delete=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('request-delete', e.detail)}
+        @edit=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('edit', e.detail)}
+        @open-item=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('open-item', e.detail)}
+        @row-action=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('row-action', e.detail)}
       ></hv-list>
 
       ${
@@ -610,7 +611,7 @@ export class HVCardShell extends LitElement {
           this._startSelecting = false;
         }}
         @menu-action=${this._onMenuSelect}
-        @request-delete=${(e: CustomEvent) => this._workspace.onRowEvent('request-delete', e.detail)}
+        @request-delete=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('request-delete', e.detail)}
       ></hv-full-view>
       ${
         mobile

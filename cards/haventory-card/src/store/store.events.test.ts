@@ -296,12 +296,12 @@ describe('Store: the filtered total after an event-inserted row', () => {
     // would be holding whichever won the race.
     const original = hass.callWS.bind(hass);
     const held: (() => void)[] = [];
-    hass.callWS = (async (msg: Record<string, unknown>) => {
+    hass.callWS = async (msg: Record<string, unknown>) => {
       if (String(msg.type) === 'haventory/item/list' && msg.limit === 1) {
         await new Promise<void>((resolve) => held.push(resolve));
       }
       return original(msg);
-    }) as typeof hass.callWS;
+    };
 
     hass.__emit('items', 'created', { item: hammer });
     await vi.waitUntil(() => held.length > 0);

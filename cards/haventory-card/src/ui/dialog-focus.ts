@@ -30,7 +30,7 @@ const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabi
  */
 function isRendered(el: HTMLElement): boolean {
   if (typeof el.checkVisibility !== 'function') return true;
-  return el.checkVisibility({ checkVisibilityCSS: true, visibilityProperty: true } as CheckVisibilityOptions);
+  return el.checkVisibility({ checkVisibilityCSS: true, visibilityProperty: true });
 }
 
 /**

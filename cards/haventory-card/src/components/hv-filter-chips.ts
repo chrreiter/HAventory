@@ -158,9 +158,9 @@ export function clearedValueFor(key: FilterChipKey): Partial<StoreFilters> {
     case 'createdAfter':
     case 'updatedBefore':
     case 'createdBefore':
-      return { [key]: null } as Partial<StoreFilters>;
+      return { [key]: null };
     default:
-      return { [key]: false } as Partial<StoreFilters>;
+      return { [key]: false };
   }
 }
 

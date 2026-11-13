@@ -23,7 +23,7 @@ async function mount(item: Partial<Item>, index: number | null = null) {
 }
 
 const panel = (el: HVLightbox) => q(el, '[data-testid="lightbox"]');
-const shown = (el: HVLightbox) => (q(el, 'img') as HTMLImageElement | null)?.getAttribute('alt');
+const shown = (el: HVLightbox) => q<HTMLImageElement>(el, 'img')?.getAttribute('alt');
 const counter = (el: HVLightbox) => q(el, '[data-testid="lightbox-counter"]')?.textContent?.trim();
 
 const press = async (el: HVLightbox, key: string) => {

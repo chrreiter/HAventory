@@ -339,7 +339,7 @@ export class HVImportSheet extends LitElement {
 
   private _parsed(): unknown | null {
     try {
-      const doc = JSON.parse(this._text);
+      const doc: unknown = JSON.parse(this._text);
       this._parseError = null;
       return doc;
     } catch (err) {
