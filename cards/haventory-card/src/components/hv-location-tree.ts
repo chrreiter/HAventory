@@ -61,7 +61,7 @@ const areaRootsId = (key: string) => containerId('tree-area-roots', key);
  */
 @customElement('hv-location-tree')
 export class HVLocationTree extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     chip,
@@ -280,7 +280,7 @@ export class HVLocationTree extends LitElement {
   /** Which node holds the tree's one roving tab stop (`_nodeKey`); null until `updated` resolves it. */
   @state() private _activeKey: string | null = null;
 
-  protected updated(changed: Map<string, unknown>) {
+  protected override updated(changed: Map<string, unknown>) {
     if (changed.has('_creating') && this._creating) {
       this.renderRoot.querySelector<HTMLInputElement>('[data-testid="tree-create-name"]')?.focus();
     }
@@ -704,7 +704,7 @@ export class HVLocationTree extends LitElement {
     this._emit('create-location', { name });
   }
 
-  render() {
+  override render() {
     const filtering = this.filterText.trim().length > 0;
     const { areaGroups, ungrouped } = groupRootsByArea(this.nodes, this.areas, {
       includeEmptyAreas: this.showEmptyAreas && !filtering,

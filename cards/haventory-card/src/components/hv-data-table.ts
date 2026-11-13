@@ -44,7 +44,7 @@ import type { Item, Sort, SortField } from '../store/types';
 /** The full view's table. Only columns the backend can sort by get a clickable header. */
 @customElement('hv-data-table')
 export class HVDataTable extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     chip,
@@ -341,7 +341,7 @@ export class HVDataTable extends LitElement {
   private readonly _urls = new MediaUrls(this);
   private readonly _thumbs = new PictureFallback(this, this._urls);
 
-  protected willUpdate() {
+  protected override willUpdate() {
     this._urls.configure(this.media?.sign ?? null);
   }
 
@@ -349,7 +349,7 @@ export class HVDataTable extends LitElement {
    * The host carries `role="table"`, the ancestor `row` and `cell` need;
    * not `grid`, which promises cell-by-cell arrow keys.
    */
-  connectedCallback(): void {
+  override connectedCallback(): void {
     super.connectedCallback();
     if (!this.hasAttribute('role')) this.setAttribute('role', 'table');
     this.addEventListener('scroll', this._onScroll);
@@ -357,7 +357,7 @@ export class HVDataTable extends LitElement {
     this._dayUnsub = onDayChange(() => this.requestUpdate());
   }
 
-  disconnectedCallback(): void {
+  override disconnectedCallback(): void {
     this.removeEventListener('scroll', this._onScroll);
     this._dayUnsub?.();
     this._dayUnsub = undefined;
@@ -465,7 +465,7 @@ export class HVDataTable extends LitElement {
     </button>`;
   }
 
-  render() {
+  override render() {
     const columns = this._columns;
     // With a Status column shown, the name cell's status chip stands down.
     const statusColumn = columns.includes('status');

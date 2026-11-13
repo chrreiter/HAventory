@@ -93,7 +93,7 @@ const DATE_KEYS = {
  */
 @customElement('hv-filter-panel')
 export class HVFilterPanel extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     chip,
@@ -352,7 +352,7 @@ export class HVFilterPanel extends LitElement {
     return this.mobile ? (this._draft ?? this.filters) : this.filters;
   }
 
-  protected willUpdate(changed: Map<string, unknown>) {
+  protected override willUpdate(changed: Map<string, unknown>) {
     if (this.mobile && (changed.has('filters') || changed.has('mobile')) && !this._draft) {
       this._draft = { ...this.filters, tags: [...this.filters.tags] };
     }
@@ -791,7 +791,7 @@ export class HVFilterPanel extends LitElement {
     `;
   }
 
-  render() {
+  override render() {
     if (!this.filters) return null;
     const count = activeFilterCount(this.working);
     return html`

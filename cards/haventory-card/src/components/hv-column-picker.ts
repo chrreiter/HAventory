@@ -15,7 +15,7 @@ import { COLUMN_DEFS, canonicalOrder, columnLabel, moveColumn, normalizeColumns 
  */
 @customElement('hv-column-picker')
 export class HVColumnPicker extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     modalChrome,
@@ -144,7 +144,7 @@ export class HVColumnPicker extends LitElement {
     return [...selected, ...off].map((key) => ({ key, label: columnLabel(key), on: selected.includes(key) }));
   }
 
-  render() {
+  override render() {
     if (!this.open) return null;
     const rows = this._rows();
     const shown = rows.filter((r) => r.on).length;

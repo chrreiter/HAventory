@@ -27,14 +27,14 @@ export abstract class StoreHostElement extends LitElement {
     this._syncColorScheme();
   }
 
-  connectedCallback(): void {
+  override connectedCallback(): void {
     super.connectedCallback();
     // HA re-attaches this element without handing it `hass` again.
     if (this._hass && !this.store) this._openStore(this._hass);
     this._syncColorScheme();
   }
 
-  disconnectedCallback(): void {
+  override disconnectedCallback(): void {
     super.disconnectedCallback();
     this._storeUnsub?.();
     this._storeUnsub = undefined;
@@ -52,7 +52,7 @@ export abstract class StoreHostElement extends LitElement {
     this.requestUpdate();
   }
 
-  protected firstUpdated(): void {
+  protected override firstUpdated(): void {
     this._syncColorScheme();
   }
 

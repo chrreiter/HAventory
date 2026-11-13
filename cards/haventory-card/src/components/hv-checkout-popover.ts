@@ -23,7 +23,7 @@ const DEFAULT_OFFSET = 7;
  */
 @customElement('hv-checkout-popover')
 export class HVCheckoutPopover extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     dayOffsets,
@@ -181,13 +181,13 @@ export class HVCheckoutPopover extends LitElement {
   /** Opening a surface must put focus in it, or Escape never reaches it. */
   private _dialogFocus = new DialogFocus();
 
-  protected updated() {
+  protected override updated() {
     this._dialogFocus.sync(this.open, () =>
       this.renderRoot.querySelector<HTMLElement>('[data-testid="checkout-popover"]'),
     );
   }
 
-  protected willUpdate(changed: Map<string, unknown>) {
+  protected override willUpdate(changed: Map<string, unknown>) {
     if (changed.has('open') && this.open) {
       this._zBase = nextZBase();
       this._due = this.item?.due_date || addDays(DEFAULT_OFFSET);
@@ -229,7 +229,7 @@ export class HVCheckoutPopover extends LitElement {
     return `top: ${Math.round(this.anchor.bottom + gap)}px; left: ${left}px;`;
   }
 
-  render() {
+  override render() {
     const subject = this.item?.name || this.itemName;
     if (!this.open || !subject) return null;
     const z = this._zBase || 9998;

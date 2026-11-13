@@ -61,7 +61,7 @@ export function placeMenu(
  */
 @customElement('hv-overflow-menu')
 export class HVOverflowMenu extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     css`
@@ -268,7 +268,7 @@ export class HVOverflowMenu extends LitElement {
     this.style.setProperty('--hv-menu-left', `${left}px`);
   }
 
-  protected updated() {
+  protected override updated() {
     // Placement first: focusing an unplaced menu would let the browser scroll
     // a (0, 0) box into view before the coordinates land.
     if (this._open) this._place();
@@ -277,7 +277,7 @@ export class HVOverflowMenu extends LitElement {
     );
   }
 
-  disconnectedCallback(): void {
+  override disconnectedCallback(): void {
     super.disconnectedCallback();
     document.removeEventListener('pointerdown', this._onDocPointerDown, true);
     this._unwatchReflow();
@@ -307,7 +307,7 @@ export class HVOverflowMenu extends LitElement {
     this.dispatchEvent(new CustomEvent('select', { detail: { id: item.id }, bubbles: true, composed: true }));
   }
 
-  render() {
+  override render() {
     // nextZBase() allocates the pair: the backdrop takes the base, the surface
     // over it takes base + 1.
     const z = this._zBase || 10000;
