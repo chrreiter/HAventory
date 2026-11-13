@@ -7,12 +7,16 @@ else.
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 from custom_components.haventory import ops as ops_module
 from custom_components.haventory import subscriptions as subs_mod
+from custom_components.haventory import ws as ws_module
 from custom_components.haventory.ws import HANDLERS, UNEXPECTED_ERROR_MESSAGE
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.core import HomeAssistant
@@ -22,13 +26,29 @@ from ws_helpers import RecordingConn, ws_send
 
 
 def test_every_registered_command_is_guarded() -> None:
-    """All haventory/* handlers must carry the ws_guard structural marker."""
+    """Every registered handler is declared through `_command`, which applies `ws_guard`.
+
+    Read off the source: a handler declared with `websocket_api.websocket_command`
+    directly would register and answer, but skip the guard.
+    """
 
     assert HANDLERS, "expected registered WS handlers"
+    assert "ws_guard(op, context)(func)" in inspect.getsource(ws_module._command)
+    tree = ast.parse(Path(inspect.getfile(ws_module)).read_text(encoding="utf-8"))
+    decorators = {
+        node.name: node.decorator_list
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef | ast.FunctionDef)
+    }
     unguarded = [
-        getattr(h, "__name__", repr(h))
+        h.__name__
         for h in HANDLERS
-        if not getattr(h, "_haventory_ws_guard", False)
+        if not (
+            len(decorators.get(h.__name__, [])) == 1
+            and isinstance(call := decorators[h.__name__][0], ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id == "_command"
+        )
     ]
     assert unguarded == []
 

@@ -41,8 +41,6 @@ jobs:
       - name: Format (ruff format --check)
         # Backstop for authors without the pre-commit hooks installed.
         run: uv run ruff format --check .
-      - name: Types (mypy)
-        run: uv run mypy
       - name: Test (pytest offline w/ coverage)
         run: >
           uv run pytest -q -p pytest_cov
@@ -64,7 +62,8 @@ jobs:
 
   integration:
     # Runs in a real HA core in a separate venv; plugin autoload stays ON because
-    # phacc must load, so there is no PYTEST_DISABLE_PLUGIN_AUTOLOAD here.
+    # phacc must load, so there is no PYTEST_DISABLE_PLUGIN_AUTOLOAD here. The
+    # type check runs here too, because it needs the same environment.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -87,6 +86,12 @@ jobs:
         run: |
           uv venv --python 3.14 .venv-integration
           uv pip install --python .venv-integration/bin/python -r requirements-integration.txt
+      - name: Sync dev environment
+        run: uv sync
+      - name: Types (mypy against the real HA core)
+        # mypy runs from the dev environment; `python_executable` in pyproject.toml
+        # resolves its imports from .venv-integration, the HA release pinned above.
+        run: uv run mypy
       - name: Integration tests (in-process HA via phacc)
         # phacc requires pytest-asyncio's auto mode.
         run: >

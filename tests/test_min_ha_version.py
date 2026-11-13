@@ -43,7 +43,7 @@ DECLARATION_SITES: tuple[tuple[str, str, int], ...] = (
         rf"supported Home Assistant version \(>= ({VERSION})\)",
         1,
     ),
-    ("pyproject.toml", rf"HA ({VERSION}) =>", 2),
+    ("pyproject.toml", rf"HA ({VERSION}) =>", 1),
     (".github/workflows/ci.yml", rf"declared HA ({VERSION}) runtime", 1),
 )
 

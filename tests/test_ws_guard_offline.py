@@ -32,8 +32,8 @@ class _ConnCollect:
 
 
 @pytest.mark.asyncio
-async def test_returns_and_sends_error_when_validation_fails() -> None:
-    """Handlers should send AND return the error envelope."""
+async def test_sends_the_error_envelope_when_validation_fails() -> None:
+    """The refusal goes out on the connection, under the frame's id."""
 
     hass = ws_hass()
 
@@ -41,11 +41,13 @@ async def test_returns_and_sends_error_when_validation_fails() -> None:
     conn = _ConnCollect()
     req = {"id": 10, "type": "haventory/item/set_quantity", "item_id": "x", "quantity": -1}
 
-    res = await handler(hass, conn, req)
+    await handler(hass, conn, req)
 
+    res = conn.last
+    assert res is not None
+    assert res["id"] == req["id"]
     assert res["success"] is False
     assert res["error"]["code"] == "validation_error"
-    assert conn.last == res
     data = res["error"].get("data", {})
     assert data.get("op") == "item_set_quantity"
     assert data.get("quantity") == -1

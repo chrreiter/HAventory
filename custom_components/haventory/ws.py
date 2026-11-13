@@ -12,19 +12,15 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
+from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
-
-try:
-    from homeassistant.components.file_upload import process_uploaded_file
-except ImportError:  # pragma: no cover - offline harness without the component
-    process_uploaded_file = None
 
 from . import import_export, ops
 from . import media as media_mod
@@ -67,11 +63,14 @@ from .subscriptions import register_subscription, unregister_subscription
 
 if TYPE_CHECKING:
     from homeassistant.components.websocket_api import ActiveConnection as _Conn
+    from homeassistant.components.websocket_api import (
+        AsyncWebSocketCommandHandler,
+        WebSocketCommandHandler,
+    )
 
 LOGGER = context_logger(__name__)
 
 _Msg = dict[str, Any]
-_WSHandler = Callable[[HomeAssistant, "_Conn", _Msg], Awaitable[Any]]
 _DOMAIN_ERRORS = (ValidationError, NotFoundError, ConflictError, StorageError)
 
 # Sent when a non-domain exception escapes a handler; the details stay in the log.
@@ -117,7 +116,9 @@ def _context_from_msg(op: str, msg: _Msg, fields: tuple[str, ...]) -> dict[str, 
     return {"op": op, **{(name_key if f == "name" else f): msg[f] for f in fields if f in msg}}
 
 
-def ws_guard(op: str, context_fields: tuple[str, ...] = ()) -> Callable[[_WSHandler], _WSHandler]:
+def ws_guard(
+    op: str, context_fields: tuple[str, ...] = ()
+) -> Callable[[AsyncWebSocketCommandHandler], AsyncWebSocketCommandHandler]:
     """Map a handler's exceptions to the contract's error envelope.
 
     Every command refuses once no loaded entry owns the data: Home Assistant
@@ -126,12 +127,13 @@ def ws_guard(op: str, context_fields: tuple[str, ...] = ()) -> Callable[[_WSHand
     `unknown_error` with a generic message and its traceback in the log.
     """
 
-    def decorator(func: _WSHandler) -> _WSHandler:
+    def decorator(func: AsyncWebSocketCommandHandler) -> AsyncWebSocketCommandHandler:
         @functools.wraps(func)
-        async def wrapper(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> Any:
+        async def wrapper(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
             try:
                 loaded_runtime(hass)
-                return await func(hass, conn, msg)
+                await func(hass, conn, msg)
+                return
             except _DOMAIN_ERRORS as exc:
                 ctx = _context_from_msg(op, msg, context_fields)
                 error = _log_rejection(exc, ctx)
@@ -139,12 +141,8 @@ def ws_guard(op: str, context_fields: tuple[str, ...] = ()) -> Callable[[_WSHand
                 ctx = _context_from_msg(op, msg, context_fields)
                 LOGGER.exception("Unexpected error in WS handler", extra={**ctx})
                 error = {"code": "unknown_error", "message": UNEXPECTED_ERROR_MESSAGE}
-            # Sent for real Home Assistant; returned for the offline stub.
-            err = _error_envelope(msg.get("id", 0), error, ctx)
-            conn.send_message(err)
-            return err
+            conn.send_message(_error_envelope(msg["id"], error, ctx))
 
-        wrapper._haventory_ws_guard = True  # type: ignore[attr-defined]  # checked by tests
         return wrapper
 
     return decorator
@@ -152,7 +150,7 @@ def ws_guard(op: str, context_fields: tuple[str, ...] = ()) -> Callable[[_WSHand
 
 def _command(
     command: str, fields: dict[Any, Any] | None = None, context: tuple[str, ...] = ()
-) -> Callable[[_WSHandler], _WSHandler]:
+) -> Callable[[AsyncWebSocketCommandHandler], WebSocketCommandHandler]:
     """Declare a command: its schema, HA's async wrapper and `ws_guard`.
 
     The guard's `op` is the command type after `haventory/`, with `/` as `_`.
@@ -161,7 +159,7 @@ def _command(
     op = command.removeprefix("haventory/").replace("/", "_")
     schema = {vol.Required("type"): command, **(fields or {})}
 
-    def decorator(func: _WSHandler) -> _WSHandler:
+    def decorator(func: AsyncWebSocketCommandHandler) -> WebSocketCommandHandler:
         guarded = websocket_api.async_response(ws_guard(op, context)(func))
         return websocket_api.websocket_command(schema)(guarded)
 
@@ -263,13 +261,13 @@ async def _mutate(
     if payload is None:
         payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
     written = await ops.commit(hass, name, payload)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), _answer(written)))
+    conn.send_message(websocket_api.result_message(msg["id"], _answer(written)))
 
 
 @_command("haventory/ping", {vol.Optional("echo"): object})
 async def ws_ping(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     result = {"echo": msg.get("echo"), "ts": datetime.now(UTC).isoformat()}
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 def _schema_version(hass: HomeAssistant) -> int:
@@ -279,7 +277,7 @@ def _schema_version(hass: HomeAssistant) -> int:
 @_command("haventory/version")
 async def ws_version(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     result = {"integration_version": INTEGRATION_VERSION, "schema_version": _schema_version(hass)}
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 @_command("haventory/config")
@@ -304,12 +302,12 @@ async def ws_config(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
             "max_attachment_bytes": MAX_ATTACHMENT_BYTES,
         },
     }
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 @_command("haventory/stats")
 async def ws_stats(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), _repo(hass).get_counts()))
+    conn.send_message(websocket_api.result_message(msg["id"], _repo(hass).get_counts()))
 
 
 @_command("haventory/distinct_values", {vol.Optional("filter"): object})
@@ -319,7 +317,7 @@ async def ws_distinct_values(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> Non
     item_filter = msg.get("filter")
     validate_item_filter(item_filter)
     result = _repo(hass).get_distinct_field_values(item_filter)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 @_command("haventory/health")
@@ -327,7 +325,7 @@ async def ws_health(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     # `healthy` and `issues` are constant (an index disagreeing with its data is
     # a bug the test suite catches), but clients read them.
     result = {"healthy": True, "issues": [], "counts": _repo(hass).get_counts()}
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 @_command(
@@ -361,16 +359,16 @@ async def ws_subscribe(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
         sub["include_subtree"] = bool(msg.get("include_subtree"))
     if "inspection_overdue_only" in msg:
         sub["inspection_overdue_only"] = bool(msg.get("inspection_overdue_only"))
-    register_subscription(hass, conn, int(msg.get("id", 0)), sub)
+    register_subscription(hass, conn, msg["id"], sub)
     LOGGER.debug(
         "Subscribed",
         extra={
             "op": "subscribe",
-            "subscription_id": msg.get("id", 0),
+            "subscription_id": msg["id"],
             "topic": topic,
         },
     )
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
+    conn.send_message(websocket_api.result_message(msg["id"], None))
 
 
 @_command("haventory/unsubscribe", {vol.Required("subscription"): object}, ("subscription",))
@@ -391,7 +389,7 @@ async def ws_unsubscribe(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
             "removed": removed,
         },
     )
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), None))
+    conn.send_message(websocket_api.result_message(msg["id"], None))
 
 
 @_command(
@@ -421,7 +419,7 @@ async def ws_item_create(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
 @_command("haventory/item/get", {vol.Required("item_id"): object}, ("item_id",))
 async def ws_item_get(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     item = _repo(hass).get_item(msg["item_id"])
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialize_item(hass, item)))
+    conn.send_message(websocket_api.result_message(msg["id"], serialize_item(hass, item)))
 
 
 @_command(
@@ -616,9 +614,6 @@ async def ws_item_attachment_add(hass: HomeAssistant, conn: _Conn, msg: _Msg) ->
     both caps are enforced here.
     """
 
-    if process_uploaded_file is None:  # pragma: no cover - real HA always has it
-        raise StorageError("Home Assistant's file_upload component is unavailable")
-
     kind = msg.get("kind", "picture")
     if kind not in ATTACHMENT_KINDS:
         raise ValidationError(f"kind must be one of: {', '.join(ATTACHMENT_KINDS)}")
@@ -767,7 +762,7 @@ async def ws_items_bulk(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
                 "failed": len(operations) - successful,
             },
         )
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), {"results": results}))
+    conn.send_message(websocket_api.result_message(msg["id"], {"results": results}))
 
 
 @_command(
@@ -797,7 +792,7 @@ async def ws_item_list(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
         "next_cursor": page.get("next_cursor"),
         "total": page["total"],
     }
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    conn.send_message(websocket_api.result_message(msg["id"], result))
 
 
 @_command(
@@ -816,7 +811,7 @@ async def ws_location_create(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> Non
 @_command("haventory/location/get", {vol.Required("location_id"): object}, ("location_id",))
 async def ws_location_get(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     loc = _repo(hass).get_location(msg["location_id"])
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialize_location(loc)))
+    conn.send_message(websocket_api.result_message(msg["id"], serialize_location(loc)))
 
 
 @_command(
@@ -841,7 +836,7 @@ async def ws_location_delete(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> Non
 @_command("haventory/location/list")
 async def ws_location_list(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     data = [serialize_location(loc) for loc in _repo(hass).iter_locations()]
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), data))
+    conn.send_message(websocket_api.result_message(msg["id"], data))
 
 
 @_command("haventory/location/tree", {vol.Optional("filter"): object})
@@ -884,7 +879,7 @@ async def ws_location_tree(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
         return node
 
     tree = [build_node(root) for root in sorted(repo.children_of(None))]
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), tree))
+    conn.send_message(websocket_api.result_message(msg["id"], tree))
 
 
 @_command(
@@ -899,7 +894,7 @@ async def ws_location_move_subtree(hass: HomeAssistant, conn: _Conn, msg: _Msg) 
 @_command("haventory/status/list")
 async def ws_status_list(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     data = [serialize_status_definition(d) for d in _repo(hass).list_statuses()]
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), data))
+    conn.send_message(websocket_api.result_message(msg["id"], data))
 
 
 @_command(
@@ -955,7 +950,7 @@ async def ws_status_delete(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
 @_command("haventory/areas/list")
 async def ws_areas_list(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     areas = [{"id": a.id, "name": a.name} for a in ar.async_get(hass).async_list_areas()]
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), {"areas": areas}))
+    conn.send_message(websocket_api.result_message(msg["id"], {"areas": areas}))
 
 
 @_command("haventory/export", {vol.Optional("filter"): object})
@@ -965,7 +960,7 @@ async def ws_export(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     document = import_export.build_export_document(
         _repo(hass), item_filter=item_filter, schema_version=_schema_version(hass)
     )
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), document))
+    conn.send_message(websocket_api.result_message(msg["id"], document))
 
 
 async def _count_missing_attachments(hass: HomeAssistant, target: dict[str, Any]) -> dict[str, int]:
@@ -1018,7 +1013,7 @@ async def ws_import_preview(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None
     )
     if target is not None:
         report["attachments"] = await _count_missing_attachments(hass, target)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), report))
+    conn.send_message(websocket_api.result_message(msg["id"], report))
 
 
 @_command("haventory/import/execute", _IMPORT_FIELDS)
@@ -1037,7 +1032,7 @@ async def ws_import_execute(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None
         refusal = ValidationError("import document is invalid", key="import_document_invalid")
         error = {"code": "validation_error", "message": str(refusal), **translation_fields(refusal)}
         conn.send_message(
-            _error_envelope(msg.get("id", 0), error, {"op": "import_execute", "errors": errors})
+            _error_envelope(msg["id"], error, {"op": "import_execute", "errors": errors})
         )
         return
 
@@ -1060,12 +1055,12 @@ async def ws_import_execute(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None
             "locations_total": summary["locations"]["total"],
         },
     )
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), summary))
+    conn.send_message(websocket_api.result_message(msg["id"], summary))
 
 
 # Home Assistant keys its command registry by type, so registering these again
 # on a reload replaces each handler rather than adding a second.
-HANDLERS: tuple[Any, ...] = (
+HANDLERS: tuple[WebSocketCommandHandler, ...] = (
     ws_ping,
     ws_version,
     ws_config,
