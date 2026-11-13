@@ -185,11 +185,11 @@ when the run fails.
 docstring states its own constraints; this is the map.
 
 **A write, end to end.** A WebSocket command (`ws.py`) or a `haventory.*` service
-(`services.py`) validates its frame against its own schema. A write both surfaces make then
-runs the one function in `ops.py` for it, which makes the repository call and returns what
-the write earns; a write only the WebSocket makes (attachments, statuses, reminder set and
-clear, subtree moves) calls the repository from its handler. Either way the caller then
-persists, announces and answers, always in that order:
+(`services.py`) validates its frame against its own schema, then hands the write to
+`ops.commit` by name (`ops.commit_batch` for `haventory/items/bulk`). That runs the one
+function in `ops.py` for the write, which makes the repository call and returns what the
+write earns, then persists, frees the attachment files nothing saved points at any more, and
+announces. The surface answers once it returns, so the order is always:
 
 1. **Persist.** `repository.py` holds the inventory in memory with its indexes. Every write
    is awaited through one persist path, serialized by one lock, and a failure reaches the

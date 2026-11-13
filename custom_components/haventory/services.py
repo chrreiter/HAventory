@@ -28,7 +28,6 @@ from .exceptions import (
     log_severity,
 )
 from .logs import context_logger
-from .storage import async_persist_repo
 
 LOGGER = context_logger(__name__)
 
@@ -182,13 +181,11 @@ def _op_payload(name: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 
 async def _run_service(hass: HomeAssistant, name: str, data: dict[str, Any]) -> dict[str, Any]:
-    """Validate, write, persist, announce, answer: the order every write path takes."""
+    """Validate, commit, answer: `ops.commit` persists and announces before the reply."""
 
     try:
         payload = _SCHEMAS[name](data)
-        written = ops.run(hass, name, _op_payload(name, payload))
-        await async_persist_repo(hass)
-        await ops.announce(hass, written)
+        written = await ops.commit(hass, name, _op_payload(name, payload))
         # The whole entity: the next call in an automation needs its `version`.
         return {written.noun: written.entity}
     except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:

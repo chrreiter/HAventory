@@ -1,18 +1,24 @@
-"""One operation per write, shared by the WebSocket commands, bulk rows and services.
+"""One operation per write, and the one place a write is committed.
 
 An op takes the payload as a plain dict (whatever the surface's schema let
 through, minus its envelope), makes the repository call and returns the
-`Written` its caller finishes with. Each surface keeps its own schemas and its
-own answer.
+`Written` that says what the write earns. A surface never runs an op itself:
+it calls `commit` (one write) or `commit_batch` (a `haventory/items/bulk`
+batch), which run the op, persist, free what the saved write orphaned, then
+announce. Each surface keeps its own schemas, envelope and the shape of its
+answer.
 
-The order is the same everywhere: persist, then `announce`, then reply.
-Announcing first would tell subscribers about a change the caller is about to
-be told failed, and which a restart then erases.
+The order is the same for every write: persist, then free files, then
+announce, then reply. Announcing first would tell subscribers about a change
+the caller is about to be told failed, and which a restart then erases; a file
+unlinked before the save would leave stored metadata naming nothing if the save
+then failed. Because the op runs inside `commit`, `commit` is also the one place
+that knows a write ran and its save failed.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 
@@ -21,19 +27,33 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.util import dt as dt_util
 
 from . import media as media_mod
-from .events import notify_counts, notify_location_mutation, notify_mutation
+from . import todo_bridge
+from .events import (
+    notify_bulk_mutation,
+    notify_counts,
+    notify_dataset_replaced,
+    notify_location_mutation,
+    notify_mutation,
+    notify_status_mutation,
+)
 from .exceptions import ValidationError
+from .logs import context_logger
 from .models import (
+    AttachmentMeta,
     Item,
     ItemCreate,
     ItemUpdate,
     normalize_string_list,
     require_string_list,
+    serialize_status_definition,
     validate_quantity,
 )
 from .repository import UNSET, Repository
 from .runtime import loaded_runtime
 from .serialization import serialize_item, serialize_location
+from .storage import async_persist_repo
+
+LOGGER = context_logger(__name__)
 
 #: The action of a save that rewrote no field; `announce` sends only the counts.
 UNCHANGED = "unchanged"
@@ -41,16 +61,28 @@ UNCHANGED = "unchanged"
 
 @dataclass(frozen=True, slots=True)
 class Written:
-    """What one write leaves for its surface.
+    """What one write earns once it is saved: the event, and what to do first.
 
-    ``action`` is the event the write earns, or ``UNCHANGED``. ``repaint`` is
-    False for the edit that re-anchors a subtree without moving a path.
+    ``noun`` picks the topic, ``entity`` is the body the event carries and the
+    surface answers with, and ``action`` is the event, or ``UNCHANGED``.
+
+    The rest is set only by the writes that need it. ``repaint`` is False for
+    the location edit that re-anchors a subtree without moving a path.
+    ``counts`` is False for an item edit that moves no count. ``detached`` are
+    the attachments whose bytes go once the save lands. ``reassigned`` are the
+    items a status delete rewrote, as saved. ``restore`` is the state to load
+    back if the save fails, for the one write that cannot leave a half-applied
+    repository behind.
     """
 
-    noun: Literal["item", "location"]
-    entity: dict[str, Any]
+    noun: Literal["item", "location", "status", "dataset"]
+    entity: Any
     action: str
     repaint: bool = True
+    counts: bool = True
+    detached: tuple[tuple[str, AttachmentMeta], ...] = ()
+    reassigned: tuple[dict[str, Any], ...] = ()
+    restore: dict[str, Any] | None = None
 
 
 Op = Callable[[HomeAssistant, dict[str, Any]], Written]
@@ -202,6 +234,82 @@ def _op_reminder_bump(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
     return _item(hass, updated)
 
 
+def _reminder_update(hass: HomeAssistant, payload: dict[str, Any], update: ItemUpdate) -> Written:
+    # An ordinary item edit: it bumps `version` and answers `conflict` like one.
+    item = _repo(hass).update_item(
+        payload["item_id"], update, expected_version=payload.get("expected_version")
+    )
+    return _item(hass, item)
+
+
+def _op_reminder_set(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    # The command names the whole reminder, so an omitted interval means a
+    # one-off rather than "keep the stored one".
+    update = cast(
+        "ItemUpdate",
+        {
+            "reminder_date": payload["reminder_date"],
+            "reminder_interval": payload.get("reminder_interval"),
+        },
+    )
+    return _reminder_update(hass, payload, update)
+
+
+def _op_reminder_clear(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    update = cast("ItemUpdate", {"reminder_date": None, "reminder_interval": None})
+    return _reminder_update(hass, payload, update)
+
+
+def _op_item_attachment_add(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    """Record an attachment whose bytes the surface already wrote.
+
+    ``meta`` is the `AttachmentMeta` the surface built from the consumed upload.
+    A failed save leaves the file with no saved metadata, which setup's orphan
+    sweep collects.
+    """
+
+    meta: AttachmentMeta = payload["meta"]
+    updated = _repo(hass).add_attachment(
+        payload["item_id"],
+        meta,
+        max_per_kind=media_mod.max_per_item(meta.kind),
+        expected_version=payload.get("expected_version"),
+    )
+    return _item(hass, updated)
+
+
+def _op_item_attachment_remove(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    updated, removed = _repo(hass).remove_attachment(
+        payload["item_id"],
+        str(payload["attachment_id"]),
+        expected_version=payload.get("expected_version"),
+    )
+    serialized = serialize_item(hass, updated)
+    return Written("item", serialized, "updated", detached=((str(updated.id), removed),))
+
+
+def _op_item_attachment_update(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    updated = _repo(hass).update_attachment(
+        payload["item_id"],
+        str(payload["attachment_id"]),
+        title=payload["title"],
+        expected_version=payload.get("expected_version"),
+    )
+    # A title moves no count.
+    return Written("item", serialize_item(hass, updated), "updated", counts=False)
+
+
+def _op_item_attachment_reorder(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    updated = _repo(hass).reorder_attachments(
+        payload["item_id"],
+        payload["kind"],
+        payload["attachment_ids"],
+        expected_version=payload.get("expected_version"),
+    )
+    # The order of attachments moves no count.
+    return Written("item", serialize_item(hass, updated), "updated", counts=False)
+
+
 def _require_known_area(hass: HomeAssistant, area_id: Any) -> None:
     """Refuse an `area_id` Home Assistant has no area for; areas are HA's."""
 
@@ -258,8 +366,57 @@ def _op_location_delete(hass: HomeAssistant, payload: dict[str, Any]) -> Written
     return Written("location", removed, "deleted")
 
 
-#: Every write, by the name both surfaces call it: `haventory/<path>` and
-#: `haventory.<name>` reach the same entry.
+def _op_location_move_subtree(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    repo = _repo(hass)
+    new_parent = payload.get("new_parent_id") if "new_parent_id" in payload else UNSET
+    was_below = repo.get_location(payload["location_id"]).parent_id
+    loc = repo.update_location(payload["location_id"], new_parent_id=new_parent)
+    # Always `moved`, as the command is named; only a new parent repaints.
+    return Written("location", serialize_location(loc), "moved", repaint=loc.parent_id != was_below)
+
+
+def _op_import_execute(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    repo = _repo(hass)
+    # The whole dataset is swapped, so a failed save must put the old one back.
+    snapshot = repo.export_state()
+    repo.load_state(payload["target"])
+    return Written("dataset", None, "reloaded", restore=snapshot)
+
+
+def _op_status_create(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    doc: dict[str, Any] = {
+        k: payload[k] for k in ("slug", "label", "color", "icon", "order") if k in payload
+    }
+    created = _repo(hass).create_status(doc)
+    return Written("status", serialize_status_definition(created), "created")
+
+
+def _op_status_update(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    changes: dict[str, Any] = {
+        k: payload[k] for k in ("label", "color", "icon", "order") if k in payload
+    }
+    updated = _repo(hass).update_status(payload["slug"], changes)
+    return Written("status", serialize_status_definition(updated), "updated")
+
+
+def _op_status_reorder(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    ordered = _repo(hass).reorder_statuses(payload["slugs"])
+    return Written("status", [serialize_status_definition(d) for d in ordered], "reordered")
+
+
+def _op_status_delete(hass: HomeAssistant, payload: dict[str, Any]) -> Written:
+    repo = _repo(hass)
+    removed, reassigned_ids = repo.delete_status(
+        payload["slug"], reassign_to=payload.get("reassign_to")
+    )
+    # Each rewritten item took a new version, so each is an ordinary item
+    # edit that `haventory_item_changed` automations must see.
+    reassigned = tuple(serialize_item(hass, repo.get_item(i)) for i in reassigned_ids)
+    return Written("status", serialize_status_definition(removed), "deleted", reassigned=reassigned)
+
+
+#: Every write, by the name its surfaces call it: `haventory/<path>` and
+#: `haventory.<name>` reach the same entry. Some have a command and no service.
 OPS: dict[str, Op] = {
     "item_create": _op_item_create,
     "item_update": _op_item_update,
@@ -273,10 +430,22 @@ OPS: dict[str, Op] = {
     "item_remove_tags": _op_item_remove_tags,
     "item_update_custom_fields": _op_item_update_custom_fields,
     "item_set_low_stock_threshold": _op_item_set_low_stock_threshold,
+    "reminder_set": _op_reminder_set,
+    "reminder_clear": _op_reminder_clear,
     "reminder_bump": _op_reminder_bump,
+    "item_attachment_add": _op_item_attachment_add,
+    "item_attachment_remove": _op_item_attachment_remove,
+    "item_attachment_update": _op_item_attachment_update,
+    "item_attachment_reorder": _op_item_attachment_reorder,
     "location_create": _op_location_create,
     "location_update": _op_location_update,
     "location_delete": _op_location_delete,
+    "location_move_subtree": _op_location_move_subtree,
+    "status_create": _op_status_create,
+    "status_update": _op_status_update,
+    "status_reorder": _op_status_reorder,
+    "status_delete": _op_status_delete,
+    "import_execute": _op_import_execute,
 }
 
 #: The subset a `haventory/items/bulk` row may name, as the contract enumerates.
@@ -297,22 +466,108 @@ BULK_KINDS = frozenset(
 )
 
 
-def run(hass: HomeAssistant, name: str, payload: dict[str, Any]) -> Written:
-    """Execute one operation by name; persist and `announce` are the caller's."""
+async def commit(hass: HomeAssistant, name: str, payload: dict[str, Any]) -> Written:
+    """Run one op, persist, free what it orphaned, announce; return what it wrote."""
 
-    return OPS[name](hass, payload)
+    written = OPS[name](hass, payload)
+    await _save(hass, name, [written])
+    await _free_files(hass, [written])
+    await _announce(hass, written)
+    return written
 
 
-async def announce(hass: HomeAssistant, written: Written) -> None:
-    """After the persist: free the files a delete orphaned, then announce."""
+async def commit_batch(
+    hass: HomeAssistant,
+    rows: Sequence[tuple[str, dict[str, Any]]],
+    *,
+    refused: Callable[[int, Exception], None],
+) -> list[Written | None]:
+    """Run a `haventory/items/bulk` batch: every row, one save, then the events.
+
+    A row that raises, or names a kind outside `BULK_KINDS`, is handed to
+    ``refused`` with its index as it fails and reads None in the result; it
+    stops no other row. A batch with no successful row saves and announces
+    nothing. The events are each row's own with the counts held back, then one
+    counts event for the batch.
+    """
+
+    results: list[Written | None] = []
+    for index, (name, payload) in enumerate(rows):
+        try:
+            if name not in BULK_KINDS:
+                raise ValidationError("unknown operation kind")
+            results.append(OPS[name](hass, payload))
+        except Exception as exc:
+            # Whatever it was, it fails its own row and no other.
+            refused(index, exc)
+            results.append(None)
+
+    successful = [w for w in results if w is not None]
+    if successful:
+        await _save(hass, "items_bulk", successful)
+        await _free_files(hass, successful)
+        for written in successful:
+            await _announce(hass, written, counts=False)
+        notify_counts(hass)
+    return results
+
+
+async def _save(hass: HomeAssistant, name: str, writes: Sequence[Written]) -> None:
+    """Persist what ``writes`` changed; the only place a write's failed save is seen."""
+
+    try:
+        await async_persist_repo(hass)
+    except Exception:
+        restores = [w.restore for w in writes if w.restore is not None]
+        if not restores:
+            raise
+        _repo(hass).load_state(restores[0])
+        LOGGER.error(
+            "Write failed during persist; rolled back",
+            extra={"op": name},
+            exc_info=True,
+        )
+        raise
+
+
+async def _free_files(hass: HomeAssistant, writes: Sequence[Written]) -> None:
+    """After the save: delete the bytes nothing saved points at any more."""
+
+    deleted = [w.entity for w in writes if w.noun == "item" and w.action == "deleted"]
+    if deleted:
+        await media_mod.async_delete_item_files(hass, deleted)
+    detached = [pair for w in writes for pair in w.detached]
+    if detached:
+        await media_mod.async_delete_attachments(hass, detached)
+    # `replace` can drop an attachment's only reference, and that metadata was
+    # the only record of where its file is; sweeping against the new metadata
+    # deletes exactly those files.
+    if any(w.noun == "dataset" for w in writes):
+        await media_mod.async_sweep_orphans(hass, _repo(hass).iter_attachments())
+
+
+async def _announce(hass: HomeAssistant, written: Written, *, counts: bool = True) -> None:
+    """Send the events a saved write earns; ``counts`` False is for a batch row."""
 
     if written.action == UNCHANGED:
         notify_counts(hass)
     elif written.noun == "item":
-        if written.action == "deleted":
-            await media_mod.async_delete_item_files(hass, [written.entity])
-        notify_mutation(hass, action=written.action, item=written.entity)
-    else:
+        notify_mutation(
+            hass, action=written.action, item=written.entity, counts=counts and written.counts
+        )
+    elif written.noun == "location":
         notify_location_mutation(
             hass, action=written.action, location=written.entity, repaint=written.repaint
         )
+    elif written.noun == "status":
+        if written.action == "reordered":
+            notify_status_mutation(hass, action=written.action, statuses=written.entity)
+        else:
+            notify_status_mutation(hass, action=written.action, status=written.entity)
+        if written.reassigned:
+            notify_bulk_mutation(hass, action="updated", items=list(written.reassigned))
+    elif written.noun == "dataset":
+        notify_dataset_replaced(hass)
+        # The shopping list explicitly: a swap that leaves the low-stock set as it
+        # was fires no bus signal the bridge would react to.
+        await todo_bridge.async_reconcile(hass)

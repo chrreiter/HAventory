@@ -44,8 +44,9 @@ Each module documents its own traps. This is the map to which file to open.
 - `subscriptions.py`: the subscription registry and the fan-out that writes events on the
   wire. `events.py` holds one announce function per topic and is the only module that calls
   the broadcaster.
-- `ops.py`: one function per write, shared by `ws.py` and `services.py`: the repository call,
-  the event the write earns, and the order in which persist, announce and answer happen.
+- `ops.py`: one function per write, shared by `ws.py` and `services.py`, and `commit` /
+  `commit_batch`, the only path from a surface to the repository, the store and the event
+  doors: run the op, persist, free orphaned files, announce. A surface answers after it.
 - `services.py` / `services.yaml`: `haventory.*`. Read the registration comment before
   changing how a handler is bound.
 - `sensor.py`: the promoted counts as entities on one HAventory device. Push only: a

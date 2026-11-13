@@ -26,7 +26,7 @@ try:
 except ImportError:  # pragma: no cover - offline harness without the component
     process_uploaded_file = None
 
-from . import import_export, ops, todo_bridge
+from . import import_export, ops
 from . import media as media_mod
 from .const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
@@ -35,14 +35,6 @@ from .const import (
     MAX_ATTACHMENT_BYTES,
     MAX_MANUALS_PER_ITEM,
     MAX_PICTURES_PER_ITEM,
-)
-from .events import (
-    notify_bulk_mutation,
-    notify_counts,
-    notify_dataset_replaced,
-    notify_location_mutation,
-    notify_mutation,
-    notify_status_mutation,
 )
 from .exceptions import (
     ConflictError,
@@ -58,8 +50,6 @@ from .logs import context_logger
 from .models import (
     ATTACHMENT_KINDS,
     AttachmentMeta,
-    Item,
-    ItemUpdate,
     iso_utc_now,
     new_uuid4,
     normalize_string_list,
@@ -69,10 +59,9 @@ from .models import (
     validate_item_filter,
     validate_sort,
 )
-from .repository import UNSET, Repository
+from .repository import Repository
 from .runtime import Subscription, loaded_runtime
 from .serialization import serialize_item, serialize_location
-from .storage import async_persist_repo
 from .subscriptions import register_subscription, unregister_subscription
 
 if TYPE_CHECKING:
@@ -243,32 +232,38 @@ def _bulk_op_error(
     return {"success": False, "error": {"code": code, "message": message, "context": context}}
 
 
-async def _mutate(hass: HomeAssistant, conn: _Conn, msg: _Msg, name: str) -> None:
-    """Run one op from `ops.py` with the command's fields as its payload.
+def _answer(written: ops.Written) -> Any:
+    """What a committed write answers with on this surface.
 
-    Persist, then announce, then reply: an event means the write is on disk. A
-    delete answers `null`, since its body is a pre-delete snapshot.
+    A delete answers `null`, since its body is a pre-delete snapshot; a status
+    delete answers the removed status and how many items it rewrote.
     """
 
-    payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
-    written = ops.run(hass, name, payload)
-    await async_persist_repo(hass)
-    await ops.announce(hass, written)
-    deleted = written.action == "deleted"
-    conn.send_message(
-        websocket_api.result_message(msg.get("id", 0), None if deleted else written.entity)
-    )
+    if written.action != "deleted":
+        return written.entity
+    if written.noun == "status":
+        return {"status": written.entity, "reassigned": len(written.reassigned)}
+    return None
 
 
-async def _answer_item(
-    hass: HomeAssistant, conn: _Conn, msg: _Msg, item: Item, *, counts: bool = True
+async def _mutate(
+    hass: HomeAssistant,
+    conn: _Conn,
+    msg: _Msg,
+    name: str,
+    payload: dict[str, Any] | None = None,
 ) -> None:
-    """Persist, announce and answer an item edit that has no op of its own."""
+    """Commit one op, then answer.
 
-    serialized = serialize_item(hass, item)
-    await async_persist_repo(hass)
-    notify_mutation(hass, action="updated", item=serialized, counts=counts)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    The payload is the command's fields unless the handler built its own. The
+    reply is sent after `ops.commit` returns, so an answer means the write is on
+    disk and announced.
+    """
+
+    if payload is None:
+        payload = {k: v for k, v in msg.items() if k not in {"id", "type"}}
+    written = await ops.commit(hass, name, payload)
+    conn.send_message(websocket_api.result_message(msg.get("id", 0), _answer(written)))
 
 
 @_command("haventory/ping", {vol.Optional("echo"): object})
@@ -513,14 +508,6 @@ async def ws_item_check_in(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     await _mutate(hass, conn, msg, "item_check_in")
 
 
-async def _apply_reminder(hass: HomeAssistant, conn: _Conn, msg: _Msg, update: ItemUpdate) -> None:
-    # An ordinary item edit: it bumps `version` and answers `conflict` like one.
-    item = _repo(hass).update_item(
-        msg["item_id"], update, expected_version=msg.get("expected_version")
-    )
-    await _answer_item(hass, conn, msg, item)
-
-
 @_command(
     "haventory/reminder/set",
     {
@@ -532,13 +519,7 @@ async def _apply_reminder(hass: HomeAssistant, conn: _Conn, msg: _Msg, update: I
     ("item_id", "reminder_date", "expected_version"),
 )
 async def ws_reminder_set(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
-    # The command names the whole reminder, so an omitted interval means a
-    # one-off rather than "keep the stored one".
-    update = cast(
-        "ItemUpdate",
-        {"reminder_date": msg["reminder_date"], "reminder_interval": msg.get("reminder_interval")},
-    )
-    await _apply_reminder(hass, conn, msg, update)
+    await _mutate(hass, conn, msg, "reminder_set")
 
 
 @_command(
@@ -547,8 +528,7 @@ async def ws_reminder_set(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     ("item_id", "expected_version"),
 )
 async def ws_reminder_clear(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
-    update = cast("ItemUpdate", {"reminder_date": None, "reminder_interval": None})
-    await _apply_reminder(hass, conn, msg, update)
+    await _mutate(hass, conn, msg, "reminder_clear")
 
 
 @_command(
@@ -684,12 +664,8 @@ async def ws_item_attachment_add(hass: HomeAssistant, conn: _Conn, msg: _Msg) ->
         size=size,
         uploaded_at=iso_utc_now(),
     )
-    updated = repo.add_attachment(
-        item_id, meta, max_per_kind=media_mod.max_per_item(kind), expected_version=expected
-    )
-    # A failed persist leaves the file with no saved metadata; setup's orphan
-    # sweep collects it.
-    await _answer_item(hass, conn, msg, updated)
+    payload = {"item_id": item_id, "meta": meta, "expected_version": expected}
+    await _mutate(hass, conn, msg, "item_attachment_add", payload)
 
 
 @_command(
@@ -704,16 +680,9 @@ async def ws_item_attachment_add(hass: HomeAssistant, conn: _Conn, msg: _Msg) ->
 async def ws_item_attachment_remove(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     """Detach one file from an item and delete its bytes."""
 
-    updated, removed = _repo(hass).remove_attachment(
-        msg["item_id"], str(msg["attachment_id"]), expected_version=msg.get("expected_version")
-    )
-    serialized = serialize_item(hass, updated)
-    # Persist before unlinking: a failed save then leaves an orphan the sweep
+    # The bytes go after the save: a failed save then leaves an orphan the sweep
     # collects, rather than metadata pointing at bytes that are gone.
-    await async_persist_repo(hass)
-    await media_mod.async_delete_attachments(hass, [(str(updated.id), removed)])
-    notify_mutation(hass, action="updated", item=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate(hass, conn, msg, "item_attachment_remove")
 
 
 @_command(
@@ -729,14 +698,7 @@ async def ws_item_attachment_remove(hass: HomeAssistant, conn: _Conn, msg: _Msg)
 async def ws_item_attachment_update(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     """Retitle one attachment. The file on disk is untouched."""
 
-    updated = _repo(hass).update_attachment(
-        msg["item_id"],
-        str(msg["attachment_id"]),
-        title=msg["title"],
-        expected_version=msg.get("expected_version"),
-    )
-    # No counts event: a title moves no count.
-    await _answer_item(hass, conn, msg, updated, counts=False)
+    await _mutate(hass, conn, msg, "item_attachment_update")
 
 
 @_command(
@@ -755,14 +717,7 @@ async def ws_item_attachment_reorder(hass: HomeAssistant, conn: _Conn, msg: _Msg
     A picture at position 0 is the item's cover, so "make cover" is this command.
     """
 
-    updated = _repo(hass).reorder_attachments(
-        msg["item_id"],
-        msg["kind"],
-        msg["attachment_ids"],
-        expected_version=msg.get("expected_version"),
-    )
-    # No counts event: the order of attachments moves no count.
-    await _answer_item(hass, conn, msg, updated, counts=False)
+    await _mutate(hass, conn, msg, "item_attachment_reorder")
 
 
 @_command(
@@ -781,45 +736,31 @@ async def ws_item_move(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
 @_command("haventory/items/bulk", {vol.Required("operations"): object})
 async def ws_items_bulk(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     operations = _validate_bulk_ops(msg.get("operations"))
-    results: dict[str, dict[str, object]] = {}
-    successful: list[ops.Written] = []
+    # Seeded in request order, so the answer lists rows as they were sent.
+    results: dict[str, dict[str, object]] = {op["op_id"]: {} for op in operations}
 
-    for op in operations:
-        op_id, kind, payload = op["op_id"], op["kind"], op["payload"]
-        try:
-            if kind not in ops.BULK_KINDS:
-                # A row may name only the documented subset of the op table.
-                raise ValidationError("unknown operation kind")
-            written = ops.run(hass, kind, payload)
-        except Exception as exc:
-            # Whatever it was, it fails its own row and no other.
-            results[op_id] = _bulk_op_error(op_id, kind, payload, exc)
-        else:
-            results[op_id] = {"success": True, "result": written.entity}
-            successful.append(written)
+    def refused(index: int, exc: Exception) -> None:
+        op = operations[index]
+        results[op["op_id"]] = _bulk_op_error(op["op_id"], op["kind"], op["payload"], exc)
 
-    # Only a batch that changed something writes or announces anything; each
-    # failed row has already logged its own reason.
+    rows = [(op["kind"], op["payload"]) for op in operations]
+    written = await ops.commit_batch(hass, rows, refused=refused)
+    for op, row in zip(operations, written, strict=True):
+        if row is not None:
+            results[op["op_id"]] = {"success": True, "result": row.entity}
+
+    successful = sum(row is not None for row in written)
+    # Each failed row has already logged its own reason.
     if successful:
-        # One write for the whole batch, before any summary or event.
-        await async_persist_repo(hass)
-        await media_mod.async_delete_item_files(
-            hass, [w.entity for w in successful if w.action == "deleted"]
-        )
         LOGGER.info(
             "Bulk operation completed",
             extra={
                 "op": "items_bulk",
                 "total_ops": len(operations),
-                "successful": len(successful),
-                "failed": len(operations) - len(successful),
+                "successful": successful,
+                "failed": len(operations) - successful,
             },
         )
-        # One counts event for the batch rather than one per row.
-        for written in successful:
-            notify_mutation(hass, action=written.action, item=written.entity, counts=False)
-        notify_counts(hass)
-
     conn.send_message(websocket_api.result_message(msg.get("id", 0), {"results": results}))
 
 
@@ -946,16 +887,7 @@ async def ws_location_tree(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     ("location_id", "new_parent_id"),
 )
 async def ws_location_move_subtree(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
-    new_parent = msg.get("new_parent_id") if "new_parent_id" in msg else UNSET
-    repo = _repo(hass)
-    was_below = repo.get_location(msg["location_id"]).parent_id
-    loc = repo.update_location(msg["location_id"], new_parent_id=new_parent)
-    serialized = serialize_location(loc)
-    await async_persist_repo(hass)
-    notify_location_mutation(
-        hass, action="moved", location=serialized, repaint=loc.parent_id != was_below
-    )
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate(hass, conn, msg, "location_move_subtree")
 
 
 @_command("haventory/status/list")
@@ -976,13 +908,7 @@ async def ws_status_list(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     ("slug",),
 )
 async def ws_status_create(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
-    doc: dict[str, Any] = {
-        k: msg[k] for k in ("slug", "label", "color", "icon", "order") if k in msg
-    }
-    serialized = serialize_status_definition(_repo(hass).create_status(doc))
-    await async_persist_repo(hass)
-    notify_status_mutation(hass, action="created", status=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate(hass, conn, msg, "status_create")
 
 
 @_command(
@@ -998,24 +924,13 @@ async def ws_status_create(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
 )
 async def ws_status_update(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     """Edit a status's presentation; no item or item version moves."""
-
-    changes: dict[str, Any] = {k: msg[k] for k in ("label", "color", "icon", "order") if k in msg}
-    serialized = serialize_status_definition(_repo(hass).update_status(msg["slug"], changes))
-    await async_persist_repo(hass)
-    notify_status_mutation(hass, action="updated", status=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate(hass, conn, msg, "status_update")
 
 
 @_command("haventory/status/reorder", {vol.Required("slugs"): object})
 async def ws_status_reorder(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
     """Rewrite display order from a full permutation of the live slugs."""
-
-    serialized = [
-        serialize_status_definition(d) for d in _repo(hass).reorder_statuses(msg["slugs"])
-    ]
-    await async_persist_repo(hass)
-    notify_status_mutation(hass, action="reordered", statuses=serialized)
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), serialized))
+    await _mutate(hass, conn, msg, "status_reorder")
 
 
 @_command(
@@ -1028,22 +943,7 @@ async def ws_status_delete(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
 
     Refused while items still carry the slug and no target is given.
     """
-
-    repo = _repo(hass)
-    removed, reassigned = repo.delete_status(msg["slug"], reassign_to=msg.get("reassign_to"))
-    serialized = serialize_status_definition(removed)
-    await async_persist_repo(hass)
-    notify_status_mutation(hass, action="deleted", status=serialized)
-    if reassigned:
-        # Each rewritten item took a new version, so each is an ordinary item
-        # edit that `haventory_item_changed` automations must see.
-        notify_bulk_mutation(
-            hass,
-            action="updated",
-            items=[serialize_item(hass, repo.get_item(item_id)) for item_id in reassigned],
-        )
-    result = {"status": serialized, "reassigned": len(reassigned)}
-    conn.send_message(websocket_api.result_message(msg.get("id", 0), result))
+    await _mutate(hass, conn, msg, "status_delete")
 
 
 @_command("haventory/areas/list")
@@ -1138,29 +1038,8 @@ async def ws_import_execute(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None
         )
         return
 
-    # Swap the whole dataset, and roll back if the persist fails: a failed
-    # import must never leave partial in-memory state.
-    snapshot = repo.export_state()
-    repo.load_state(target)
-    try:
-        await async_persist_repo(hass)
-    except Exception:
-        repo.load_state(snapshot)
-        LOGGER.error(
-            "Import failed during persist; rolled back",
-            extra={"op": "import_execute"},
-            exc_info=True,
-        )
-        raise
-
-    # `replace` can drop an attachment's only reference, and that metadata was
-    # the only record of where its file is; sweeping against the new metadata
-    # deletes exactly those files.
-    await media_mod.async_sweep_orphans(hass, repo.iter_attachments())
-    notify_dataset_replaced(hass)
-    # The shopping list explicitly: a swap that leaves the low-stock set as it
-    # was fires no bus signal the bridge would react to.
-    await todo_bridge.async_reconcile(hass)
+    # Not `_mutate`: the answer is the summary below, built after the commit.
+    await ops.commit(hass, "import_execute", {"target": target})
 
     summary = {
         "applied": True,
