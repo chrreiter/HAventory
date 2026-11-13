@@ -18,10 +18,7 @@ from typing import Any
 
 import pytest
 from custom_components.haventory.exceptions import ValidationError
-from custom_components.haventory.models import (
-    ItemCreate,
-    ItemUpdate,
-)
+from custom_components.haventory.item_writes import ItemCreate, ItemUpdate
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.validation import (
     CATEGORY_MAX_LENGTH,

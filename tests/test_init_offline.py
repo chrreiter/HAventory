@@ -23,12 +23,9 @@ from custom_components.haventory.exceptions import (
     CorruptSchemaVersionError,
     SchemaDowngradeError,
 )
+from custom_components.haventory.item_writes import ItemCreate
 from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
-from custom_components.haventory.models import (
-    AttachmentMeta,
-    ItemCreate,
-    new_uuid4,
-)
+from custom_components.haventory.models import AttachmentMeta, new_uuid4
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
 from custom_components.haventory.timestamps import iso_utc_now

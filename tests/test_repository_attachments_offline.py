@@ -11,11 +11,8 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory.exceptions import ConflictError, NotFoundError, ValidationError
-from custom_components.haventory.models import (
-    AttachmentMeta,
-    ItemCreate,
-    new_uuid4,
-)
+from custom_components.haventory.item_writes import ItemCreate
+from custom_components.haventory.models import AttachmentMeta, new_uuid4
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.timestamps import iso_utc_now
 

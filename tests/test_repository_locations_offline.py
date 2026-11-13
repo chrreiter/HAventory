@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory.exceptions import NotFoundError, ValidationError
-from custom_components.haventory.models import ItemCreate, ItemUpdate
+from custom_components.haventory.item_writes import ItemCreate, ItemUpdate
 from custom_components.haventory.repository import Repository
 
 

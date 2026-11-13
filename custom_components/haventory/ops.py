@@ -44,12 +44,11 @@ from .events import (
     notify_status_mutation,
 )
 from .exceptions import ValidationError
+from .item_writes import ItemCreate, ItemUpdate
 from .logs import context_logger
 from .models import (
     AttachmentMeta,
     Item,
-    ItemCreate,
-    ItemUpdate,
     serialize_status_definition,
 )
 from .repository import UNSET, Repository, RepositorySnapshot

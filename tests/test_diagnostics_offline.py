@@ -14,7 +14,8 @@ import json
 import pytest
 from custom_components.haventory import diagnostics
 from custom_components.haventory.const import CONF_CARD_TITLE, CONF_TODO_ENTITY_ID, DOMAIN
-from custom_components.haventory.models import ITEM_STATUSES, ItemCreate
+from custom_components.haventory.item_writes import ItemCreate
+from custom_components.haventory.models import ITEM_STATUSES
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY, DomainStore
 from homeassistant.config_entries import ConfigEntry

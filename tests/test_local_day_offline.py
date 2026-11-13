@@ -20,9 +20,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
+from custom_components.haventory.item_writes import ItemCreate
 from custom_components.haventory.models import (
     Item,
-    ItemCreate,
     filter_items,
     item_inspection_is_due,
     item_inspection_is_overdue,

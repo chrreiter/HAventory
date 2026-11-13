@@ -9,7 +9,7 @@ was supposed to guard.
 from __future__ import annotations
 
 import pytest
-from custom_components.haventory.models import ItemCreate, ItemUpdate
+from custom_components.haventory.item_writes import ItemCreate, ItemUpdate
 from custom_components.haventory.repository import Repository
 
 from repository_invariants import collect_index_issues, internal_indexes

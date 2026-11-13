@@ -16,7 +16,7 @@ import os
 import time
 
 import pytest
-from custom_components.haventory.models import ItemCreate
+from custom_components.haventory.item_writes import ItemCreate
 from custom_components.haventory.repository import Repository
 
 #: Items seeded before the query is timed. Well past the few thousand items the
