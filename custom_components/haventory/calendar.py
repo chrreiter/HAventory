@@ -70,7 +70,7 @@ class HaventoryCalendar(CalendarEntity):
         )
 
     @callback
-    def _handle_update(self, *_now: datetime) -> None:
+    def _handle_update(self, *_args: object) -> None:
         self.async_write_ha_state()
 
     @property

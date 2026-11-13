@@ -1,14 +1,21 @@
 """The promoted inventory counts as sensor entities on one HAventory device.
 
 Push only — no coordinator and no polling. Two things move a state: a mutation,
-through the dispatcher signal `events.notify_mutation` sends, and the
-instance's local midnight, for the counts that are derived from the calendar
-and so change with no mutation at all. `const.SENSOR_DESCRIPTIONS` is the
-catalog; nothing here is per-count.
+through the dispatcher signal `events.py` sends, and the instance's local
+midnight, for the counts that are derived from the calendar and so change with
+no mutation at all. `const.SENSOR_DESCRIPTIONS` is the catalog; nothing here is
+per-count.
+
+The signal carries the counts computed once for the write, and each entity
+keeps the value it last read. Every sensor reading `Repository.get_counts()`
+itself would walk the inventory once per entity per write. The value cannot go
+stale, because the two triggers above are the only things that move a count.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorStateClass
@@ -66,36 +73,38 @@ class HaventoryCountSensor(SensorEntity):
         self._attr_device_info = device_info(entry)
 
     async def async_added_to_hass(self) -> None:
-        """Subscribe to the two things that move this count."""
+        """Read the count once, then subscribe to the two things that move it."""
 
+        self._read(self._current_counts())
         self.async_on_remove(
-            async_dispatcher_connect(self.hass, SIGNAL_INVENTORY_CHANGED, self._handle_update)
+            async_dispatcher_connect(self.hass, SIGNAL_INVENTORY_CHANGED, self._handle_mutation)
         )
         if self._description.date_derived:
             # The instance's local midnight, not UTC's: the counts compare
             # against the local day.
             self.async_on_remove(
-                async_track_time_change(self.hass, self._handle_update, hour=0, minute=0, second=0)
+                async_track_time_change(
+                    self.hass, self._handle_midnight, hour=0, minute=0, second=0
+                )
             )
 
     @callback
-    def _handle_update(self, *_now: Any) -> None:
+    def _handle_mutation(self, counts: Mapping[str, Any] | None = None) -> None:
+        self._read(counts if counts is not None else self._current_counts())
         self.async_write_ha_state()
 
-    @property
-    def available(self) -> bool:
+    @callback
+    def _handle_midnight(self, _now: datetime) -> None:
+        self._read(self._current_counts())
+        self.async_write_ha_state()
+
+    def _read(self, counts: Mapping[str, Any] | None) -> None:
         """Unavailable while no config entry is loaded to read counts from."""
 
-        return self._counts() is not None
+        self._attr_available = counts is not None
+        value = None if counts is None else counts.get(self._description.key)
+        self._attr_native_value = int(value) if value is not None else None
 
-    @property
-    def native_value(self) -> int | None:
-        counts = self._counts()
-        if counts is None:
-            return None
-        value = counts.get(self._description.key)
-        return int(value) if value is not None else None
-
-    def _counts(self) -> dict[str, Any] | None:
+    def _current_counts(self) -> dict[str, Any] | None:
         runtime = find_runtime(self.hass)
         return None if runtime is None else runtime.repository.get_counts()
