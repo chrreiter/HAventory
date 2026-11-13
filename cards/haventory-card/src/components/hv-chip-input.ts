@@ -12,7 +12,7 @@ import { normalizeTags } from '../ui/item-form';
  */
 @customElement('hv-chip-input')
 export class HVChipInput extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     chip,
@@ -114,7 +114,7 @@ export class HVChipInput extends LitElement {
       .slice(0, 3);
   }
 
-  render() {
+  override render() {
     const suggestions = this._visibleSuggestions;
     return html`
       <div class="field" data-testid="chip-field">

@@ -56,7 +56,7 @@ const FILTER_SURFACE_ID = 'card-filter-surface';
  */
 @customElement('hv-card-shell')
 export class HVCardShell extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     chip,
@@ -313,12 +313,12 @@ export class HVCardShell extends LitElement {
     return this.store?.state.value ?? null;
   }
 
-  connectedCallback(): void {
+  override connectedCallback(): void {
     super.connectedCallback();
     this._filterPanelOpen = readPanelPref();
   }
 
-  protected willUpdate() {
+  protected override willUpdate() {
     this._searchDraft = searchDraftFor(this._searchDraft, this.st?.filters.q, this._emitSearch);
     // Reflect the mode so child selectors and :host([mobile]) rules apply. The
     // controller requests an update whenever the mode flips.
@@ -465,7 +465,7 @@ export class HVCardShell extends LitElement {
     });
   }
 
-  render() {
+  override render() {
     const st = this.st;
     const filters = st?.filters ?? defaultFilters();
     const filterCount = activeFilterCount(filters);

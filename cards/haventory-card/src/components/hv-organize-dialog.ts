@@ -95,7 +95,7 @@ function errorText(err: unknown, fallback: TranslationKey, params?: Record<strin
  */
 @customElement('hv-organize-dialog')
 export class HVOrganizeDialog extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     chip,
@@ -712,12 +712,12 @@ export class HVOrganizeDialog extends LitElement {
     this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
   }
 
-  connectedCallback(): void {
+  override connectedCallback(): void {
     super.connectedCallback();
     if (this.store && !this._storeUnsub) this._subscribe();
   }
 
-  disconnectedCallback(): void {
+  override disconnectedCallback(): void {
     super.disconnectedCallback();
     this._storeUnsub?.();
     this._storeUnsub = undefined;
@@ -744,7 +744,7 @@ export class HVOrganizeDialog extends LitElement {
     });
   };
 
-  protected updated() {
+  protected override updated() {
     // A touched native select stops following its options' `selected`, so an
     // area chosen in the parent tree is written to the live element.
     const areaSelect = this.renderRoot.querySelector<HTMLSelectElement>('[data-testid="location-area"]');
@@ -752,7 +752,7 @@ export class HVOrganizeDialog extends LitElement {
     this._opening = false;
   }
 
-  protected willUpdate(changed: Map<string, unknown>) {
+  protected override willUpdate(changed: Map<string, unknown>) {
     if (changed.has('store') && this.store) this._subscribe();
     if (changed.has('open') && this.open) {
       this._opening = true;
@@ -2256,7 +2256,7 @@ export class HVOrganizeDialog extends LitElement {
     target.focus({ preventScroll: true });
   };
 
-  render() {
+  override render() {
     if (!this.open) return null;
     const removeCount = this._allValues.find((v) => v.value === this._confirmRemove)?.count ?? 0;
 

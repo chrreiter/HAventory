@@ -70,7 +70,7 @@ function policyTitle(id: ImportPolicy): string {
  */
 @customElement('hv-import-sheet')
 export class HVImportSheet extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     modalChrome,
@@ -326,7 +326,7 @@ export class HVImportSheet extends LitElement {
 
   private _modal = new Modal(this, { open: () => this.open });
 
-  protected willUpdate(changed: Map<string, unknown>) {
+  protected override willUpdate(changed: Map<string, unknown>) {
     if (changed.has('open') && this.open) {
       this._source = 'paste';
       this._text = '';
@@ -673,7 +673,7 @@ export class HVImportSheet extends LitElement {
     `;
   }
 
-  render() {
+  override render() {
     if (!this.open) return null;
     const body = this.summary
       ? this._renderSummary(this.summary)

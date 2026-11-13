@@ -19,7 +19,7 @@ const DEFAULT_ICON: Record<BannerKind, IconName> = {
  */
 @customElement('hv-banner')
 export class HVBanner extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     css`
@@ -98,7 +98,7 @@ export class HVBanner extends LitElement {
   /** Override the kind's default glyph. */
   @property({ attribute: false }) glyph: IconName | null = null;
 
-  render() {
+  override render() {
     return html`
       <div class="banner ${this.kind}" role="alert" data-testid="banner" data-kind=${this.kind}>
         <span class="glyph">${icon(this.glyph ?? DEFAULT_ICON[this.kind], 18)}</span>

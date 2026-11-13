@@ -29,7 +29,7 @@ import './hv-overflow-menu';
  */
 @customElement('hv-list-row')
 export class HVListRow extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     chip,
@@ -284,18 +284,18 @@ export class HVListRow extends LitElement {
   private _dayUnsub?: () => void;
 
   /** The due and inspection chips read the clock, so midnight redraws them. */
-  connectedCallback(): void {
+  override connectedCallback(): void {
     super.connectedCallback();
     this._dayUnsub = onDayChange(() => this.requestUpdate());
   }
 
-  disconnectedCallback(): void {
+  override disconnectedCallback(): void {
     this._dayUnsub?.();
     this._dayUnsub = undefined;
     super.disconnectedCallback();
   }
 
-  protected willUpdate() {
+  protected override willUpdate() {
     this._urls.configure(this.media?.sign ?? null);
   }
 
@@ -371,7 +371,7 @@ export class HVListRow extends LitElement {
     }`;
   }
 
-  render() {
+  override render() {
     const item = this.item;
     if (!item) return null;
     const low = isLowStock(item);

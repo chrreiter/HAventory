@@ -13,7 +13,7 @@ import './hv-banner';
  */
 @customElement('hv-confirm')
 export class HVConfirm extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     modalChrome,
@@ -71,7 +71,7 @@ export class HVConfirm extends LitElement {
     this.dispatchEvent(new CustomEvent('confirm', { bubbles: true, composed: true }));
   };
 
-  render() {
+  override render() {
     if (!this.open) return null;
     return this._modal.render(
       {

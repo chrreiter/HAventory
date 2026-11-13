@@ -19,7 +19,7 @@ const SKELETON_ROWS = 5;
  */
 @customElement('hv-list')
 export class HVList extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     css`
@@ -154,7 +154,7 @@ export class HVList extends LitElement {
   /** Reflected so the stylesheet can give the open editor more room. */
   @property({ type: Boolean, reflect: true }) editing = false;
 
-  protected willUpdate(changed: PropertyValues) {
+  protected override willUpdate(changed: PropertyValues) {
     if (changed.has('editingItemId') || changed.has('addingNew') || changed.has('editorTemplate')) {
       this.editing = Boolean(this.editorTemplate) && (this.addingNew || this.editingItemId !== null);
     }
@@ -189,7 +189,7 @@ export class HVList extends LitElement {
     return { rows: [pinned, ...this.items], pinnedId: id };
   }
 
-  render() {
+  override render() {
     // An open editor outranks the skeleton, which would replace the scroller and the form.
     const editorOpen = Boolean(this.editorTemplate) && (this.addingNew || this.editingItemId !== null);
     if (this.loading && !this.items.length && !editorOpen) {

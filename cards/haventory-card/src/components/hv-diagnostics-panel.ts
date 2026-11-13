@@ -15,7 +15,7 @@ import type { DegradedState, StatsCounts, VersionInfo } from '../store/types';
  */
 @customElement('hv-diagnostics-panel')
 export class HVDiagnosticsPanel extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     modalChrome,
@@ -162,7 +162,7 @@ export class HVDiagnosticsPanel extends LitElement {
 
   private _modal = new Modal(this, { open: () => this.open });
 
-  protected willUpdate(changed: Map<string, unknown>) {
+  protected override willUpdate(changed: Map<string, unknown>) {
     if (changed.has('open') && this.open) this._copied = false;
   }
 
@@ -181,7 +181,7 @@ export class HVDiagnosticsPanel extends LitElement {
     ].join('\n');
   }
 
-  render() {
+  override render() {
     if (!this.open) return null;
     const live = !!this.connected?.items && !this.degraded?.connectionLost;
 

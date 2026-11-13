@@ -12,7 +12,7 @@ import './haventory-panel';
 import './haventory-card-editor';
 
 export class HAventoryCard extends StoreHostElement {
-  static styles = css`
+  static override styles = css`
     :host {
       display: block;
       font-family: var(--paper-font-body1_-_font-family, var(--ha-card-font-family, Arial, sans-serif));
@@ -63,7 +63,7 @@ export class HAventoryCard extends StoreHostElement {
   }
 
   /** This element owns the `Store` and the Lovelace interface; the shell owns the rest. */
-  render() {
+  override render() {
     return html`
       <hv-card-shell
         data-testid="card-shell"

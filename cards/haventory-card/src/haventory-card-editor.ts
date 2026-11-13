@@ -22,7 +22,7 @@ export interface HAventoryCardConfig {
  * after swapping `window.customElements`.
  */
 export class HAventoryCardEditor extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     css`
@@ -48,11 +48,11 @@ export class HAventoryCardEditor extends LitElement {
   }
 
   /** `hass` is a plain property here, so the language is picked up on its update. */
-  protected willUpdate(changed: PropertyValues<this>): void {
+  protected override willUpdate(changed: PropertyValues<this>): void {
     if (changed.has('hass')) setLanguage(this.hass?.language);
   }
 
-  render() {
+  override render() {
     return html`<div class="field" data-testid="card-editor-form">
       <label class="hv-label" for="card-editor-title">${t('hv.cardEditor.title')}</label>
       <input

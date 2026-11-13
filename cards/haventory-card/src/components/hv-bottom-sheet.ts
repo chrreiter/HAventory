@@ -12,7 +12,7 @@ import { nextZBase } from '../utils/zindex';
  */
 @customElement('hv-bottom-sheet')
 export class HVBottomSheet extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     css`
@@ -102,7 +102,7 @@ export class HVBottomSheet extends LitElement {
   private _dragFrom: number | null = null;
   private _dragStartedAt = 0;
 
-  protected willUpdate(changed: Map<string, unknown>) {
+  protected override willUpdate(changed: Map<string, unknown>) {
     if (changed.has('open')) {
       if (this.open) this._zBase = nextZBase();
       this._dragFrom = null;
@@ -155,7 +155,7 @@ export class HVBottomSheet extends LitElement {
     panel.focus({ preventScroll: true });
   }
 
-  render() {
+  override render() {
     if (!this.open) return null;
     const z = this._zBase ?? 9998;
     // Only while dragging, so the opening animation's transform runs untouched.

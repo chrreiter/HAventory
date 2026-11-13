@@ -61,7 +61,7 @@ const actions = (): { id: BulkAction; label: string; glyph?: IconName; picker?: 
  */
 @customElement('hv-bulk-bar')
 export class HVBulkBar extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     css`
@@ -471,7 +471,7 @@ export class HVBulkBar extends LitElement {
     return found?.name ?? failure.itemId ?? t('hv.term.item');
   }
 
-  render() {
+  override render() {
     if (this.result) return this._renderResult(this.result);
     if (this.progress) return this._renderProgress(this.progress);
     if (this.selectedCount === 0) return null;

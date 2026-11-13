@@ -63,7 +63,7 @@ import type { HVItemEditor } from './hv-item-editor';
  */
 @customElement('hv-detail-sheet')
 export class HVDetailSheet extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     chip,
@@ -459,7 +459,7 @@ export class HVDetailSheet extends LitElement {
    * Another item, a re-open, or a finished save lands on the read view. Keyed
    * on the id: the host hands a new `item` object on every store broadcast.
    */
-  protected willUpdate(changed: Map<string, unknown>) {
+  protected override willUpdate(changed: Map<string, unknown>) {
     this._urls.configure(this.media?.sign ?? null);
     const id = this.item?.id ?? null;
     const moved = id !== this._shownItemId;
@@ -478,12 +478,12 @@ export class HVDetailSheet extends LitElement {
   }
 
   /** The overdue, inspection and reminder lines read the clock, and a sheet can stay open overnight. */
-  connectedCallback(): void {
+  override connectedCallback(): void {
     super.connectedCallback();
     this._dayUnsub = onDayChange(() => this.requestUpdate());
   }
 
-  disconnectedCallback(): void {
+  override disconnectedCallback(): void {
     super.disconnectedCallback();
     this._dayUnsub?.();
     this._dayUnsub = undefined;
@@ -897,7 +897,7 @@ export class HVDetailSheet extends LitElement {
     `;
   }
 
-  render() {
+  override render() {
     const item = this.item;
     return html`<hv-bottom-sheet
         data-testid="detail-sheet"

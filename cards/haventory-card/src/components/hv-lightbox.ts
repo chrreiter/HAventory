@@ -16,7 +16,7 @@ import { nextZBase } from '../utils/zindex';
  */
 @customElement('hv-lightbox')
 export class HVLightbox extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     css`
@@ -110,7 +110,7 @@ export class HVLightbox extends LitElement {
   private readonly _pictures = new PictureFallback(this, this._urls);
   private readonly _focus = new DialogFocus();
 
-  protected willUpdate(changed: Map<string, unknown>) {
+  protected override willUpdate(changed: Map<string, unknown>) {
     this._urls.configure(this.media?.sign ?? null);
     if (changed.has('index')) {
       if (this.index !== null && this._at === null) this._zBase = nextZBase();
@@ -122,7 +122,7 @@ export class HVLightbox extends LitElement {
     this._at = count === 0 ? null : Math.min(this._at, count - 1);
   }
 
-  protected updated() {
+  protected override updated() {
     const open = this._at !== null;
     this._focus.sync(
       open,
@@ -145,7 +145,7 @@ export class HVLightbox extends LitElement {
     this._at = (this._at + delta + count) % count;
   }
 
-  render() {
+  override render() {
     const item = this.item;
     const index = this._at;
     if (!item || index === null) return null;

@@ -107,7 +107,7 @@ function barSteps(width: number): string {
  */
 @customElement('hv-full-view')
 export class HVFullView extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     chip,
@@ -758,7 +758,7 @@ export class HVFullView extends LitElement {
     return this.store?.state.value ?? null;
   }
 
-  disconnectedCallback(): void {
+  override disconnectedCallback(): void {
     super.disconnectedCallback();
     this._barObserver?.disconnect();
     this._barTarget = null;
@@ -792,7 +792,7 @@ export class HVFullView extends LitElement {
     },
   );
 
-  protected willUpdate(changed: Map<string, unknown>) {
+  protected override willUpdate(changed: Map<string, unknown>) {
     this._workspace.syncPinnedItem();
     this._searchDraft = searchDraftFor(this._searchDraft, this.st?.filters.q, this._emitSearch);
     if (changed.has('open')) {
@@ -814,7 +814,7 @@ export class HVFullView extends LitElement {
     }
   }
 
-  protected updated(changed: Map<string, unknown>) {
+  protected override updated(changed: Map<string, unknown>) {
     if (changed.has('open')) {
       if (this.open) {
         // Embedded there is no trap, and focusing the search would raise a
@@ -1425,7 +1425,7 @@ export class HVFullView extends LitElement {
     `;
   }
 
-  render() {
+  override render() {
     if (!this.open) return null;
     const z = this._zBase || 9998;
     const modal = !this.embedded;

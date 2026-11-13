@@ -19,7 +19,7 @@ interface PanelInfo {
  * embeds `hv-full-view`, since a page has nowhere to close to.
  */
 export class HAventoryPanel extends StoreHostElement {
-  static styles = css`
+  static override styles = css`
     :host {
       display: block;
       /* Nothing above this element has a height, so a percentage would collapse;
@@ -46,7 +46,7 @@ export class HAventoryPanel extends StoreHostElement {
    */
   readonly surfaces = new HostSurfaces(this, () => this.store);
 
-  render() {
+  override render() {
     return html`
       <hv-full-view
         data-testid="panel-full-view"

@@ -167,7 +167,7 @@ export function clearedValueFor(key: FilterChipKey): Partial<StoreFilters> {
 /** Removable chips for every active filter, plus a clear-all affordance. */
 @customElement('hv-filter-chips')
 export class HVFilterChips extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     chip,
@@ -208,7 +208,7 @@ export class HVFilterChips extends LitElement {
   @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
   @property({ attribute: false }) areas: { id: string; name: string }[] = [];
 
-  render() {
+  override render() {
     if (!this.filters) return null;
     const chips = chipsFor(this.filters, {
       locations: this.locations,

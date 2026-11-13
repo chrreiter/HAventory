@@ -106,7 +106,7 @@ function errorText(err: unknown, fallback = t('hv.editor.upload.failed')): strin
  */
 @customElement('hv-item-editor')
 export class HVItemEditor extends LitElement {
-  static styles = [
+  static override styles = [
     tokens,
     base,
     chip,
@@ -973,7 +973,7 @@ export class HVItemEditor extends LitElement {
   }
 
   /** Focus inside the form so its Escape handler hears the key. */
-  protected firstUpdated() {
+  protected override firstUpdated() {
     this.renderRoot.querySelector<HTMLInputElement>('[data-testid="editor-name"]')?.focus();
   }
 
@@ -982,7 +982,7 @@ export class HVItemEditor extends LitElement {
    * `.item` on every store broadcast, and rebuilding on that would throw away
    * the typing. A different id (including a create's null→id hop) is a new form.
    */
-  protected willUpdate() {
+  protected override willUpdate() {
     this._urls.configure(this.media?.sign ?? null);
     const id = this.item?.id ?? null;
     if (id !== this._formItemId) {
@@ -1238,12 +1238,12 @@ export class HVItemEditor extends LitElement {
   }
 
   /** Re-render at midnight, since the editor marks a past due date overdue. */
-  connectedCallback(): void {
+  override connectedCallback(): void {
     super.connectedCallback();
     this._dayUnsub = onDayChange(() => this.requestUpdate());
   }
 
-  disconnectedCallback(): void {
+  override disconnectedCallback(): void {
     super.disconnectedCallback();
     this._dayUnsub?.();
     this._dayUnsub = undefined;
@@ -2204,7 +2204,7 @@ export class HVItemEditor extends LitElement {
     </ul>`;
   }
 
-  render() {
+  override render() {
     const model = this._model;
     const creating = this.item === null;
     const overdue = isOverdue(this.item?.due_date);
