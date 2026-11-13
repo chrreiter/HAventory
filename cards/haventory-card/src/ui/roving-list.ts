@@ -29,8 +29,9 @@ export function syncRovingTabindex(
   keyOf: (el: HTMLElement) => string,
   riders?: (el: HTMLElement) => Iterable<HTMLElement>,
 ): string | null {
-  if (!rows.length) return null;
-  const active = rows.find((el) => keyOf(el) === held) ?? rows.find(isSelected) ?? rows[0];
+  const [first] = rows;
+  if (!first) return null;
+  const active = rows.find((el) => keyOf(el) === held) ?? rows.find(isSelected) ?? first;
   for (const el of rows) {
     el.tabIndex = el === active ? 0 : -1;
     if (riders) for (const rider of riders(el)) rider.tabIndex = el === active ? 0 : -1;
@@ -63,15 +64,16 @@ export function rovingTarget(
   e.preventDefault();
   e.stopPropagation();
   const current = rows[index];
+  if (!current) return null;
   switch (e.key) {
     case 'ArrowDown':
-      return rows[Math.min(index + 1, rows.length - 1)];
+      return rows[Math.min(index + 1, rows.length - 1)] ?? null;
     case 'ArrowUp':
-      return rows[Math.max(index - 1, 0)];
+      return rows[Math.max(index - 1, 0)] ?? null;
     case 'Home':
-      return rows[0];
+      return rows[0] ?? null;
     case 'End':
-      return rows[rows.length - 1];
+      return rows[rows.length - 1] ?? null;
     case 'ArrowRight':
       // An open node's first child is the next row drawn; a leaf stays put.
       if (current.getAttribute('aria-expanded') === 'false') {
@@ -92,9 +94,11 @@ export function rovingTarget(
 
 /** The row one level out from `rows[index]` — the nearest earlier, shallower one. */
 function parentOf(rows: HTMLElement[], index: number): HTMLElement | null {
-  const level = levelOf(rows[index]);
-  for (let i = index - 1; i >= 0; i--) {
-    if (levelOf(rows[i]) < level) return rows[i];
+  const row = rows[index];
+  if (!row) return null;
+  const level = levelOf(row);
+  for (const candidate of rows.slice(0, index).reverse()) {
+    if (levelOf(candidate) < level) return candidate;
   }
   return null;
 }

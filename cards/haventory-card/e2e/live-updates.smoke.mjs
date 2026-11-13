@@ -53,7 +53,8 @@ const args = process.argv.slice(2);
 /** @type {(name: string, dflt: string | null) => string | null} */
 const flag = (name, dflt) => {
   const i = args.indexOf(name);
-  return i >= 0 && args[i + 1] ? args[i + 1] : dflt;
+  const value = args[i + 1];
+  return i >= 0 && value ? value : dflt;
 };
 
 // Playwright is an optional peer of this smoke — resolve it lazily so a plain

@@ -144,9 +144,11 @@ export class HVChipInput extends LitElement {
             if (e.key === 'Enter' || e.key === ',') {
               e.preventDefault();
               this._add(this._draft);
-            } else if (e.key === 'Backspace' && !this._draft && this.values.length) {
+            } else if (e.key === 'Backspace' && !this._draft) {
+              const last = this.values[this.values.length - 1];
+              if (last === undefined) return;
               e.preventDefault();
-              this._remove(this.values[this.values.length - 1]);
+              this._remove(last);
             }
           }}
           @blur=${() => this._add(this._draft)}

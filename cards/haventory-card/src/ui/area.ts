@@ -63,8 +63,8 @@ function rootIdFor(parentOf: ReadonlyMap<string, string | null>, start: string):
 function subtreeSize(childrenOf: ReadonlyMap<string | null, string[]>, rootId: string): number {
   const seen = new Set<string>([rootId]);
   const queue = [rootId];
-  for (let i = 0; i < queue.length; i += 1) {
-    for (const child of childrenOf.get(queue[i]) ?? []) {
+  for (const current of queue) {
+    for (const child of childrenOf.get(current) ?? []) {
       if (seen.has(child)) continue;
       seen.add(child);
       queue.push(child);

@@ -7,5 +7,5 @@
 export function customFieldLabel(key: string): string {
   const words = key.replace(/[_-]+/g, ' ').trim().replace(/\s+/g, ' ');
   if (!words) return key;
-  return words[0].toUpperCase() + words.slice(1);
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }

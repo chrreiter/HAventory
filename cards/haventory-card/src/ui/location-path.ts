@@ -102,7 +102,7 @@ export function elideMobilePath(areaName: string | null, path: string): { area: 
 /** The area worth marking beside a path, or null when the path's root already names it. */
 export function areaMarkName(areaName: string | null, path: string): string | null {
   if (!areaName) return null;
-  return path.split(PATH_SEPARATOR)[0].trim() === areaName.trim() ? null : areaName;
+  return (path.split(PATH_SEPARATOR)[0] ?? '').trim() === areaName.trim() ? null : areaName;
 }
 
 /**
