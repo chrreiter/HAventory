@@ -115,6 +115,7 @@ module = [
   "haventory.ops",
   "haventory.pagination",
   "haventory.query",
+  "haventory.repair_issues",
   "haventory.repository",
   "haventory.runtime",
   "haventory.serialization",

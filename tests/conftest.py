@@ -1066,7 +1066,7 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
     ha_helpers_area_registry.async_get = async_get
     sys.modules["homeassistant.helpers.area_registry"] = ha_helpers_area_registry
 
-    # homeassistant.helpers.issue_registry — `__init__.py` imports it at module
+    # homeassistant.helpers.issue_registry — `repair_issues.py` imports it at module
     # scope to raise the setup refusals in Settings -> Repairs. The stub records
     # what was raised and cleared, keyed the way HA keys it, so an offline test
     # can assert both without a registry to read.
