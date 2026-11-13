@@ -21,6 +21,9 @@ from custom_components.haventory.repository import Repository
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import STORAGE_KEY
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import translation
+from homeassistant.setup import async_setup_component
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -310,3 +313,54 @@ async def test_reminders_are_reachable_from_an_automation(hass: HomeAssistant, s
         return_response=True,
     )
     assert cleared["item"]["reminder_date"] is None
+
+
+async def test_services_exist_and_refuse_before_any_entry_is_loaded(hass: HomeAssistant) -> None:
+    """`async_setup` registers the catalog; with no entry a call is the caller's to retry.
+
+    A `ServiceValidationError`, so Home Assistant logs no traceback for it.
+    """
+
+    assert await async_setup_component(hass, DOMAIN, {})
+    await hass.async_block_till_done()
+
+    assert "item_create" in hass.services.async_services_for_domain(DOMAIN)
+    with pytest.raises(ServiceValidationError) as raised:
+        await _call(hass, "item_create", {"name": "Torch"})
+    assert raised.value.translation_domain == DOMAIN
+    assert raised.value.translation_key == "not_loaded"
+
+
+async def test_a_refused_service_call_reaches_a_german_caller_by_its_key(
+    hass: HomeAssistant, hass_ws_client, setup_entry
+) -> None:
+    """What Developer Tools gets: the key and placeholders, worded from `de.json`."""
+
+    await setup_entry()
+    await _call(hass, "item_create", {"name": "Torch"})
+    repo = find_runtime(hass).repository
+    item_id = _only_item_id(repo)
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "call_service",
+            "domain": DOMAIN,
+            "service": "item_update",
+            "service_data": {"item_id": item_id, "name": "Lamp", "expected_version": 99},
+        }
+    )
+    error = (await client.receive_json())["error"]
+
+    assert error["code"] == "service_validation_error"
+    assert error["translation_domain"] == DOMAIN
+    assert error["translation_key"] == "version_conflict"
+    placeholders = error["translation_placeholders"]
+    assert placeholders == {"expected": "99", "actual": "1"}
+
+    german = await translation.async_get_translations(hass, "de", "exceptions", {DOMAIN})
+    template = german[f"component.{DOMAIN}.exceptions.version_conflict.message"]
+    assert template.format(**placeholders) == (
+        "Dieser Gegenstand wurde zwischenzeitlich geändert (erwartete Version 99, aktuell 1). "
+        "Lade ihn neu und wiederhole die Änderung."
+    )

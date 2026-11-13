@@ -127,14 +127,18 @@ def validate_upload(*, kind: str, head: bytes, size: int) -> str:
         raise ValidationError(f"kind must be one of: {', '.join(sorted(MIME_TYPES_BY_KIND))}")
     if size > MAX_ATTACHMENT_BYTES:
         raise ValidationError(
-            f"file is {size} bytes, over the {MAX_ATTACHMENT_BYTES}-byte limit for an attachment"
+            f"file is {size} bytes, over the {MAX_ATTACHMENT_BYTES}-byte limit for an attachment",
+            key="attachment_too_large",
+            placeholders={"size": size, "max": MAX_ATTACHMENT_BYTES},
         )
     if size <= 0:
-        raise ValidationError("file is empty")
+        raise ValidationError("file is empty", key="attachment_empty")
     mime = sniff_mime(head)
     if mime is None or mime not in allowed:
         raise ValidationError(
-            f"file content is not one of the accepted types for '{kind}': {', '.join(allowed)}"
+            f"file content is not one of the accepted types for '{kind}': {', '.join(allowed)}",
+            key="attachment_type",
+            placeholders={"types": ", ".join(allowed)},
         )
     return mime
 

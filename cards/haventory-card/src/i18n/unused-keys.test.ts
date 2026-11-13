@@ -38,6 +38,8 @@ const COMPUTED_PREFIXES = [
   // The editor's repeat unit and its upload states.
   'hv.editor.unit.',
   'hv.editor.upload.state.',
+  // `serverErrorText` over the `translation_key` a backend refusal names.
+  'hv.serverError.',
 ];
 
 /** Every source the card ships, minus the dictionaries, which name every key. */

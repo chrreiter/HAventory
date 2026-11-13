@@ -15,9 +15,9 @@ from runtime_helpers import runtime_of, setup_entry
 async def test_a_second_setup_leaves_one_handler_per_command() -> None:
     """Setting the entry up again registers over the top, as a reload does.
 
-    Home Assistant can unregister neither a WebSocket command nor a service, and
-    keys both registries by name — so a second registration replaces the first,
-    and nothing has to be counted or taken back on unload.
+    Home Assistant cannot unregister a WebSocket command and keys the registry
+    by name, so a second registration replaces the first. The services are
+    registered once from `async_setup` and an entry setup leaves them alone.
     """
 
     hass = HomeAssistant()

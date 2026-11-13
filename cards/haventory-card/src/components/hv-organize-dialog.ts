@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { serverErrorText } from '../store/server-error';
 import type { TranslationKey } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
@@ -81,9 +82,9 @@ interface RewriteState {
   error?: string | null;
 }
 
-/** The failed request's own message, or the card's fallback sentence. */
+/** The failed request's own refusal, or the card's fallback sentence. */
 function errorText(err: unknown, fallback: TranslationKey, params?: Record<string, string>): string {
-  return (err as { message?: string })?.message ?? t(fallback, params);
+  return serverErrorText(err, t(fallback, params));
 }
 
 /**

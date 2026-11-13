@@ -1,4 +1,5 @@
 import { t, tn } from '../i18n';
+import { serverErrorText } from '../store/server-error';
 import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -519,7 +520,7 @@ export class HVImportSheet extends LitElement {
           ${preview.errors.map(
             (err) => html`<div class="error" data-testid="import-error-row">
               <div class="path">${err.path}</div>
-              <div class="msg">${err.message}</div>
+              <div class="msg">${serverErrorText(err, err.message)}</div>
             </div>`,
           )}
         </div>

@@ -283,7 +283,9 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
 
     runtime = find_runtime(hass)
     if runtime is None:
-        raise NotLoadedError("HAventory runtime not initialized; run integration setup")
+        raise NotLoadedError(
+            "HAventory runtime not initialized; run integration setup", key="not_loaded"
+        )
 
     async with runtime.persist_lock:
         start_time = time.monotonic()

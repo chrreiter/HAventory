@@ -44,6 +44,7 @@ from .exceptions import (
     error_code,
     log_exc_info,
     log_severity,
+    translation_fields,
 )
 from .import_export import POLICIES, Policy
 from .logs import context_logger
@@ -82,21 +83,20 @@ def _repo(hass: HomeAssistant) -> Repository:
 
 
 def _error_envelope(
-    iden: int, code: str, message: str, context: dict[str, Any] | None
+    iden: int, error: dict[str, Any], context: dict[str, Any] | None
 ) -> dict[str, Any]:
     """The contract's error envelope, built by hand.
 
     ``websocket_api.error_message`` has no ``data`` parameter (its 4th
     positional is ``translation_key``), so it cannot carry the context.
     """
-    error: dict[str, Any] = {"code": code, "message": message}
     if context:
-        error["data"] = context
+        error = {**error, "data": context}
     return {"id": iden, "type": "result", "success": False, "error": error}
 
 
-def _log_rejection(exc: Exception, context: dict[str, Any]) -> tuple[str, str]:
-    """Log one refusal at the level its code earns; return the wire's code and message.
+def _log_rejection(exc: Exception, context: dict[str, Any]) -> dict[str, Any]:
+    """Log one refusal at the level its code earns; return the wire's error body.
 
     Shared by a whole command and one bulk row, so both log a refusal alike.
     """
@@ -108,7 +108,7 @@ def _log_rejection(exc: Exception, context: dict[str, Any]) -> tuple[str, str]:
         extra={**context},
         exc_info=log_exc_info(code, exc),
     )
-    return code, str(exc)
+    return {"code": code, "message": str(exc), **translation_fields(exc)}
 
 
 def _context_from_msg(op: str, msg: _Msg, fields: tuple[str, ...]) -> dict[str, Any]:
@@ -134,13 +134,13 @@ def ws_guard(op: str, context_fields: tuple[str, ...] = ()) -> Callable[[_WSHand
                 return await func(hass, conn, msg)
             except _DOMAIN_ERRORS as exc:
                 ctx = _context_from_msg(op, msg, context_fields)
-                code, message = _log_rejection(exc, ctx)
+                error = _log_rejection(exc, ctx)
             except Exception:
                 ctx = _context_from_msg(op, msg, context_fields)
                 LOGGER.exception("Unexpected error in WS handler", extra={**ctx})
-                code, message = "unknown_error", UNEXPECTED_ERROR_MESSAGE
+                error = {"code": "unknown_error", "message": UNEXPECTED_ERROR_MESSAGE}
             # Sent for real Home Assistant; returned for the offline stub.
-            err = _error_envelope(msg.get("id", 0), code, message, ctx)
+            err = _error_envelope(msg.get("id", 0), error, ctx)
             conn.send_message(err)
             return err
 
@@ -225,11 +225,11 @@ def _bulk_op_error(
     context["op_id"] = op_id
     context["kind"] = kind
     if isinstance(exc, _DOMAIN_ERRORS):
-        code, message = _log_rejection(exc, context)
+        error = _log_rejection(exc, context)
     else:
         LOGGER.exception("Unexpected error in a bulk operation", extra={**context})
-        code, message = "unknown_error", UNEXPECTED_ERROR_MESSAGE
-    return {"success": False, "error": {"code": code, "message": message, "context": context}}
+        error = {"code": "unknown_error", "message": UNEXPECTED_ERROR_MESSAGE}
+    return {"success": False, "error": {**error, "context": context}}
 
 
 def _answer(written: ops.Written) -> Any:
@@ -630,7 +630,11 @@ async def ws_item_attachment_add(hass: HomeAssistant, conn: _Conn, msg: _Msg) ->
     # either way, so failing afterwards would cost the user the upload too.
     current = repo.get_item(item_id)
     if expected is not None and current.version != expected:
-        raise ConflictError(f"version conflict: expected {expected}, actual {current.version}")
+        raise ConflictError(
+            f"version conflict: expected {expected}, actual {current.version}",
+            key="version_conflict",
+            placeholders={"expected": expected, "actual": current.version},
+        )
 
     attachment_id = new_uuid4()
     # Both halves of `file_upload`'s context manager run in the executor: its
@@ -641,7 +645,9 @@ async def ws_item_attachment_add(hass: HomeAssistant, conn: _Conn, msg: _Msg) ->
         # unknown or already consumed id.
         source = await hass.async_add_executor_job(upload_handle.__enter__)
     except ValueError as exc:
-        raise NotFoundError("uploaded file not found; upload it again") from exc
+        raise NotFoundError(
+            "uploaded file not found; upload it again", key="upload_not_found"
+        ) from exc
 
     try:
         mime, size = await media_mod.async_consume_upload(
@@ -1028,13 +1034,10 @@ async def ws_import_execute(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None
             "Import rejected: invalid document",
             extra={"op": "import_execute", "error_count": len(errors)},
         )
+        refusal = ValidationError("import document is invalid", key="import_document_invalid")
+        error = {"code": "validation_error", "message": str(refusal), **translation_fields(refusal)}
         conn.send_message(
-            _error_envelope(
-                msg.get("id", 0),
-                "validation_error",
-                "import document is invalid",
-                {"op": "import_execute", "errors": errors},
-            )
+            _error_envelope(msg.get("id", 0), error, {"op": "import_execute", "errors": errors})
         )
         return
 

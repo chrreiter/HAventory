@@ -401,7 +401,9 @@ browser views and custom-field key suggestions:
 ```json
 {
   "valid": true,
-  "errors": [ { "path": "items[2].id", "message": "must be a UUID v4 string" } ],
+  "errors": [ { "path": "items[2].id", "message": "items[2].id must be a UUID v4 string",
+                "translation_domain": "haventory", "translation_key": "invalid_uuid",
+                "translation_placeholders": { "field": "items[2].id" } } ],
   "warnings": [ <ImportWarning>, ... ],
   "policy": "merge",
   "document": {
@@ -556,6 +558,31 @@ WebSocket shapes; there is no service-only shape:
 - The response is produced **after** the durable write, so an answer means the mutation is
   persisted.
 - `OPTIONAL`, not `ONLY`: a caller that omits `response_variable` is unaffected.
+
+### Refusal translations
+
+A refusal a person can meet names a key under `exceptions` in `strings.json`, with its
+placeholders as strings. The WebSocket error envelope, a refused `items/bulk` row and an
+`ImportPreview.errors` row carry them as `translation_domain`, `translation_key` and
+`translation_placeholders`; a service raises them on the exception, where Home Assistant's
+frontend reads them. `message` beside them stays English.
+
+A service refusal the caller can fix (`validation_error`, `not_found`, `conflict`, and the
+"no entry is loaded" `storage_error`) is a `ServiceValidationError`, so Home Assistant logs
+no traceback for it. A storage fault is a plain `HomeAssistantError`.
+
+Keyed: the refusals a card user or an automation author can meet with values they would
+write. That is a missing item, location, status or attachment, a version conflict, a
+location that still has sub-locations or items, a move under itself or its own subtree, a
+status that exists or is in use, a stale reorder, the attachment caps and types, an upload
+that is gone, an invalid import, no entry loaded, and the field rules a service's schema
+cannot check (names, caps, dates, quantities, reminder rules, area and id values).
+
+Not keyed, and English only: what only a client ignoring this contract can send (the
+`items/bulk` envelope, subscription topics and ids, list cursors and limits, filter and sort
+shapes, a slug change), storage and setup faults, and the import rules only a hand-edited
+document breaks (status slug, colour, icon and order, attachment metadata, the location
+chain). An import row for one of those carries its `path` and English `message` alone.
 
 ### Validation notes
 

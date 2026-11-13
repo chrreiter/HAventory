@@ -98,16 +98,22 @@ def find_runtime(hass: HomeAssistant) -> HAventoryRuntime | None:
 def loaded_runtime(hass: HomeAssistant) -> HAventoryRuntime:
     """The runtime of a `LOADED` entry, or `NotLoadedError`.
 
-    Home Assistant cannot unregister a WebSocket command or a service, so this
-    refusal is what makes them answer `storage_error` once the entry is gone.
+    Home Assistant cannot unregister a WebSocket command, and the services stay
+    registered from `async_setup` so an automation naming one still validates,
+    so this refusal is what makes both answer `storage_error` while no entry is
+    loaded.
     """
 
     entry = find_entry(hass)
     if entry is None:
-        raise NotLoadedError("no HAventory config entry; add the integration")
+        raise NotLoadedError("no HAventory config entry; add the integration", key="not_loaded")
     if entry.state is not ConfigEntryState.LOADED:
-        raise NotLoadedError("HAventory config entry is not loaded; run integration setup")
+        raise NotLoadedError(
+            "HAventory config entry is not loaded; run integration setup", key="not_loaded"
+        )
     runtime = getattr(entry, "runtime_data", None)
     if not isinstance(runtime, HAventoryRuntime):
-        raise NotLoadedError("HAventory runtime not initialized; run integration setup")
+        raise NotLoadedError(
+            "HAventory runtime not initialized; run integration setup", key="not_loaded"
+        )
     return runtime

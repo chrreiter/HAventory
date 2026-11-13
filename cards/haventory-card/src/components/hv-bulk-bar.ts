@@ -3,6 +3,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { t, tn } from '../i18n';
+import { serverErrorText } from '../store/server-error';
 import type { TranslationKey } from '../i18n';
 import { counted } from '../ui/plural';
 import type { IconName } from '../ui/icons';
@@ -517,13 +518,13 @@ export function describeFailure(failure: BulkFailure): string {
     case 'not_found':
       return t('hv.bulk.failure.notFound');
     case 'validation_error':
-      // The backend's own sentence, framed by the card's — the message text
-      // itself is not translated.
-      return t('hv.bulk.failure.rejected', { message });
+      // The backend's own refusal, translated where the catalog has its key,
+      // framed by the card's sentence.
+      return t('hv.bulk.failure.rejected', { message: serverErrorText(failure.error, message) });
     case 'storage_error':
       return t('hv.bulk.failure.storage');
     default:
-      return message || t('hv.bulk.failure.fallback');
+      return serverErrorText(failure.error, t('hv.bulk.failure.fallback'));
   }
 }
 

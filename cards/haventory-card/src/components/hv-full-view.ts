@@ -8,6 +8,7 @@ import { onEscape } from '../ui/keyboard';
 import { rovingTarget, syncRovingTabindex } from '../ui/roving-list';
 import { icon } from '../ui/icons';
 import { t, tn } from '../i18n';
+import { serverErrorText } from '../store/server-error';
 import type { TranslationKey } from '../i18n';
 import { counted, showingCount } from '../ui/plural';
 import { nextZBase } from '../utils/zindex';
@@ -1019,8 +1020,7 @@ export class HVFullView extends LitElement {
       await this.store?.createLocation(trimmed, soleLocationId(this.st?.filters ?? defaultFilters()), null);
       this._creatingLocation = false;
     } catch (err) {
-      this._locationError =
-        (err as { message?: string })?.message ?? t('hv.editor.locationCreateFailed');
+      this._locationError = serverErrorText(err, t('hv.editor.locationCreateFailed'));
     }
   }
 

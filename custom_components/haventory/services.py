@@ -265,7 +265,7 @@ def _bind(
 
 
 def setup(hass: HomeAssistant) -> None:
-    """Register the ``haventory.*`` services; a reload registers over the top."""
+    """Register the ``haventory.*`` services; ``async_setup`` calls it once per run."""
 
     # OPTIONAL, not ONLY: each is a mutation first, so a caller that omits
     # `response_variable` must keep working.
