@@ -67,8 +67,9 @@ to the integration-wide option. All three elements register through `defineCardE
 `window.customElements`.
 
 The integration registers that panel at `/haventory` through `panel_custom`, handing it the
-*same* module URL both card loaders get (`__init__.py`, `_async_apply_sidebar_panel`), so the
-browser's module map evaluates the bundle once whichever surface is opened first. The
+*same* module URL both card loaders get (`frontend_registration.py`,
+`async_apply_sidebar_panel`), so the browser's module map evaluates the bundle once whichever
+surface is opened first. The
 registration's `config` carries `{"title": <card title option>}`, which is where the panel's
 heading comes from; the sidebar entry itself is named by the same option. Changing a
 registration is remove-then-register, because `panel_custom.async_register_panel` does not

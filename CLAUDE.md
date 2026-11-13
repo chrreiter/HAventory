@@ -27,17 +27,30 @@ floor is a judgment call with a security half: `CONTRIBUTING.md` → "Developmen
 ### Backend: `custom_components/haventory/`
 Each module documents its own traps. This is the map to which file to open.
 
-- `__init__.py`: setup and teardown, runtime wiring, Lovelace resource registration, and
-  the sidebar panel (`panel_custom` at `/haventory`).
+- `__init__.py`: setup and teardown, and the runtime wiring between them.
+- `frontend_registration.py`: the card bundle's static path, the two loaders that receive
+  one versioned URL (the extra module URL and the Lovelace resource), and the sidebar panel
+  (`panel_custom` at `/haventory`).
+- `repair_issues.py`: the setup refusals as Repairs issues, and the one-boot lossy-load
+  opt-in the corrupt-store fix sets.
 - `runtime.py`: `HAventoryRuntime`, plus the two lookups whose difference decides whether
   teardown works at all, `loaded_runtime` against `find_runtime`.
-- `models.py`: `Item` / `Location`, the create/update/filter/sort schemas, and the validation
-  every surface refuses through, so one value is refused for one reason everywhere. Search
-  and sort normalize text here.
-  `SORT_FIELDS` is read off `Sort`. Free of I/O.
+- `models.py`: the persisted shapes (`Item`, `Location`, statuses, attachments, reminders)
+  and the readers that refuse a stored row no write could have written. Free of I/O.
+- `validation.py`: the field checks and caps every surface refuses through, so one value is
+  refused for one reason everywhere. Knows no entity shape, so it imports nothing from
+  `models.py`.
+- `item_writes.py`: `ItemCreate` / `ItemUpdate` and the one rule table a create and an
+  update both walk.
+- `query.py`: `ItemFilter` / `Sort`, their validation, and the filter and sort engines.
+  `SORT_FIELDS` is read off `Sort`.
+- `text.py`: the case and accent fold search and sort share. `timestamps.py`: canonical UTC
+  timestamps and the household's local day. `location_paths.py`: the denormalized path,
+  derived from the location tree.
 - `serialization.py`: one serializer per entity, shared by the WebSocket API and the
   services so the two surfaces cannot answer with different shapes.
-- `repository.py`: the in-memory indexed source of truth.
+- `repository.py`: the in-memory indexed source of truth. `pagination.py` holds its
+  cursors, and `load_report.py` what a load could not read.
 - `storage.py`: HA `Store`, schema versioning, serialized writes, the persist helpers, and
   the refusal to read a store a newer schema wrote. `migrations.py` is forward-only and **idempotent**.
 - `ws.py`: the primary API surface: CRUD, the four subscription topics, and `ws_guard`.

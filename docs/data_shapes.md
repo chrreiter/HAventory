@@ -1,8 +1,9 @@
 ## HAventory Data Shapes
 
 The shapes the WebSocket API, the `haventory.*` services and the store exchange. The source
-of truth is `custom_components/haventory/models.py` (the entities, the input `TypedDict`s and
-the validation) and `serialization.py` (what goes on the wire). What each command does with
+of truth is `custom_components/haventory/models.py` (the entities), `item_writes.py` and
+`query.py` (the write and query input `TypedDict`s), `validation.py` (the field checks and
+caps) and `serialization.py` (what goes on the wire). What each command does with
 them is [`backend_api_contract.md`](backend_api_contract.md).
 
 `ScalarValue` below is `string | number | boolean`, the values `custom_fields` accepts.
