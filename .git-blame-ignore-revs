@@ -1,7 +1,7 @@
 # Commits that change layout only. `git blame` skips them once a clone runs
 #   git config blame.ignoreRevsFile .git-blame-ignore-revs
 # and GitHub's blame view reads this file on its own. A hash here must be the
-# one on main: a squash merge gives the commit a new one.
+# one on main: a squash or rebase merge gives the commit a new one.
 
 # style: format the card with Prettier
-fc1acc12e328b98b2ad32cd03139aadaeb46a89a
+7d989288091976f2797bd852656c7f4a90a9f730
