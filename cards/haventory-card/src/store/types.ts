@@ -161,9 +161,12 @@ export interface ItemFilter {
   low_stock_only?: boolean;
   low_stock_first?: boolean;
   orphaned_only?: boolean;
-  /** `overdue_only` / `inspection_overdue_only`: the date is before today (UTC). */
+  /**
+   * `overdue_only` / `inspection_overdue_only`: the date is before today, the
+   * day in Home Assistant's configured time zone.
+   */
   overdue_only?: boolean;
-  /** The `*_due_only` keys: the date is on or before today (UTC). */
+  /** The `*_due_only` keys: the date is on or before that same day. */
   checked_out_due_only?: boolean;
   inspection_overdue_only?: boolean;
   inspection_due_only?: boolean;
@@ -315,7 +318,7 @@ export type BulkOpKind =
   | 'item_set_low_stock_threshold';
 
 export interface BulkOperation {
-  /** Must be unique per call — the backend keys results by it and silently keeps the last duplicate. */
+  /** Unique per call: the backend keys results by it and refuses a whole call that repeats one. */
   op_id: string;
   kind: BulkOpKind;
   payload: Record<string, unknown>;

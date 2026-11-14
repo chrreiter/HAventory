@@ -1272,7 +1272,10 @@ export class Store {
             failed.push({ op, error: result.error ?? unknownBulkError(), itemId: opTargetId(op) });
           }
         }
-        // The endpoint collapses duplicate op_ids, so a missing one is reported.
+        // A conforming server answers every op_id, and refuses the whole call
+        // when one repeats. An op left unanswered all the same (a backend of
+        // another version, a cut frame) is reported rather than dropped from
+        // both lists.
         for (const op of chunk) {
           if (!(op.op_id in results)) {
             failed.push({
@@ -1416,7 +1419,7 @@ export class Store {
 
 let bulkOpSeq = 0;
 
-/** Build a batch operation with an `op_id` unique for the process: the backend keeps only the last duplicate. */
+/** Build a batch operation with an `op_id` unique for the process: the backend refuses a call that repeats one. */
 export function makeBulkOp(kind: BulkOperation['kind'], payload: Record<string, unknown>): BulkOperation {
   bulkOpSeq += 1;
   const target = typeof payload.item_id === 'string' ? payload.item_id : 'op';
