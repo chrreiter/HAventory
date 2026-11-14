@@ -28,6 +28,7 @@ import pytest
 from custom_components.haventory.const import (
     CONF_CARD_TITLE,
     CONF_SIDEBAR_PANEL_ENABLED,
+    DOMAIN,
     INTEGRATION_VERSION,
     MEDIA_NAME_TOKEN_PARAM,
     MEDIA_SIZE_PARAM,
@@ -713,3 +714,70 @@ async def test_no_sidebar_panel_without_a_built_bundle(monkeypatch, tmp_path):
     await setup_frontend(frontend, hass, ConfigEntry())
 
     assert registered_panel(hass) is None
+
+
+@pytest.mark.asyncio
+async def test_a_foreign_panel_on_our_path_is_left_alone_and_logged(frontend, caplog):
+    """Something else holding `/haventory` makes our registration raise; setup goes on."""
+    hass = make_hass()
+    foreign = types.SimpleNamespace(component_name="custom", sidebar_title="Not ours")
+    hass.data[DATA_PANELS] = {PANEL_URL_PATH: foreign}
+
+    with caplog.at_level(logging.WARNING):
+        await frontend.async_apply_sidebar_panel(hass, ConfigEntry())
+
+    failures = [
+        r
+        for r in caplog.records
+        if "Failed to register the HAventory sidebar panel" in r.getMessage()
+    ]
+    assert [r.levelno for r in failures] == [logging.WARNING]
+    assert registered_panel(hass) is foreign
+    assert frontend._PANEL_STATE_KEY not in hass.data.get(DOMAIN, {})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method", ["async_create_item", "async_update_item", "async_delete_item"])
+async def test_a_refused_card_resource_is_a_warning_not_a_failed_setup(frontend, caplog, method):
+    """The collection loads its store on first use, so any write can raise anything."""
+    hass = make_hass()
+    items_by_method = {
+        "async_create_item": [],
+        "async_update_item": [{"id": "stale", "url": f"{CARD_PATH}?v=0.0.1", "type": "module"}],
+        "async_delete_item": [
+            {"id": "current", "url": CURRENT_CARD_URL, "type": "module"},
+            {"id": "stale", "url": f"{CARD_PATH}?v=0.0.1", "type": "module"},
+        ],
+    }
+    resources = MockResourceCollection(items_by_method[method])
+
+    async def refuse(*_args, **_kwargs):
+        raise RuntimeError("the resource store is unreadable")
+
+    setattr(resources, method, refuse)
+    hass.data["lovelace_data_key"] = MockLovelaceData(resources)
+
+    with caplog.at_level(logging.WARNING):
+        await frontend.async_register_frontend_module(hass)
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "frontend resource" in warnings[0].getMessage()
+    assert extra_js_urls(hass) == {CURRENT_CARD_URL}
+
+
+@pytest.mark.asyncio
+async def test_yaml_mode_duplicates_are_left_alone(frontend):
+    """A read-only collection has no delete to call, so the duplicate pass deletes nothing."""
+    hass = make_hass()
+    items = [
+        {"id": "a", "url": CURRENT_CARD_URL},
+        {"id": "b", "url": f"{CARD_PATH}?v=0.0.1"},
+    ]
+    resources = MockYamlResourceCollection(items)
+    hass.data["lovelace_data_key"] = MockLovelaceData(resources)
+
+    await frontend.async_register_frontend_module(hass)
+
+    assert resources.async_items() == items
+    assert extra_js_urls(hass) == {CURRENT_CARD_URL}

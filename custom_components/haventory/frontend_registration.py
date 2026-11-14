@@ -114,7 +114,8 @@ async def _async_register_static_path(hass: HomeAssistant) -> bool:
         await hass.http.async_register_static_paths(
             [StaticPathConfig(_STATIC_URL_PATH, str(_WWW_DIR), cache_headers=False)]
         )
-    except Exception:
+    except OSError, RuntimeError, ValueError:
+        # What aiohttp raises building and routing a static resource.
         # ERROR: without the route neither card loader has anything to load.
         LOGGER.error(
             "Failed to serve the HAventory card directory; the card cannot load",
@@ -143,7 +144,8 @@ def _register_extra_js_url(hass: HomeAssistant, url: str) -> None:
     """
     try:
         add_extra_js_url(hass, url)
-    except Exception:
+    except KeyError:
+        # The frontend has not set up its URL manager.
         LOGGER.debug(
             "Frontend not ready for an extra module URL; the card relies on the Lovelace resource",
             extra={"op": "frontend_register", "url": url},
@@ -170,7 +172,8 @@ def release_extra_js_url(hass: HomeAssistant, fallback_url: str | None = None) -
 
     try:
         remove_extra_js_url(hass, url)
-    except Exception:
+    except KeyError:
+        # The frontend has not set up its URL manager.
         LOGGER.debug(
             "Could not remove the frontend module URL",
             extra={"op": "frontend_unregister", "url": url},
@@ -192,14 +195,7 @@ def _sidebar_panel_enabled(entry: ConfigEntry) -> bool:
 def remove_sidebar_panel(hass: HomeAssistant) -> None:
     """Take the sidebar entry back, whether or not one is registered."""
     hass.data.setdefault(DOMAIN, {}).pop(_PANEL_STATE_KEY, None)
-    try:
-        async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
-    except Exception:  # pragma: no cover - defensive
-        LOGGER.debug(
-            "Could not remove the HAventory sidebar panel",
-            extra={"op": "panel_unregister", "url": PANEL_URL_PATH},
-            exc_info=True,
-        )
+    async_remove_panel(hass, PANEL_URL_PATH, warn_if_unknown=False)
 
 
 async def async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -269,7 +265,8 @@ async def async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) -> 
             config={"title": title},
             require_admin=False,
         )
-    except Exception:
+    except ValueError:
+        # "Overwriting panel": something other than this integration holds the path.
         LOGGER.warning(
             "Failed to register the HAventory sidebar panel",
             extra={"op": "panel_register", "url": PANEL_URL_PATH},
@@ -300,6 +297,10 @@ async def _rewrite_card_resource(resources: Any, stale: dict[str, Any], url: str
         )
         return
 
+    # The three resource writes below catch everything: the collection loads its
+    # store on first use, so it can raise whatever reading that file raises
+    # (HomeAssistantError, a migration's error) besides ItemNotFound, ValueError
+    # and vol.Invalid. A refused resource is a warning, not a failed setup.
     try:
         await resources.async_update_item(stale_id, {"res_type": "module", "url": url})
         LOGGER.info(
@@ -310,7 +311,7 @@ async def _rewrite_card_resource(resources: Any, stale: dict[str, Any], url: str
                 "previous_url": stale.get("url"),
             },
         )
-    except Exception:  # pragma: no cover - defensive
+    except Exception:
         LOGGER.warning(
             "Failed to update frontend resource",
             extra={"op": "frontend_register", "url": url},
@@ -333,7 +334,7 @@ async def _create_card_resource(resources: Any, url: str) -> None:
             "Registered HAventory card as Lovelace resource",
             extra={"op": "frontend_register", "url": url},
         )
-    except Exception:  # pragma: no cover - defensive
+    except Exception:  # Same reasons as in `_rewrite_card_resource`.
         LOGGER.warning(
             "Failed to register frontend resource",
             extra={"op": "frontend_register", "url": url},
@@ -344,7 +345,8 @@ async def _create_card_resource(resources: Any, url: str) -> None:
 async def _delete_card_resource(resources: Any, item: dict[str, Any], *, op: str) -> None:
     """Remove one Lovelace resource entry for the card."""
     item_id = item.get("id")
-    if item_id is None or not hasattr(resources, "async_delete_item"):  # pragma: no cover
+    # YAML mode: the collection is read-only and its entries carry no id.
+    if item_id is None or not hasattr(resources, "async_delete_item"):
         return
 
     try:
@@ -357,7 +359,7 @@ async def _delete_card_resource(resources: Any, item: dict[str, Any], *, op: str
                 "resource_id": item_id,
             },
         )
-    except Exception:  # pragma: no cover - defensive
+    except Exception:  # Same reasons as in `_rewrite_card_resource`.
         LOGGER.warning(
             "Failed to remove frontend resource",
             extra={
