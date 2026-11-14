@@ -93,6 +93,31 @@ can do with it.
   camera: [photos and manuals](docs/installing.md#photos-and-manuals).
 - **Something wrong?** See [troubleshooting](docs/installing.md#troubleshooting).
 
+## Design decisions
+
+A few choices shape what HAventory does and does not do. They are deliberate, so a request
+to reverse one is a discussion rather than a bug.
+
+- **It keeps its own inventory.** Home Assistant has no inventory feature of its own and no
+  nested places, and a location tree is the reason HAventory exists. So locations, items,
+  check-outs, reminders and low stock stay HAventory's data even where a core feature looks
+  similar. Where Home Assistant has a surface that fits, HAventory publishes to it (sensors,
+  a calendar, a to-do list) rather than moving into it.
+- **Areas belong to Home Assistant.** HAventory reads the area list and never creates or
+  changes an area. The rest of Home Assistant, from devices to dashboards, shares the same
+  areas, so they are managed in one place: Home Assistant's own settings.
+- **One minimum Home Assistant version.** The release under [Install](#install) is the only
+  one stated, with no lower "also runs on" number beside it. Two numbers leave you to guess
+  which applies to you, and the lower one would point at releases with known security
+  problems. Older releases that also run HAventory are recorded in
+  [#235](https://github.com/chrreiter/HAventory/issues/235).
+- **Reminders are worked out, not scheduled.** A repeating reminder is a rule, and its dates
+  are computed from it each time they are needed. Nothing is queued and no upcoming date is
+  stored, so a restart cannot lose one, and editing the rule moves every future date at
+  once. HAventory sends no notifications of its own: your automations decide who hears about
+  a due date, and how ([examples](docs/automations.md)). The one thing on a clock is a
+  refresh at local midnight, so the next date and the due counts roll over.
+
 ## Where next
 
 - [`docs/installing.md`](docs/installing.md): setup options, the card's configuration,

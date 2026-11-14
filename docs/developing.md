@@ -53,8 +53,8 @@ gate in one go, with coverage, and stops at the first failing step.
 
 ## Testing
 
-Every feature or fix ships with tests: the happy path plus at least one edge or error case.
-The backend has two test modes, kept apart on purpose.
+What to test, and how much, is [CONTRIBUTING.md](../CONTRIBUTING.md#tests-earn-their-place)
+→ "Tests earn their place". The backend has two test modes, kept apart on purpose.
 
 **Offline** is the default and runs in seconds with no Home Assistant install. HA is stubbed
 in `tests/conftest.py`, and the WebSocket stub applies each command's schema before

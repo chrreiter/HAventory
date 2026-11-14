@@ -67,11 +67,11 @@ npm test          # vitest  → 2044 passed across 79 files
 npm run build     # vite → ../../custom_components/haventory/www/ (git-ignored)
 ```
 
-Those counts are a collection oracle, not a target: TDD means every release adds tests, so a
-number *larger* than the one printed here is the normal result. A number **smaller** (fewer
-tests, fewer vitest files, fewer mypy source files) means collection broke and half the
-suite silently did not run. Re-pin them whenever a release moves them; a stale figure read
-as an exact expectation misdiagnoses a healthy run.
+Those counts are a collection oracle, not a target: a release adds some tests and deletes
+others, so a small move either way is the normal result. A **large drop** (a whole file's
+worth of tests, fewer vitest files, fewer mypy source files) means collection broke and
+part of the suite silently did not run. Re-pin them whenever a release moves them; a stale
+figure read as an exact expectation misdiagnoses a healthy run.
 
 Warm the hooks before committing (never `--no-verify`):
 
