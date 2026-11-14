@@ -42,6 +42,7 @@ export class ItemList {
   /** The deferred work: every one of these is cancelled by `dispose`. */
   private readonly totalRefresh = new Coalesced();
   private readonly latestTotal = new Latest();
+  private readonly latestList = new Latest();
 
   constructor(
     private readonly ws: WSClient,
@@ -124,8 +125,12 @@ export class ItemList {
     const key = JSON.stringify({ op: 'list', filter, sort, limit, cursor });
     if (this.inflight.has(key)) return this.inflight.get(key) as Promise<void>;
 
+    // Newest wins: an answer, or a refusal, for a filter or page the view has
+    // since left does not land, whatever order the two arrive in.
+    const current = this.latestList.claim();
     const p = this.run(() => this.ws.listItems(filter, sort, limit, cursor))
       .then((res: ListItemsResult) => {
+        if (!current()) return;
         const merged = reset ? res.items : mergeUniqueById(this.slice.value.items, res.items);
         this.slice.set({
           items: merged,
@@ -135,6 +140,7 @@ export class ItemList {
         });
       })
       .catch((err: unknown) => {
+        if (!current()) return;
         this.slice.set({ loading: false });
         this.pushError(err);
       })
