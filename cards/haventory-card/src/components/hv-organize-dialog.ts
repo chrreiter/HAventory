@@ -711,7 +711,8 @@ export class HVOrganizeDialog extends LitElement {
 
   private _subscribe() {
     this._storeUnsub?.();
-    this._storeUnsub = this.store.state.onChange(() => this.requestUpdate());
+    // The dialog reads locations, tallies, counts and statuses, never the list.
+    this._storeUnsub = this.store.watch(['locations', 'facets', 'stats', 'config'], () => this.requestUpdate());
   }
 
   override connectedCallback(): void {
