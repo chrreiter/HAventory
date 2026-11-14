@@ -10,6 +10,7 @@ import type { HvEvent } from './events';
 import { serverErrorText } from './store/server-error';
 import { discardPrompt } from './ui/discard';
 import type { ConfirmDiscard } from './ui/discard';
+import { HostState } from './ui/host-state';
 import { ViewportNarrow } from './ui/responsive';
 import type { OrganizeTab } from './components/hv-organize-dialog';
 import type { OverflowMenuEntry } from './components/hv-overflow-menu';
@@ -25,6 +26,25 @@ interface ConfirmSpec {
   confirmLabel?: string;
   destructive?: boolean;
   onConfirm: () => void;
+}
+
+/** What these surfaces show; changed only through `HostState.set`, which renders. */
+interface SurfaceState {
+  /** The full view's table columns. */
+  columns: ColumnKey[];
+  /** When the caches were last known-good, for the diagnostics "since" tile. */
+  lastRefresh: string | null;
+  refreshBusy: boolean;
+  pickerOpen: boolean;
+  confirmSpec: ConfirmSpec | null;
+  organizeOpen: boolean;
+  organizeTab: OrganizeTab;
+  diagnosticsOpen: boolean;
+  importOpen: boolean;
+  importPreview: ImportPreview | null;
+  importSummary: ImportSummary | null;
+  importBusy: boolean;
+  importError: string | null;
 }
 
 /** The ways a host differs; everything else in these surfaces is identical. */
@@ -45,45 +65,55 @@ interface SurfaceHooks {
  * panel alike, with the ⋮ menu contents, so the two cannot drift apart.
  */
 export class HostSurfaces {
-  /** The full view's table columns. Feed this to `hv-full-view.columns`. */
-  columns: ColumnKey[] = loadColumnPrefs();
-
   /** How a file reaches the user's disk; a test seam. */
   download: (filename: string, text: string) => void = triggerDownload;
 
-  /** When the caches were last known-good, for the diagnostics "since" tile. */
-  lastRefresh: string | null = null;
-  refreshBusy = false;
-
-  private readonly host: ReactiveControllerHost;
   private readonly getStore: () => Store | undefined;
   private readonly hooks: SurfaceHooks;
   /** Measured against the viewport, not the card: these dialogs are `position: fixed`. */
   private readonly viewport: ViewportNarrow;
-  private pickerOpen = false;
-  private confirmSpec: ConfirmSpec | null = null;
-  private organizeOpen = false;
-  private organizeTab: OrganizeTab = 'locations';
-  private diagnosticsOpen = false;
-  private importOpen = false;
-  private importPreview: ImportPreview | null = null;
-  private importSummary: ImportSummary | null = null;
-  private importBusy = false;
-  private importError: string | null = null;
+  private readonly ui: HostState<SurfaceState>;
 
   constructor(host: ReactiveControllerHost, getStore: () => Store | undefined, hooks: SurfaceHooks = {}) {
-    this.host = host;
     this.getStore = getStore;
     this.hooks = hooks;
     this.viewport = new ViewportNarrow(host);
+    this.ui = new HostState<SurfaceState>(host, {
+      columns: loadColumnPrefs(),
+      lastRefresh: null,
+      refreshBusy: false,
+      pickerOpen: false,
+      confirmSpec: null,
+      organizeOpen: false,
+      organizeTab: 'locations',
+      diagnosticsOpen: false,
+      importOpen: false,
+      importPreview: null,
+      importSummary: null,
+      importBusy: false,
+      importError: null,
+    });
+  }
+
+  /** The full view's table columns. Feed this to `hv-full-view.columns`. */
+  get columns(): ColumnKey[] {
+    return this.ui.value.columns;
+  }
+
+  /** When the caches were last known-good, for the diagnostics "since" tile. */
+  get lastRefresh(): string | null {
+    return this.ui.value.lastRefresh;
+  }
+
+  get refreshBusy(): boolean {
+    return this.ui.value.refreshBusy;
   }
 
   /** Run a menu action if a surface here owns it; `false` leaves it to the host. */
   handleAction(id: string, tab?: OrganizeTab): boolean {
     switch (id) {
       case 'columns':
-        this.pickerOpen = true;
-        this.host.requestUpdate();
+        this.ui.set({ pickerOpen: true });
         return true;
       case 'export-all':
         void this.exportDownload('all');
@@ -92,20 +122,13 @@ export class HostSurfaces {
         void this.exportDownload('view');
         return true;
       case 'organize':
-        this.organizeTab = tab ?? 'locations';
-        this.organizeOpen = true;
-        this.host.requestUpdate();
+        this.ui.set({ organizeTab: tab ?? 'locations', organizeOpen: true });
         return true;
       case 'import':
-        this.importPreview = null;
-        this.importSummary = null;
-        this.importError = null;
-        this.importOpen = true;
-        this.host.requestUpdate();
+        this.ui.set({ importPreview: null, importSummary: null, importError: null, importOpen: true });
         return true;
       case 'diagnostics':
-        this.diagnosticsOpen = true;
-        this.host.requestUpdate();
+        this.ui.set({ diagnosticsOpen: true });
         return true;
       case 'refresh':
         void this.refresh();
@@ -117,8 +140,7 @@ export class HostSurfaces {
 
   /** Ask before doing something irreversible. One prompt at a time. */
   confirm(spec: ConfirmSpec): void {
-    this.confirmSpec = spec;
-    this.host.requestUpdate();
+    this.ui.set({ confirmSpec: spec });
   }
 
   /** The one place the card asks whether typed edits may be thrown away; a bound field, so it can be passed down. */
@@ -144,14 +166,12 @@ export class HostSurfaces {
   }
 
   async refresh(): Promise<void> {
-    this.refreshBusy = true;
-    this.host.requestUpdate();
+    this.ui.set({ refreshBusy: true });
     try {
       await this.getStore()?.refreshAll();
-      this.lastRefresh = new Date().toISOString();
+      this.ui.set({ lastRefresh: new Date().toISOString() });
     } finally {
-      this.refreshBusy = false;
-      this.host.requestUpdate();
+      this.ui.set({ refreshBusy: false });
     }
   }
 
@@ -212,101 +232,79 @@ export class HostSurfaces {
   /** Every dialog these surfaces own. Render once, after the host's main UI. */
   renderSurfaces(): TemplateResult {
     const st = this.getStore()?.state.value ?? null;
+    const ui = this.ui.value;
     const mobile = this.viewport.narrow;
     return html`
       <hv-column-picker
         data-testid="host-columns"
-        .open=${this.pickerOpen}
+        .open=${ui.pickerOpen}
         ?mobile=${mobile}
-        .columns=${this.columns}
+        .columns=${ui.columns}
         heading=${t('hv.surfaces.columnsHeading')}
         @change=${(e: HvEvent<'hv-column-picker', 'change'>) => this.setColumns(e.detail.columns)}
-        @cancel=${() => {
-          this.pickerOpen = false;
-          this.host.requestUpdate();
-        }}
+        @cancel=${() => this.ui.set({ pickerOpen: false })}
       ></hv-column-picker>
 
       <hv-confirm
         data-testid="host-confirm"
-        ?open=${this.confirmSpec !== null}
+        ?open=${ui.confirmSpec !== null}
         ?mobile=${mobile}
-        .heading=${this.confirmSpec?.heading ?? ''}
-        .message=${this.confirmSpec?.message ?? ''}
-        .confirmLabel=${this.confirmSpec?.confirmLabel ?? t('hv.action.delete')}
-        .destructive=${this.confirmSpec?.destructive ?? true}
+        .heading=${ui.confirmSpec?.heading ?? ''}
+        .message=${ui.confirmSpec?.message ?? ''}
+        .confirmLabel=${ui.confirmSpec?.confirmLabel ?? t('hv.action.delete')}
+        .destructive=${ui.confirmSpec?.destructive ?? true}
         @confirm=${() => {
-          this.confirmSpec?.onConfirm();
-          this.confirmSpec = null;
-          this.host.requestUpdate();
+          ui.confirmSpec?.onConfirm();
+          this.ui.set({ confirmSpec: null });
         }}
-        @cancel=${() => {
-          this.confirmSpec = null;
-          this.host.requestUpdate();
-        }}
+        @cancel=${() => this.ui.set({ confirmSpec: null })}
       ></hv-confirm>
 
       <hv-organize-dialog
         data-testid="host-organize"
-        ?open=${this.organizeOpen}
+        ?open=${ui.organizeOpen}
         ?mobile=${mobile}
-        .tab=${this.organizeTab}
+        .tab=${ui.organizeTab}
         .store=${this.getStore()}
-        @cancel=${() => {
-          this.organizeOpen = false;
-          this.host.requestUpdate();
-        }}
+        @cancel=${() => this.ui.set({ organizeOpen: false })}
         @browse=${() => this.hooks.onBrowse?.()}
       ></hv-organize-dialog>
 
       <hv-import-sheet
         data-testid="host-import"
-        ?open=${this.importOpen}
+        ?open=${ui.importOpen}
         ?mobile=${mobile}
-        .preview=${this.importPreview}
-        .summary=${this.importSummary}
-        .busy=${this.importBusy}
-        .errorMessage=${this.importError}
+        .preview=${ui.importPreview}
+        .summary=${ui.importSummary}
+        .busy=${ui.importBusy}
+        .errorMessage=${ui.importError}
         @preview=${(e: HvEvent<'hv-import-sheet', 'preview'>) => void this.onImportPreview(e)}
         @execute=${(e: HvEvent<'hv-import-sheet', 'execute'>) => void this.onImportExecute(e)}
-        @invalidate-preview=${() => {
-          this.importPreview = null;
-          this.importError = null;
-          this.host.requestUpdate();
-        }}
-        @cancel=${() => {
-          this.importOpen = false;
-          this.importPreview = null;
-          this.importSummary = null;
-          this.importError = null;
-          this.host.requestUpdate();
-        }}
+        @invalidate-preview=${() => this.ui.set({ importPreview: null, importError: null })}
+        @cancel=${() =>
+          this.ui.set({ importOpen: false, importPreview: null, importSummary: null, importError: null })}
       ></hv-import-sheet>
 
       <hv-diagnostics-panel
         data-testid="host-diagnostics"
-        ?open=${this.diagnosticsOpen}
+        ?open=${ui.diagnosticsOpen}
         ?mobile=${mobile}
         .counts=${st?.statsCounts ?? null}
         .version=${st?.versionInfo ?? null}
         .degraded=${st?.degraded ?? null}
         .connected=${st?.connected ?? null}
         .loadedItems=${st?.items.length ?? 0}
-        .lastRefresh=${this.lastRefresh}
-        .busy=${this.refreshBusy}
+        .lastRefresh=${ui.lastRefresh}
+        .busy=${ui.refreshBusy}
         @refresh=${() => void this.refresh()}
-        @cancel=${() => {
-          this.diagnosticsOpen = false;
-          this.host.requestUpdate();
-        }}
+        @cancel=${() => this.ui.set({ diagnosticsOpen: false })}
       ></hv-diagnostics-panel>
     `;
   }
 
   private setColumns(columns: ColumnKey[]): void {
-    this.columns = columns;
+    this.ui.set({ columns });
     saveColumnPrefs(columns);
-    this.host.requestUpdate();
   }
 
   private async exportDownload(scope: 'all' | 'view'): Promise<void> {
@@ -323,29 +321,25 @@ export class HostSurfaces {
 
   private async onImportPreview(e: HvEvent<'hv-import-sheet', 'preview'>): Promise<void> {
     const { document, policy } = e.detail;
-    this.importBusy = true;
-    this.importError = null;
-    this.importSummary = null;
-    this.host.requestUpdate();
+    this.ui.set({ importBusy: true, importError: null, importSummary: null });
     try {
-      this.importPreview = (await this.getStore()?.previewImport(document, policy)) ?? null;
+      this.ui.set({ importPreview: (await this.getStore()?.previewImport(document, policy)) ?? null });
     } catch (err) {
-      this.importPreview = null;
-      this.importError = serverErrorText(err, t('hv.surfaces.importCheckFailed'));
+      this.ui.set({
+        importPreview: null,
+        importError: serverErrorText(err, t('hv.surfaces.importCheckFailed')),
+      });
     } finally {
-      this.importBusy = false;
-      this.host.requestUpdate();
+      this.ui.set({ importBusy: false });
     }
   }
 
   private async onImportExecute(e: HvEvent<'hv-import-sheet', 'execute'>): Promise<void> {
     const { document, policy } = e.detail;
-    this.importBusy = true;
-    this.importError = null;
-    this.host.requestUpdate();
+    this.ui.set({ importBusy: true, importError: null });
     try {
-      this.importSummary = (await this.getStore()?.executeImport(document, policy)) ?? null;
-      this.lastRefresh = new Date().toISOString();
+      const summary = (await this.getStore()?.executeImport(document, policy)) ?? null;
+      this.ui.set({ importSummary: summary, lastRefresh: new Date().toISOString() });
     } catch (err) {
       const anyErr = err as {
         code?: string;
@@ -354,26 +348,27 @@ export class HostSurfaces {
       };
       if (anyErr?.code === 'validation_error' && anyErr.data?.errors?.length) {
         // A rejected document shows its structured list, not one message.
-        this.importPreview = {
-          valid: false,
-          errors: anyErr.data.errors,
-          policy,
-          document: {
-            haventory_export_version: null,
-            schema_version: null,
-            exported_at: null,
-            integration_version: null,
+        this.ui.set({
+          importPreview: {
+            valid: false,
+            errors: anyErr.data.errors,
+            policy,
+            document: {
+              haventory_export_version: null,
+              schema_version: null,
+              exported_at: null,
+              integration_version: null,
+            },
+            items: { add: [], update: [], conflict: [], unchanged: [] },
+            locations: { add: [], update: [], conflict: [], unchanged: [] },
+            counts: {},
           },
-          items: { add: [], update: [], conflict: [], unchanged: [] },
-          locations: { add: [], update: [], conflict: [], unchanged: [] },
-          counts: {},
-        };
+        });
       } else {
-        this.importError = serverErrorText(err, t('hv.surfaces.importFailed'));
+        this.ui.set({ importError: serverErrorText(err, t('hv.surfaces.importFailed')) });
       }
     } finally {
-      this.importBusy = false;
-      this.host.requestUpdate();
+      this.ui.set({ importBusy: false });
     }
   }
 }

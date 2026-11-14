@@ -443,6 +443,10 @@ Because the shell receives a stable `store` object, a property binding would nev
 it, so each container subscribes to `store.state.onChange` itself, through the
 `ItemWorkspace` it holds, for as long as it is in the DOM.
 
+`ItemWorkspace` and `HostSurfaces` keep their own UI state (the open form, the open dialogs,
+the import's progress) in a `HostState` (`src/ui/host-state.ts`). Its value is read-only to
+the type checker, and `set` is the only way to change it, so no write can skip the render.
+
 ---
 
 ## Shared UI layer (`src/ui/`)
@@ -507,13 +511,31 @@ stands in for `ha-button-menu` / `mwc-list-item` for the same reason. The rule i
 
 ### `Store`
 
-Holds all app state in a small observable (`createObservable`), fetches over `WSClient`, and
-applies optimistic writes with rollback.
+The one object components talk to. It composes parts with one job each, keeps their method
+names on itself, and routes what one part's work means for another (an item event moves the
+list, then books the tally and tree re-reads).
+
+| Part | File | Owns |
+|---|---|---|
+| `ConnectionHealth` | `connection-health.ts` | `run()`, the grace period on a closed socket, `degraded` and `connected` |
+| `LiveSubscriptions` | `live-subscriptions.ts` | The four topic subscriptions as one round, the retry ladder, the area-registry watch |
+| `ItemList` | `item-list.ts` | The loaded page, its cursor and total, the filters and selection, optimistic writes, removed ids |
+| `Facets` | `facets.ts` | The category and tag tallies, and the values named on the card before any item carries them |
+| `ReferenceData` | `reference-data.ts` | Counts, areas, the location tree and flat list, config, statuses, and the writes to locations and statuses |
+| `ErrorQueue` | `error-queue.ts` | The banners' failures, and the rule that tells a transport failure from a refusal |
+
+The batch loop is `runBulk` in `bulk.ts`; the filter helpers are in `filters.ts`. Each part
+takes what it needs (the socket client, `run`, a filters getter) in its constructor and never
+sees the `Store`.
 
 **State**: `StoreState` in `src/store/types.ts`, which documents each field: the loaded page
 and its cursor, the filtered total, the selection, the caches the sidebar and the
 autocompletes read, what `haventory/config` answered, and the connection state the banners
-render from.
+render from. Each part holds its keys in a `Slice` (`slice.ts`), which is replaced on write
+and notifies only when a value moved. `store.state` reads every slice as one flat,
+read-only object and notifies on any of them; `store.watch(['locations', 'facets'], cb)`
+notifies only for the slices named, which is how `hv-organize-dialog` stays quiet while the
+list changes.
 
 **Notable methods**
 

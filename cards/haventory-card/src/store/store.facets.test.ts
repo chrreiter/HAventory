@@ -12,6 +12,9 @@ import { makeMockHass, makeItem, defined } from '../test.utils';
 /** Stores under test never wait on real backoff. */
 const fast = { retryBaseMs: 0 };
 
+/** Past the window item events gather in before the one tally they cause. */
+const settleFacets = () => new Promise((r) => setTimeout(r, 300));
+
 describe('Store', () => {
   it('caches distinct categories and tags with counts on init', async () => {
     const items = [
@@ -46,7 +49,7 @@ describe('Store', () => {
     hass.__emit('items', 'created', {
       item: makeItem({ id: '99', name: 'Drill', category: 'Tools' }),
     });
-    await new Promise((r) => setTimeout(r, 0));
+    await settleFacets();
 
     expect(store.state.value.distinctValuesCache?.categories).toEqual([{ value: 'Tools', count: 1 }]);
   });
@@ -92,7 +95,7 @@ describe('Store', () => {
     hass.__emit('items', 'created', {
       item: makeItem({ id: '99', name: 'Sponges', category: 'Consumables' }),
     });
-    await new Promise((r) => setTimeout(r, 0));
+    await settleFacets();
 
     // One entry, with the server's count — not a duplicate sitting at zero.
     expect(store.state.value.distinctValuesCache?.categories).toEqual([{ value: 'Consumables', count: 1 }]);
@@ -231,7 +234,32 @@ describe('Store', () => {
     }
   });
 
-  // Not every facet refetch is debounced — an item event lands
+  // A batch edit of one chunk announces one items event per row, and every
+  // tally is a full scan on the backend: the burst asks once.
+  it('asks for the tallies once for a burst of item events', async () => {
+    const items = Array.from({ length: 25 }, (_, i) => makeItem({ id: String(i + 1), category: 'Tools' }));
+    const hass = makeMockHass({ items });
+    const store = new Store(hass, fast);
+    await store.init();
+    const facetCalls = () => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length;
+    const before = facetCalls();
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      for (const item of items) hass.__emit('items', 'updated', { item: { ...item, category: 'Books' } });
+      await vi.advanceTimersByTimeAsync(249);
+      expect(facetCalls()).toBe(before);
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(facetCalls()).toBe(before + 1);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(facetCalls()).toBe(before + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Not every facet refetch is debounced — a reload or a batch lands
   // beside a filter change — so two can be in flight at once, and the response
   // that lands last is not the one that was issued last. The newest request is
   // the only one allowed to assign.

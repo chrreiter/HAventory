@@ -362,3 +362,64 @@ describe('Store', () => {
     expect(sent[sent.length - 1]?.sort).toEqual({ field: 'location', order: 'desc' });
   });
 });
+
+// Home Assistant answers in order, but nothing in the protocol promises it: a
+// list asked for under an older filter must not overwrite the newer one's rows.
+describe('Store: overlapping list requests', () => {
+  async function storeWithHeldFirstList() {
+    const hass = makeMockHass({
+      items: [makeItem({ id: 't', name: 'Tool', category: 'Tools' }), makeItem({ id: 'b', name: 'Book' })],
+    });
+    const store = new Store(hass, fast);
+    await store.init();
+
+    const original = hass.callWS.bind(hass);
+    let release: ((outcome: 'answer' | 'refuse') => void) | null = null;
+    let held = false;
+    hass.callWS = (async (msg: Record<string, unknown>) => {
+      if (String(msg.type) === 'haventory/item/list' && msg.limit !== 1 && !held) {
+        held = true;
+        const outcome = await new Promise<'answer' | 'refuse'>((resolve) => {
+          release = resolve;
+        });
+        if (outcome === 'refuse') throw { code: 'storage_error', message: 'old refusal' };
+        return { items: [makeItem({ id: 'stale', name: 'Stale' })], next_cursor: 'stale-cursor', total: 9 };
+      }
+      return original(msg);
+    }) as typeof hass.callWS;
+    return {
+      store,
+      release: async (outcome: 'answer' | 'refuse') => {
+        await vi.waitUntil(() => release !== null);
+        release!(outcome);
+        await flush(2);
+      },
+    };
+  }
+
+  it('drops the answer to a list the view has moved on from', async () => {
+    const { store, release } = await storeWithHeldFirstList();
+
+    store.setFilters({ q: 'old' });
+    store.setFilters({ q: '', categories: ['Tools'] });
+    await flush(2);
+    expect(store.state.value.items.map((i) => i.id)).toEqual(['t']);
+
+    await release('answer');
+    expect(store.state.value.items.map((i) => i.id)).toEqual(['t']);
+    expect(store.state.value.cursor).toBeNull();
+    expect(store.state.value.total).toBe(1);
+  });
+
+  it('drops the refusal of a list the view has moved on from', async () => {
+    const { store, release } = await storeWithHeldFirstList();
+
+    store.setFilters({ q: 'old' });
+    store.setFilters({ q: '', categories: ['Tools'] });
+    await flush(2);
+
+    await release('refuse');
+    expect(store.state.value.errorQueue).toEqual([]);
+    expect(store.state.value.items.map((i) => i.id)).toEqual(['t']);
+  });
+});
