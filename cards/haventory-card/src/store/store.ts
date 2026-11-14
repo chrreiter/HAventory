@@ -7,10 +7,8 @@ import type {
   BulkFailure,
   BulkOperation,
   BulkOutcome,
-  DegradedState,
   DistinctValue,
   DistinctValues,
-  ErrorEntry,
   ExportDocument,
   HassLike,
   ImportPolicy,
@@ -30,7 +28,14 @@ import type {
   Unsubscribe,
 } from './types';
 import { WSClient } from './ws';
-import { DEFAULT_SORT } from './sort';
+import { ConnectionHealth } from './connection-health';
+import type { ConnectionSlice } from './connection-health';
+import { ErrorQueue, errorCode } from './error-queue';
+import type { ErrorDetails, ErrorsSlice } from './error-queue';
+import { activeFilterCount, defaultFilters, sameStrings, toWireFilter } from './filters';
+import { Coalesced, Latest } from './scheduling';
+import { Slice, combineSlices } from './slice';
+import type { Observable } from './slice';
 import { onDayChange } from '../ui/day-clock';
 import { normalizeQuickFilters } from '../ui/quick-filters';
 import { sortLocationTree } from './location-tree';
@@ -39,21 +44,6 @@ const PAGE_LIMIT = 50;
 
 /** Operations per `haventory/items/bulk` call, so progress and cancel work per chunk. */
 export const BULK_CHUNK_SIZE = 25;
-
-/**
- * Code for a failure that never reached a server: HA wraps those with a numeric
- * code of its own, and they say nothing about the request itself.
- */
-const TRANSPORT_ERROR_CODE = 'connection_lost';
-
-/** Consecutive transport failures before the card declares the connection lost. */
-const CONNECTION_LOST_THRESHOLD = 2;
-
-/**
- * How long a closed socket may stay closed before the card says so. HA retries
- * at 0, 1, 3 and 6 s; a Wi-Fi roam lands on the 3 s rung and must stay silent.
- */
-const CONNECTION_LOST_GRACE_MS = 4_500;
 
 /**
  * Re-subscribes while the backend reports itself unavailable. Generous, because
@@ -78,191 +68,48 @@ const BACKEND_UNAVAILABLE_ACTION = 'unavailable';
 /** Removed item ids kept for `wasRemoved`: enough to outlive a bulk delete. */
 const REMOVED_ID_MEMORY = 200;
 
-const NO_DEGRADATION: DegradedState = {
-  connectionLost: false,
-  reloading: false,
-  liveUpdates: 'live',
-  liveUpdatesReason: null,
-  nextLiveRetryAt: null,
-};
-
-/** A string code means a server answered; anything else never reached one. */
-function errorCode(err: unknown): string {
-  const code = (err as { code?: unknown } | undefined)?.code;
-  return typeof code === 'string' && code ? code : TRANSPORT_ERROR_CODE;
-}
-
 /** Exponential backoff off the base delay, capped. */
 export function subscribeRetryDelayMs(attempt: number, baseMs: number): number {
   return Math.min(baseMs * 2 ** attempt, SUBSCRIBE_RETRY_MAX_MS);
 }
 
-/** Translate the card's filter state into the backend's `ItemFilter`. */
-export function toWireFilter(filters: StoreFilters): ItemFilter {
-  const filter: ItemFilter = {
-    q: filters.q || undefined,
-    area_id: filters.areaId || undefined,
-    location_ids: filters.locationIds.length ? [...filters.locationIds] : undefined,
-    // Sent explicitly: the list defaults it to false, subscriptions to true.
-    include_subtree: filters.includeSubtree,
-    checked_out: filters.checkedOutOnly || undefined,
-    low_stock_only: filters.lowStockOnly || undefined,
-    low_stock_first: filters.lowStockFirst || undefined,
-    orphaned_only: filters.orphansOnly || undefined,
-    overdue_only: filters.overdueOnly || undefined,
-    inspection_due_only: filters.inspectionDueOnly || undefined,
-    reminder_due_only: filters.reminderDueOnly || undefined,
-    status: filters.status ?? undefined,
-    categories: filters.categories.length ? [...filters.categories] : undefined,
-    updated_after: filters.updatedAfter || undefined,
-    created_after: filters.createdAfter || undefined,
-    updated_before: filters.updatedBefore || undefined,
-    created_before: filters.createdBefore || undefined,
-  };
-  if (filters.tags.length) {
-    if (filters.tagsMode === 'all') filter.tags_all = [...filters.tags];
-    else filter.tags_any = [...filters.tags];
-  }
-  return filter;
-}
-
-/** The filter state a freshly-mounted card starts from. */
-export function defaultFilters(): StoreFilters {
-  return {
-    q: '',
-    areaId: null,
-    locationIds: [],
-    includeSubtree: true,
-    checkedOutOnly: false,
-    lowStockFirst: false,
-    orphansOnly: false,
-    lowStockOnly: false,
-    overdueOnly: false,
-    inspectionDueOnly: false,
-    reminderDueOnly: false,
-    status: null,
-    categories: [],
-    tags: [],
-    tagsMode: 'any',
-    updatedAfter: null,
-    createdAfter: null,
-    updatedBefore: null,
-    createdBefore: null,
-    sort: DEFAULT_SORT,
-  };
-}
-
-/** The single location the view is pointed at; null for none or several. */
-export function soleLocationId(filters: StoreFilters): string | null {
-  return filters.locationIds.length === 1 ? (filters.locationIds[0] ?? null) : null;
-}
-
-/** Whether two selections name the same values, order included. */
-function sameStrings(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((value, i) => value === b[i]);
-}
-
-/** How many filters (ignoring sort) are narrowing the list right now. */
-export function activeFilterCount(filters: StoreFilters): number {
-  let n = 0;
-  if (filters.q) n += 1;
-  if (filters.areaId) n += 1;
-  if (filters.locationIds.length) n += 1;
-  if (filters.checkedOutOnly) n += 1;
-  if (filters.orphansOnly) n += 1;
-  if (filters.lowStockOnly) n += 1;
-  if (filters.lowStockFirst) n += 1;
-  if (filters.overdueOnly) n += 1;
-  if (filters.inspectionDueOnly) n += 1;
-  if (filters.reminderDueOnly) n += 1;
-  if (filters.status) n += 1;
-  if (filters.categories.length) n += 1;
-  if (filters.tags.length) n += 1;
-  if (filters.updatedAfter) n += 1;
-  if (filters.createdAfter) n += 1;
-  if (filters.updatedBefore) n += 1;
-  if (filters.createdBefore) n += 1;
-  return n;
-}
-
-/** Minimal reactive container: `set` merges a patch and notifies every `onChange` subscriber. */
-export interface Observable<T> {
-  readonly value: T;
-  onChange(cb: () => void): () => void;
-}
-
-export function createObservable<T extends object>(
-  initial: T,
-): Observable<T> & { set(patch: Partial<T>): void } {
-  const listeners = new Set<() => void>();
-  const state = { ...initial };
-  return {
-    get value() {
-      return state;
-    },
-    set(patch: Partial<T>) {
-      Object.assign(state, patch);
-      listeners.forEach((l) => l());
-    },
-    onChange(cb: () => void) {
-      listeners.add(cb);
-      return () => listeners.delete(cb);
-    },
-  };
-}
+type ListSlice = Pick<StoreState, 'items' | 'cursor' | 'total' | 'loading' | 'filters' | 'selection'>;
+type FacetsSlice = Pick<StoreState, 'distinctValuesCache'>;
+type LocationsSlice = Pick<
+  StoreState,
+  'areasCache' | 'locationTreeCache' | 'locationMatchTotal' | 'locationsFlatCache'
+>;
+type StatsSlice = Pick<StoreState, 'statsCounts'>;
+type ConfigSlice = Pick<StoreState, 'versionInfo' | 'cardTitle' | 'quickFilters' | 'mediaConfig' | 'statuses'>;
 
 export interface StoreOptions {
   /** Base backoff for the re-subscribe ladder; set to 0 in tests. */
   retryBaseMs?: number;
 }
 
-/** A deferred call with at most one fire outstanding; `dispose` cancels each one. */
-class Coalesced {
-  private handle: ReturnType<typeof setTimeout> | null = null;
-
-  /** True while a fire is booked — a grace period that must not be restarted. */
-  get pending(): boolean {
-    return this.handle !== null;
-  }
-
-  /** Book `run`, dropping any fire already booked. */
-  schedule(delayMs: number, run: () => void): void {
-    this.cancel();
-    this.handle = setTimeout(() => {
-      this.handle = null;
-      run();
-    }, delayMs);
-  }
-
-  cancel(): void {
-    if (this.handle === null) return;
-    clearTimeout(this.handle);
-    this.handle = null;
-  }
-}
-
-/**
- * Which request of its kind is the newest: two reads can be in flight against
- * different filters, and the one that lands last is not always the newest.
- */
-class Latest {
-  private seq = 0;
-
-  /** Take the newest turn; the token reads false once another has taken one. */
-  claim(): () => boolean {
-    const seq = ++this.seq;
-    return () => seq === this.seq;
-  }
-
-  /** End every outstanding turn without starting one. */
-  invalidate(): void {
-    this.seq += 1;
-  }
-}
+export { activeFilterCount, defaultFilters, soleLocationId, toWireFilter } from './filters';
+export type { Observable } from './slice';
 
 export class Store {
   private ws: WSClient;
-  private stateObs: ReturnType<typeof createObservable<StoreState>>;
+  private readonly errors = new ErrorQueue();
+  private readonly health: ConnectionHealth;
+  /** Each part's state, notified on its own; `state` reads them as one. */
+  readonly slices: {
+    connection: Observable<ConnectionSlice>;
+    list: Observable<ListSlice>;
+    errors: Observable<ErrorsSlice>;
+    facets: Observable<FacetsSlice>;
+    locations: Observable<LocationsSlice>;
+    stats: Observable<StatsSlice>;
+    config: Observable<ConfigSlice>;
+  };
+  private readonly listSlice: Slice<ListSlice>;
+  private readonly facetsSlice: Slice<FacetsSlice>;
+  private readonly locationsSlice: Slice<LocationsSlice>;
+  private readonly statsSlice: Slice<StatsSlice>;
+  private readonly configSlice: Slice<ConfigSlice>;
+  private readonly combined: Observable<Readonly<StoreState>>;
   private inflight: Map<string, Promise<unknown>> = new Map();
   /** Ids removed since this store connected — see `noteRemoved`. */
   private readonly removedIds = new Set<string>();
@@ -272,7 +119,6 @@ export class Store {
   private statusesUnsub: Unsubscribe | null = null;
   private areaRegistryUnsub: Unsubscribe | null = null;
   private retryBaseMs: number;
-  private consecutiveTransportFailures = 0;
   /** The deferred work: every one of these is cancelled by `dispose`. */
   private readonly treeRefresh = new Coalesced();
   private readonly facetRefresh = new Coalesced();
@@ -280,8 +126,6 @@ export class Store {
   private readonly totalRefresh = new Coalesced();
   private readonly subscribeRetry = new Coalesced();
   private readonly areaRegistryRetry = new Coalesced();
-  /** Counts down the grace period on a closed socket; idle while it is open. */
-  private readonly connectionLostGrace = new Coalesced();
   private readonly latestFacetTally = new Latest();
   private readonly latestTree = new Latest();
   private readonly latestTotal = new Latest();
@@ -295,8 +139,6 @@ export class Store {
   private subscribeAttempt = 0;
   /** Re-opens of the area-registry watch already spent on the current refusal. */
   private areaRegistryAttempt = 0;
-  private connectionReadyUnsub: Unsubscribe | null = null;
-  private connectionLostUnsub: Unsubscribe | null = null;
   private dayChangeUnsub: Unsubscribe | null = null;
   /** True once `dispose` ran, so a load still in flight wires nothing. */
   private disposed = false;
@@ -311,33 +153,52 @@ export class Store {
     this.ws = new WSClient(hass);
     this.retryBaseMs = options.retryBaseMs ?? 400;
 
-    const initial: StoreState = {
+    this.health = new ConnectionHealth(this.ws);
+    this.listSlice = new Slice<ListSlice>({
       items: [],
       cursor: null,
       total: null,
       loading: true,
       filters: defaultFilters(),
       selection: new Set<string>(),
-      errorQueue: [],
+    });
+    this.facetsSlice = new Slice<FacetsSlice>({ distinctValuesCache: null });
+    this.locationsSlice = new Slice<LocationsSlice>({
       areasCache: null,
       locationTreeCache: null,
       locationMatchTotal: null,
       locationsFlatCache: null,
-      statsCounts: null,
+    });
+    this.statsSlice = new Slice<StatsSlice>({ statsCounts: null });
+    this.configSlice = new Slice<ConfigSlice>({
       versionInfo: null,
       cardTitle: null,
       quickFilters: null,
       mediaConfig: null,
       statuses: null,
-      distinctValuesCache: null,
-      connected: { items: false, stats: false },
-      degraded: { ...NO_DEGRADATION },
+    });
+    const slices = {
+      connection: this.health.slice,
+      list: this.listSlice,
+      errors: this.errors.slice,
+      facets: this.facetsSlice,
+      locations: this.locationsSlice,
+      stats: this.statsSlice,
+      config: this.configSlice,
     };
-    this.stateObs = createObservable<StoreState>(initial);
+    this.slices = slices;
+    this.combined = combineSlices(slices);
   }
 
-  get state(): Observable<StoreState> {
-    return this.stateObs;
+  /** Every slice as one flat state; `onChange` fires when any of them moves. */
+  get state(): Observable<Readonly<StoreState>> {
+    return this.combined;
+  }
+
+  /** Watch only the named slices: a change elsewhere does not call `cb`. */
+  watch(names: readonly (keyof Store['slices'])[], cb: () => void): () => void {
+    const offs = names.map((name) => this.slices[name].onChange(cb));
+    return () => offs.forEach((off) => off());
   }
 
   // ---------- Initialization and subscriptions ----------
@@ -367,7 +228,11 @@ export class Store {
       if (!this.disposed) {
         this.subscribeTopics();
         this.watchAreaRegistry();
-        this.watchConnectionGaps();
+        this.health.watchConnectionGaps(() => {
+          this.scheduleAreasRefresh();
+          // The events fired while the socket was down went nowhere.
+          void this.reloadAll().catch(() => undefined);
+        });
         this.watchDayChange();
       }
     }
@@ -380,34 +245,6 @@ export class Store {
   private watchDayChange() {
     this.dayChangeUnsub?.();
     this.dayChangeUnsub = onDayChange(() => void this.refreshStats().catch(() => undefined));
-  }
-
-  /**
-   * Follow the socket in both directions. HA re-issues its subscriptions before
-   * `ready`, so an area renamed while the socket was down reaches nobody and
-   * only a refetch catches it; and an idle surface learns of an outage only here.
-   */
-  private watchConnectionGaps() {
-    this.connectionReadyUnsub?.();
-    this.connectionLostUnsub?.();
-    this.connectionReadyUnsub = this.ws.onConnectionReady(() => {
-      this.connectionLostGrace.cancel();
-      this.noteSuccess();
-      this.scheduleAreasRefresh();
-      // The events fired while the socket was down went nowhere.
-      void this.reloadAll().catch(() => undefined);
-    });
-    this.connectionLostUnsub = this.ws.onConnectionLost(() => this.startConnectionLostGrace());
-  }
-
-  /** Declare the connection lost unless it comes back inside the grace period. */
-  private startConnectionLostGrace() {
-    // A second `disconnected` inside the window is the same outage, and
-    // restarting the countdown would postpone the banner indefinitely.
-    if (this.connectionLostGrace.pending) return;
-    this.connectionLostGrace.schedule(CONNECTION_LOST_GRACE_MS, () =>
-      this.setDegraded({ connectionLost: true }),
-    );
   }
 
   /** Keep the area cache current while mounted; any registry event triggers a refetch. */
@@ -500,7 +337,7 @@ export class Store {
    */
   private onBackendUnavailable() {
     if (this.state.value.degraded.liveUpdatesReason === 'unavailable') return;
-    this.stateObs.set({ connected: { items: false, stats: false } });
+    this.health.setConnected(false);
     this.subscribeAttempt = 0;
     this.scheduleReopen('unavailable');
   }
@@ -516,8 +353,8 @@ export class Store {
     if (!refused) {
       const wasUnavailable = this.state.value.degraded.liveUpdatesReason === 'unavailable';
       this.subscribeAttempt = 0;
-      this.stateObs.set({ connected: { items: true, stats: true } });
-      this.setDegraded({ liveUpdates: 'live', liveUpdatesReason: null, nextLiveRetryAt: null });
+      this.health.setConnected(true);
+      this.health.setDegraded({ liveUpdates: 'live', liveUpdatesReason: null, nextLiveRetryAt: null });
       // Every event while the backend was away went to subscriptions that no
       // longer existed, so re-read everything.
       if (wasUnavailable) void this.reloadAll().catch(() => undefined);
@@ -533,13 +370,13 @@ export class Store {
    * the integration is set up). Any other refusal is reported at once.
    */
   private onSubscribeRefused(err: unknown) {
-    this.stateObs.set({ connected: { items: false, stats: false } });
+    this.health.setConnected(false);
 
     const code = errorCode(err);
     const reason: LiveUpdatePause | null =
       code === 'storage_error' || code === 'unknown_command' ? 'unavailable' : null;
     if (reason === null) {
-      this.setDegraded({
+      this.health.setDegraded({
         connectionLost: true,
         liveUpdates: 'paused',
         liveUpdatesReason: null,
@@ -550,7 +387,7 @@ export class Store {
     }
 
     if (this.subscribeAttempt >= SUBSCRIBE_UNAVAILABLE_ATTEMPTS) {
-      this.setDegraded({ liveUpdates: 'paused', liveUpdatesReason: reason, nextLiveRetryAt: null });
+      this.health.setDegraded({ liveUpdates: 'paused', liveUpdatesReason: reason, nextLiveRetryAt: null });
       this.pushError(err);
       return;
     }
@@ -562,7 +399,7 @@ export class Store {
   private scheduleReopen(reason: LiveUpdatePause) {
     const delay = subscribeRetryDelayMs(this.subscribeAttempt, this.retryBaseMs);
     this.subscribeAttempt += 1;
-    this.setDegraded({
+    this.health.setDegraded({
       liveUpdates: 'retrying',
       liveUpdatesReason: reason,
       nextLiveRetryAt: Date.now() + delay,
@@ -578,23 +415,20 @@ export class Store {
     this.locationsUnsub?.();
     this.statusesUnsub?.();
     this.areaRegistryUnsub?.();
-    // Held by HA's connection and the module-level day clock, which outlive every card.
-    this.connectionReadyUnsub?.();
-    this.connectionLostUnsub?.();
+    // Held by the module-level day clock, which outlives every card.
     this.dayChangeUnsub?.();
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
-    this.areaRegistryUnsub = this.connectionReadyUnsub = this.connectionLostUnsub = null;
+    this.areaRegistryUnsub = null;
     this.dayChangeUnsub = null;
     this.latestSubscribeRound.invalidate();
     this.latestAreaWatch.invalidate();
-    this.connectionLostGrace.cancel();
     this.subscribeRetry.cancel();
     this.areaRegistryRetry.cancel();
     this.treeRefresh.cancel();
     this.totalRefresh.cancel();
     this.facetRefresh.cancel();
     this.areasRefresh.cancel();
-    this.stateObs.set({ connected: { items: false, stats: false } });
+    this.health.dispose();
   }
 
   private onItemsEvent(evt: LiveEventPayload) {
@@ -603,10 +437,10 @@ export class Store {
     if (evt.action === 'reloaded' || item === undefined) {
       // The dataset moved wholesale: refetch, and say so while it is in flight,
       // because an open editor may be holding data that no longer exists.
-      this.setDegraded({ reloading: true });
+      this.health.setDegraded({ reloading: true });
       void this.listItems(true)
         .catch(() => undefined)
-        .finally(() => this.setDegraded({ reloading: false }));
+        .finally(() => this.health.setDegraded({ reloading: false }));
       void this.refreshDistinctValues().catch(() => undefined);
       this.scheduleTreeRefresh();
       return;
@@ -639,7 +473,9 @@ export class Store {
     // only, so with any filter on the server is asked for the real count.
     const total = this.state.value.total;
     const delta = items.length - loadedBefore;
-    this.stateObs.set(total !== null && delta !== 0 ? { items, total: Math.max(0, total + delta) } : { items });
+    this.listSlice.set(
+      total !== null && delta !== 0 ? { items, total: Math.max(0, total + delta) } : { items },
+    );
     if (activeFilterCount(this.state.value.filters) > 0) this.scheduleTotalRefresh();
     if (evt.action === 'created' || evt.action === 'updated' || evt.action === 'deleted') {
       void this.refreshDistinctValues().catch(() => undefined);
@@ -663,7 +499,7 @@ export class Store {
     // A moved filter is already answered by the `listItems` it triggered.
     if (!current() || total === null) return;
     if (JSON.stringify(toWireFilter(this.state.value.filters)) !== asked) return;
-    this.stateObs.set({ total });
+    this.listSlice.set({ total });
   }
 
   private scheduleTreeRefresh(delayMs = 250) {
@@ -676,7 +512,7 @@ export class Store {
 
   private onStatsEvent(evt: LiveEventPayload) {
     if (evt.topic !== 'stats') return;
-    this.stateObs.set({ statsCounts: evt.counts });
+    this.statsSlice.set({ statsCounts: evt.counts });
   }
 
   private onLocationsEvent(evt: LiveEventPayload) {
@@ -692,13 +528,13 @@ export class Store {
   // Every command goes through `run`, so transport failures on any of them grade
   // the connection. The attachment family is the exception, and says why.
   async refreshStats() {
-    const counts = await this.run(() => this.ws.stats());
-    this.stateObs.set({ statsCounts: counts });
+    const counts = await this.health.run(() => this.ws.stats());
+    this.statsSlice.set({ statsCounts: counts });
   }
 
   async refreshAreas() {
-    const areas = await this.run(() => this.ws.listAreas());
-    this.stateObs.set({ areasCache: areas });
+    const areas = await this.health.run(() => this.ws.listAreas());
+    this.locationsSlice.set({ areasCache: areas });
   }
 
   /**
@@ -710,7 +546,7 @@ export class Store {
     const current = this.latestFacetTally.claim();
     const counting = { ...this.state.value.filters, categories: [], tags: [] };
     const filtered = activeFilterCount(this.state.value.filters) > 0;
-    const distinct = await this.run(() =>
+    const distinct = await this.health.run(() =>
       this.ws.distinctValues(filtered ? toWireFilter(counting) : undefined),
     );
     if (!current()) return;
@@ -771,7 +607,7 @@ export class Store {
             a.value.toLowerCase().localeCompare(b.value.toLowerCase()),
           )
         : list;
-    this.stateObs.set({
+    this.facetsSlice.set({
       distinctValuesCache: {
         ...server,
         categories: merge(server.categories, this.drafts.categories),
@@ -781,25 +617,25 @@ export class Store {
   }
 
   async refreshVersion() {
-    const info = await this.run(() => this.ws.version());
-    this.stateObs.set({ versionInfo: info });
+    const info = await this.health.run(() => this.ws.version());
+    this.configSlice.set({ versionInfo: info });
   }
 
   async refreshStatuses() {
-    const statuses = await this.run(() => this.ws.listStatuses()).catch(() => null);
-    if (statuses) this.stateObs.set({ statuses });
+    const statuses = await this.health.run(() => this.ws.listStatuses()).catch(() => null);
+    if (statuses) this.configSlice.set({ statuses });
   }
 
   /** Card heading, quick-filter pills, statuses and attachment caps; all cosmetic, so a failure keeps the defaults. */
   async refreshConfig() {
-    const config = await this.run(() => this.ws.config()).catch(() => null);
+    const config = await this.health.run(() => this.ws.config()).catch(() => null);
     const title = config?.card_title;
-    if (typeof title === 'string' && title) this.stateObs.set({ cardTitle: title });
+    if (typeof title === 'string' && title) this.configSlice.set({ cardTitle: title });
     if (config && 'quick_filters' in config) {
-      this.stateObs.set({ quickFilters: normalizeQuickFilters(config.quick_filters) });
+      this.configSlice.set({ quickFilters: normalizeQuickFilters(config.quick_filters) });
     }
-    if (config?.media) this.stateObs.set({ mediaConfig: config.media });
-    if (config?.statuses?.length) this.stateObs.set({ statuses: config.statuses });
+    if (config?.media) this.configSlice.set({ mediaConfig: config.media });
+    if (config?.statuses?.length) this.configSlice.set({ statuses: config.statuses });
   }
 
   // ---------- Attachments ----------
@@ -869,22 +705,24 @@ export class Store {
       orphansOnly: false,
     };
     const filtered = activeFilterCount(this.state.value.filters) > 0;
-    const tree = await this.run(() => this.ws.getLocationTree(filtered ? toWireFilter(counting) : undefined));
+    const tree = await this.health.run(() =>
+      this.ws.getLocationTree(filtered ? toWireFilter(counting) : undefined),
+    );
     if (!current()) return;
     // The API returns insertion order; sorted once here for every consumer.
-    this.stateObs.set({ locationTreeCache: sortLocationTree(tree) });
+    this.locationsSlice.set({ locationTreeCache: sortLocationTree(tree) });
     // The tree covers filed items only; "No location" is this total's remainder.
     const matchTotal = filtered ? await this.countMatching(counting) : null;
     if (!current()) return;
-    this.stateObs.set({ locationMatchTotal: matchTotal });
+    this.locationsSlice.set({ locationMatchTotal: matchTotal });
   }
 
   async refreshLocationsFlat() {
-    const locs = await this.run(() => this.ws.listLocations());
+    const locs = await this.health.run(() => this.ws.listLocations());
     const list = locs
       .slice()
       .sort((a, b) => a.path.sort_key.localeCompare(b.path.sort_key, undefined, { sensitivity: 'base' }));
-    this.stateObs.set({ locationsFlatCache: list });
+    this.locationsSlice.set({ locationsFlatCache: list });
   }
 
   // ---------- Listing & pagination ----------
@@ -898,10 +736,11 @@ export class Store {
     const key = JSON.stringify({ op: 'list', filter, sort, limit, cursor });
     if (this.inflight.has(key)) return this.inflight.get(key) as Promise<void>;
 
-    const p = this.run(() => this.ws.listItems(filter, sort, limit, cursor))
+    const p = this.health
+      .run(() => this.ws.listItems(filter, sort, limit, cursor))
       .then((res: ListItemsResult) => {
         const merged = reset ? res.items : mergeUniqueById(this.state.value.items, res.items);
-        this.stateObs.set({
+        this.listSlice.set({
           items: merged,
           cursor: res.next_cursor,
           total: res.total,
@@ -909,7 +748,7 @@ export class Store {
         });
       })
       .catch((err: unknown) => {
-        this.stateObs.set({ loading: false });
+        this.listSlice.set({ loading: false });
         this.pushError(err);
       })
       .finally(() => this.inflight.delete(key));
@@ -921,7 +760,7 @@ export class Store {
   /** How many items a filter would match: one row asked for, `total` read off it. */
   async countMatching(filters: StoreFilters): Promise<number | null> {
     try {
-      const res = await this.run(() => this.ws.listItems(toWireFilter(filters), filters.sort, 1));
+      const res = await this.health.run(() => this.ws.listItems(toWireFilter(filters), filters.sort, 1));
       return res.total;
     } catch {
       return null;
@@ -930,7 +769,7 @@ export class Store {
 
   /** Every item matching a filter; no `limit` makes the backend return them all. */
   async listAllMatching(filter: ItemFilter): Promise<Item[]> {
-    const res = await this.run(() => this.ws.listItems(filter));
+    const res = await this.health.run(() => this.ws.listItems(filter));
     return res.items;
   }
 
@@ -960,7 +799,7 @@ export class Store {
       !sameStrings(next.locationIds, previous.locationIds) || next.areaId !== previous.areaId;
     // Loaded rows stay until the refetch replaces them: blanking them would tear
     // the scroller, and an open editor with it, down mid-edit.
-    this.stateObs.set({ filters: next, cursor: null, loading: true, selection: new Set<string>() });
+    this.listSlice.set({ filters: next, cursor: null, loading: true, selection: new Set<string>() });
     // The items subscription is scoped by location and area only.
     if (scopeChanged) this.subscribeTopics();
     void this.listItems(true);
@@ -984,7 +823,7 @@ export class Store {
   }
 
   setSelected(itemIds: Iterable<string>) {
-    this.stateObs.set({ selection: new Set(itemIds) });
+    this.listSlice.set({ selection: new Set(itemIds) });
   }
 
   clearSelection() {
@@ -1002,52 +841,10 @@ export class Store {
     this.selectAllLoaded();
   }
 
-  // ---------- Degraded / retry plumbing ----------
-  private setDegraded(patch: Partial<DegradedState>) {
-    const cur = this.state.value.degraded;
-    // A no-op patch publishes nothing: every subscriber re-renders on notify.
-    const keys = Object.keys(patch) as (keyof DegradedState)[];
-    if (keys.every((key) => cur[key] === patch[key])) return;
-    this.stateObs.set({ degraded: { ...cur, ...patch } });
-  }
-
-  private noteSuccess() {
-    this.consecutiveTransportFailures = 0;
-    this.setDegraded({ connectionLost: false });
-  }
-
-  /**
-   * A refusal that came back over the socket proves the transport works. A run
-   * of failures that did not catches outages that close no socket.
-   */
-  private noteFailure(err: unknown) {
-    if (errorCode(err) !== TRANSPORT_ERROR_CODE) {
-      this.consecutiveTransportFailures = 0;
-      return;
-    }
-    this.consecutiveTransportFailures += 1;
-    if (this.consecutiveTransportFailures >= CONNECTION_LOST_THRESHOLD) {
-      this.setDegraded({ connectionLost: true });
-    }
-  }
-
-  /** Run a command and grade what its outcome says about the connection. */
-  private async run<T>(fn: () => Promise<T>): Promise<T> {
-    try {
-      const out = await fn();
-      this.noteSuccess();
-      return out;
-    } catch (err) {
-      this.noteFailure(err);
-      throw err;
-    }
-  }
-
+  // ---------- Recovery ----------
   /** The user-triggered recovery the contract prescribes: re-read and re-subscribe. */
   async refreshAll(): Promise<void> {
-    this.consecutiveTransportFailures = 0;
-    this.connectionLostGrace.cancel();
-    this.setDegraded({ ...NO_DEGRADATION });
+    this.health.reset();
     // First, so a refused re-read still leaves the subscriptions retrying.
     this.subscribeTopics();
     await this.reloadAll();
@@ -1068,7 +865,7 @@ export class Store {
     const before = patch ? this.state.value.items.find((i) => i.id === itemId) : undefined;
     if (patch && before) this.applyOptimistic({ ...before, ...patch(before) } as Item);
     try {
-      this.applyOptimistic(await this.run(call));
+      this.applyOptimistic(await this.health.run(call));
     } catch (err) {
       this.pushError(err, details);
       if (before) this.applyOptimistic(before);
@@ -1077,9 +874,9 @@ export class Store {
 
   async createItem(input: ItemCreate) {
     try {
-      const created = await this.run(() => this.ws.createItem(input));
+      const created = await this.health.run(() => this.ws.createItem(input));
       // The items event carries this row too, so merge by id.
-      this.stateObs.set({ items: mergeUniqueById(this.state.value.items, [created]) });
+      this.listSlice.set({ items: mergeUniqueById(this.state.value.items, [created]) });
     } catch (err) {
       this.pushError(err);
     }
@@ -1098,7 +895,7 @@ export class Store {
     const before = this.state.value.items.find((i) => i.id === itemId);
     if (before) this.removeById(itemId);
     try {
-      await this.run(() => this.ws.deleteItem(itemId, expectedVersion));
+      await this.health.run(() => this.ws.deleteItem(itemId, expectedVersion));
     } catch (err) {
       this.pushError(err);
       if (before) this.applyOptimistic(before);
@@ -1162,7 +959,7 @@ export class Store {
   // ---------- Locations ----------
   /** Run a location change and re-read the flat list and the tree, neither of which is pushed. */
   private async afterLocationChange<T>(call: () => Promise<T>): Promise<T> {
-    const result = await this.run(call);
+    const result = await this.health.run(call);
     await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
     return result;
   }
@@ -1194,7 +991,7 @@ export class Store {
   // ---------- Status definitions ----------
   /** Run a status change and re-read the whole vocabulary, whose order is part of it. */
   private async afterStatusChange<T>(call: () => Promise<T>): Promise<T> {
-    const result = await this.run(call);
+    const result = await this.health.run(call);
     await this.refreshStatuses();
     return result;
   }
@@ -1259,7 +1056,7 @@ export class Store {
       const chunk = ops.slice(i, i + chunkSize);
       const byId = new Map(chunk.map((op) => [op.op_id, op]));
       try {
-        const { results } = await this.run(() => this.ws.bulk(chunk));
+        const { results } = await this.health.run(() => this.ws.bulk(chunk));
         for (const [opId, result] of Object.entries(results)) {
           const op = byId.get(opId);
           if (result.success) {
@@ -1317,19 +1114,19 @@ export class Store {
   // ---------- Import / export (data safety) ----------
   /** Build a versioned backup document; `scope: 'view'` applies the active filter. */
   async exportDocument(scope: 'all' | 'view' = 'all'): Promise<ExportDocument> {
-    return this.run(() =>
+    return this.health.run(() =>
       this.ws.exportDocument(scope === 'view' ? toWireFilter(this.state.value.filters) : undefined),
     );
   }
 
   /** Validate + classify an import document without mutating state. */
   async previewImport(document: unknown, policy: ImportPolicy): Promise<ImportPreview> {
-    return this.run(() => this.ws.importPreview(document, policy));
+    return this.health.run(() => this.ws.importPreview(document, policy));
   }
 
   /** Apply an import document, then reload local caches to reflect the new dataset. */
   async executeImport(document: unknown, policy: ImportPolicy): Promise<ImportSummary> {
-    const summary = await this.run(() => this.ws.importExecute(document, policy));
+    const summary = await this.health.run(() => this.ws.importExecute(document, policy));
     await this.reloadAll();
     return summary;
   }
@@ -1347,32 +1144,17 @@ export class Store {
   }
 
   // ---------- Errors ----------
-  private pushError(err: unknown, details?: { itemId?: string; changes?: ItemUpdate }) {
-    const anyErr = err as { message?: unknown; context?: unknown; data?: unknown } | undefined;
-    const code = errorCode(err);
-    const transport = code === TRANSPORT_ERROR_CODE;
-    // One transport entry stands for every call an outage fails.
-    if (transport && this.state.value.errorQueue.some((e) => e.code === TRANSPORT_ERROR_CODE)) return;
-    const entry: ErrorEntry = {
-      id: `${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
-      code,
-      // A transport rejection carries no text worth showing.
-      message: transport ? t('hv.store.transportError') : serverErrorText(err, t('hv.store.unknownError')),
-      context: (anyErr?.context ?? anyErr?.data ?? undefined) as Record<string, unknown> | undefined,
-      kind: code === 'conflict' ? 'conflict' : 'error',
-      itemId: details?.itemId,
-      changes: details?.changes,
-    };
-    this.stateObs.set({ errorQueue: [...this.state.value.errorQueue, entry] });
+  private pushError(err: unknown, details?: ErrorDetails) {
+    this.errors.push(err, details);
   }
 
   dismissError(id: string) {
-    this.stateObs.set({ errorQueue: this.state.value.errorQueue.filter((e) => e.id !== id) });
+    this.errors.dismiss(id);
   }
 
   async refreshItem(itemId: string) {
     try {
-      this.applyOptimistic(await this.run(() => this.ws.getItem(itemId)));
+      this.applyOptimistic(await this.health.run(() => this.ws.getItem(itemId)));
     } catch (err) {
       this.pushError(err);
     }
@@ -1386,13 +1168,13 @@ export class Store {
     else items.unshift(item);
     // A rolled-back delete puts the row back, so it is no longer gone.
     this.forgetRemoved(item.id);
-    this.stateObs.set({ items });
+    this.listSlice.set({ items });
   }
 
   private removeById(itemId: string) {
     const items = this.state.value.items.filter((x) => x.id !== itemId);
     this.noteRemoved(itemId);
-    this.stateObs.set({ items });
+    this.listSlice.set({ items });
   }
 
   /**

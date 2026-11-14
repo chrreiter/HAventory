@@ -141,10 +141,10 @@ describe('hv-full-view: phone-width app bar', () => {
 
   it('marks the load-all button so it can be ordered onto its own row', async () => {
     // Styling it by data-testid would tie the stylesheet to the test hooks.
-    const { el, store, sr } = await mount({
-      items: [makeItem({ id: '1' }), makeItem({ id: '2' })],
+    // One row past the first page, so some matches are still unloaded.
+    const { el, sr } = await mount({
+      items: Array.from({ length: 51 }, (_, i) => makeItem({ id: String(i + 1) })),
     });
-    store.state.value.total = 99;
     el.startSelecting = true;
     el.open = false;
     await el.updateComplete;
