@@ -213,7 +213,14 @@ haventory-card                     Lovelace element; store owner
     │   └── hv-checkout-popover    inline due-date step
     ├── hv-checkout-popover        desktop: anchored due-date step
     ├── hv-column-picker           which table columns show, and their order
-    ├── hv-organize-dialog         Locations / Categories / Tags / Statuses
+    ├── hv-organize-dialog         Organize: the chrome, the tab strip and focus; each
+    │   │                          tab is an element that takes the store itself
+    │   ├── hv-organize-locations  the managed tree, edit in place, merge, guarded delete
+    │   │   └── hv-location-tree   the tree and both pickers
+    │   ├── hv-organize-values     categories or tags (one element, two keys): rename,
+    │   │   │                      merge and remove as batch rewrites, draft values
+    │   │   └── hv-confirm         the remove question
+    │   └── hv-organize-statuses   the vocabulary: order, colour and glyph, reassign
     ├── hv-import-sheet            input → preview → summary (+ invalid-document state)
     ├── hv-diagnostics-panel       subscriptions, counts, version, copy report
     ├── hv-confirm                 in-app confirmation, never window.confirm
@@ -298,8 +305,8 @@ rise from the bottom edge like every other phone surface, through the `modalShee
 keeps its full-bleed page, which is what a four-tab management surface needs at that width.
 
 Inside that dialog one declaration governs row height: `--hv-organize-row-pad` on its host,
-read by its own value rows and inherited through the shadow boundary into the
-`hv-location-tree` its Locations tab hosts. No other host declares it, so the sidebar tree,
+inherited through the shadow boundaries into its tab elements' value rows and into the
+`hv-location-tree` the Locations tab hosts. No other host declares it, so the sidebar tree,
 the filter panel's picker and the editor's location field are untouched.
 
 ### Shared wording
@@ -385,11 +392,11 @@ that resolves to nothing announces the control as controlling nothing. Only the 
 come and go, so collapsing still discards the state inside. Every disclosure in the card is
 wired this way: `hv-filter-panel`'s location chip, `hv-full-view`'s sidebar headings and
 Filters button, `hv-card-shell`'s expand and filter buttons, `hv-item-editor`'s location and
-category fields, `hv-organize-dialog`'s two location pickers and its merge-target value list,
-and `hv-location-tree`'s rows and area bands. Ids are shadow-scoped, so the desktop panel
-and the phone sheet can both be mounted without colliding. `hv-overflow-menu` is the one
-disclosure outside this rule: a menu button announces its popup with `aria-haspopup`, so its
-menu is free to leave the DOM.
+category fields, `hv-organize-locations`' two location pickers, `hv-organize-values`'
+merge-target list, and `hv-location-tree`'s rows and area bands. Ids are shadow-scoped, so
+the desktop panel and the phone sheet can both be mounted without colliding.
+`hv-overflow-menu` is the one disclosure outside this rule: a menu button announces its
+popup with `aria-haspopup`, so its menu is free to leave the DOM.
 
 Where the target keeps a rendered box of its own it is held in the tree with `hidden`, so an
 empty one neither paints nor takes a grid gap. A holder that sets a `display` of its own
@@ -444,7 +451,7 @@ the path whole. Above the breakpoint `renderPathSegments` keeps every segment.
 Threading is by property, outward from the two containers that hold `areasCache`.
 `hv-card-shell` and `hv-full-view` pass `.areas` to `hv-list` (which forwards to
 `hv-list-row`), `hv-data-table`, `hv-detail-sheet`, `hv-item-editor`, `hv-filter-panel`,
-`hv-filter-chips`, `hv-bulk-bar` and every `hv-location-tree`; `hv-organize-dialog` passes
+`hv-filter-chips`, `hv-bulk-bar` and every `hv-location-tree`; `hv-organize-locations` passes
 it to its three trees. Resolution happens in the component that renders: a `find` over a
 handful of areas per render, not memoized.
 
@@ -460,7 +467,7 @@ An area belongs to a tree, not to a location, so the organize dialog's area `<se
 reaches further than it looks: an explicit pick moves the assignment to the tree root and
 clears every node below, and giving one up empties the tree. `areaChangePreview`
 (`ui/area.ts`, pure) turns the pending edit into `{ kind, rootId, rootName, treeSize,
-effectiveAreaId, editsRoot }`, and `hv-organize-dialog` renders one muted line under the
+effectiveAreaId, editsRoot }`, and `hv-organize-locations` renders one muted line under the
 select, updating on change, with the area in the shared `.hv-area-chip`.
 
 Two things it has to get right. `kind` is `none` unless the selection differs from the
@@ -495,7 +502,8 @@ only collapse.
 ### Container vs presentation
 
 `hv-card-shell` and `hv-full-view` are **containers**: they hold the `Store` and call it
-directly. Everything else is presentational and communicates by events.
+directly, as do the organize dialog's three tab elements, which the dialog hands the store.
+Everything else is presentational and communicates by events.
 
 Interactions nest several levels deep (row, editor, location tree, selection), and threading
 each one back through the root element as a re-dispatched event is more plumbing than it is
@@ -511,15 +519,19 @@ the type checker, and `set` is the only way to change it, so no write can skip t
 
 ### Splitting a large component into child elements
 
-`hv-item-editor` is split this way, and the same recipe fits the other large components
-(`hv-organize-dialog`, `hv-full-view`) when they are taken apart.
+`hv-item-editor` and `hv-organize-dialog` are split this way, and the same recipe fits
+`hv-full-view` when it is taken apart.
 
 - **The parent keeps the model; a child keeps its own surface.** The editor holds the form
   model, validation, save and cancel, and the grid. A field that has state of its own (an
   open list, a keyboard cursor, an upload queue, a dialog) becomes an element that owns
   that state, its markup, its styles and its tests. It takes the slice of the model it shows
   as properties and sends a `change` whose detail is `Partial<ItemFormModel>`, which the
-  editor merges. A piece that is only markup stays a render method on the parent.
+  editor merges. A piece that is only markup stays a render method on the parent. Where
+  the parent holds no model, as the organize dialog's tabs share nothing but chrome, each
+  child is a container instead: it takes the store, re-renders only for the slices it reads
+  (`SliceWatch`), and sends an event only for what the parent does for it (`browse`, which
+  the dialog passes on before it closes).
 - **A new form is a new element.** Hosts render the editor through Lit's `keyed` on the item
   id (`ItemWorkspace.renderEditor`, `hv-detail-sheet`), so a different item, or a create's
   hop to a real id, discards every piece of state in the editor and its children at once,
@@ -527,6 +539,10 @@ the type checker, and `set` is the only way to change it, so no write can skip t
   the element and the typing. The editor throws on an id change under a live form, so a
   host that forgets the key fails in its tests instead of saving one item's typing onto
   another. The new element runs `firstUpdated` again, which puts focus on the name field.
+  The organize tabs are keyed on the tab and a count of openings, so each opening builds
+  them afresh. A child whose draft has to outlive the switch is cached with Lit's `cache`
+  instead, as the statuses tab is, and for it to outlive a close too the parent caches its
+  open body as well, so closing detaches that DOM rather than discarding it.
 - **One place decides what Escape takes back.** A child that can be open exposes `open` and
   `close()`, and the editor's keydown handler walks them in order before it cancels the
   form. A child also stops the keys it handles itself, as the category list does with
@@ -534,11 +550,15 @@ the type checker, and `set` is the only way to change it, so no write can skip t
 - **Shadow roots change what reaches what.** A `<label for>` cannot name a control in
   another shadow root, so a label moves with its control. Styles do not cross: rules shared
   by the parent and its children live in a module under `src/ui/` (`editor-fields.ts` for
-  the editor) that each lists, never in a copy. Classes the parent puts on a child's host
-  element (`class="cell"`) are styled by the parent's sheet, which is how a child takes its
-  place in the parent's grid without knowing the grid. A key an overlay inside a child
+  the editor, `organize-tab.ts` for the organize tabs) that each lists, never in a copy. A
+  child that takes over a scrolling region of the parent's flex column takes that region's
+  flex sizing on its own host, or the region stops scrolling inside the panel. Classes the
+  parent puts on a child's host element (`class="cell"`) are styled by the parent's sheet,
+  which is how a child takes its place in the parent's grid without knowing the grid. A key an overlay inside a child
   sends now passes the parent's listeners on its way up; stop there what the parent must
-  not hear.
+  not hear. A `ref` fires again when cached DOM is re-attached, so a child that reveals a
+  disclosure as it is built asks the parent whether this update is the opening one
+  (`opening`), when `Modal` owns focus.
 - **Tests follow the code.** A child's behaviour is tested by mounting the child. The
   parent's tests keep the wiring: what goes in, what a `change` does to the save, the
   Escape order, focus. They reach a moved field through the child's shadow root.
@@ -583,6 +603,7 @@ the type checker, and `set` is the only way to change it, so no write can skip t
 | `browse-row.ts` | The metrics of a browse row, shared by `hv-location-tree` and the full view's facet lists so a name starts at the same inset in both. |
 | `discard.ts` | `discardPrompt()`, the one question asked before typed edits are thrown away. |
 | `editor-error.ts` | What an open editor says about a save that did not land. |
+| `organize-tab.ts` | What the organize dialog's three tab elements share: the toolbar, row, inline disclosure and its commit row, guard, rewrite progress and touch sheet, their styles, and `SliceWatch`, which re-renders a tab only for the store slices it reads. |
 | `reminder.ts` | Reading a reminder off an item: whether it has one, and whether it has come round. |
 | `field-label.ts` | A custom field's key written for reading (`purchase_price` → `Purchase price`); editing surfaces keep the key as typed. |
 | `clipboard.ts` | Copying one string, falling back to `execCommand` where `navigator.clipboard` is missing (plain `http://`). |
@@ -630,8 +651,8 @@ autocompletes read, what `haventory/config` answered, and the connection state t
 render from. Each part holds its keys in a `Slice` (`slice.ts`), which is replaced on write
 and notifies only when a value moved. `store.state` reads every slice as one flat,
 read-only object and notifies on any of them; `store.watch(['locations', 'facets'], cb)`
-notifies only for the slices named, which is how `hv-organize-dialog` stays quiet while the
-list changes.
+notifies only for the slices named, which is how each organize tab (`SliceWatch` in
+`ui/organize-tab.ts`) stays quiet while the list changes.
 
 **Notable methods**
 
@@ -837,7 +858,7 @@ Component tests follow one pattern: mount with `mountComponent` from `src/test.u
 (which creates the element, sets its properties and awaits the render), query the shadow root
 by `data-testid` with `q` / `all`, dispatch real events, and `settle` before asserting.
 `componentCss(tag)` reads a component's stylesheets, because jsdom lays nothing out. The
-components that take a `store` (`hv-card-shell`, `hv-full-view`, `hv-organize-dialog`) mount
+components that take a `store` (`hv-card-shell`, `hv-full-view`, the organize dialog and its tabs) mount
 through `mountHost`, which builds the store over a mock hass first. Every interactive element
 carries a testid. Use these helpers rather than a per-file copy.
 
