@@ -27,7 +27,7 @@ import {
 import { renderStatBadges } from '../ui/stat-badges';
 import { HostSurfaces } from '../host-surfaces';
 import { ItemWorkspace } from '../item-workspace';
-import type { RowEventDetail } from '../item-workspace';
+import type { HvEvent } from '../events';
 import type { Store } from '../store/store';
 import type { StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
@@ -406,12 +406,14 @@ export class HVCardShell extends LitElement {
     return this.surfaces.menuEntries().filter((entry) => !('id' in entry && entry.id === 'columns'));
   }
 
-  private _onMenuSelect = (e: CustomEvent) => {
+  private _onMenuSelect = (
+    e: HvEvent<'hv-overflow-menu', 'select'> | HvEvent<'hv-full-view', 'menu-action'>,
+  ) => {
     // The full view re-dispatches its own menu selections through here; stop the
     // original so it does not leak out of the card as if it were public API.
     e.stopPropagation();
-    const { id, tab } = e.detail as { id: string; tab?: OrganizeTab };
-    this._runMenuAction(id, tab);
+    const { id } = e.detail;
+    this._runMenuAction(id, 'tab' in e.detail ? e.detail.tab : undefined);
   };
 
   /** What an action id from a ⋮ menu or an empty-state offer means. */
@@ -439,8 +441,8 @@ export class HVCardShell extends LitElement {
     return html`<div class="badges">${badges.total}${badges.pills}</div>`;
   }
 
-  private _onEmptyAction = (e: CustomEvent) => {
-    const { id } = e.detail as { id: string };
+  private _onEmptyAction = (e: HvEvent<'hv-list', 'empty-action'>) => {
+    const { id } = e.detail;
     if (id === 'clear-filters') this.store?.clearFilters();
     else if (id === 'refresh') void this.store?.refreshAll();
     else if (id === 'add-item') this._workspace.startEdit('new');
@@ -568,16 +570,15 @@ export class HVCardShell extends LitElement {
         .emptyLocationName=${
           (st?.locationsFlatCache ?? []).find((l) => l.id === soleLocationId(filters))?.name ?? null
         }
-        @near-end=${(e: CustomEvent) =>
-          void this.store?.prefetchIfNeeded((e.detail as { ratio: number }).ratio)}
+        @near-end=${(e: HvEvent<'hv-list', 'near-end'>) => void this.store?.prefetchIfNeeded(e.detail.ratio)}
         @empty-action=${this._onEmptyAction}
-        @increment=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('increment', e.detail)}
-        @decrement=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('decrement', e.detail)}
-        @check-in=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('check-in', e.detail)}
-        @request-delete=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('request-delete', e.detail)}
-        @edit=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('edit', e.detail)}
-        @open-item=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('open-item', e.detail)}
-        @row-action=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('row-action', e.detail)}
+        @increment=${(e: HvEvent<'hv-list', 'increment'>) => this._workspace.onRowEvent('increment', e.detail)}
+        @decrement=${(e: HvEvent<'hv-list', 'decrement'>) => this._workspace.onRowEvent('decrement', e.detail)}
+        @check-in=${(e: HvEvent<'hv-list', 'check-in'>) => this._workspace.onRowEvent('check-in', e.detail)}
+        @request-delete=${(e: HvEvent<'hv-list', 'request-delete'>) => this._workspace.onRowEvent('request-delete', e.detail)}
+        @edit=${(e: HvEvent<'hv-list', 'edit'>) => this._workspace.onRowEvent('edit', e.detail)}
+        @open-item=${(e: HvEvent<'hv-list', 'open-item'>) => this._workspace.onRowEvent('open-item', e.detail)}
+        @row-action=${(e: HvEvent<'hv-list', 'row-action'>) => this._workspace.onRowEvent('row-action', e.detail)}
       ></hv-list>
 
       ${
@@ -611,7 +612,7 @@ export class HVCardShell extends LitElement {
           this._startSelecting = false;
         }}
         @menu-action=${this._onMenuSelect}
-        @request-delete=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('request-delete', e.detail)}
+        @request-delete=${(e: HvEvent<'hv-full-view', 'request-delete'>) => this._workspace.onRowEvent('request-delete', e.detail)}
       ></hv-full-view>
       ${
         mobile
