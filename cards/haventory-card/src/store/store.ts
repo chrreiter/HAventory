@@ -7,8 +7,6 @@ import type {
   BulkFailure,
   BulkOperation,
   BulkOutcome,
-  DistinctValue,
-  DistinctValues,
   ExportDocument,
   HassLike,
   ImportPolicy,
@@ -30,6 +28,8 @@ import type {
 import { WSClient } from './ws';
 import { ConnectionHealth } from './connection-health';
 import type { ConnectionSlice } from './connection-health';
+import { Facets } from './facets';
+import type { FacetsSlice } from './facets';
 import { ErrorQueue, errorCode } from './error-queue';
 import type { ErrorDetails, ErrorsSlice } from './error-queue';
 import { activeFilterCount, defaultFilters, sameStrings, toWireFilter } from './filters';
@@ -74,7 +74,6 @@ export function subscribeRetryDelayMs(attempt: number, baseMs: number): number {
 }
 
 type ListSlice = Pick<StoreState, 'items' | 'cursor' | 'total' | 'loading' | 'filters' | 'selection'>;
-type FacetsSlice = Pick<StoreState, 'distinctValuesCache'>;
 type LocationsSlice = Pick<
   StoreState,
   'areasCache' | 'locationTreeCache' | 'locationMatchTotal' | 'locationsFlatCache'
@@ -94,6 +93,7 @@ export class Store {
   private ws: WSClient;
   private readonly errors = new ErrorQueue();
   private readonly health: ConnectionHealth;
+  private readonly facets: Facets;
   /** Each part's state, notified on its own; `state` reads them as one. */
   readonly slices: {
     connection: Observable<ConnectionSlice>;
@@ -105,7 +105,6 @@ export class Store {
     config: Observable<ConfigSlice>;
   };
   private readonly listSlice: Slice<ListSlice>;
-  private readonly facetsSlice: Slice<FacetsSlice>;
   private readonly locationsSlice: Slice<LocationsSlice>;
   private readonly statsSlice: Slice<StatsSlice>;
   private readonly configSlice: Slice<ConfigSlice>;
@@ -121,12 +120,10 @@ export class Store {
   private retryBaseMs: number;
   /** The deferred work: every one of these is cancelled by `dispose`. */
   private readonly treeRefresh = new Coalesced();
-  private readonly facetRefresh = new Coalesced();
   private readonly areasRefresh = new Coalesced();
   private readonly totalRefresh = new Coalesced();
   private readonly subscribeRetry = new Coalesced();
   private readonly areaRegistryRetry = new Coalesced();
-  private readonly latestFacetTally = new Latest();
   private readonly latestTree = new Latest();
   private readonly latestTotal = new Latest();
   private readonly latestSubscribeRound = new Latest();
@@ -142,18 +139,13 @@ export class Store {
   private dayChangeUnsub: Unsubscribe | null = null;
   /** True once `dispose` ran, so a load still in flight wires nothing. */
   private disposed = false;
-  /** Last untouched `distinct_values` result, so drafts can be re-merged. */
-  private serverDistinct: DistinctValues | null = null;
-  /** Whether the last `distinct_values` answer was priced against a filter. */
-  private serverDistinctPriced = false;
-  /** Values named in the organize dialog that no item carries yet. */
-  private drafts: { categories: string[]; tags: string[] } = { categories: [], tags: [] };
 
   constructor(hass: HassLike, options: StoreOptions = {}) {
     this.ws = new WSClient(hass);
     this.retryBaseMs = options.retryBaseMs ?? 400;
 
     this.health = new ConnectionHealth(this.ws);
+    this.facets = new Facets(this.ws, this.health.run, () => this.listSlice.value.filters);
     this.listSlice = new Slice<ListSlice>({
       items: [],
       cursor: null,
@@ -162,7 +154,6 @@ export class Store {
       filters: defaultFilters(),
       selection: new Set<string>(),
     });
-    this.facetsSlice = new Slice<FacetsSlice>({ distinctValuesCache: null });
     this.locationsSlice = new Slice<LocationsSlice>({
       areasCache: null,
       locationTreeCache: null,
@@ -181,7 +172,7 @@ export class Store {
       connection: this.health.slice,
       list: this.listSlice,
       errors: this.errors.slice,
-      facets: this.facetsSlice,
+      facets: this.facets.slice,
       locations: this.locationsSlice,
       stats: this.statsSlice,
       config: this.configSlice,
@@ -426,7 +417,7 @@ export class Store {
     this.areaRegistryRetry.cancel();
     this.treeRefresh.cancel();
     this.totalRefresh.cancel();
-    this.facetRefresh.cancel();
+    this.facets.dispose();
     this.areasRefresh.cancel();
     this.health.dispose();
   }
@@ -506,10 +497,6 @@ export class Store {
     this.treeRefresh.schedule(delayMs, () => void this.refreshLocationTree().catch(() => undefined));
   }
 
-  private scheduleFacetRefresh(delayMs = 250) {
-    this.facetRefresh.schedule(delayMs, () => void this.refreshDistinctValues().catch(() => undefined));
-  }
-
   private onStatsEvent(evt: LiveEventPayload) {
     if (evt.topic !== 'stats') return;
     this.statsSlice.set({ statsCounts: evt.counts });
@@ -537,83 +524,27 @@ export class Store {
     this.locationsSlice.set({ areasCache: areas });
   }
 
-  /**
-   * Refresh distinct categories/tags with counts. The tallies drop both
-   * dimensions from the filter, as the tree drops location, so a facet does
-   * not zero its own other rows; they are priced whenever any filter is on.
-   */
-  async refreshDistinctValues() {
-    const current = this.latestFacetTally.claim();
-    const counting = { ...this.state.value.filters, categories: [], tags: [] };
-    const filtered = activeFilterCount(this.state.value.filters) > 0;
-    const distinct = await this.health.run(() =>
-      this.ws.distinctValues(filtered ? toWireFilter(counting) : undefined),
-    );
-    if (!current()) return;
-    this.serverDistinct = distinct;
-    this.serverDistinctPriced = filtered;
-    // A draft the backend now knows about is no longer a draft.
-    const known = (list: DistinctValue[], value: string) =>
-      list.some((v) => v.value.toLowerCase() === value.toLowerCase());
-    this.drafts = {
-      categories: this.drafts.categories.filter((v) => !known(distinct.categories, v)),
-      tags: this.drafts.tags.filter((v) => !known(distinct.tags, v)),
-    };
-    this.publishDistinct();
+  /** Refresh distinct categories/tags with counts. */
+  refreshDistinctValues() {
+    return this.facets.refresh();
   }
 
   /**
-   * Name a category or tag before any item carries it. `distinct_values` is
-   * derived from the items, so the value is held here at count 0 until an item
-   * adopts it. Returns false for a blank name or one that already exists.
+   * Name a category or tag before any item carries it. Returns false for a
+   * blank name or one that already exists.
    */
   addDraftValue(kind: 'category' | 'tag', raw: string): boolean {
-    const value = kind === 'tag' ? raw.trim().toLowerCase() : raw.trim();
-    if (!value) return false;
-    const key = kind === 'tag' ? 'tags' : 'categories';
-    const current = this.state.value.distinctValuesCache?.[key] ?? [];
-    if (current.some((v) => v.value.toLowerCase() === value.toLowerCase())) return false;
-    this.drafts = { ...this.drafts, [key]: [...this.drafts[key], value] };
-    this.publishDistinct();
-    return true;
+    return this.facets.addDraftValue(kind, raw);
   }
 
   /** Drop a value named here that never made it onto an item. */
   removeDraftValue(kind: 'category' | 'tag', value: string): void {
-    const key = kind === 'tag' ? 'tags' : 'categories';
-    this.drafts = {
-      ...this.drafts,
-      [key]: this.drafts[key].filter((v) => v.toLowerCase() !== value.toLowerCase()),
-    };
-    this.publishDistinct();
+    this.facets.removeDraftValue(kind, value);
   }
 
   /** True while this value only exists on the card. */
   isDraftValue(kind: 'category' | 'tag', value: string): boolean {
-    const key = kind === 'tag' ? 'tags' : 'categories';
-    return this.drafts[key].some((v) => v.toLowerCase() === value.toLowerCase());
-  }
-
-  /** Publish the server's distinct values with the drafts folded in. */
-  private publishDistinct() {
-    const server = this.serverDistinct;
-    if (!server) return;
-    // A draft is priced in the same shape as the rows beside it.
-    const draft = (value: string): DistinctValue =>
-      this.serverDistinctPriced ? { value, count: 0, matching_count: 0 } : { value, count: 0 };
-    const merge = (list: DistinctValue[], drafts: string[]): DistinctValue[] =>
-      drafts.length
-        ? [...list, ...drafts.map(draft)].sort((a, b) =>
-            a.value.toLowerCase().localeCompare(b.value.toLowerCase()),
-          )
-        : list;
-    this.facetsSlice.set({
-      distinctValuesCache: {
-        ...server,
-        categories: merge(server.categories, this.drafts.categories),
-        tags: merge(server.tags, this.drafts.tags),
-      },
-    });
+    return this.facets.isDraftValue(kind, value);
   }
 
   async refreshVersion() {
@@ -806,7 +737,7 @@ export class Store {
     // The counts move with every filter but not with the sort.
     if (Object.keys(patch).some((key) => key !== 'sort')) {
       this.scheduleTreeRefresh();
-      this.scheduleFacetRefresh();
+      this.facets.scheduleRefresh();
     }
   }
 

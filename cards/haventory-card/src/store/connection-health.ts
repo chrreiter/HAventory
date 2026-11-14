@@ -21,6 +21,9 @@ export const NO_DEGRADATION: DegradedState = {
   nextLiveRetryAt: null,
 };
 
+/** `ConnectionHealth.run`, as the parts that send commands receive it. */
+export type Run = <T>(fn: () => Promise<T>) => Promise<T>;
+
 export type ConnectionSlice = Pick<StoreState, 'connected' | 'degraded'>;
 
 /**
@@ -43,7 +46,7 @@ export class ConnectionHealth {
   constructor(private readonly ws: WSClient) {}
 
   /** Run a command and grade what its outcome says about the connection. */
-  readonly run = async <T>(fn: () => Promise<T>): Promise<T> => {
+  readonly run: Run = async <T>(fn: () => Promise<T>): Promise<T> => {
     try {
       const out = await fn();
       this.noteSuccess();
