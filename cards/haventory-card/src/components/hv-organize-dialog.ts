@@ -2,10 +2,12 @@ import { t } from '../i18n';
 import { serverErrorText } from '../store/server-error';
 import type { TranslationKey } from '../i18n';
 import { LitElement, css, html } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, query, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { keyed } from 'lit/directives/keyed.js';
 import { ref } from 'lit/directives/ref.js';
+import { emitter } from '../events';
+import type { HvEvent } from '../events';
 import { tokens, base } from '../ui/tokens';
 import { chip, tagLabel } from '../ui/chip';
 import { Modal, modalChrome } from '../ui/modal';
@@ -723,15 +725,20 @@ export class HVOrganizeDialog extends LitElement {
     this._storeUnsub = undefined;
   }
 
+  @query('#org-loc-area') private _areaSelect?: HTMLSelectElement | null;
+
+  private readonly _emit = emitter<'hv-organize-dialog'>(this);
+
   /** Whether this update is the one that puts the dialog on screen. */
   private _opening = false;
 
   /**
-   * Scroll a disclosure into view as it opens, and give a form's field (named
-   * by `data-field`) the caret. A ref fires only when the element is built, so
-   * each disclosure is `keyed` on its subject. Skipped on the update that opens
-   * the dialog, where `Modal` owns focus, and deferred a microtask because a
-   * ref fires while its subtree is still detached.
+   * Scroll a disclosure into view as it opens, and give a form's field the
+   * caret: `data-field` holds a selector for it inside the disclosure. A ref
+   * fires only when the element is built, so each disclosure is `keyed` on its
+   * subject. Skipped on the update that opens the dialog, where `Modal` owns
+   * focus, and deferred a microtask because a ref fires while its subtree is
+   * still detached.
    */
   private _reveal = (el?: Element) => {
     if (!el || this._opening) return;
@@ -740,14 +747,14 @@ export class HVOrganizeDialog extends LitElement {
       // Optional: a test DOM without layout has no scrollIntoView.
       (el as HTMLElement).scrollIntoView?.({ block: 'nearest' });
       const field = (el as HTMLElement).dataset.field;
-      if (field) el.querySelector<HTMLElement>(`[data-testid="${field}"]`)?.focus();
+      if (field) el.querySelector<HTMLElement>(field)?.focus();
     });
   };
 
   protected override updated() {
     // A touched native select stops following its options' `selected`, so an
     // area chosen in the parent tree is written to the live element.
-    const areaSelect = this.renderRoot.querySelector<HTMLSelectElement>('[data-testid="location-area"]');
+    const areaSelect = this._areaSelect;
     if (areaSelect) areaSelect.value = this._locArea ?? '';
     this._opening = false;
   }
@@ -780,7 +787,7 @@ export class HVOrganizeDialog extends LitElement {
   }
 
   private _close = () => {
-    this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+    this._emit('cancel');
   };
 
   // ---------- Chrome the four tabs share ----------
@@ -1138,7 +1145,7 @@ export class HVOrganizeDialog extends LitElement {
 
   /** Close, asking the host for the expanded surface to show what was picked. */
   private _browse() {
-    this.dispatchEvent(new CustomEvent('browse', { bubbles: true, composed: true }));
+    this._emit('browse');
     this._close();
   }
 
@@ -1203,7 +1210,7 @@ export class HVOrganizeDialog extends LitElement {
 
     return keyed(
       nodeId,
-      html`<div class="expander" data-testid="location-editor" data-field="location-name" ${ref(this._reveal)}>
+      html`<div class="expander" data-testid="location-editor" data-field="#org-loc-name" ${ref(this._reveal)}>
         <div class="grid2">
           <div class="cell ${areas.length ? '' : 'wide'}">
             <label class="hv-label" for="org-loc-name">${t('hv.field.name')}</label>
@@ -1265,13 +1272,13 @@ export class HVOrganizeDialog extends LitElement {
                 allLabel=${t('hv.organize.topLevel')}
                 areaSelectable
                 showEmptyAreas
-                @select=${(e: CustomEvent) => {
-                  this._locParent = (e.detail as { locationId: string | null }).locationId;
+                @select=${(e: HvEvent<'hv-location-tree', 'select'>) => {
+                  this._locParent = e.detail.locationId;
                 }}
-                @select-area=${(e: CustomEvent) => {
+                @select-area=${(e: HvEvent<'hv-location-tree', 'select-area'>) => {
                   // Picking an area moves the location to the top level, in it.
                   this._locParent = null;
-                  this._locArea = (e.detail as { areaId: string }).areaId;
+                  this._locArea = e.detail.areaId;
                 }}
               ></hv-location-tree>`,
             )}
@@ -1382,8 +1389,8 @@ export class HVOrganizeDialog extends LitElement {
           .areas=${this.st?.areasCache?.areas ?? []}
           .selectedId=${this._mergeTarget}
           .excludeSubtreeOf=${source.id}
-          @select=${(e: CustomEvent) => {
-            this._mergeTarget = (e.detail as { locationId: string | null }).locationId;
+          @select=${(e: HvEvent<'hv-location-tree', 'select'>) => {
+            this._mergeTarget = e.detail.locationId;
           }}
         ></hv-location-tree>`,
       )}
@@ -1444,21 +1451,19 @@ export class HVOrganizeDialog extends LitElement {
           .nodes=${tree}
           .areas=${this.st?.areasCache?.areas ?? []}
           .filterText=${this._filter}
-          @select=${(e: CustomEvent) =>
-            this._showLocation((e.detail as { locationId: string | null }).locationId)}
-          @edit-location=${(e: CustomEvent) =>
-            this._startLocationEdit((e.detail as { locationId: string }).locationId)}
-          @merge-location=${(e: CustomEvent) =>
-            this._startLocationMerge((e.detail as { locationId: string }).locationId)}
-          @more-location=${(e: CustomEvent) => {
-            const { locationId } = e.detail as { locationId: string };
+          @select=${(e: HvEvent<'hv-location-tree', 'select'>) => this._showLocation(e.detail.locationId)}
+          @edit-location=${(e: HvEvent<'hv-location-tree', 'edit-location'>) =>
+            this._startLocationEdit(e.detail.locationId)}
+          @merge-location=${(e: HvEvent<'hv-location-tree', 'merge-location'>) =>
+            this._startLocationMerge(e.detail.locationId)}
+          @more-location=${(e: HvEvent<'hv-location-tree', 'more-location'>) => {
+            const { locationId } = e.detail;
             this._sheetLocation = this._sheetLocation === locationId ? null : locationId;
             this._editingLocation = null;
             this._mergingLocation = null;
           }}
-          @delete-location=${(e: CustomEvent) => {
-            const node = (e.detail as { node: LocationTreeNode }).node;
-            void this._deleteLocation(node);
+          @delete-location=${(e: HvEvent<'hv-location-tree', 'delete-location'>) => {
+            void this._deleteLocation(e.detail.node);
           }}
         ></hv-location-tree>
         ${sheeted ? this._renderLocationSheet(sheeted) : null}
@@ -1635,7 +1640,7 @@ export class HVOrganizeDialog extends LitElement {
         class="expander"
         data-testid="value-editor"
         data-mode=${editing.mode}
-        data-field="value-target"
+        data-field=${merging ? 'button[aria-controls]' : '#org-value-target'}
         ${ref(this._reveal)}
       >
         <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
@@ -1647,6 +1652,7 @@ export class HVOrganizeDialog extends LitElement {
               : html`<label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
                 <span class="hv-sr-only">${t('hv.organize.newName')}</span>
                 <input
+                  id="org-value-target"
                   class="control"
                   data-testid="value-target"
                   placeholder=${t('hv.organize.newNamePlaceholder')}
@@ -1932,10 +1938,11 @@ export class HVOrganizeDialog extends LitElement {
     const printsAs = stored && this._statusLabel === stored.label && shown !== stored.label ? shown : null;
     return keyed(
       slug,
-      html`<div class="expander" data-testid="status-editor" data-field="status-label" ${ref(this._reveal)}>
+      html`<div class="expander" data-testid="status-editor" data-field="#org-status-label" ${ref(this._reveal)}>
         <label class="status-name">
           <span class="hv-sr-only">${t('hv.organize.statusName')}</span>
           <input
+            id="org-status-label"
             class="control"
             data-testid="status-label"
             placeholder=${t('hv.organize.statusNamePlaceholder')}
@@ -2250,10 +2257,10 @@ export class HVOrganizeDialog extends LitElement {
     const row =
       value === null
         ? null
-        : (Array.from(this.renderRoot.querySelectorAll<HTMLElement>('[data-testid="value-row"]')).find(
+        : (Array.from(this.renderRoot.querySelectorAll<HTMLElement>('.value-row')).find(
             (r) => r.dataset.value === value,
           ) ?? null);
-    const target = row ?? this.renderRoot.querySelector<HTMLElement>('[data-testid="organize-dialog"]');
+    const target = row ?? this.renderRoot.querySelector<HTMLElement>('.panel');
     if (!target) return;
     if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
     target.focus({ preventScroll: true });
@@ -2333,14 +2340,14 @@ export class HVOrganizeDialog extends LitElement {
         .confirmLabel=${t('hv.action.remove')}
         destructive
         .onOpenerGone=${this._refocusConfirmRow}
-        @confirm=${(e: Event) => {
+        @confirm=${(e: HvEvent<'hv-confirm', 'confirm'>) => {
           e.stopPropagation();
           const value = this._confirmRemove;
           this._lastConfirmValue = value;
           this._confirmRemove = null;
           if (value) void this._runRewrite(value, null, 'remove');
         }}
-        @cancel=${(e: Event) => {
+        @cancel=${(e: HvEvent<'hv-confirm', 'cancel'>) => {
           e.stopPropagation();
           this._lastConfirmValue = this._confirmRemove;
           this._confirmRemove = null;

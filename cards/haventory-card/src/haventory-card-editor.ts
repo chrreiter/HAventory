@@ -2,6 +2,7 @@ import { LitElement, css, html } from 'lit';
 import type { PropertyValues } from 'lit';
 import { property, state } from 'lit/decorators.js';
 import { setLanguage, t } from './i18n';
+import { emitter } from './events';
 import { tokens, base } from './ui/tokens';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { defineCardElement } from './register';
@@ -22,6 +23,8 @@ export interface HAventoryCardConfig {
  * after swapping `window.customElements`.
  */
 export class HAventoryCardEditor extends LitElement {
+  private readonly _emit = emitter<'haventory-card-editor'>(this);
+
   static override styles = [
     tokens,
     base,
@@ -78,13 +81,7 @@ export class HAventoryCardEditor extends LitElement {
     else delete config.title;
 
     this._config = config;
-    this.dispatchEvent(
-      new CustomEvent('config-changed', {
-        detail: { config },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    this._emit('config-changed', { config });
   }
 }
 

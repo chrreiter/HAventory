@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
-import { customElement, property } from 'lit/decorators.js';
+import { customElement, property, query } from 'lit/decorators.js';
+import { emitter } from '../events';
 import { tokens, base } from '../ui/tokens';
 import { Modal, modalChrome, modalSheet } from '../ui/modal';
 import { icon } from '../ui/icons';
@@ -56,19 +57,23 @@ export class HVConfirm extends LitElement {
   /** Where focus goes when the opener is gone and it would otherwise land on `<body>`. */
   @property({ attribute: false }) onOpenerGone: (() => void) | null = null;
 
+  private readonly _emit = emitter<'hv-confirm'>(this);
+
+  @query('#accept') private _accept?: HTMLButtonElement | null;
+
   private _modal = new Modal(this, {
     open: () => this.open,
     // Land focus on the confirm action so Enter completes and Escape aborts.
-    initialFocus: () => this.renderRoot.querySelector<HTMLButtonElement>('[data-testid="confirm-accept"]'),
+    initialFocus: () => this._accept,
     onOpenerGone: () => this.onOpenerGone?.(),
   });
 
   private _cancel = () => {
-    this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+    this._emit('cancel');
   };
 
   private _confirm = () => {
-    this.dispatchEvent(new CustomEvent('confirm', { bubbles: true, composed: true }));
+    this._emit('confirm');
   };
 
   override render() {
@@ -95,6 +100,7 @@ export class HVConfirm extends LitElement {
             ${t('hv.action.cancel')}
           </button>
           <button
+            id="accept"
             class="hv-pill ${this.destructive ? 'danger' : ''}"
             data-testid="confirm-accept"
             @click=${this._confirm}

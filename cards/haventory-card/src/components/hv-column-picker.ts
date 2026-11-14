@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
+import { emitter } from '../events';
 import { tokens, base } from '../ui/tokens';
 import { Modal, modalChrome, modalSheet } from '../ui/modal';
 import { icon } from '../ui/icons';
@@ -15,6 +16,8 @@ import { COLUMN_DEFS, canonicalOrder, columnLabel, moveColumn, normalizeColumns 
  */
 @customElement('hv-column-picker')
 export class HVColumnPicker extends LitElement {
+  private readonly _send = emitter<'hv-column-picker'>(this);
+
   static override styles = [
     tokens,
     base,
@@ -121,11 +124,11 @@ export class HVColumnPicker extends LitElement {
   private _modal = new Modal(this, { open: () => this.open });
 
   private _close = () => {
-    this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+    this._send('cancel');
   };
 
   private _emit(columns: ColumnKey[]): void {
-    this.dispatchEvent(new CustomEvent('change', { detail: { columns }, bubbles: true, composed: true }));
+    this._send('change', { columns });
   }
 
   /** A column switched on joins at the end, so the user's order is not disturbed. */

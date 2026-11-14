@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, query, state } from 'lit/decorators.js';
+import { emitter } from '../events';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { DialogFocus } from '../ui/dialog-focus';
@@ -16,6 +17,10 @@ import { nextZBase } from '../utils/zindex';
  */
 @customElement('hv-lightbox')
 export class HVLightbox extends LitElement {
+  private readonly _emit = emitter<'hv-lightbox'>(this);
+
+  @query('.lightbox') private readonly _dialog!: HTMLElement | null;
+
   static override styles = [
     tokens,
     base,
@@ -126,12 +131,12 @@ export class HVLightbox extends LitElement {
     const open = this._at !== null;
     this._focus.sync(
       open,
-      () => this.renderRoot.querySelector<HTMLElement>('[data-testid="lightbox"]'),
+      () => this._dialog,
       () => this.onOpenerGone?.(),
     );
     // Announced here whether the user closed it or the last photo went away.
     if (!open && this.index !== null) {
-      this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
+      this._emit('close');
     }
   }
 

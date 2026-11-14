@@ -4,8 +4,9 @@ import type { ColumnKey } from './store/columns';
 import { loadColumnPrefs, saveColumnPrefs } from './store/columns';
 import { activeFilterCount } from './store/store';
 import type { Store } from './store/store';
-import type { ImportPolicy, ImportPreview, ImportSummary } from './store/types';
+import type { ImportPreview, ImportSummary } from './store/types';
 import { t, tn } from './i18n';
+import type { HvEvent } from './events';
 import { serverErrorText } from './store/server-error';
 import { discardPrompt } from './ui/discard';
 import type { ConfirmDiscard } from './ui/discard';
@@ -219,7 +220,7 @@ export class HostSurfaces {
         ?mobile=${mobile}
         .columns=${this.columns}
         heading=${t('hv.surfaces.columnsHeading')}
-        @change=${(e: CustomEvent) => this.setColumns((e.detail as { columns: ColumnKey[] }).columns)}
+        @change=${(e: HvEvent<'hv-column-picker', 'change'>) => this.setColumns(e.detail.columns)}
         @cancel=${() => {
           this.pickerOpen = false;
           this.host.requestUpdate();
@@ -266,8 +267,8 @@ export class HostSurfaces {
         .summary=${this.importSummary}
         .busy=${this.importBusy}
         .errorMessage=${this.importError}
-        @preview=${(e: CustomEvent) => void this.onImportPreview(e)}
-        @execute=${(e: CustomEvent) => void this.onImportExecute(e)}
+        @preview=${(e: HvEvent<'hv-import-sheet', 'preview'>) => void this.onImportPreview(e)}
+        @execute=${(e: HvEvent<'hv-import-sheet', 'execute'>) => void this.onImportExecute(e)}
         @invalidate-preview=${() => {
           this.importPreview = null;
           this.importError = null;
@@ -320,8 +321,8 @@ export class HostSurfaces {
     }
   }
 
-  private async onImportPreview(e: CustomEvent): Promise<void> {
-    const { document, policy } = e.detail as { document: unknown; policy: ImportPolicy };
+  private async onImportPreview(e: HvEvent<'hv-import-sheet', 'preview'>): Promise<void> {
+    const { document, policy } = e.detail;
     this.importBusy = true;
     this.importError = null;
     this.importSummary = null;
@@ -337,8 +338,8 @@ export class HostSurfaces {
     }
   }
 
-  private async onImportExecute(e: CustomEvent): Promise<void> {
-    const { document, policy } = e.detail as { document: unknown; policy: ImportPolicy };
+  private async onImportExecute(e: HvEvent<'hv-import-sheet', 'execute'>): Promise<void> {
+    const { document, policy } = e.detail;
     this.importBusy = true;
     this.importError = null;
     this.host.requestUpdate();
