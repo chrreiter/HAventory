@@ -43,6 +43,8 @@ import type {
 import './hv-bottom-sheet';
 import './hv-checkout-popover';
 import './hv-item-editor';
+import { emitter } from '../events';
+import type { HvEvent } from '../events';
 import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { HVItemEditor } from './hv-item-editor';
 
@@ -505,9 +507,15 @@ export class HVDetailSheet extends LitElement {
     return this.shadowRoot?.querySelector('hv-bottom-sheet') ?? null;
   }
 
-  private _emit(name: string, detail: Record<string, unknown> = {}) {
-    const init = { detail: { itemId: this.item?.id, ...detail }, bubbles: true, composed: true };
-    this.dispatchEvent(new CustomEvent(name, init));
+  private readonly _send = emitter<'hv-detail-sheet'>(this);
+
+  /** A listener can do nothing with an event that names no item, so none is sent. */
+  private _emit(name: 'increment' | 'decrement' | 'check-in' | 'request-delete' | 'reminder-bump') {
+    if (this.item) this._send(name, { itemId: this.item.id });
+  }
+
+  private _emitDueDate(name: 'check-out-confirmed' | 'set-due-date', dueDate: string | null) {
+    if (this.item) this._send(name, { itemId: this.item.id, dueDate });
   }
 
   private _edit = () => {
@@ -516,7 +524,7 @@ export class HVDetailSheet extends LitElement {
 
   private _close = () => {
     this.open = false;
-    this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+    this._send('cancel');
   };
 
   /** Leave the form for the read view (Back) or dismiss the sheet, asking first about unsaved typing. */
@@ -795,17 +803,15 @@ export class HVDetailSheet extends LitElement {
               data-testid="sheet-checkout"
               .item=${item}
               .mode=${item.checked_out ? 'set-due-date' : 'check-out'}
-              @check-out=${(e: CustomEvent) => {
+              @check-out=${(e: HvEvent<'hv-checkout-popover', 'check-out'>) => {
                 this._checkoutOpen = false;
-                this._emit('check-out-confirmed', {
-                  dueDate: (e.detail as { dueDate: string | null }).dueDate,
-                });
+                this._emitDueDate('check-out-confirmed', e.detail.dueDate);
               }}
-              @set-due-date=${(e: CustomEvent) => {
+              @set-due-date=${(e: HvEvent<'hv-checkout-popover', 'set-due-date'>) => {
                 this._checkoutOpen = false;
-                this._emit('set-due-date', { dueDate: (e.detail as { dueDate: string | null }).dueDate });
+                this._emitDueDate('set-due-date', e.detail.dueDate);
               }}
-              @cancel=${(e: Event) => {
+              @cancel=${(e: HvEvent<'hv-checkout-popover', 'cancel'>) => {
                 // Composed: unstopped, the host would read it as the sheet closing.
                 e.stopPropagation();
                 this._checkoutOpen = false;
@@ -859,7 +865,7 @@ export class HVDetailSheet extends LitElement {
           class="save"
           data-testid="sheet-save"
           ?disabled=${this.busy}
-          @click=${() => this._editor?.shadowRoot?.querySelector<HTMLButtonElement>('[data-testid="editor-save"]')?.click()}
+          @click=${() => this._editor?.requestSave()}
         >
           ${this.busy ? t('hv.action.saving') : t('hv.action.save')}
         </button>
@@ -882,13 +888,13 @@ export class HVDetailSheet extends LitElement {
         .confirmDiscard=${this.confirmDiscard}
         .busy=${this.busy}
         .errorMessage=${this.errorMessage}
-        @cancel=${(e: Event) => {
+        @cancel=${(e: HvEvent<'hv-item-editor', 'cancel'>) => {
           // Composed: unstopped, the bottom sheet would read it as a dismissal.
           // The form has already asked about unsaved typing.
           e.stopPropagation();
           this._mode = 'read';
         }}
-        @delete-item=${(e: Event) => {
+        @delete-item=${(e: HvEvent<'hv-item-editor', 'delete-item'>) => {
           // Forwarded as the read view's `request-delete`, so the host confirms once.
           e.stopPropagation();
           this._emit('request-delete');
@@ -904,7 +910,7 @@ export class HVDetailSheet extends LitElement {
         ?open=${this.open && !!item}
         ?noHandle=${this._mode === 'edit'}
         label=${item?.name ?? t('hv.term.item')}
-        @cancel=${(e: Event) => {
+        @cancel=${(e: HvEvent<'hv-bottom-sheet', 'cancel'>) => {
           // The host hears only the cancel `_close` sends, once the discard question is settled.
           e.stopPropagation();
           this._leaveEdit('close');

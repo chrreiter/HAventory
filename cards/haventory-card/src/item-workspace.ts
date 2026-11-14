@@ -5,8 +5,9 @@ import { editorErrorText } from './ui/editor-error';
 import type { ConfirmDiscard } from './ui/discard';
 import type { MediaBindings } from './ui/media';
 import type { Store } from './store/store';
-import type { Item, ItemCreate, ItemUpdate, Location, StoreState } from './store/types';
+import type { Item, Location, StoreState } from './store/types';
 import type { HVItemEditor } from './components/hv-item-editor';
+import type { HvEvent, RowEventDetail } from './events';
 import './components/hv-checkout-popover';
 import './components/hv-detail-sheet';
 import './components/hv-item-editor';
@@ -17,12 +18,7 @@ interface SurfaceOptions {
   mobile: boolean;
 }
 
-/** The detail a row, table or read sheet event carries; `action` and `anchor` ride on `row-action`. */
-export interface RowEventDetail {
-  itemId?: string;
-  action?: string;
-  anchor?: DOMRect;
-}
+export type { RowEventDetail } from './events';
 
 /** The ways a host differs; everything else in this workspace is identical. */
 export interface WorkspaceHooks {
@@ -110,7 +106,7 @@ export class ItemWorkspace implements ReactiveController {
     return this.getStore()?.state.value ?? null;
   }
 
-  private itemById(itemId: string | undefined): Item | undefined {
+  private itemById(itemId: string | null | undefined): Item | undefined {
     return this.st?.items.find((i) => i.id === itemId);
   }
 
@@ -209,13 +205,10 @@ export class ItemWorkspace implements ReactiveController {
     return store.createLocation(name, null, null);
   };
 
-  readonly onEditorSave = async (e: CustomEvent): Promise<void> => {
-    const detail = e.detail as {
-      itemId: string | null;
-      expectedVersion?: number;
-      changes?: ItemUpdate;
-      create?: ItemCreate;
-    };
+  readonly onEditorSave = async (
+    e: HvEvent<'hv-item-editor', 'save'> | HvEvent<'hv-detail-sheet', 'save'>,
+  ): Promise<void> => {
+    const detail = e.detail;
     this.editorBusy = true;
     this.editorError = null;
     this.host.requestUpdate();
@@ -262,8 +255,19 @@ export class ItemWorkspace implements ReactiveController {
     }
   }
 
-  /** Everything a row or the read sheet can raise about one item; others are re-raised on the host. */
-  onRowEvent(name: string, detail: RowEventDetail): void {
+  /** Everything a row or the read sheet can raise about one item. */
+  onRowEvent(
+    name:
+      | 'increment'
+      | 'decrement'
+      | 'check-in'
+      | 'reminder-bump'
+      | 'request-delete'
+      | 'row-action'
+      | 'edit'
+      | 'open-item',
+    detail: RowEventDetail,
+  ): void {
     const item = this.itemById(detail.itemId);
     if (!item) return;
     const store = this.getStore();
@@ -290,10 +294,6 @@ export class ItemWorkspace implements ReactiveController {
       case 'open-item':
         this.hooks.openItem(item.id);
         break;
-      default:
-        this.host.dispatchEvent(
-          new CustomEvent(name, { detail: { itemId: item.id }, bubbles: true, composed: true }),
-        );
     }
   }
 
@@ -319,8 +319,7 @@ export class ItemWorkspace implements ReactiveController {
       .busy=${this.editorBusy}
       .errorMessage=${this.editorError}
       @save=${this.onEditorSave}
-      @delete-item=${(e: CustomEvent) =>
-        this.hooks.requestDelete(e.detail as { itemId: string; name?: string })}
+      @delete-item=${(e: HvEvent<'hv-item-editor', 'delete-item'>) => this.hooks.requestDelete(e.detail)}
       @cancel=${() => this.setEditing(null)}
     ></hv-item-editor>`;
   }
@@ -346,13 +345,13 @@ export class ItemWorkspace implements ReactiveController {
       .busy=${this.editorBusy}
       .errorMessage=${this.editorError}
       @cancel=${() => this.closeDetail()}
-      @increment=${(e: CustomEvent<RowEventDetail>) => this.onRowEvent('increment', e.detail)}
-      @decrement=${(e: CustomEvent<RowEventDetail>) => this.onRowEvent('decrement', e.detail)}
-      @check-in=${(e: CustomEvent<RowEventDetail>) => this.onRowEvent('check-in', e.detail)}
-      @reminder-bump=${(e: CustomEvent<RowEventDetail>) => this.onRowEvent('reminder-bump', e.detail)}
-      @request-delete=${(e: CustomEvent<RowEventDetail>) => this.onRowEvent('request-delete', e.detail)}
-      @check-out-confirmed=${(e: CustomEvent) => this.onCheckOut(e)}
-      @set-due-date=${(e: CustomEvent) => this.onSetDueDate(e)}
+      @increment=${(e: HvEvent<'hv-detail-sheet', 'increment'>) => this.onRowEvent('increment', e.detail)}
+      @decrement=${(e: HvEvent<'hv-detail-sheet', 'decrement'>) => this.onRowEvent('decrement', e.detail)}
+      @check-in=${(e: HvEvent<'hv-detail-sheet', 'check-in'>) => this.onRowEvent('check-in', e.detail)}
+      @reminder-bump=${(e: HvEvent<'hv-detail-sheet', 'reminder-bump'>) => this.onRowEvent('reminder-bump', e.detail)}
+      @request-delete=${(e: HvEvent<'hv-detail-sheet', 'request-delete'>) => this.onRowEvent('request-delete', e.detail)}
+      @check-out-confirmed=${(e: HvEvent<'hv-detail-sheet', 'check-out-confirmed'>) => this.onCheckOut(e)}
+      @set-due-date=${(e: HvEvent<'hv-detail-sheet', 'set-due-date'>) => this.onSetDueDate(e)}
       @save=${this.onEditorSave}
     ></hv-detail-sheet>`;
   }
@@ -373,11 +372,11 @@ export class ItemWorkspace implements ReactiveController {
       .mode=${this.checkout?.mode ?? 'check-out'}
       .anchor=${this.checkout?.anchor ?? null}
       .item=${this.checkout ? (this.itemById(this.checkout.itemId) ?? null) : null}
-      @check-out=${(e: CustomEvent) => {
+      @check-out=${(e: HvEvent<'hv-checkout-popover', 'check-out'>) => {
         close();
         this.onCheckOut(e);
       }}
-      @set-due-date=${(e: CustomEvent) => {
+      @set-due-date=${(e: HvEvent<'hv-checkout-popover', 'set-due-date'>) => {
         close();
         this.onSetDueDate(e);
       }}
@@ -385,15 +384,19 @@ export class ItemWorkspace implements ReactiveController {
     ></hv-checkout-popover>`;
   }
 
-  private onCheckOut(e: CustomEvent): void {
-    const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+  private onCheckOut(
+    e: HvEvent<'hv-checkout-popover', 'check-out'> | HvEvent<'hv-detail-sheet', 'check-out-confirmed'>,
+  ): void {
+    const { itemId, dueDate } = e.detail;
     const item = this.itemById(itemId);
     if (item) void this.getStore()?.checkOut(item.id, dueDate, item.version);
   }
 
   /** A due date only exists while an item is out, so this is a plain update. */
-  private onSetDueDate(e: CustomEvent): void {
-    const { itemId, dueDate } = e.detail as { itemId: string; dueDate: string | null };
+  private onSetDueDate(
+    e: HvEvent<'hv-checkout-popover', 'set-due-date'> | HvEvent<'hv-detail-sheet', 'set-due-date'>,
+  ): void {
+    const { itemId, dueDate } = e.detail;
     const item = this.itemById(itemId);
     if (item) void this.getStore()?.updateItem(item.id, { due_date: dueDate }, item.version);
   }

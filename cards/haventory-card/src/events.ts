@@ -49,6 +49,12 @@ export interface DueDateDetail {
   dueDate: string | null;
 }
 
+/** The popover also runs with no item: for a bulk check-out, and in a form for an item not created yet. */
+export interface CheckoutDetail {
+  itemId: string | null;
+  dueDate: string | null;
+}
+
 /** A pick in the location tree; clearing the pick sends both as `null`. */
 export type LocationSelectDetail =
   { locationId: string; node: LocationTreeNode } | { locationId: null; node: null };
@@ -89,8 +95,8 @@ export interface HvEventMap {
     'retry-failed': None;
   };
   'hv-checkout-popover': {
-    'check-out': DueDateDetail;
-    'set-due-date': DueDateDetail;
+    'check-out': CheckoutDetail;
+    'set-due-date': CheckoutDetail;
     cancel: None;
   };
   'hv-chip-input': { change: { values: string[] } };

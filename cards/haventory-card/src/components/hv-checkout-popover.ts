@@ -1,6 +1,6 @@
 import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, query, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
@@ -8,6 +8,7 @@ import { DEFAULT_CUSTOM_DAYS, addDays, formatDate } from '../ui/relative-time';
 import { dayOffsets, renderDayOffsets } from '../ui/day-offsets';
 import { nextZBase } from '../utils/zindex';
 import { DialogFocus } from '../ui/dialog-focus';
+import { emitter } from '../events';
 import type { Item } from '../store/types';
 
 /** Offset the popover pre-selects when it opens. */
@@ -178,13 +179,15 @@ export class HVCheckoutPopover extends LitElement {
   @state() private _customOpen = false;
   @state() private _customDays = DEFAULT_CUSTOM_DAYS;
 
+  private readonly _emit = emitter<'hv-checkout-popover'>(this);
+
+  @query('.card') private _card!: HTMLElement | null;
+
   /** Opening a surface must put focus in it, or Escape never reaches it. */
   private _dialogFocus = new DialogFocus();
 
   protected override updated() {
-    this._dialogFocus.sync(this.open, () =>
-      this.renderRoot.querySelector<HTMLElement>('[data-testid="checkout-popover"]'),
-    );
+    this._dialogFocus.sync(this.open, () => this._card);
   }
 
   protected override willUpdate(changed: Map<string, unknown>) {
@@ -198,18 +201,15 @@ export class HVCheckoutPopover extends LitElement {
 
   private _commit(dueDate: string | null) {
     this.open = false;
-    this.dispatchEvent(
-      new CustomEvent(this.mode === 'set-due-date' ? 'set-due-date' : 'check-out', {
-        detail: { itemId: this.item?.id, dueDate },
-        bubbles: true,
-        composed: true,
-      }),
-    );
+    this._emit(this.mode === 'set-due-date' ? 'set-due-date' : 'check-out', {
+      itemId: this.item?.id ?? null,
+      dueDate,
+    });
   }
 
   private _cancel = () => {
     this.open = false;
-    this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+    this._emit('cancel');
   };
 
   private get _position(): string {
