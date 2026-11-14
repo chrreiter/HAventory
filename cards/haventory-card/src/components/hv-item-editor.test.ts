@@ -1,4 +1,6 @@
 import { setLanguage, t } from '../i18n';
+import { html, render } from 'lit';
+import { keyed } from 'lit/directives/keyed.js';
 import './hv-item-editor';
 import {
   all,
@@ -53,6 +55,32 @@ async function mount(item: Item | null, props: Partial<HVItemEditor> = {}) {
     ...props,
   });
   return el;
+}
+
+/**
+ * The editor as a host renders it: `keyed` by item id, so another id is
+ * another element. `editor()` is whichever one is mounted now.
+ */
+async function keyedHost(initial: Item | null) {
+  const root = document.createElement('div');
+  document.body.appendChild(root);
+  const show = async (item: Item | null) => {
+    render(
+      keyed(
+        item?.id ?? null,
+        html`<hv-item-editor
+          .item=${item}
+          .locationTree=${tree}
+          .locations=${[garage]}
+          .categorySuggestions=${['Hardware', 'Tools']}
+        ></hv-item-editor>`,
+      ),
+      root,
+    );
+    await settle(root.querySelector('hv-item-editor') as HTMLElement);
+  };
+  await show(initial);
+  return { show, editor: () => root.querySelector('hv-item-editor') as HVItemEditor };
 }
 
 /** jsdom lays out no shadow DOM, so layout rules are asserted on the sheet. */
@@ -1170,14 +1198,25 @@ describe('hv-item-editor: dirty tracking', () => {
     expect(el.dirty).toBe(true);
   });
 
-  it('resets when a different item is loaded in', async () => {
+  // A different id is a new form, and so a new element: hosts render this one
+  // keyed by item id (their own tests hold them to it). An id swapped under a
+  // live form would save one item's typing onto another, so it is refused.
+  it('refuses a different item under an open form', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
-    await type(el, 'editor-name', 'B');
-    expect(el.dirty).toBe(true);
-
     el.item = makeItem({ id: '2', name: 'C' });
-    await el.updateComplete;
-    expect(el.dirty).toBe(false);
+    await expect(el.updateComplete).rejects.toThrow(/keyed by item id/);
+  });
+
+  it('starts clean for another item when rendered keyed by id, as hosts do', async () => {
+    const host = await keyedHost(makeItem({ id: '1', name: 'A' }));
+    const first = host.editor();
+    await type(first, 'editor-name', 'B');
+    expect(first.dirty).toBe(true);
+
+    await host.show(makeItem({ id: '2', name: 'C' }));
+    expect(host.editor()).not.toBe(first);
+    expect(host.editor().dirty).toBe(false);
+    expect((q(host.editor(), '[data-testid="editor-name"]') as HTMLInputElement).value).toBe('C');
   });
 });
 
@@ -2388,15 +2427,21 @@ describe('hv-item-editor: same-item refreshes', () => {
     expect(saves[1]?.expectedVersion).toBe(9);
   });
 
+  // The create form's hop from no id to a real one is a new form too. A host
+  // closes the form on a landed create, so in practice nobody sees the hop; a
+  // host that kept it open would get a fresh form with focus on the name.
   it('rebuilds the form when the create form saves into a real item', async () => {
-    const el = await mount(null);
-    await type(el, 'editor-name', 'Drill');
-    expect(el.dirty).toBe(true);
+    const host = await keyedHost(null);
+    await type(host.editor(), 'editor-name', 'Drill');
+    expect(host.editor().dirty).toBe(true);
 
-    await refreshed(el, { version: 1 });
+    await host.show(makeItem({ id: 'i-1', name: 'Drill', version: 1 }));
 
+    const el = host.editor();
     expect(el.dirty).toBe(false);
-    expect((q(el, '[data-testid="editor-name"]') as HTMLInputElement).value).toBe('Drill');
+    const name = q(el, '[data-testid="editor-name"]') as HTMLInputElement;
+    expect(name.value).toBe('Drill');
+    expect(el.shadowRoot?.activeElement).toBe(name);
   });
 });
 
@@ -2999,7 +3044,7 @@ describe('hv-item-editor: the id an automation names', () => {
   // is editing goes in, the label comes back off the controller, and the move
   // to another item takes it back — a label left standing would name the id of
   // the item before this one.
-  it('copies the id it is editing, and forgets it on the next item', async () => {
+  it('copies the id it is editing', async () => {
     const el = await mount(makeItem({ id: UUID }));
     expect(button(el).textContent?.trim()).toBe('Copy');
 
@@ -3008,12 +3053,18 @@ describe('hv-item-editor: the id an automation names', () => {
 
     expect(clipboard.writes).toEqual([UUID]);
     expect(button(el).textContent?.trim()).toBe('Copied');
+  });
 
-    el.item = makeItem({ id: 'i-8' });
-    await settle(el);
+  it('forgets the flash on the next item, which is a new form', async () => {
+    const host = await keyedHost(makeItem({ id: UUID }));
+    button(host.editor()).click();
+    await settle(host.editor());
+    expect(button(host.editor()).textContent?.trim()).toBe('Copied');
 
-    expect(q(el, '[data-testid="editor-id"]')?.textContent?.trim()).toBe('i-8');
-    expect(button(el).textContent?.trim()).toBe('Copy');
+    await host.show(makeItem({ id: 'i-8' }));
+
+    expect(q(host.editor(), '[data-testid="editor-id"]')?.textContent?.trim()).toBe('i-8');
+    expect(button(host.editor()).textContent?.trim()).toBe('Copy');
   });
 });
 

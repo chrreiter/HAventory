@@ -988,28 +988,23 @@ export class HVItemEditor extends LitElement {
   /**
    * The form belongs to an item id, not to one `item` object: hosts re-bind
    * `.item` on every store broadcast, and rebuilding on that would throw away
-   * the typing. A different id (including a create's null→id hop) is a new form.
+   * the typing. A different id (including a create's null→id hop) is a new
+   * form, which is a new element: every host renders this one `keyed` by item
+   * id, so no state here or in the children is reset by hand. An id change on
+   * a live form is a host bug, refused before a save could carry one item's
+   * typing onto another.
    */
   protected override willUpdate() {
     this._urls.configure(this.media?.sign ?? null);
     const id = this.item?.id ?? null;
-    if (id !== this._formItemId) {
+    if (this._formItemId === undefined) {
       this._formItemId = id;
       this._formItem = this.item ?? null;
       this._model = formFromItem(this.item);
-      this._errors = [];
-      this._showErrors = false;
-      this._location.close();
-      this._checkoutOpen = false;
-      this._uploads = [];
-      this._uploaded = null;
-      this._confirmRemove = null;
-      this._lightbox = null;
-      this._locationError = null;
-      this._createdLocations = [];
-      this._copyFlash.reset();
-      this._closeCategory();
       return;
+    }
+    if (id !== this._formItemId) {
+      throw new Error('hv-item-editor: the item id changed under an open form; render it keyed by item id');
     }
     // Once `item` reaches the upload's version it is the fresher copy.
     if (this._uploaded && this.item && this.item.version >= this._uploaded.version) {

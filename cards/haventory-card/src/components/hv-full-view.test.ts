@@ -1425,6 +1425,38 @@ describe('hv-full-view: editing', () => {
     );
   });
 
+  // The form is keyed by item id, so another row's form starts from that row
+  // with nothing carried over, and takes the focus as a first open does.
+  it('starts a new form for another row', async () => {
+    const { el, sr, host } = await mount({
+      items: [makeItem({ id: '1', name: 'Wood Glue' }), makeItem({ id: '2', name: 'Epoxy' })],
+    });
+    const edits = () => [
+      ...((q(sr, '[data-testid="full-table"]') as HTMLElement).shadowRoot?.querySelectorAll<HTMLButtonElement>(
+        '[data-testid="table-edit"]',
+      ) ?? []),
+    ];
+    defined(edits()[0], 'first edit button').click();
+    await settle(el);
+    const first = q(sr, '[data-testid="full-editor"]') as HTMLElement & { dirty: boolean };
+    const name = first.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    name.value = 'Wood Glue EDITED';
+    name.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle(el);
+
+    defined(edits()[1], 'second edit button').click();
+    await settle(el);
+    host.answer('discard');
+    await settle(el);
+
+    const next = q(sr, '[data-testid="full-editor"]') as HTMLElement & { dirty: boolean };
+    expect(next).not.toBe(first);
+    expect(next.dirty).toBe(false);
+    const nextName = next.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    expect(nextName.value).toBe('Epoxy');
+    expect(next.shadowRoot?.activeElement).toBe(nextName);
+  });
+
   // This surface fills the screen, so the card's banner list is not behind it:
   // without a sentence inside the form the user is left with a form that did not
   // close and no account of why.
