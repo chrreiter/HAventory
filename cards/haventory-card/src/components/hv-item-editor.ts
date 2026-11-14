@@ -1,7 +1,9 @@
 import { t } from '../i18n';
 import { serverErrorText } from '../store/server-error';
 import { LitElement, css, html } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, query, state } from 'lit/decorators.js';
+import { emitter } from '../events';
+import type { HvEvent } from '../events';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
 import { areaMarkName, locationPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
@@ -972,9 +974,15 @@ export class HVItemEditor extends LitElement {
     return this._uploaded ?? this.item;
   }
 
+  private readonly _emit = emitter<'hv-item-editor'>(this);
+
+  @query('#hv-editor-name') private _nameInput!: HTMLInputElement | null;
+  @query(`button[aria-controls="${LOCATION_TREE_ID}"]`) private _locationTrigger!: HTMLElement | null;
+  @query('#editor-inspection') private _inspectionInput!: HTMLInputElement | null;
+
   /** Focus inside the form so its Escape handler hears the key. */
   protected override firstUpdated() {
-    this.renderRoot.querySelector<HTMLInputElement>('[data-testid="editor-name"]')?.focus();
+    this._nameInput?.focus();
   }
 
   /**
@@ -1039,11 +1047,17 @@ export class HVItemEditor extends LitElement {
           changes: toUpdatePayload(this._model, this._formItem ?? current),
         }
       : { itemId: null, expectedVersion: undefined, create: toCreatePayload(this._model) };
-    this.dispatchEvent(new CustomEvent('save', { detail, bubbles: true, composed: true }));
+    this._emit('save', detail);
   };
 
+  /** What pressing Save does, including nothing while a save is in flight. */
+  requestSave(): void {
+    if (this.busy) return;
+    this._save();
+  }
+
   private _cancel = () => {
-    this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+    this._emit('cancel');
   };
 
   /** Cancel, the ✕ and Escape: a dirty form asks the host first, then sends `cancel`. */
@@ -1075,27 +1089,27 @@ export class HVItemEditor extends LitElement {
 
   /** Rescue focus into the form when a surface over it closes with its opener gone. */
   private _refocus() {
-    this.renderRoot.querySelector<HTMLElement>('[data-testid="editor-name"]')?.focus();
+    this._nameInput?.focus();
   }
 
   /** Shut the location picker and put focus back on the control that opened it. */
   private _closeLocation() {
     this._location.close();
     this._locationError = null;
-    this.renderRoot.querySelector<HTMLElement>('[data-testid="editor-location"]')?.focus();
+    this._locationTrigger?.focus();
   }
 
   // ---------- Field renderers ----------
   private _text(
     field: 'name' | 'quantity' | 'lowStock',
     label: string,
-    opts: { type?: string; testid: string },
+    opts: { type?: string; id: string; testid: string },
   ) {
     const error = this._errorFor(field);
     return html`<div class="cell ${error ? 'invalid' : ''}">
-      <label class="hv-label" for=${opts.testid}>${label}</label>
+      <label class="hv-label" for=${opts.id}>${label}</label>
       <input
-        id=${opts.testid}
+        id=${opts.id}
         class="hv-input"
         type=${opts.type ?? 'text'}
         data-testid=${opts.testid}
@@ -1184,13 +1198,13 @@ export class HVItemEditor extends LitElement {
           allLabel=${t('hv.term.noLocation')}
           allIcon="close"
           ?allowCreate=${this.createLocation !== null}
-          @select=${(e: CustomEvent) => {
-            this._patch({ locationId: (e.detail as { locationId: string | null }).locationId });
+          @select=${(e: HvEvent<'hv-location-tree', 'select'>) => {
+            this._patch({ locationId: e.detail.locationId });
             this._locationError = null;
           }}
-          @create-location=${(e: CustomEvent) => {
+          @create-location=${(e: HvEvent<'hv-location-tree', 'create-location'>) => {
             e.stopPropagation();
-            void this._createLocation((e.detail as { name: string }).name);
+            void this._createLocation(e.detail.name);
           }}
         ></hv-location-tree>`,
       )}
@@ -1459,14 +1473,14 @@ export class HVItemEditor extends LitElement {
             ?inline=${this.mobile}
             ?touch=${this.mobile}
             ?open=${this._checkoutOpen}
-            @check-out=${(e: CustomEvent) => {
+            @check-out=${(e: HvEvent<'hv-checkout-popover', 'check-out'>) => {
               // A form event only: the shell would send the real command.
               e.stopPropagation();
-              const { dueDate } = e.detail as { dueDate: string | null };
+              const { dueDate } = e.detail;
               this._patch({ checkedOut: true, dueDate: dueDate ?? '' });
               this._checkoutOpen = false;
             }}
-            @cancel=${(e: Event) => {
+            @cancel=${(e: HvEvent<'hv-checkout-popover', 'cancel'>) => {
               e.stopPropagation();
               this._checkoutOpen = false;
             }}
@@ -1602,7 +1616,7 @@ export class HVItemEditor extends LitElement {
   private _clearInspection = () => {
     this._inspectionCustomOpen = false;
     this._patch({ inspectionDate: '' });
-    this.renderRoot.querySelector<HTMLElement>('[data-testid="editor-inspection-date"]')?.focus();
+    this._inspectionInput?.focus();
   };
 
   private _onCheckoutPressed = (e: Event) => {
@@ -2269,13 +2283,15 @@ export class HVItemEditor extends LitElement {
         }
 
         <div class="grid">
-          ${this._text('name', t('hv.field.name'), { testid: 'editor-name' })}
+          ${this._text('name', t('hv.field.name'), { id: 'hv-editor-name', testid: 'editor-name' })}
           ${this._text('quantity', t('hv.field.quantity'), {
             type: 'number',
+            id: 'hv-editor-quantity',
             testid: 'editor-quantity',
           })}
           ${this._text('lowStock', t('hv.field.lowStock'), {
             type: 'number',
+            id: 'hv-editor-low-stock',
             testid: 'editor-low-stock',
           })}
           ${this.mobile ? null : html`${this._renderDescriptionField()} ${this._renderStatusField()}`}
@@ -2290,7 +2306,7 @@ export class HVItemEditor extends LitElement {
               data-testid="editor-tags"
               .values=${model.tags}
               .suggestions=${this.tagSuggestions}
-              @change=${(e: CustomEvent) => this._patch({ tags: (e.detail as { values: string[] }).values })}
+              @change=${(e: HvEvent<'hv-chip-input', 'change'>) => this._patch({ tags: e.detail.values })}
             ></hv-chip-input>
           </div>
           ${this._renderPictures()} ${this._renderDocuments()} ${this._renderCreateAttachmentHint()}
@@ -2307,14 +2323,7 @@ export class HVItemEditor extends LitElement {
                     class="hv-text-button danger"
                     data-testid="editor-delete"
                     aria-label=${t('hv.action.deleteItem')}
-                    @click=${() =>
-                      this.dispatchEvent(
-                        new CustomEvent('delete-item', {
-                          detail: { itemId: this.item!.id, name: this.item!.name },
-                          bubbles: true,
-                          composed: true,
-                        }),
-                      )}
+                    @click=${() => this._emit('delete-item', { itemId: this.item!.id, name: this.item!.name })}
                   >
                     ${t(this.mobile ? 'hv.action.delete' : 'hv.action.deleteItem')}
                   </button>`
@@ -2360,13 +2369,13 @@ export class HVItemEditor extends LitElement {
         .message=${removing.message}
         .confirmLabel=${t('hv.action.remove')}
         destructive
-        @confirm=${(e: Event) => {
+        @confirm=${(e: HvEvent<'hv-confirm', 'confirm'>) => {
           e.stopPropagation();
           const target = this._confirmRemove;
           this._confirmRemove = null;
           if (target) void this._removeAttachment(target.id, target.kind);
         }}
-        @cancel=${(e: Event) => {
+        @cancel=${(e: HvEvent<'hv-confirm', 'cancel'>) => {
           e.stopPropagation();
           this._confirmRemove = null;
         }}
