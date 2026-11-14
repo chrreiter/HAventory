@@ -2,6 +2,7 @@ import { html } from 'lit';
 import type { ReactiveController, ReactiveControllerHost, TemplateResult } from 'lit';
 import { t } from './i18n';
 import { editorErrorText } from './ui/editor-error';
+import { HostState } from './ui/host-state';
 import type { ConfirmDiscard } from './ui/discard';
 import type { MediaBindings } from './ui/media';
 import type { Store } from './store/store';
@@ -34,6 +35,29 @@ export interface WorkspaceHooks {
   requestDelete: (detail: { itemId: string; name?: string }) => void;
 }
 
+type Checkout = { itemId: string; mode: 'check-out' | 'set-due-date'; anchor: DOMRect | null };
+
+/** What the workspace shows; changed only through `HostState.set`, which renders. */
+interface WorkspaceState {
+  /** Row expanded into the editor, or `'new'` for the create form. */
+  editing: string | 'new' | null;
+  editorBusy: boolean;
+  /**
+   * A refused save, shown inside the form: the store queues failures rather
+   * than throwing, and a tall form can scroll the banners out of sight.
+   */
+  editorError: string | null;
+  /**
+   * The last copy of the row being edited. A refetch can drop it from the list,
+   * and handing the editor `null` would wipe the typed edits.
+   */
+  pinnedItem: Item | null;
+  /** Item shown in the read sheet, which is the phone's read surface. */
+  detailItemId: string | null;
+  /** Item whose check-out / due-date step is open, with where to anchor it. */
+  checkout: Checkout | null;
+}
+
 /**
  * Everything both of the card's shells do to one item: the edit form and the
  * row it is open on, saving, the phone read sheet and the check-out step. Held
@@ -41,24 +65,7 @@ export interface WorkspaceHooks {
  * expanded view cannot drift apart.
  */
 export class ItemWorkspace implements ReactiveController {
-  /** Row expanded into the editor, or `'new'` for the create form. */
-  editing: string | 'new' | null = null;
-  editorBusy = false;
-  /**
-   * A refused save, shown inside the form: the store queues failures rather
-   * than throwing, and a tall form can scroll the banners out of sight.
-   */
-  editorError: string | null = null;
-  /**
-   * The last copy of the row being edited. A refetch can drop it from the list,
-   * and handing the editor `null` would wipe the typed edits.
-   */
-  pinnedItem: Item | null = null;
-  /** Item shown in the read sheet, which is the phone's read surface. */
-  detailItemId: string | null = null;
-  /** Item whose check-out / due-date step is open, with where to anchor it. */
-  checkout: { itemId: string; mode: 'check-out' | 'set-due-date'; anchor: DOMRect | null } | null = null;
-
+  private readonly ui: HostState<WorkspaceState>;
   private readonly host: ReactiveControllerHost & EventTarget;
   private readonly getStore: () => Store | undefined;
   private readonly hooks: WorkspaceHooks;
@@ -75,7 +82,34 @@ export class ItemWorkspace implements ReactiveController {
     this.host = host;
     this.getStore = getStore;
     this.hooks = hooks;
+    this.ui = new HostState<WorkspaceState>(host, {
+      editing: null,
+      editorBusy: false,
+      editorError: null,
+      pinnedItem: null,
+      detailItemId: null,
+      checkout: null,
+    });
     host.addController(this);
+  }
+
+  /** Row expanded into the editor, or `'new'` for the create form. */
+  get editing(): string | 'new' | null {
+    return this.ui.value.editing;
+  }
+
+  get editorBusy(): boolean {
+    return this.ui.value.editorBusy;
+  }
+
+  /** A refused save, shown inside the form. */
+  get editorError(): string | null {
+    return this.ui.value.editorError;
+  }
+
+  /** The last copy of the row being edited, kept while a refetch drops it. */
+  get pinnedItem(): Item | null {
+    return this.ui.value.pinnedItem;
   }
 
   hostConnected(): void {
@@ -139,22 +173,21 @@ export class ItemWorkspace implements ReactiveController {
    * store says was removed rather than filtered off the page.
    */
   syncPinnedItem(): void {
-    if (this.detailItemId !== null && this.getStore()?.wasRemoved(this.detailItemId)) {
-      this.detailItemId = null;
+    const { detailItemId } = this.ui.value;
+    if (detailItemId !== null && this.getStore()?.wasRemoved(detailItemId)) {
+      this.ui.set({ detailItemId: null });
     }
     const editing = this.editing;
     if (editing === null || editing === 'new') {
-      this.pinnedItem = null;
+      this.ui.set({ pinnedItem: null });
       return;
     }
     if (this.getStore()?.wasRemoved(editing)) {
-      this.pinnedItem = null;
-      this.editing = null;
-      this.editorError = null;
+      this.ui.set({ pinnedItem: null, editing: null, editorError: null });
       return;
     }
     const listed = this.itemById(editing);
-    if (listed) this.pinnedItem = listed;
+    if (listed) this.ui.set({ pinnedItem: listed });
   }
 
   /** Open a form, closing the one that is open; only one row edits at a time. */
@@ -175,27 +208,24 @@ export class ItemWorkspace implements ReactiveController {
 
   /** Show `next` in the form, dropping what the last save said. */
   setEditing(next: string | 'new' | null): void {
-    this.editing = next;
-    this.editorError = null;
-    this.host.requestUpdate();
+    this.ui.set({ editing: next, editorError: null });
   }
 
   openDetail(itemId: string): void {
-    this.detailItemId = itemId;
-    this.host.requestUpdate();
+    this.ui.set({ detailItemId: itemId });
   }
 
   closeDetail(): void {
-    this.detailItemId = null;
-    this.editorError = null;
-    this.host.requestUpdate();
+    this.ui.set({ detailItemId: null, editorError: null });
   }
 
   /** A confirmed delete: close whatever still points at the item. */
   forgetItem(itemId: string): void {
-    if (this.editing === itemId) this.editing = null;
-    if (this.detailItemId === itemId) this.detailItemId = null;
-    this.host.requestUpdate();
+    const { editing, detailItemId } = this.ui.value;
+    this.ui.set({
+      editing: editing === itemId ? null : editing,
+      detailItemId: detailItemId === itemId ? null : detailItemId,
+    });
   }
 
   /** The editor's way out of an empty location picker: a root location with no area. */
@@ -209,9 +239,7 @@ export class ItemWorkspace implements ReactiveController {
     e: HvEvent<'hv-item-editor', 'save'> | HvEvent<'hv-detail-sheet', 'save'>,
   ): Promise<void> => {
     const detail = e.detail;
-    this.editorBusy = true;
-    this.editorError = null;
-    this.host.requestUpdate();
+    this.ui.set({ editorBusy: true, editorError: null });
     const before = this.st?.errorQueue.length ?? 0;
     try {
       if (detail.itemId && detail.changes) {
@@ -220,7 +248,7 @@ export class ItemWorkspace implements ReactiveController {
         await this.getStore()?.createItem(detail.create);
       }
     } finally {
-      this.editorBusy = false;
+      this.ui.set({ editorBusy: false });
     }
     // A new error-queue entry means the save was refused, so the form stays open.
     // `busy` and the message settle in one synchronous run: the read sheet takes
@@ -228,9 +256,8 @@ export class ItemWorkspace implements ReactiveController {
     const queue = this.st?.errorQueue ?? [];
     const failed = queue.length > before;
     const latest = failed ? queue[queue.length - 1] : undefined;
-    this.editorError = latest ? editorErrorText(latest) : null;
-    if (!failed) this.editing = null;
-    this.host.requestUpdate();
+    this.ui.set({ editorError: latest ? editorErrorText(latest) : null });
+    if (!failed) this.ui.set({ editing: null });
   };
 
   /** What a row's ⋮ entry means, the same wherever it was reached. */
@@ -240,8 +267,7 @@ export class ItemWorkspace implements ReactiveController {
     switch (detail.action) {
       case 'check-out':
       case 'set-due-date':
-        this.checkout = { itemId: item.id, mode: detail.action, anchor: detail.anchor ?? null };
-        this.host.requestUpdate();
+        this.ui.set({ checkout: { itemId: item.id, mode: detail.action, anchor: detail.anchor ?? null } });
         break;
       case 'check-in':
         void this.getStore()?.markCheckedIn(item.id, item.version);
@@ -327,14 +353,15 @@ export class ItemWorkspace implements ReactiveController {
   /** The phone read sheet, which reads the viewport itself. */
   renderDetailSheet(opts: Pick<SurfaceOptions, 'testid'>): TemplateResult {
     const st = this.st;
+    const { detailItemId } = this.ui.value;
     return html`<hv-detail-sheet
       .statuses=${st?.statuses ?? null}
       data-testid=${opts.testid}
       .areas=${st?.areasCache?.areas ?? []}
       .media=${this.media}
       .mediaConfig=${st?.mediaConfig ?? null}
-      ?open=${this.detailItemId !== null}
-      .item=${this.detailItemId ? (this.itemById(this.detailItemId) ?? null) : null}
+      ?open=${detailItemId !== null}
+      .item=${detailItemId ? (this.itemById(detailItemId) ?? null) : null}
       .locations=${st?.locationsFlatCache ?? null}
       .locationTree=${st?.locationTreeCache ?? []}
       .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
@@ -361,17 +388,15 @@ export class ItemWorkspace implements ReactiveController {
    * rectangle over, else centred (the table's ⋮ can scroll out of view).
    */
   renderCheckoutPopover(opts: SurfaceOptions): TemplateResult {
-    const close = () => {
-      this.checkout = null;
-      this.host.requestUpdate();
-    };
+    const close = () => this.ui.set({ checkout: null });
+    const { checkout } = this.ui.value;
     return html`<hv-checkout-popover
       data-testid=${opts.testid}
-      ?open=${this.checkout !== null}
+      ?open=${checkout !== null}
       ?touch=${opts.mobile}
-      .mode=${this.checkout?.mode ?? 'check-out'}
-      .anchor=${this.checkout?.anchor ?? null}
-      .item=${this.checkout ? (this.itemById(this.checkout.itemId) ?? null) : null}
+      .mode=${checkout?.mode ?? 'check-out'}
+      .anchor=${checkout?.anchor ?? null}
+      .item=${checkout ? (this.itemById(checkout.itemId) ?? null) : null}
       @check-out=${(e: HvEvent<'hv-checkout-popover', 'check-out'>) => {
         close();
         this.onCheckOut(e);
