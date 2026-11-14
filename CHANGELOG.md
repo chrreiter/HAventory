@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.5](https://github.com/chrreiter/HAventory/compare/v0.9.4...v0.9.5) (2026-11-14)
+
+
+### Bug Fixes
+
+* give the item editor's category list an accessible name ([0933aeb](https://github.com/chrreiter/HAventory/commit/0933aeb2d839456c0161eb9d08b7ee2d92f8d366))
+* keep a percent sign in log context from dropping the line ([#803](https://github.com/chrreiter/HAventory/issues/803)) ([7f99be1](https://github.com/chrreiter/HAventory/commit/7f99be1a04cbbc2c2662304773ead5173d55b16e))
+* load a missing item quantity as one, and sweep small review slips ([#821](https://github.com/chrreiter/HAventory/issues/821)) ([a12fd83](https://github.com/chrreiter/HAventory/commit/a12fd834e27991c851a51c2a3017b95762d6e5d5))
+* name the deleted item in a bulk delete's low-stock cleared event ([#813](https://github.com/chrreiter/HAventory/issues/813)) ([8e8d916](https://github.com/chrreiter/HAventory/commit/8e8d91630ac198d7052c3f2bb86c0c13612e9444)), closes [#812](https://github.com/chrreiter/HAventory/issues/812)
+* tie the card's wire types to what the backend sends ([#816](https://github.com/chrreiter/HAventory/issues/816)) ([40d81f8](https://github.com/chrreiter/HAventory/commit/40d81f88462ee882753da50ef564290311d08218))
+* undo a write whose save failed, so a later save cannot write it ([#806](https://github.com/chrreiter/HAventory/issues/806)) ([faf6de9](https://github.com/chrreiter/HAventory/commit/faf6de9b765c133960b3d0da7bf8756bfcd3322b))
+* word backend refusals in the household's language and register services from async_setup ([#807](https://github.com/chrreiter/HAventory/issues/807)) ([2b4b8e0](https://github.com/chrreiter/HAventory/commit/2b4b8e05e28d2c169213d39b87f4b4c1eb55fd27))
+
+
+### Performance Improvements
+
+* do less work on the event loop for each write ([#810](https://github.com/chrreiter/HAventory/issues/810)) ([8e46fb4](https://github.com/chrreiter/HAventory/commit/8e46fb43f14c42235437f40b36f24959c1a4d0ef))
+* load the card's code only on pages that show it ([#820](https://github.com/chrreiter/HAventory/issues/820)) ([388eaff](https://github.com/chrreiter/HAventory/commit/388eaff31cf278fae364c55d798dae579afe4dbe))
+
 ## [0.9.4](https://github.com/chrreiter/HAventory/compare/v0.9.3...v0.9.4) (2026-11-12)
 
 
