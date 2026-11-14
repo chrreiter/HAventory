@@ -468,8 +468,10 @@ export class Store {
       total !== null && delta !== 0 ? { items, total: Math.max(0, total + delta) } : { items },
     );
     if (activeFilterCount(this.state.value.filters) > 0) this.scheduleTotalRefresh();
+    // Coalesced: a batch edit announces one event per row, and each tally is a
+    // full scan on the backend.
     if (evt.action === 'created' || evt.action === 'updated' || evt.action === 'deleted') {
-      void this.refreshDistinctValues().catch(() => undefined);
+      this.facets.scheduleRefresh();
     }
     // Per-location counts ride the tree, which is not pushed.
     if (evt.action === 'created' || evt.action === 'deleted' || evt.action === 'moved') {
