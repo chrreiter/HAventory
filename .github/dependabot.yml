@@ -77,8 +77,7 @@ updates:
     cooldown:
       default-days: 3
 
-  # The dev container's images: only `FROM` lines are read, which
-  # tests/test_repo_hardening_offline.py enforces.
+  # The dev container's images: only `FROM` lines are read.
   - package-ecosystem: "docker"
     directory: "/.devcontainer"
     schedule:

@@ -76,7 +76,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Live-update smoke
         env:
-          # Without it the smoke prints SKIP and exits 0 (`tests/test_repo_hardening_offline.py`).
+          # Without it the smoke prints SKIP and exits 0, and the job passes having driven nothing.
           RUN_ONLINE: "1"
           HA_BASE_URL: http://localhost:8123
           HA_TOKEN: ${{ steps.provision.outputs.token }}
