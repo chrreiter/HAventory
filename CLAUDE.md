@@ -111,7 +111,7 @@ disagrees with an issue is stale.
 Backend at the repo root, frontend in `cards/haventory-card`. The gate, both halves, green
 before every commit, is written out once in [`CONTRIBUTING.md`](CONTRIBUTING.md) → "The
 gate", audit level included. [`docs/developing.md`](docs/developing.md) carries the
-bootstrap, the helper scripts and the online smokes.
+bootstrap, the helper scripts and the live-update browser smoke.
 
 In-process HA tests are a **second, separate mode**: the integration inside a real HA core
 via `pytest-homeassistant-custom-component`, run with `scripts/test_integration.sh`. What it

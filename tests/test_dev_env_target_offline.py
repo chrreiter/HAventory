@@ -47,10 +47,8 @@ def test_env_file_beats_an_inherited_export(tmp_path: Path) -> None:
 def test_keys_the_file_does_not_declare_survive(tmp_path: Path) -> None:
     """A per-command HA_CONTAINER=... still reaches the helper.
 
-    The .env deliberately declares no container (setting one there arms
-    ``scripts/smoke_online.sh`` to purge that container's store), so overriding
-    the whole environment rather than the declared keys would break the one way
-    the container is named.
+    The .env declares no container, so overriding the whole environment rather
+    than the declared keys would break the one way the container is named.
     """
     (tmp_path / ".env").write_text(ENV_A, encoding="utf-8")
     env = {"HA_CONTAINER": "throwaway-ha"}

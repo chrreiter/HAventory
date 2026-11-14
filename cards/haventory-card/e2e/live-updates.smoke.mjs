@@ -20,7 +20,7 @@
 //   3. Delete it out-of-band -> the row must disappear live.
 //   4. No card-related console errors or uncaught page errors throughout.
 //
-// This is an OPT-IN online test (like tests/*_online.py): it does nothing unless
+// This is an OPT-IN online test: it does nothing unless
 // RUN_ONLINE is set. It needs a running HA with the card on a dashboard, HA_BASE_URL +
 // HA_TOKEN (env or repo-root .env), Playwright installed, and a Chromium browser
 // (`npx playwright install chromium`).

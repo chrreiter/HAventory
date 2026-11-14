@@ -4,7 +4,7 @@ name: ha-latest
 # is drift against a newer core, not a regression in an open pull request.
 #
 # Scheduled only: with no `pull_request` trigger it can never become a gate a pull
-# request waits on (`tests/test_repo_hardening_offline.py`).
+# request waits on.
 on:
   schedule:
     # The 8th is always after Home Assistant's first-Wednesday minor and after

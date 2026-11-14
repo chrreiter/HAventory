@@ -9,8 +9,8 @@ scale benchmark either: the README's "Good to know" states the size the store ha
 ## Before the tag
 
 1. The automated suites are green on the candidate: both halves of the gate
-   (`CONTRIBUTING.md` → "The gate"), the in-process HA suite and the online smokes
-   (`docs/developing.md` → "Testing"), and the stress regimen
+   (`CONTRIBUTING.md` → "The gate"), the in-process HA suite and the live-update
+   browser smoke (`docs/developing.md` → "Testing"), and the stress regimen
    (`.claude/skills/test-haventory/SKILL.md`).
 2. The owner has used the candidate at home for ordinary inventory work long enough to trust
    it. Every usability bug that turned up is filed with the bug template, fixed as a `fix:`
@@ -48,8 +48,7 @@ HAVENTORY_IGNORE_ENV_FILE=1 HA_BASE_URL=http://<host>:8123 HA_TOKEN=<token> \
 ```
 
 `HAVENTORY_IGNORE_ENV_FILE=1` is what makes the two variables beside it win over the `.env`
-in the checkout. Never point `scripts/smoke_online.sh` at production: with `HA_CONTAINER`
-set it deletes the store before it runs.
+in the checkout.
 
 ## Findings
 

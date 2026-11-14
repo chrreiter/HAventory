@@ -276,3 +276,151 @@ async def test_duplicate_op_ids_reject_the_batch(
     await client.send_json({"id": 3, "type": "haventory/item/get", "item_id": item_id})
     fetched = await client.receive_json()
     assert fetched["result"]["quantity"] == 1
+
+
+async def test_card_write_commands_over_the_real_schemas(
+    hass: HomeAssistant, hass_ws_client, setup_entry
+) -> None:
+    """Every write the card sends passes its real schema and takes effect.
+
+    The refusals a user can hit answer ``validation_error`` and ``conflict``
+    rather than ``invalid_format``, which is what a schema mismatch would give.
+    """
+
+    await setup_entry()
+    client = await hass_ws_client(hass)
+    last_id = 0
+    set_to, adjusted_to = 4, 3
+
+    async def call(frame: dict) -> dict:
+        nonlocal last_id
+        last_id += 1
+        await client.send_json({"id": last_id, **frame})
+        return await client.receive_json()
+
+    async def ok(frame: dict) -> dict:
+        resp = await call(frame)
+        assert resp["success"] is True, resp
+        return resp["result"]
+
+    async def refused(frame: dict, code: str) -> None:
+        resp = await call(frame)
+        assert resp["success"] is False, resp
+        assert resp["error"]["code"] == code, resp
+
+    garage = (await ok({"type": "haventory/location/create", "name": "Garage"}))["id"]
+    shelf = (await ok({"type": "haventory/location/create", "name": "Shelf", "parent_id": garage}))[
+        "id"
+    ]
+    basement = (await ok({"type": "haventory/location/create", "name": "Basement"}))["id"]
+
+    item = await ok({"type": "haventory/item/create", "name": "Hammer"})
+    item_id = item["id"]
+
+    async def write(command: str, **fields) -> dict:
+        nonlocal item
+        item = await ok(
+            {
+                "type": f"haventory/item/{command}",
+                "item_id": item_id,
+                "expected_version": item["version"],
+                **fields,
+            }
+        )
+        return item
+
+    moved = await write("move", location_id=basement)
+    assert moved["location_id"] == basement
+    assert moved["location_path"]["display_path"] == "Basement"
+    assert (await write("set_quantity", quantity=set_to))["quantity"] == set_to
+    assert (await write("adjust_quantity", delta=-1))["quantity"] == adjusted_to
+    assert (await write("add_tags", tags=["Tool", "TOOL", "garage"]))["tags"] == ["tool", "garage"]
+    assert (await write("remove_tags", tags=["TOOL"]))["tags"] == ["garage"]
+    assert (await write("update_custom_fields", set={"color": "red", "weight": 1.2}, unset=[]))[
+        "custom_fields"
+    ] == {"color": "red", "weight": 1.2}
+    assert (await write("update_custom_fields", set={}, unset=["weight"]))["custom_fields"] == {
+        "color": "red"
+    }
+
+    assert (await ok({"type": "haventory/stats"}))["low_stock_count"] == 0
+    await write("set_low_stock_threshold", low_stock_threshold=5)
+    assert (await ok({"type": "haventory/stats"}))["low_stock_count"] == 1
+
+    await refused(
+        {
+            "type": "haventory/item/set_quantity",
+            "item_id": item_id,
+            "expected_version": item["version"],
+            "quantity": -1,
+        },
+        "validation_error",
+    )
+    stale = {
+        "type": "haventory/item/update",
+        "item_id": item_id,
+        "expected_version": item["version"] - 1,
+        "name": "Mallet",
+    }
+    await refused(stale, "conflict")
+
+    await ok(
+        {
+            "type": "haventory/location/move_subtree",
+            "location_id": garage,
+            "new_parent_id": basement,
+        }
+    )
+    tree = await ok({"type": "haventory/location/tree"})
+    basement_node = next(node for node in tree if node["id"] == basement)
+    assert [child["id"] for child in basement_node["children"]] == [garage]
+    for parent in (garage, shelf):
+        await refused(
+            {
+                "type": "haventory/location/move_subtree",
+                "location_id": garage,
+                "new_parent_id": parent,
+            },
+            "validation_error",
+        )
+
+    await ok({"type": "haventory/location/delete", "location_id": shelf})
+    await refused({"type": "haventory/location/get", "location_id": shelf}, "not_found")
+
+
+async def test_bulk_batch_answers_each_row_on_its_own(
+    hass: HomeAssistant, hass_ws_client, setup_entry
+) -> None:
+    """A row the batch cannot apply fails alone; the rows around it still land."""
+
+    await setup_entry()
+    client = await hass_ws_client(hass)
+    quantity = 7
+
+    await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Hammer"})
+    item_id = (await client.receive_json())["result"]["id"]
+
+    await client.send_json(
+        {
+            "id": 2,
+            "type": "haventory/items/bulk",
+            "operations": [
+                {
+                    "op_id": "good",
+                    "kind": "item_set_quantity",
+                    "payload": {"item_id": item_id, "quantity": quantity},
+                },
+                {"op_id": "bad", "kind": "totally_unknown", "payload": {}},
+            ],
+        }
+    )
+    resp = await client.receive_json()
+    assert resp["success"] is True, resp
+    results = resp["result"]["results"]
+    assert results["good"]["success"] is True
+    assert results["good"]["result"]["quantity"] == quantity
+    assert results["bad"]["success"] is False
+    assert results["bad"]["error"]["code"] == "validation_error"
+
+    await client.send_json({"id": 3, "type": "haventory/item/get", "item_id": item_id})
+    assert (await client.receive_json())["result"]["quantity"] == quantity

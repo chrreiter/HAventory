@@ -3,7 +3,7 @@
 
 The mark is the geometry the card already carries (`HOUSE` + `CRATES` + `HANDLES` in
 `cards/haventory-card/src/ui/brand-icon.ts`, joined into one `d`), so the artwork
-cannot drift from the sidebar icon without `tests/test_brand_assets.py` failing.
+is the sidebar icon's own outline.
 
 Everything lands in `custom_components/haventory/brand/`, which Home Assistant serves
 at `/api/brands/integration/haventory/<file>` in preference to the brands CDN. Eight

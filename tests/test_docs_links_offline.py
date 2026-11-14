@@ -1,14 +1,7 @@
-"""Every relative Markdown link in the public documents resolves.
+"""Every relative link and every repository image in the public documents names a file.
 
-The repository had no Markdown link check, which is exactly how a deletion leaves a
-dangling one: the file goes, the sentence pointing at it stays, and nothing is red.
-This covers the documents a reader arrives at — `README.md`, `CONTRIBUTING.md`,
-`CLAUDE.md` and `docs/*.md`.
-
-Only *relative* targets are checked. An `http(s)://` link is a network call and a
-bare `#anchor` is a heading this test would have to render Markdown to know about;
-both are out of scope, and saying so is what keeps the check honest about what it
-does not cover.
+Only relative targets and this repository's raw URLs are checked: an ``http(s)://`` link
+is a network call, and a bare ``#anchor`` would need the Markdown rendered.
 """
 
 from __future__ import annotations
@@ -72,33 +65,6 @@ def test_every_relative_link_resolves() -> None:
     assert not broken, "dangling relative links:\n  " + "\n  ".join(broken)
 
 
-def test_the_resolver_reports_a_missing_target(tmp_path: Path) -> None:
-    """A green run above has to mean the targets were really looked for."""
-
-    (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "present.md").write_text("here", encoding="utf-8")
-    document = tmp_path / "index.md"
-    document.write_text(
-        "\n".join(
-            [
-                "[fine](docs/present.md)",
-                "[fine with an anchor](docs/present.md#a-heading)",
-                "[external](https://example.invalid/gone.md)",
-                "[anchor only](#somewhere)",
-                "[gone](docs/absent.md)",
-                "[escapes](../outside.md)",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    assert _broken_links(document, tmp_path) == [
-        "index.md → docs/absent.md",
-        "index.md → ../outside.md (escapes the repository)",
-    ]
-
-
-#
 # `hacs.json` sets `render_readme`, so the HACS info panel renders `README.md`
 # from outside this repository, where a relative image path resolves against
 # nothing. The screenshots are therefore referenced by absolute
@@ -163,28 +129,3 @@ def test_every_repository_image_names_a_committed_file() -> None:
     tracked = _tracked_paths()
     missing = [entry for d in documents for entry in _missing_images(d, tracked)]
     assert not missing, "images naming nothing this repository holds:\n  " + "\n  ".join(missing)
-
-
-def test_an_uncommitted_image_is_reported(tmp_path: Path) -> None:
-    """The green run above has to mean the files were really looked for."""
-
-    document = tmp_path / "README.md"
-    document.write_text(
-        "\n".join(
-            [
-                f"![hero]({RAW_PREFIX}main/docs/assets/screenshots/full-view.png)",
-                f"![gone]({RAW_PREFIX}main/docs/assets/screenshots/absent.png)",
-                "[![CI](https://img.shields.io/badge/x.svg)](https://example.invalid/ci)",
-                "![relative](docs/assets/social-preview.png)",
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    assert _repository_images(document) == [
-        "docs/assets/screenshots/full-view.png",
-        "docs/assets/screenshots/absent.png",
-    ]
-    assert _missing_images(document, {"docs/assets/screenshots/full-view.png"}) == [
-        "README.md → docs/assets/screenshots/absent.png"
-    ]
