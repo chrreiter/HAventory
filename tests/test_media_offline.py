@@ -848,3 +848,32 @@ def test_an_exif_rotated_photograph_still_comes_out_upright(tmp_path: Path) -> N
     with image_module.open(target) as tile:
         # Landscape on disk, portrait once the tag is honoured.
         assert tile.size == (THUMBNAIL_MAX_EDGE // 2, THUMBNAIL_MAX_EDGE)
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_keeps_going_when_one_orphan_cannot_be_removed(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    hass = HomeAssistant()
+    root = media.media_root(hass)
+    stuck = root / "11111111-1111-4111-8111-111111111111" / "stuck.png"
+    gone = root / "22222222-2222-4222-8222-222222222222" / "gone.png"
+    for path in (stuck, gone):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(PNG_BYTES)
+    stuck_resolved = stuck.resolve()
+    original = Path.unlink
+
+    def _unlink(self: Path, *args: object, **kwargs: object) -> None:
+        if self == stuck_resolved:
+            raise PermissionError("read-only")
+        original(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "unlink", _unlink)
+
+    with caplog.at_level(logging.WARNING):
+        removed = await media.async_sweep_orphans(hass, [])
+
+    assert removed == (str(gone.resolve()),)
+    assert stuck.is_file()
+    assert "Could not remove an orphaned attachment file" in caplog.text

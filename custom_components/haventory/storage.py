@@ -296,7 +296,8 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
         payload = runtime.repository.export_state()
         try:
             await runtime.store.async_save(payload)
-        except Exception as exc:  # pragma: no cover - mapped at boundaries
+        # Store logs WriteError itself; whatever it lets through answers storage_error.
+        except Exception as exc:
             _LOGGER.error(
                 "Failed to persist repository",
                 extra={
