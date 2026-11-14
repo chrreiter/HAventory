@@ -7,15 +7,13 @@ import { tokens, base } from '../ui/tokens';
 import { editorFields } from '../ui/editor-fields';
 import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
-import { DEFAULT_CUSTOM_DAYS, formatDate, isOverdue, relativeTime } from '../ui/relative-time';
-import { dayOffsets, renderDayOffsets } from '../ui/day-offsets';
+import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { onDayChange } from '../ui/day-clock';
 import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
 import type { ConfirmDiscard } from '../ui/discard';
 import { CopyFlash, idRow } from '../ui/clipboard';
 import {
-  REMINDER_UNITS,
   customFieldsFrom,
   formFromItem,
   isDirty,
@@ -27,19 +25,12 @@ import {
 import type { CustomFieldRow, CustomFieldType, FieldError, ItemFormModel } from '../ui/item-form';
 import { statusLabel, statusList } from '../ui/status';
 import type { MediaBindings } from '../ui/media';
-import type {
-  AreaRef,
-  Item,
-  Location,
-  LocationTreeNode,
-  MediaConfig,
-  ReminderUnit,
-  StatusDefinition,
-} from '../store/types';
+import type { AreaRef, Item, Location, LocationTreeNode, MediaConfig, StatusDefinition } from '../store/types';
 import './hv-chip-input';
-import './hv-checkout-popover';
 import './hv-editor-attachments';
 import type { HVEditorAttachments } from './hv-editor-attachments';
+import './hv-editor-dates';
+import type { HVEditorDates } from './hv-editor-dates';
 import './hv-editor-category';
 import type { HVEditorCategory } from './hv-editor-category';
 import './hv-editor-location';
@@ -65,7 +56,6 @@ export class HVItemEditor extends LitElement {
     base,
     editorFields,
     chip,
-    dayOffsets,
     idRow,
     css`
       :host {
@@ -140,8 +130,8 @@ export class HVItemEditor extends LitElement {
         gap: 4px;
         min-width: 0;
       }
-      /* Check-out with its due date, and the unrelated inspection date, as two
-         boxes of equal height so they read as two things, not three peers. */
+      /* Only the header's "checked out" chip ("hv-chip state") matches this
+         here, and its layout depends on it; the dates element has its own. */
       .state {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -149,118 +139,6 @@ export class HVItemEditor extends LitElement {
       }
       :host([mobile]) .state {
         grid-template-columns: 1fr;
-      }
-      /* Three controls, so the reminder takes the whole row. */
-      .state .reminder {
-        grid-column: 1 / -1;
-      }
-      .repeat {
-        display: grid;
-        grid-template-columns: auto minmax(0, 4.5rem) minmax(0, 7rem);
-        align-items: center;
-        gap: 8px;
-      }
-      :host([mobile]) .repeat {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      }
-      :host([mobile]) .repeat > label {
-        grid-column: 1 / -1;
-      }
-      /* Packed to the top, as .cell, inside a box stretched to its neighbour. */
-      .group {
-        display: grid;
-        align-content: start;
-        gap: 9px;
-        min-width: 0;
-        border: 1px solid var(--hv-divider);
-        border-radius: var(--hv-radius-input);
-        padding: 9px 11px 11px;
-      }
-      .group-caption {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-      }
-      .group-caption .hv-icon {
-        flex: none;
-        opacity: 0.8;
-      }
-      .group-body {
-        display: grid;
-        gap: 12px;
-        min-width: 0;
-      }
-      /* The date and its clear button on one line, no taller than the input. */
-      .inspection-row {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) var(--hv-tap-min, 34px);
-        align-items: center;
-        gap: 8px;
-      }
-      /* Shut, it would still take a grid row and a gap. */
-      hv-checkout-popover:not([open]) {
-        display: none;
-      }
-      /* The button and the due date share a row by construction: the label row
-         leaves column 1 empty because the button has no label. */
-      .checkout-body {
-        grid-template-columns: 1fr 1fr;
-        grid-template-areas:
-          '. label'
-          'action field'
-          'hint hint';
-        gap: 4px 12px;
-      }
-      .due-label {
-        grid-area: label;
-      }
-      .due-input {
-        grid-area: field;
-      }
-      .checkout-body .group-hint {
-        grid-area: hint;
-      }
-      .checkout-action {
-        grid-area: action;
-        justify-content: center;
-        gap: 7px;
-        min-height: var(--hv-tap-min, auto);
-        font-weight: 500;
-        cursor: pointer;
-      }
-      .checkout-action:hover {
-        background: var(--hv-row-hover);
-      }
-      .checkout-action .hv-icon {
-        flex: none;
-        opacity: 0.85;
-      }
-      .group-hint {
-        font-size: var(--hv-editor-note);
-        line-height: 1.4;
-        color: var(--hv-text-tertiary);
-      }
-      :host([mobile]) .offset {
-        min-height: var(--hv-tap-min, auto);
-        padding: 0 15px;
-        font-size: 13.5px;
-      }
-      :host([mobile]) .day-box input {
-        min-height: 44px;
-        width: 88px;
-        font-size: var(--hv-input-font, 14.5px);
-      }
-      /* A native date input clips its placeholder below ~140px, so a phone stacks. */
-      :host([mobile]) .checkout-body {
-        grid-template-columns: 1fr;
-        grid-template-areas:
-          'action'
-          'label'
-          'field'
-          'hint';
-      }
-      :host([mobile]) .checkout-action {
-        margin-bottom: 8px;
       }
       textarea.hv-input {
         min-height: 44px;
@@ -504,12 +382,6 @@ export class HVItemEditor extends LitElement {
   @state() private _model: ItemFormModel = formFromItem(null);
   @state() private _errors: FieldError[] = [];
   @state() private _showErrors = false;
-  /** The check-out dialog, and the button it hangs from on a wide screen. */
-  @state() private _checkoutOpen = false;
-  @state() private _checkoutAnchor: DOMRect | null = null;
-  /** The inspection field's "+X days" row is showing, and owns the date. */
-  @state() private _inspectionCustomOpen = false;
-  @state() private _inspectionCustomDays = DEFAULT_CUSTOM_DAYS;
 
   /** The "Copied" label on the id row's button. */
   private readonly _copyFlash = new CopyFlash(this);
@@ -532,7 +404,7 @@ export class HVItemEditor extends LitElement {
   @query('hv-editor-category') private _category!: HVEditorCategory | null;
   @query('hv-editor-attachments') private _attachments!: HVEditorAttachments | null;
   @query('hv-editor-location') private _locationField!: HVEditorLocation | null;
-  @query('#editor-inspection') private _inspectionInput!: HTMLInputElement | null;
+  @query('hv-editor-dates') private _dates!: HVEditorDates | null;
 
   /** Focus inside the form so its Escape handler hears the key. */
   protected override firstUpdated() {
@@ -619,8 +491,8 @@ export class HVItemEditor extends LitElement {
       const category = this._category;
       if (category?.open) {
         category.close();
-      } else if (this._checkoutOpen) {
-        this._checkoutOpen = false;
+      } else if (this._dates?.checkoutOpen) {
+        this._dates.closeCheckout();
       } else if (this._locationField?.open) {
         this._locationField.close();
       } else {
@@ -710,212 +582,6 @@ export class HVItemEditor extends LitElement {
       </select>
     </div>`;
   }
-
-  /**
-   * The checkout with its due date (live only while out), and the unrelated
-   * inspection date. Checking out writes `checkedOut` into the form model
-   * rather than sending the command, since a new item has no id yet.
-   */
-  private _renderStateFields() {
-    const model = this._model;
-    return html`<div class="cell span3">
-      <div class="state">
-        <div class="group" role="group" aria-labelledby="editor-checkout-caption">
-          <span class="hv-label group-caption" id="editor-checkout-caption" data-testid="editor-checkout-caption">
-            ${icon('account', 14)} ${t('hv.editor.checkOutCaption')}
-          </span>
-          <div class="group-body checkout-body">
-            <button
-              class="field-button checkout-action"
-              data-testid="editor-checked-out"
-              @click=${this._onCheckoutPressed}
-            >
-              ${icon(model.checkedOut ? 'check' : 'account', 16)}
-              <span
-                >${model.checkedOut ? t('hv.action.checkIn') : t('hv.action.checkOutEllipsis')}</span
-              >
-            </button>
-            <label class="hv-label due-label ${model.checkedOut ? '' : 'muted'}" for="editor-due">
-              ${t('hv.field.due_date')}
-            </label>
-            <input
-              id="editor-due"
-              class="hv-input due-input"
-              type="date"
-              data-testid="editor-due-date"
-              ?disabled=${!model.checkedOut}
-              title=${model.checkedOut ? '' : t('hv.editor.dueDateHint')}
-              .value=${model.dueDate}
-              @input=${(e: Event) => this._patch({ dueDate: (e.target as HTMLInputElement).value })}
-            />
-            ${
-              model.checkedOut
-                ? null
-                : html`<span class="group-hint" data-testid="editor-due-hint">${t('hv.editor.dueDateHint')}</span>`
-            }
-          </div>
-          <hv-checkout-popover
-            data-testid="editor-checkout"
-            .item=${this.item}
-            .itemName=${model.name.trim() || t('hv.editor.thisItem')}
-            .anchor=${this._checkoutAnchor}
-            ?inline=${this.mobile}
-            ?touch=${this.mobile}
-            ?open=${this._checkoutOpen}
-            @check-out=${(e: HvEvent<'hv-checkout-popover', 'check-out'>) => {
-              // A form event only: the shell would send the real command.
-              e.stopPropagation();
-              const { dueDate } = e.detail;
-              this._patch({ checkedOut: true, dueDate: dueDate ?? '' });
-              this._checkoutOpen = false;
-            }}
-            @cancel=${(e: HvEvent<'hv-checkout-popover', 'cancel'>) => {
-              e.stopPropagation();
-              this._checkoutOpen = false;
-            }}
-          ></hv-checkout-popover>
-        </div>
-        <div class="group">
-          <label class="hv-label group-caption" for="editor-inspection" data-testid="editor-inspection-caption">
-            ${icon('calendar', 14)} ${t('hv.field.inspection_date')}
-          </label>
-          <div class="group-body">
-            <div class="inspection-row">
-              <input
-                id="editor-inspection"
-                class="hv-input"
-                type="date"
-                data-testid="editor-inspection-date"
-                .value=${model.inspectionDate}
-                @input=${(e: Event) => this._patch({ inspectionDate: (e.target as HTMLInputElement).value })}
-              />
-              <button
-                class="hv-icon-button"
-                data-testid="editor-inspection-clear"
-                aria-label=${t('hv.editor.clearInspectionDate')}
-                ?disabled=${!model.inspectionDate}
-                @click=${this._clearInspection}
-              >
-                ${icon('close', 16)}
-              </button>
-            </div>
-            ${this._renderInspectionOffsets(model.inspectionDate)}
-          </div>
-        </div>
-        ${this._renderReminderFields()}
-      </div>
-    </div>`;
-  }
-
-  /**
-   * A date that comes round again, with an optional repeat (blank is a one-off).
-   * Saved with the rest of the form, not through `haventory/reminder/set`.
-   */
-  private _renderReminderFields() {
-    const model = this._model;
-    return html`<div class="group reminder" role="group" aria-labelledby="editor-reminder-caption">
-      <span class="hv-label group-caption" id="editor-reminder-caption" data-testid="editor-reminder-caption">
-        ${icon('clock', 14)} ${t('hv.field.reminder_date')}
-      </span>
-      <div class="group-body">
-        <input
-          id="editor-reminder-date"
-          class="hv-input"
-          type="date"
-          aria-label=${t('hv.editor.reminderDate')}
-          data-testid="editor-reminder-date"
-          .value=${model.reminderDate}
-          @input=${(e: Event) => this._patch({ reminderDate: (e.target as HTMLInputElement).value })}
-        />
-        <div class="repeat">
-          <label class="hv-label ${model.reminderDate ? '' : 'muted'}" for="editor-reminder-count">
-            ${t('hv.editor.repeatEvery')}
-          </label>
-          <input
-            id="editor-reminder-count"
-            class="hv-input repeat-count"
-            type="number"
-            min="1"
-            max="1000"
-            placeholder="—"
-            data-testid="editor-reminder-count"
-            ?disabled=${!model.reminderDate}
-            title=${model.reminderDate ? '' : t('hv.editor.reminderHint')}
-            .value=${model.reminderCount === null ? '' : String(model.reminderCount)}
-            @input=${(e: Event) => {
-              const raw = (e.target as HTMLInputElement).value.trim();
-              this._patch({ reminderCount: raw === '' ? null : Number(raw) });
-            }}
-          />
-          <select
-            class="hv-input repeat-unit"
-            aria-label=${t('hv.editor.repeatUnit')}
-            data-testid="editor-reminder-unit"
-            ?disabled=${!model.reminderDate}
-            .value=${model.reminderUnit}
-            @change=${(e: Event) =>
-              this._patch({ reminderUnit: (e.target as HTMLSelectElement).value as ReminderUnit })}
-          >
-            ${REMINDER_UNITS.map(
-              (unit) => html`<option value=${unit} ?selected=${unit === model.reminderUnit}>
-                ${t(`hv.editor.unit.${unit}`)}
-              </option>`,
-            )}
-          </select>
-        </div>
-        ${
-          model.reminderDate
-            ? null
-            : html`<span class="group-hint" data-testid="editor-reminder-hint">${t('hv.editor.reminderHint')}</span>`
-        }
-      </div>
-    </div>`;
-  }
-
-  /** The `ui/day-offsets` quick jumps for the inspection date. */
-  private _renderInspectionOffsets(current: string) {
-    return renderDayOffsets(
-      {
-        current,
-        customOpen: this._inspectionCustomOpen,
-        customDays: this._inspectionCustomDays,
-      },
-      {
-        prefix: 'editor-inspection',
-        onPick: (date) => {
-          this._inspectionCustomOpen = false;
-          this._patch({ inspectionDate: date });
-        },
-        onCustom: (date) => {
-          this._inspectionCustomOpen = true;
-          this._patch({ inspectionDate: date });
-        },
-        onDays: (days, date) => {
-          this._inspectionCustomDays = days;
-          this._patch({ inspectionDate: date ?? '' });
-        },
-      },
-    );
-  }
-
-  /**
-   * Clear the inspection date and its custom row. Focus moves to the field,
-   * since the button disables itself and would drop focus to the page body.
-   */
-  private _clearInspection = () => {
-    this._inspectionCustomOpen = false;
-    this._patch({ inspectionDate: '' });
-    this._inspectionInput?.focus();
-  };
-
-  private _onCheckoutPressed = (e: Event) => {
-    if (this._model.checkedOut) {
-      this._patch({ checkedOut: false });
-      return;
-    }
-    this._checkoutAnchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    this._checkoutOpen = true;
-  };
 
   private _patchRow(id: number, patch: Partial<CustomFieldRow>) {
     this._patch({
@@ -1186,7 +852,14 @@ export class HVItemEditor extends LitElement {
             ></hv-chip-input>
           </div>
           ${this._renderAttachments()} ${this._renderCreateAttachmentHint()}
-          ${this.mobile ? this._renderDescriptionField() : null} ${this._renderStateFields()}
+          ${this.mobile ? this._renderDescriptionField() : null}
+          <hv-editor-dates
+            class="cell span3"
+            ?mobile=${this.mobile}
+            .model=${model}
+            .item=${this.item}
+            @change=${(e: HvEvent<'hv-editor-dates', 'change'>) => this._patch(e.detail)}
+          ></hv-editor-dates>
           ${this._renderCustomFields()}
 
           ${this._renderIdRow()}

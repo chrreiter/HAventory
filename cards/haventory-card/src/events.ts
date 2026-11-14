@@ -126,6 +126,7 @@ export interface HvEventMap {
   'hv-editor-attachments': { 'focus-stranded': None };
   /** The item editor's own fields, each sending the slice of the form it changed. */
   'hv-editor-category': { change: Partial<ItemFormModel> };
+  'hv-editor-dates': { change: Partial<ItemFormModel> };
   'hv-editor-location': { change: Partial<ItemFormModel> };
   'hv-filter-chips': {
     'remove-filter': { key: FilterChipKey; patch: Partial<StoreFilters> };
