@@ -9,6 +9,8 @@ that upgrades.
 
 from __future__ import annotations
 
+import json
+import logging
 from pathlib import Path
 
 import custom_components.haventory as haven_init
@@ -176,6 +178,168 @@ async def test_setup_entry_sweeps_the_retired_paths(install_dir: Path, monkeypat
 
     assert await haven_init.async_setup_entry(HomeAssistant(), ConfigEntry()) is True
     assert not stale.exists()
+
+
+MANIFEST = {
+    "_core-aaa.js": {"file": "chunks/core-aaa.js"},
+    "src/index.ts": {"file": "haventory-card.js", "isEntry": True},
+    "src/runtime.ts": {"file": "chunks/runtime-bbb.js"},
+}
+
+
+@pytest.fixture
+def chunks_dir(install_dir: Path) -> Path:
+    """``www/chunks/`` inside the stand-in install, with its two current chunks."""
+    directory = install_dir / "www" / "chunks"
+    directory.mkdir(parents=True)
+    (directory / "core-aaa.js").write_text("// core\n", encoding="utf-8")
+    (directory / "runtime-bbb.js").write_text("// runtime\n", encoding="utf-8")
+    return directory
+
+
+def _write_manifest(directory: Path, payload: object) -> None:
+    (directory / "manifest.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_an_unlisted_chunk_is_removed_and_listed_ones_survive(chunks_dir: Path) -> None:
+    """Chunk names change with their content, so an upgrade leaves the old ones behind."""
+    _write_manifest(chunks_dir, MANIFEST)
+    (chunks_dir / "runtime-old.js").write_text("// old\n", encoding="utf-8")
+
+    removed = await stale_files.async_sweep_stale_chunks(HomeAssistant())
+
+    assert removed == ("runtime-old.js",)
+    assert not (chunks_dir / "runtime-old.js").exists()
+    assert (chunks_dir / "core-aaa.js").exists()
+    assert (chunks_dir / "runtime-bbb.js").exists()
+    assert (chunks_dir / "manifest.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_the_chunk_sweep_accepts_an_explicit_directory(tmp_path: Path) -> None:
+    """The directory argument overrides the package default."""
+    directory = tmp_path / "chunks"
+    directory.mkdir()
+    _write_manifest(directory, MANIFEST)
+    (directory / "core-aaa.js").write_text("// core\n", encoding="utf-8")
+    (directory / "stale.js").write_text("// stale\n", encoding="utf-8")
+
+    removed = await stale_files.async_sweep_stale_chunks(HomeAssistant(), directory)
+
+    assert removed == ("stale.js",)
+    assert (directory / "core-aaa.js").exists()
+
+
+@pytest.mark.asyncio
+async def test_without_a_manifest_no_chunk_is_removed(chunks_dir: Path) -> None:
+    """A dev checkout or a half-extracted upgrade has no list to judge by."""
+    removed = await stale_files.async_sweep_stale_chunks(HomeAssistant())
+
+    assert removed == ()
+    assert (chunks_dir / "core-aaa.js").exists()
+    assert (chunks_dir / "runtime-bbb.js").exists()
+
+
+@pytest.mark.asyncio
+async def test_without_a_chunks_directory_the_sweep_is_a_no_op(install_dir: Path) -> None:
+    """An install that has never had a chunked build."""
+    assert await stale_files.async_sweep_stale_chunks(HomeAssistant()) == ()
+
+
+@pytest.mark.asyncio
+async def test_an_unparseable_manifest_removes_nothing_and_warns(chunks_dir: Path, caplog) -> None:
+    """Deleting on a guess would take the current chunks down with the stale ones."""
+    (chunks_dir / "manifest.json").write_text("{not json", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        removed = await stale_files.async_sweep_stale_chunks(HomeAssistant())
+
+    assert removed == ()
+    assert (chunks_dir / "core-aaa.js").exists()
+    assert (chunks_dir / "runtime-bbb.js").exists()
+    assert any("chunk manifest" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload", [[], "text", {"src/index.ts": "haventory-card.js"}, {"src/index.ts": {}}]
+)
+async def test_a_manifest_of_the_wrong_shape_removes_nothing(
+    chunks_dir: Path, payload: object, caplog
+) -> None:
+    """Valid JSON that is not a Vite manifest names no chunks, so it cannot condemn any."""
+    _write_manifest(chunks_dir, payload)
+
+    with caplog.at_level(logging.WARNING):
+        removed = await stale_files.async_sweep_stale_chunks(HomeAssistant())
+
+    assert removed == ()
+    assert (chunks_dir / "core-aaa.js").exists()
+    assert any("not in the expected shape" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_the_chunk_sweep_leaves_files_that_are_not_scripts(chunks_dir: Path) -> None:
+    """An operator's own notes can sit in the directory; only ``*.js`` is a chunk."""
+    _write_manifest(chunks_dir, MANIFEST)
+    readme = chunks_dir / "README.md"
+    readme.write_text("mine\n", encoding="utf-8")
+    (chunks_dir / "old.js.map").write_text("{}", encoding="utf-8")
+
+    removed = await stale_files.async_sweep_stale_chunks(HomeAssistant())
+
+    assert removed == ()
+    assert readme.read_text(encoding="utf-8") == "mine\n"
+    assert (chunks_dir / "old.js.map").exists()
+
+
+@pytest.mark.asyncio
+async def test_the_chunk_sweep_never_touches_the_entry(chunks_dir: Path) -> None:
+    """The entry sits in ``www/``, outside the manifest's chunk names."""
+    _write_manifest(chunks_dir, MANIFEST)
+    entry = chunks_dir.parent / "haventory-card.js"
+    entry.write_text("// entry\n", encoding="utf-8")
+    (chunks_dir / "stale.js").write_text("// stale\n", encoding="utf-8")
+
+    await stale_files.async_sweep_stale_chunks(HomeAssistant())
+
+    assert entry.read_text(encoding="utf-8") == "// entry\n"
+
+
+def test_chunks_named_by_lists_only_the_files_under_chunks() -> None:
+    """The entry is not a chunk, and each name is relative to ``chunks/``."""
+    assert stale_files.chunks_named_by(MANIFEST) == frozenset({"core-aaa.js", "runtime-bbb.js"})
+
+
+def test_chunks_named_by_an_entry_only_manifest_is_empty_not_invalid() -> None:
+    """A build with no split chunks is a valid manifest that names none."""
+    manifest = {"src/index.ts": {"file": "haventory-card.js"}}
+
+    assert stale_files.chunks_named_by(manifest) == frozenset()
+
+
+@pytest.mark.parametrize("manifest", [None, [], "x", 3, {"a": "b"}, {"a": {}}, {"a": {"file": 1}}])
+def test_chunks_named_by_refuses_anything_that_is_not_a_build_manifest(manifest: object) -> None:
+    """``None`` is the signal for 'do not sweep'; an empty set would condemn every chunk."""
+    assert stale_files.chunks_named_by(manifest) is None
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_sweeps_the_stale_chunks(chunks_dir: Path, monkeypatch) -> None:
+    """The chunk sweep is wired into setup, which is the only thing that runs it."""
+    _write_manifest(chunks_dir, MANIFEST)
+    stale = chunks_dir / "runtime-old.js"
+    stale.write_text("// old\n", encoding="utf-8")
+
+    async def _fake_load(self):  # type: ignore[no-untyped-def]
+        return {"schema_version": CURRENT_SCHEMA_VERSION, "items": {}, "locations": {}}
+
+    monkeypatch.setattr(DomainStore, "async_load", _fake_load)
+
+    assert await haven_init.async_setup_entry(HomeAssistant(), ConfigEntry()) is True
+    assert not stale.exists()
+    assert (chunks_dir / "core-aaa.js").exists()
 
 
 def test_no_retired_path_names_a_file_this_release_ships() -> None:

@@ -9,6 +9,7 @@ quietly passes them is worth nothing.
 
 from __future__ import annotations
 
+import json
 import sys
 import zipfile
 from pathlib import Path
@@ -20,12 +21,21 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from check_release_zip import check, extracted_path  # noqa: E402
 
+CHUNK_MANIFEST = {
+    "_core-aaa.js": {"file": "chunks/core-aaa.js", "name": "core"},
+    "src/index.ts": {"file": "haventory-card.js", "isEntry": True, "imports": ["_core-aaa.js"]},
+    "src/runtime.ts": {"file": "chunks/runtime-bbb.js", "isDynamicEntry": True},
+}
+
 GOOD_LAYOUT: dict[str, bytes] = {
     "__init__.py": b"async def async_setup_entry(): ...\n",
     "manifest.json": b'{"domain": "haventory"}',
     "const.py": b'DOMAIN = "haventory"\n',
     "translations/en.json": b"{}",
-    "www/haventory-card.js": b"customElements.define('haventory-card', C);\n",
+    "www/haventory-card.js": b"import './chunks/core-aaa.js';\n",
+    "www/chunks/manifest.json": json.dumps(CHUNK_MANIFEST).encode(),
+    "www/chunks/core-aaa.js": b"customElements.define('haventory-card', C);\n",
+    "www/chunks/runtime-bbb.js": b"export const runtime = 1;\n",
 }
 
 
@@ -57,6 +67,7 @@ def test_zipping_one_directory_too_high_is_rejected(tmp_path: Path) -> None:
         "missing at the zip root: __init__.py",
         "missing at the zip root: manifest.json",
         "missing at the zip root: www/haventory-card.js",
+        "missing at the zip root: www/chunks/manifest.json",
     ]
 
 
@@ -68,7 +79,10 @@ def test_a_card_build_that_never_ran_is_rejected(tmp_path: Path) -> None:
 
     problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
 
-    assert problems == ["missing at the zip root: www/haventory-card.js"]
+    assert problems == [
+        "missing at the zip root: www/haventory-card.js",
+        "missing at the zip root: www/chunks/manifest.json",
+    ]
 
 
 def test_an_empty_bundle_is_rejected(tmp_path: Path) -> None:
@@ -78,6 +92,67 @@ def test_an_empty_bundle_is_rejected(tmp_path: Path) -> None:
     problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
 
     assert problems == ["empty at the zip root: www/haventory-card.js"]
+
+
+def test_a_zip_without_the_chunk_manifest_is_rejected(tmp_path: Path) -> None:
+    """Without the manifest nothing says which chunks the card needs."""
+    members = {k: v for k, v in GOOD_LAYOUT.items() if k != "www/chunks/manifest.json"}
+
+    problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
+
+    assert problems == ["missing at the zip root: www/chunks/manifest.json"]
+
+
+def test_a_chunk_the_manifest_names_but_the_zip_lacks_is_rejected(tmp_path: Path) -> None:
+    """A missing chunk installs cleanly and leaves the card blank."""
+    members = {k: v for k, v in GOOD_LAYOUT.items() if k != "www/chunks/runtime-bbb.js"}
+
+    problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
+
+    assert problems == ["chunk the manifest names is missing: www/chunks/runtime-bbb.js"]
+
+
+def test_a_chunk_the_manifest_does_not_name_is_rejected(tmp_path: Path) -> None:
+    """A stale build's chunk that leaked into the asset ships to every install."""
+    members = {**GOOD_LAYOUT, "www/chunks/runtime-old.js": b"export const runtime = 0;\n"}
+
+    problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
+
+    assert problems == ["chunk the manifest does not name: www/chunks/runtime-old.js"]
+
+
+def test_an_empty_chunk_is_rejected(tmp_path: Path) -> None:
+    """A zero-byte chunk is served fine and defines nothing."""
+    members = {**GOOD_LAYOUT, "www/chunks/runtime-bbb.js": b""}
+
+    problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
+
+    assert problems == ["empty chunk: www/chunks/runtime-bbb.js"]
+
+
+def test_a_chunk_that_imports_the_entry_is_rejected(tmp_path: Path) -> None:
+    """The import carries no ``?v=``, so the entry loads twice and defines elements twice."""
+    members = {
+        **GOOD_LAYOUT,
+        "www/chunks/runtime-bbb.js": b"import './../haventory-card.js';\n",
+    }
+
+    problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
+
+    assert problems == ["chunk imports the entry: www/chunks/runtime-bbb.js"]
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [b"not json", b"[]", b'{"src/index.ts": "haventory-card.js"}', b'{"src/index.ts": {}}'],
+)
+def test_a_manifest_in_the_wrong_shape_is_rejected(tmp_path: Path, manifest: bytes) -> None:
+    """Unparseable or foreign JSON cannot vouch for the chunks beside it."""
+    members = {**GOOD_LAYOUT, "www/chunks/manifest.json": manifest}
+
+    problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
+
+    assert problems == ["not a build manifest: www/chunks/manifest.json"]
 
 
 @pytest.mark.parametrize(
