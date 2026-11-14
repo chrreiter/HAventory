@@ -624,3 +624,37 @@ async def test_a_bulk_batch_with_no_successful_row_announces_nothing() -> None:
 
     assert res["result"]["results"]["a"]["success"] is False
     assert _signals(hass) == []
+
+
+def test_a_failing_announcement_does_not_raise_out_of_a_mutation(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    hass, repo = _hass()
+    _item, serialized = _create(repo, hass, name="Widget")
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("bus down")
+
+    monkeypatch.setattr(events_mod, "broadcast_event", _boom)
+
+    with caplog.at_level("ERROR", logger=EVENTS_LOGGER):
+        events_mod.notify_mutation(hass, action="created", item=serialized)
+
+    assert "Failed to notify a mutation" in caplog.text
+
+
+def test_a_failing_announcement_does_not_raise_out_of_a_bulk_mutation(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    hass, repo = _hass()
+    serialized = [_create(repo, hass, name=f"Widget {n}")[1] for n in range(2)]
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("bus down")
+
+    monkeypatch.setattr(events_mod, "_fire_item_changed", _boom)
+
+    with caplog.at_level("ERROR", logger=EVENTS_LOGGER):
+        events_mod.notify_bulk_mutation(hass, action="updated", items=serialized)
+
+    assert "Failed to notify a bulk mutation" in caplog.text

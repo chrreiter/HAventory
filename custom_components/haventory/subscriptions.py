@@ -22,6 +22,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN
+from .exceptions import NotLoadedError
 from .logs import context_logger
 from .runtime import Subscription, find_runtime, loaded_runtime
 from .timestamps import today_local_date
@@ -206,7 +207,7 @@ def _send_event_message(
     # One dead connection must not stop the fan-out reaching the others.
     try:
         conn.send_message({"id": subscription_id, "type": "event", "event": event_payload})
-    except Exception:  # pragma: no cover - defensive logging only
+    except Exception:
         LOGGER.debug(
             "Failed to send WS event message",
             extra={"op": "send_event", "subscription_id": subscription_id},
@@ -236,7 +237,7 @@ def broadcast_event(
         for conn, sub_ids in _collect_event_deliveries(hass, topic, payload):
             for sub_id in sub_ids:
                 _send_event_message(conn, sub_id, event)
-    except Exception:  # pragma: no cover - defensive
+    except Exception:
         LOGGER.exception(
             "Failed to broadcast WS event",
             extra={"op": "broadcast_event", "topic": topic, "action": action},
@@ -255,7 +256,7 @@ def broadcast_counts(hass: HomeAssistant, counts: dict[str, Any] | None = None) 
     else:
         try:
             counts_payload = loaded_runtime(hass).repository.get_counts()
-        except Exception:  # pragma: no cover - defensive
+        except NotLoadedError:  # The entry unloaded between the write and the broadcast.
             LOGGER.exception("Failed to broadcast counts", extra={"op": "broadcast_counts"})
             return
     broadcast_event(hass, topic="stats", action="counts", payload={"counts": counts_payload})

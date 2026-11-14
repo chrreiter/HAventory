@@ -11,7 +11,12 @@ from typing import Any
 
 import pytest
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.subscriptions import broadcast_event, open_subscriptions
+from custom_components.haventory.subscriptions import (
+    broadcast_counts,
+    broadcast_event,
+    open_subscriptions,
+)
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 
 from date_helpers import day_offset
@@ -796,3 +801,36 @@ async def test_subscribe_refuses_location_ids_that_is_not_a_list_of_strings(bad:
     assert res["error"]["code"] == "validation_error"
     assert res["error"]["message"] == "location_ids must be a list of strings"
     assert conn.subscriptions == {}
+
+
+class _DeadConn(RecordingConn):
+    """Answers the subscribe, then fails every event, as a socket that just closed does."""
+
+    def send_message(self, msg: dict[str, Any]) -> None:
+        if msg.get("type") == "event":
+            raise RuntimeError("connection closed")
+        super().send_message(msg)
+
+
+@pytest.mark.asyncio
+async def test_one_dead_connection_does_not_stop_the_broadcast_reaching_the_others() -> None:
+    hass = ws_hass()
+    dead, live = _DeadConn(), RecordingConn()
+    for conn, base in ((dead, 201), (live, 301)):
+        res = await ws_send(hass, base, "haventory/subscribe", conn=conn, topic="items")
+        assert res["success"] is True
+
+    broadcast_event(hass, topic="items", action="created", payload={"item": {"id": "x"}})
+
+    assert [e["action"] for e in live.events(topic="items")] == ["created"]
+    assert dead.events(topic="items") == []
+
+
+def test_counts_broadcast_without_a_loaded_entry_is_dropped(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    hass = HomeAssistant()
+
+    broadcast_counts(hass)
+
+    assert "Failed to broadcast counts" in caplog.text
