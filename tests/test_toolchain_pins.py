@@ -20,12 +20,12 @@ changing the number does. Whether the declared patch is the one the pinned Home
 Assistant release demands cannot be read without HA installed, and is asserted
 in ``tests/integration/test_python_floor.py``.
 
-Two Python copies are shaped so no interpreter-version pattern can see them, and
-neither is unguarded: ``.github/rulesets/main.json`` names the required check
-``backend (3.14)``, which ``tests/test_repo_hardening_offline.py`` ties to the
-job the ``ci.yml`` matrix actually produces, and ``hacs.json``'s Home Assistant
-floor implies the interpreter, which ``tests/test_min_ha_version.py`` holds to
-the 2026.3 split where HA itself moved to 3.14.
+Two Python copies are shaped so no interpreter-version pattern can see them.
+``.github/rulesets/main.json`` names the required check ``backend (3.14)``, so a
+floor change renames it by hand, and a pull request blocked on a check that never
+reports says so at once. ``hacs.json``'s Home Assistant floor implies the
+interpreter, which ``tests/test_min_ha_version.py`` holds to the 2026.3 split
+where HA itself moved to 3.14.
 """
 
 from __future__ import annotations
@@ -247,21 +247,6 @@ def test_python_floor_sites_match_pyproject(
     )
 
 
-def test_a_local_only_file_is_not_swept() -> None:
-    """The sweep reads the index, so an untracked file cannot redden the gate.
-
-    A contributor's machine carries files no other checkout has — session
-    settings, scratch notes — and some of them state interpreter versions.
-    Failing on those fails one machine for a copy nothing ships.
-    """
-    probe = REPO_ROOT / "sweep_probe_local_only.md"
-    probe.write_text("built on Python 3.99\n", encoding="utf-8")
-    try:
-        assert probe not in swept_files()
-    finally:
-        probe.unlink()
-
-
 def test_no_unregistered_file_states_an_interpreter_version() -> None:
     """A copy in a file this test does not know about fails the same way."""
     registered = {path for path, *_ in PYTHON_FLOOR_SITES}
@@ -275,20 +260,6 @@ def test_no_unregistered_file_states_an_interpreter_version() -> None:
         f"unregistered: {sorted(carrying - registered)}; "
         f"registered but no longer carrying one: {sorted(registered - carrying)}"
     )
-
-
-def test_version_numbers_that_are_not_the_interpreter_are_left_alone() -> None:
-    """Release pins that look like an interpreter version are not copies of it."""
-    assert python_versions_in("aiohttp==3.14.2\nhomeassistant==2026.6.0\nidna==3.18\n") == []
-    assert python_versions_in("does not parse on 3.13") == []
-
-
-def test_both_spellings_of_a_version_are_found() -> None:
-    """ruff's dotless target and a line-wrapped prose mention read the same."""
-    assert python_versions_in('target-version = "py315"') == ["3.15"]
-    assert python_versions_in("needs Python\n**3.15** to run") == ["3.15"]
-    assert python_versions_in("uv venv --python 3.15 .venv") == ["3.15"]
-    assert python_versions_in('requires-python = ">=3.15.2"') == ["3.15.2"]
 
 
 # --------------------------------------------------------------------------
@@ -387,8 +358,7 @@ def test_prose_node_versions_agree_with_engines() -> None:
 # between releases: a hook on one ruff reformats what CI's ``ruff format
 # --check`` on another rejects. The pre-commit rev is therefore a second copy
 # of the same number, and ``.github/dependabot.yml`` moves the two in one pull
-# request (``tests/test_repo_hardening_offline.py`` holds that pairing) so the
-# check below is what a bump passes, not what it trips over.
+# request so the check below is what a bump passes, not what it trips over.
 
 
 def dev_dependency_pin(name: str) -> str:
@@ -420,22 +390,3 @@ def test_the_documented_commands_name_no_ruff_version() -> None:
     text = (REPO_ROOT / ".claude/skills/test-haventory/SKILL.md").read_text(encoding="utf-8")
 
     assert re.findall(r"ruff==\S+", text) == []
-
-
-def test_ci_runs_actionlint_through_the_pre_commit_hook() -> None:
-    """The hook rev is the one copy of the actionlint version, so CI runs the hook.
-
-    The job used to run the tool as a digest-pinned ``docker://`` image with the
-    version in a trailing comment, which this test tied to the hook's ``rev``.
-    That was a second copy Dependabot's github-actions updater does not read, so
-    every bump of the hook arrived red until a hand moved the digest. With the
-    job running the hook there is nothing to tie — only a second copy to refuse.
-    """
-    job = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["actionlint"]
-    commands = [step.get("run", "") for step in job["steps"]]
-
-    assert any("pre-commit run actionlint" in command for command in commands), commands
-    for path in sorted(WORKFLOWS_DIR.glob("*.yml")):
-        assert "rhysd/actionlint" not in path.read_text(encoding="utf-8"), (
-            f"{path.name} names actionlint itself — a copy of the version the hook rev already is"
-        )

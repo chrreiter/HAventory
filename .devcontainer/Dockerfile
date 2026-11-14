@@ -3,8 +3,7 @@
 # 3.14 HA runtime) from pyproject.toml / uv.lock.
 #
 # Every image is named on a `FROM` line, the only place Dependabot's docker
-# updater reads a tag; tests/test_repo_hardening_offline.py refuses a
-# `COPY --from=` that names an image instead of a stage.
+# updater reads a tag, so a `COPY --from=` names a stage, never an image.
 FROM ghcr.io/astral-sh/uv:0.13.7 AS uv
 FROM ghcr.io/alexxit/go2rtc:1.9.15 AS go2rtc
 

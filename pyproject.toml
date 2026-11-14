@@ -29,7 +29,7 @@ dev = [
   "pre-commit",
   "voluptuous",
   "aiohttp>=3.14.3",
-  # tests/test_repo_hardening_offline.py parses .github/workflows/*.yml.
+  # Tests parse services.yaml and the workflow files.
   "pyyaml",
 ]
 # Not installed by `uv sync`, on purpose. `scripts/probe_fixtures.py` generates

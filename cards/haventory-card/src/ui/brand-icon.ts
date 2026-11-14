@@ -42,9 +42,9 @@ const HANDLES = [
 /**
  * The mark as a single path. `ha-svg-icon` sets no `fill-rule`, so under
  * `nonzero` the winding above is what cuts the holes. `social-preview.html`
- * draws the same outline for `evenodd`, so the two are not interchangeable;
- * `tests/test_brand_assets.py` pins both, and the images under
- * `custom_components/haventory/brand/` are rendered from these constants.
+ * draws the same outline for `evenodd`, so the two are not interchangeable.
+ * The images under `custom_components/haventory/brand/` are rendered from these
+ * constants by `scripts/render_brand_assets.py`.
  */
 export const HAVENTORY_MARK_PATH = [HOUSE, ...CRATES, ...HANDLES].join(' ');
 
