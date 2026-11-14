@@ -11,7 +11,7 @@ import '../components/hv-full-view';
 import '../components/hv-item-editor';
 import '../components/hv-list-row';
 import '../components/hv-location-tree';
-import '../components/hv-organize-dialog';
+import '../components/hv-organize-locations';
 import '../components/hv-organize-statuses';
 import '../components/hv-organize-values';
 import { sheetsOf } from '../test.utils';
@@ -28,7 +28,7 @@ const CHIPPED = [
   'hv-item-editor',
   'hv-list-row',
   'hv-location-tree',
-  'hv-organize-dialog',
+  'hv-organize-locations',
   'hv-organize-statuses',
   'hv-organize-values',
 ];
