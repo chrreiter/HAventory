@@ -1,0 +1,271 @@
+{
+  "outputs": {
+    "Attachment": {
+      "required": [
+        "filename",
+        "id",
+        "kind",
+        "mime",
+        "order",
+        "size",
+        "title",
+        "uploaded_at"
+      ],
+      "optional": []
+    },
+    "BackendUnavailableEventPayload": {
+      "required": [
+        "action",
+        "domain",
+        "topic",
+        "ts"
+      ],
+      "optional": []
+    },
+    "BulkOpError": {
+      "required": [
+        "code",
+        "context",
+        "message"
+      ],
+      "optional": [
+        "translation_domain",
+        "translation_key",
+        "translation_placeholders"
+      ]
+    },
+    "Item": {
+      "required": [
+        "attachments",
+        "category",
+        "checked_out",
+        "created_at",
+        "custom_fields",
+        "description",
+        "due_date",
+        "effective_area_id",
+        "id",
+        "inspection_date",
+        "location_id",
+        "location_path",
+        "low_stock_threshold",
+        "name",
+        "quantity",
+        "reminder_anchor",
+        "reminder_date",
+        "reminder_interval",
+        "status",
+        "tags",
+        "updated_at",
+        "version"
+      ],
+      "optional": []
+    },
+    "ItemsEventPayload": {
+      "required": [
+        "action",
+        "domain",
+        "topic",
+        "ts"
+      ],
+      "optional": [
+        "item"
+      ]
+    },
+    "Location": {
+      "required": [
+        "area_id",
+        "id",
+        "name",
+        "parent_id",
+        "path"
+      ],
+      "optional": []
+    },
+    "LocationPath": {
+      "required": [
+        "display_path",
+        "id_path",
+        "name_path",
+        "sort_key"
+      ],
+      "optional": []
+    },
+    "LocationTreeNode": {
+      "required": [
+        "area_id",
+        "children",
+        "direct_item_count",
+        "id",
+        "name",
+        "parent_id",
+        "path",
+        "subtree_item_count"
+      ],
+      "optional": [
+        "matching_direct_count",
+        "matching_subtree_count"
+      ]
+    },
+    "LocationsEventPayload": {
+      "required": [
+        "action",
+        "domain",
+        "topic",
+        "ts"
+      ],
+      "optional": [
+        "location"
+      ]
+    },
+    "ReminderInterval": {
+      "required": [
+        "count",
+        "unit"
+      ],
+      "optional": []
+    },
+    "ServerError": {
+      "required": [
+        "code",
+        "message"
+      ],
+      "optional": [
+        "data",
+        "translation_domain",
+        "translation_key",
+        "translation_placeholders"
+      ]
+    },
+    "StatsCounts": {
+      "required": [
+        "checked_out_count",
+        "checked_out_due_count",
+        "inspection_due_count",
+        "inspection_overdue_count",
+        "items_total",
+        "locations_total",
+        "low_stock_count",
+        "missing_count",
+        "needs_repair_count",
+        "no_location_count",
+        "overdue_count",
+        "reminder_due_count",
+        "status_counts"
+      ],
+      "optional": []
+    },
+    "StatsEventPayload": {
+      "required": [
+        "action",
+        "counts",
+        "domain",
+        "topic",
+        "ts"
+      ],
+      "optional": []
+    },
+    "StatusDefinition": {
+      "required": [
+        "color",
+        "icon",
+        "label",
+        "order",
+        "slug"
+      ],
+      "optional": []
+    },
+    "StatusesEventPayload": {
+      "required": [
+        "action",
+        "domain",
+        "topic",
+        "ts"
+      ],
+      "optional": [
+        "status",
+        "statuses"
+      ]
+    }
+  },
+  "inputs": {
+    "ItemCreate": [
+      "category",
+      "checked_out",
+      "custom_fields",
+      "description",
+      "due_date",
+      "inspection_date",
+      "location_id",
+      "low_stock_threshold",
+      "name",
+      "quantity",
+      "reminder_date",
+      "reminder_interval",
+      "status",
+      "tags"
+    ],
+    "ItemFilter": [
+      "area_id",
+      "categories",
+      "category",
+      "checked_out",
+      "checked_out_due_only",
+      "created_after",
+      "created_before",
+      "include_subtree",
+      "inspection_due_only",
+      "inspection_overdue_only",
+      "location_id",
+      "location_ids",
+      "low_stock_first",
+      "low_stock_only",
+      "orphaned_only",
+      "overdue_only",
+      "q",
+      "reminder_due_only",
+      "status",
+      "tags_all",
+      "tags_any",
+      "updated_after",
+      "updated_before"
+    ],
+    "ItemUpdate": [
+      "category",
+      "checked_out",
+      "custom_fields_set",
+      "custom_fields_unset",
+      "description",
+      "due_date",
+      "inspection_date",
+      "location_id",
+      "low_stock_threshold",
+      "name",
+      "quantity",
+      "reminder_date",
+      "reminder_interval",
+      "status",
+      "tags"
+    ],
+    "Sort": [
+      "field",
+      "order"
+    ]
+  },
+  "values": {
+    "SortField": [
+      "created_at",
+      "due_date",
+      "inspection_date",
+      "location",
+      "name",
+      "quantity",
+      "reminder_date",
+      "updated_at"
+    ],
+    "SortOrder": [
+      "asc",
+      "desc"
+    ]
+  }
+}

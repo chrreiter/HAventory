@@ -728,6 +728,14 @@ counts, and hooks for the failure paths: `__failNext`, `__failSubscribe`, `__set
 `__setLocations`, plus a `__calls` log. It **throws on an unhandled command**, so adding a WS
 call without extending the mock fails loudly.
 
+The wire types in `src/store/types.ts` are a hand-written copy of the backend's shapes, held
+to it through `tests/fixtures/wire_shapes.json`. `tests/test_wire_shapes_offline.py` writes
+there which keys the real serializers send, always or only sometimes, and fails when the file
+is stale, printing the command that regenerates it. `src/store/wire-shapes.test.ts` keeps one
+key spec per interface, which the compiler ties to the interface, and fails on any key the
+two sides disagree about. A field the backend always sends is therefore required in the type,
+and the card reads it without a fallback.
+
 Things jsdom cannot do, and how the tests handle it:
 
 - **No CSS evaluation in shadow DOM.** Tests assert the hook a stylesheet keys off (the
