@@ -1108,10 +1108,12 @@ class Repository:
         parent_changed, target_parent_id = self._parse_new_parent(new_parent_id, loc.parent_id)
         parsed_area, area_change_requested = self._parse_area_change(area_id, loc.area_id)
 
+        if parent_changed:
+            self._validate_parent_move(location_key=key, target_parent_id=target_parent_id)
+
         # Everything that can refuse has refused by here; the parent link is
         # written first, then the paths derived from it.
         if parent_changed:
-            self._validate_parent_move(location_key=key, target_parent_id=target_parent_id)
             self._remove_from_bucket(
                 self._children_ids_by_parent_id,
                 str(loc.parent_id) if loc.parent_id is not None else None,
