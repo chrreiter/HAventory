@@ -3,6 +3,8 @@ import type { TranslationKey } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
+import { emitter } from '../events';
+import type { HvEvent } from '../events';
 import { tokens, base } from '../ui/tokens';
 import { chip, tagLabel } from '../ui/chip';
 import { locationPathParts, pathLabel } from '../ui/location-path';
@@ -93,6 +95,8 @@ const DATE_KEYS = {
  */
 @customElement('hv-filter-panel')
 export class HVFilterPanel extends LitElement {
+  private readonly _emit = emitter<'hv-filter-panel'>(this);
+
   static override styles = [
     tokens,
     base,
@@ -367,7 +371,7 @@ export class HVFilterPanel extends LitElement {
   /** "Clear all". Staged, it empties the draft, which the footer button commits. */
   clearAll() {
     if (!this.mobile) {
-      this.dispatchEvent(new CustomEvent('clear-filters', { bubbles: true, composed: true }));
+      this._emit('clear-filters');
       return;
     }
     // Sort is a view preference, not a filter — "Clear all" keeps it.
@@ -377,12 +381,10 @@ export class HVFilterPanel extends LitElement {
   private _patch(patch: Partial<StoreFilters>) {
     if (this.mobile) {
       this._draft = { ...this.working, ...patch };
-      this.dispatchEvent(
-        new CustomEvent('stage', { detail: { filters: this._draft }, bubbles: true, composed: true }),
-      );
+      this._emit('stage', { filters: this._draft });
       return;
     }
-    this.dispatchEvent(new CustomEvent('change', { detail: patch, bubbles: true, composed: true }));
+    this._emit('change', patch);
   }
 
   /** Commit staged edits (the sheet's "Show N items"). */
@@ -390,7 +392,7 @@ export class HVFilterPanel extends LitElement {
     const draft = this._draft;
     this._draft = null;
     if (draft) {
-      this.dispatchEvent(new CustomEvent('apply', { detail: draft, bubbles: true, composed: true }));
+      this._emit('apply', draft);
     }
   }
 
@@ -488,8 +490,8 @@ export class HVFilterPanel extends LitElement {
             showAll
             showCounts
             .totalCount=${this.grandTotal}
-            @select=${(e: CustomEvent) => {
-              const id = (e.detail as { locationId: string | null }).locationId;
+            @select=${(e: HvEvent<'hv-location-tree', 'select'>) => {
+              const id = e.detail.locationId;
               this._patch({ locationIds: id === null ? [] : toggled(f.locationIds, id) });
             }}
           ></hv-location-tree>`,

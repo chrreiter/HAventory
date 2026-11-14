@@ -3,6 +3,7 @@ import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
+import { emitter } from '../events';
 import { tokens, base } from '../ui/tokens';
 import { TAG_MARK, chip } from '../ui/chip';
 import { locationPathParts, pathLabel } from '../ui/location-path';
@@ -167,6 +168,8 @@ export function clearedValueFor(key: FilterChipKey): Partial<StoreFilters> {
 /** Removable chips for every active filter, plus a clear-all affordance. */
 @customElement('hv-filter-chips')
 export class HVFilterChips extends LitElement {
+  private readonly _emit = emitter<'hv-filter-chips'>(this);
+
   static override styles = [
     tokens,
     base,
@@ -230,14 +233,7 @@ export class HVFilterChips extends LitElement {
             data-key=${entry.key}
             title=${entry.label}
             aria-label=${t('hv.action.clearFilter', { label: entry.label })}
-            @click=${() =>
-              this.dispatchEvent(
-                new CustomEvent('remove-filter', {
-                  detail: { key: entry.key, patch: clearedValueFor(entry.key) },
-                  bubbles: true,
-                  composed: true,
-                }),
-              )}
+            @click=${() => this._emit('remove-filter', { key: entry.key, patch: clearedValueFor(entry.key) })}
           >
             <span class="hv-chip-text">${entry.label}</span>${icon('close', 15)}
           </button>`,
@@ -245,8 +241,7 @@ export class HVFilterChips extends LitElement {
         <button
           class="hv-text-button"
           data-testid="filter-chips-clear"
-          @click=${() =>
-            this.dispatchEvent(new CustomEvent('clear-filters', { bubbles: true, composed: true }))}
+          @click=${() => this._emit('clear-filters')}
         >
           ${t('hv.action.clearAll')}
         </button>
