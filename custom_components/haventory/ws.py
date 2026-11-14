@@ -854,16 +854,7 @@ async def ws_location_tree(hass: HomeAssistant, conn: _Conn, msg: _Msg) -> None:
         counts = repo.get_location_item_counts(loc_id)
         children = [build_node(cid) for cid in sorted(repo.children_of(loc_id))]
         node = {
-            "id": str(loc.id),
-            "name": loc.name,
-            "parent_id": str(loc.parent_id) if loc.parent_id is not None else None,
-            "area_id": str(loc.area_id) if loc.area_id is not None else None,
-            "path": {
-                "id_path": [str(x) for x in loc.path.id_path],
-                "name_path": list(loc.path.name_path),
-                "display_path": loc.path.display_path,
-                "sort_key": loc.path.sort_key,
-            },
+            **serialize_location(loc),
             "direct_item_count": counts["direct"],
             "subtree_item_count": counts["subtree"],
             "children": children,
