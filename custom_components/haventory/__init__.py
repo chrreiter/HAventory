@@ -176,7 +176,9 @@ async def _async_load_repository(
             exc_info=True,
         )
         raise ConfigEntryNotReady("storage validation failed") from exc
-    except Exception as exc:  # pragma: no cover - defensive
+    except Exception as exc:
+        # `Store.async_load` raises HomeAssistantError for a file it cannot read, and
+        # KeyError or a migration's error for a hand-edited one; each gets a retry.
         LOGGER.error(
             "Failed to load storage during setup",
             extra={"op": "setup_storage", "schema_version": store.schema_version},
@@ -247,7 +249,8 @@ def _register_media_view(hass: HomeAssistant) -> None:
 
     try:
         hass.http.register_view(media_mod.HaventoryMediaView())
-    except Exception:
+    except RuntimeError, ValueError:
+        # What aiohttp's router raises adding a route.
         # WARNING, not ERROR: the inventory works without it, but every
         # attachment on every card is a broken image until it is fixed.
         LOGGER.warning(
@@ -294,7 +297,7 @@ async def _async_sweep_orphaned_media(hass: HomeAssistant, repository: Repositor
                 },
             )
         await media_mod.async_sweep_orphans(hass, repository.iter_attachments(), held_item_ids=held)
-    except Exception:
+    except Exception:  # Costs disk, not data, so it never stops the entry from loading.
         LOGGER.warning(
             "Could not sweep orphaned attachment files",
             extra={"op": "media_sweep"},
@@ -335,7 +338,7 @@ async def _async_flush_pending_writes(hass: HomeAssistant, *, op: str) -> None:
 
     try:
         await async_persist_immediate(hass)
-    except Exception:  # pragma: no cover - defensive
+    except StorageError:  # `async_persist_repo` maps every save failure to this.
         LOGGER.error(
             "Failed to persist during teardown",
             extra={"op": op},

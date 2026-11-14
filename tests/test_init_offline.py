@@ -32,10 +32,16 @@ from custom_components.haventory.timestamps import iso_utc_now
 from custom_components.haventory.ws import setup as ws_setup
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryError, ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers.storage import Store as HAStore
 
-from runtime_helpers import RETIRED_RATE_LIMIT_OPTIONS, repo_of, runtime_of, setup_entry
+from runtime_helpers import (
+    RETIRED_RATE_LIMIT_OPTIONS,
+    repo_of,
+    runtime_of,
+    setup_entry,
+    unload_entry,
+)
 from ws_helpers import RecordingConn, ws_send
 
 #: One above every stamp this project used before the collapse: a store only a
@@ -798,3 +804,60 @@ async def test_a_boot_with_items_still_sweeps_the_orphans(monkeypatch) -> None:
 
     assert referenced.is_file()
     assert not orphan.exists()
+
+
+@pytest.mark.asyncio
+async def test_setup_entry_retries_when_the_store_file_cannot_be_read(monkeypatch, caplog) -> None:
+    """`Store.async_load` raises HomeAssistantError for a file it cannot read: retry."""
+
+    hass = HomeAssistant()
+
+    async def _unreadable(self):  # type: ignore[no-untyped-def]
+        raise HomeAssistantError("the store file is unreadable")
+
+    monkeypatch.setattr(DomainStore, "async_load", _unreadable)
+
+    with caplog.at_level(logging.ERROR), pytest.raises(ConfigEntryNotReady, match="load failed"):
+        await haven_init.async_setup_entry(hass, ConfigEntry())
+
+    assert "Failed to load storage during setup" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [RuntimeError, ValueError])
+async def test_a_media_view_that_will_not_register_does_not_stop_setup(
+    monkeypatch, caplog, error
+) -> None:
+    """aiohttp's router raises these adding a route; attachments break, the entry loads."""
+
+    hass = HomeAssistant()
+
+    def _refuse(view) -> None:  # type: ignore[no-untyped-def]
+        raise error("route refused")
+
+    monkeypatch.setattr(hass.http, "register_view", _refuse)
+
+    with caplog.at_level(logging.WARNING):
+        haven_init._register_media_view(hass)
+
+    assert "Failed to register the HAventory media view" in caplog.text
+    assert haven_init._MEDIA_VIEW_KEY not in hass.data[haven_init.DOMAIN]
+
+
+@pytest.mark.asyncio
+async def test_unload_survives_a_flush_that_cannot_save(monkeypatch, caplog) -> None:
+    """A save that fails at teardown is logged at ERROR and the unload still completes."""
+
+    hass = HomeAssistant()
+    entry = await setup_entry(hass, ConfigEntry())
+
+    async def _refuse(self, data):  # type: ignore[no-untyped-def]
+        raise OSError("disk full")
+
+    monkeypatch.setattr(DomainStore, "async_save", _refuse)
+
+    with caplog.at_level(logging.ERROR):
+        assert await unload_entry(hass, entry) is True
+
+    failures = [r for r in caplog.records if "Failed to persist during teardown" in r.getMessage()]
+    assert [r.levelno for r in failures] == [logging.ERROR]
