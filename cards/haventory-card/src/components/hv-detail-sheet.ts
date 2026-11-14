@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { keyed } from 'lit/directives/keyed.js';
 import { tokens, base } from '../ui/tokens';
 import { chip, renderTagChip } from '../ui/chip';
 import { icon } from '../ui/icons';
@@ -870,7 +871,10 @@ export class HVDetailSheet extends LitElement {
           ${this.busy ? t('hv.action.saving') : t('hv.action.save')}
         </button>
       </div>
-      <hv-item-editor
+      <!-- Keyed by item id: a different item is a new form. -->
+      ${keyed(
+        item.id,
+        html`<hv-item-editor
         .statuses=${this.statuses}
         .areas=${this.areas}
         .media=${this.media}
@@ -899,7 +903,8 @@ export class HVDetailSheet extends LitElement {
           e.stopPropagation();
           this._emit('request-delete');
         }}
-      ></hv-item-editor>
+      ></hv-item-editor>`,
+      )}
     `;
   }
 

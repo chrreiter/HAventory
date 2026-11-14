@@ -21,6 +21,7 @@ import type { BulkRunDetail } from './components/hv-bulk-bar';
 import type { OrganizeTab } from './components/hv-organize-dialog';
 import type { EmptyOffer } from './ui/empty-state';
 import type { ColumnKey } from './store/columns';
+import type { ItemFormModel } from './ui/item-form';
 import type { ImportPolicy, ItemCreate, ItemUpdate, LocationTreeNode, Sort, StoreFilters } from './store/types';
 
 /** No detail: the element sends `detail: null`. */
@@ -121,6 +122,12 @@ export interface HvEventMap {
     cancel: None;
   };
   'hv-diagnostics-panel': { refresh: None; cancel: None };
+  /** The item editor's attachments; focus lost to a surface that closed is the editor's to catch. */
+  'hv-editor-attachments': { 'focus-stranded': None };
+  /** The item editor's own fields, each sending the slice of the form it changed. */
+  'hv-editor-category': { change: Partial<ItemFormModel> };
+  'hv-editor-dates': { change: Partial<ItemFormModel> };
+  'hv-editor-location': { change: Partial<ItemFormModel> };
   'hv-filter-chips': {
     'remove-filter': { key: FilterChipKey; patch: Partial<StoreFilters> };
     'clear-filters': None;

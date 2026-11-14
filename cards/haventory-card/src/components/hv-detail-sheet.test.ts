@@ -1418,3 +1418,51 @@ describe('hv-detail-sheet: the action pair', () => {
     expect(css).toMatch(/\.actions \.pair > button \{[^}]*white-space: nowrap/);
   });
 });
+
+// The form belongs to an item id: the store re-binds `.item` on every
+// broadcast, and that must not take the typing, while another item is
+// another form. The sheet keys the form by id, so the form keeps no list
+// of what to forget.
+describe('hv-detail-sheet: the edit form belongs to an item id', () => {
+  async function editing(el: HVDetailSheet) {
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement & { dirty: boolean };
+    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    name.value = 'typed here';
+    name.dispatchEvent(new Event('input'));
+    await settle(el);
+    return editor;
+  }
+
+  it('keeps the form and its typing when the same item comes back', async () => {
+    const el = await mount({ id: '1', name: 'A', version: 1 });
+    const editor = await editing(el);
+
+    el.item = makeItem({ id: '1', name: 'A', version: 2 });
+    await settle(el);
+
+    expect(q(el, '[data-testid="sheet-editor"]')).toBe(editor);
+    expect(editor.dirty).toBe(true);
+    expect((editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe(
+      'typed here',
+    );
+  });
+
+  it('starts a new form when the sheet moves to another item', async () => {
+    const el = await mount({ id: '1', name: 'A' });
+    const editor = await editing(el);
+
+    el.item = makeItem({ id: '2', name: 'B' });
+    await settle(el);
+    // Another item lands on its read view first.
+    expect(q(el, '[data-testid="sheet-editor"]')).toBe(null);
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const next = q(el, '[data-testid="sheet-editor"]') as HTMLElement & { dirty: boolean };
+    expect(next).not.toBe(editor);
+    expect(next.dirty).toBe(false);
+    expect((next.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe('B');
+  });
+});

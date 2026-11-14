@@ -1,4 +1,5 @@
 import { html } from 'lit';
+import { keyed } from 'lit/directives/keyed.js';
 import type { ReactiveController, ReactiveControllerHost, TemplateResult } from 'lit';
 import { t } from './i18n';
 import { editorErrorText } from './ui/editor-error';
@@ -323,17 +324,23 @@ export class ItemWorkspace implements ReactiveController {
     }
   }
 
-  /** The edit form. `noHeader` is for the phone add sheet, which draws its own title bar. */
-  renderEditor(opts: SurfaceOptions & { noHeader?: boolean }): TemplateResult {
+  /**
+   * The edit form. `noHeader` is for the phone add sheet, which draws its own title bar.
+   * Keyed by item id: a different item, or a create's hop to a real id, is a new form.
+   */
+  renderEditor(opts: SurfaceOptions & { noHeader?: boolean }): unknown {
     const st = this.st;
-    return html`<hv-item-editor
+    const item = this.editorItem;
+    return keyed(
+      item?.id ?? null,
+      html`<hv-item-editor
       .statuses=${st?.statuses ?? null}
       data-testid=${opts.testid}
       .areas=${st?.areasCache?.areas ?? []}
       .media=${this.media}
       .mediaConfig=${st?.mediaConfig ?? null}
       ?noHeader=${opts.noHeader ?? false}
-      .item=${this.editorItem}
+      .item=${item}
       .locations=${st?.locationsFlatCache ?? null}
       .locationTree=${st?.locationTreeCache ?? []}
       .categorySuggestions=${(st?.distinctValuesCache?.categories ?? []).map((c) => c.value)}
@@ -347,7 +354,8 @@ export class ItemWorkspace implements ReactiveController {
       @save=${this.onEditorSave}
       @delete-item=${(e: HvEvent<'hv-item-editor', 'delete-item'>) => this.hooks.requestDelete(e.detail)}
       @cancel=${() => this.setEditing(null)}
-    ></hv-item-editor>`;
+    ></hv-item-editor>`,
+    );
   }
 
   /** The phone read sheet, which reads the viewport itself. */

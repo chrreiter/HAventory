@@ -136,12 +136,18 @@ haventory-card                     Lovelace element; store owner
     ├── hv-list                    rows, skeletons, empty states, near-end scroll
     │   ├── hv-list-row            stepper, badges, hover actions, row ⋮, photo thumbnail,
     │   │                          document marker
-    │   └── hv-item-editor         inline expander (the one edit form); photo and
-    │                              document pickers, cover/reorder controls,
-    │                              per-document title field, per-file retry
+    │   └── hv-item-editor         inline expander (the one edit form): the model,
+    │                              validation, save and cancel, and the grid
     │       ├── hv-chip-input      tag chips with suggestions
-    │       ├── hv-lightbox        the photo strip opens full-size here too
-    │       └── hv-location-tree
+    │       ├── hv-editor-category the category combobox
+    │       ├── hv-editor-location the location picker and its first-run create
+    │       │   └── hv-location-tree
+    │       ├── hv-editor-dates    check-out with its due date, inspection, reminder
+    │       │   └── hv-checkout-popover
+    │       └── hv-editor-attachments  photo and document pickers, cover/reorder
+    │           │                  controls, per-document title, per-file retry
+    │           ├── hv-lightbox    the photo strip opens full-size here too
+    │           └── hv-confirm     the remove guard
     ├── hv-detail-sheet            the narrow read view, on the card and the full
     │   │                          view alike: read + edit in one sheet (a save that
     │   │                          lands returns it to read), photo gallery strip and
@@ -446,6 +452,40 @@ it, so each container subscribes to `store.state.onChange` itself, through the
 `ItemWorkspace` and `HostSurfaces` keep their own UI state (the open form, the open dialogs,
 the import's progress) in a `HostState` (`src/ui/host-state.ts`). Its value is read-only to
 the type checker, and `set` is the only way to change it, so no write can skip the render.
+
+### Splitting a large component into child elements
+
+`hv-item-editor` is split this way, and the same recipe fits the other large components
+(`hv-organize-dialog`, `hv-full-view`) when they are taken apart.
+
+- **The parent keeps the model; a child keeps its own surface.** The editor holds the form
+  model, validation, save and cancel, and the grid. A field that has state of its own (an
+  open list, a keyboard cursor, an upload queue, a dialog) becomes an element that owns
+  that state, its markup, its styles and its tests. It takes the slice of the model it shows
+  as properties and sends a `change` whose detail is `Partial<ItemFormModel>`, which the
+  editor merges. A piece that is only markup stays a render method on the parent.
+- **A new form is a new element.** Hosts render the editor through Lit's `keyed` on the item
+  id (`ItemWorkspace.renderEditor`, `hv-detail-sheet`), so a different item, or a create's
+  hop to a real id, discards every piece of state in the editor and its children at once,
+  with no list of fields to reset. A same-id re-bind, which every store broadcast is, keeps
+  the element and the typing. The editor throws on an id change under a live form, so a
+  host that forgets the key fails in its tests instead of saving one item's typing onto
+  another. The new element runs `firstUpdated` again, which puts focus on the name field.
+- **One place decides what Escape takes back.** A child that can be open exposes `open` and
+  `close()`, and the editor's keydown handler walks them in order before it cancels the
+  form. A child also stops the keys it handles itself, as the category list does with
+  Escape and Enter.
+- **Shadow roots change what reaches what.** A `<label for>` cannot name a control in
+  another shadow root, so a label moves with its control. Styles do not cross: rules shared
+  by the parent and its children live in a module under `src/ui/` (`editor-fields.ts` for
+  the editor) that each lists, never in a copy. Classes the parent puts on a child's host
+  element (`class="cell"`) are styled by the parent's sheet, which is how a child takes its
+  place in the parent's grid without knowing the grid. A key an overlay inside a child
+  sends now passes the parent's listeners on its way up; stop there what the parent must
+  not hear.
+- **Tests follow the code.** A child's behaviour is tested by mounting the child. The
+  parent's tests keep the wiring: what goes in, what a `change` does to the save, the
+  Escape order, focus. They reach a moved field through the child's shadow root.
 
 ---
 
