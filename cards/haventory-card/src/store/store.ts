@@ -1,9 +1,6 @@
-import { t } from '../i18n';
-import { serverErrorText } from './server-error';
 import type {
   LiveEventPayload,
   AttachmentKind,
-  BulkFailure,
   BulkOperation,
   BulkOutcome,
   ExportDocument,
@@ -15,7 +12,6 @@ import type {
   ItemCreate,
   ItemFilter,
   ItemUpdate,
-  ListItemsResult,
   Location,
   StatusColorValue,
   StatusDefinition,
@@ -25,27 +21,20 @@ import type {
 import { WSClient } from './ws';
 import { ConnectionHealth } from './connection-health';
 import type { ConnectionSlice } from './connection-health';
+import { opTargetId, runBulk } from './bulk';
+import type { BulkOptions } from './bulk';
 import { Facets } from './facets';
+import { ItemList } from './item-list';
+import type { ListSlice } from './item-list';
 import type { FacetsSlice } from './facets';
 import { ReferenceData } from './reference-data';
 import type { ConfigSlice, LocationsSlice, StatsSlice } from './reference-data';
-import { ErrorQueue, errorCode } from './error-queue';
+import { ErrorQueue } from './error-queue';
 import type { ErrorDetails, ErrorsSlice } from './error-queue';
-import { activeFilterCount, defaultFilters, sameStrings, toWireFilter } from './filters';
+import { defaultFilters, sameStrings, toWireFilter } from './filters';
 import { LiveSubscriptions } from './live-subscriptions';
-import { Coalesced, Latest } from './scheduling';
-import { Slice, combineSlices } from './slice';
+import { combineSlices } from './slice';
 import type { Observable } from './slice';
-
-const PAGE_LIMIT = 50;
-
-/** Operations per `haventory/items/bulk` call, so progress and cancel work per chunk. */
-export const BULK_CHUNK_SIZE = 25;
-
-/** Removed item ids kept for `wasRemoved`: enough to outlive a bulk delete. */
-const REMOVED_ID_MEMORY = 200;
-
-type ListSlice = Pick<StoreState, 'items' | 'cursor' | 'total' | 'loading' | 'filters' | 'selection'>;
 
 export interface StoreOptions {
   /** Base backoff for the re-subscribe ladder; set to 0 in tests. */
@@ -55,11 +44,13 @@ export interface StoreOptions {
 export { activeFilterCount, defaultFilters, soleLocationId, toWireFilter } from './filters';
 export type { Observable } from './slice';
 export { subscribeRetryDelayMs } from './live-subscriptions';
+export { BULK_CHUNK_SIZE, makeBulkOp } from './bulk';
 
 export class Store {
   private ws: WSClient;
   private readonly errors = new ErrorQueue();
   private readonly health: ConnectionHealth;
+  private readonly list: ItemList;
   private readonly facets: Facets;
   private readonly reference: ReferenceData;
   private readonly subscriptions: LiveSubscriptions;
@@ -73,14 +64,7 @@ export class Store {
     stats: Observable<StatsSlice>;
     config: Observable<ConfigSlice>;
   };
-  private readonly listSlice: Slice<ListSlice>;
   private readonly combined: Observable<Readonly<StoreState>>;
-  private inflight: Map<string, Promise<unknown>> = new Map();
-  /** Ids removed since this store connected — see `noteRemoved`. */
-  private readonly removedIds = new Set<string>();
-  /** The deferred work: every one of these is cancelled by `dispose`. */
-  private readonly totalRefresh = new Coalesced();
-  private readonly latestTotal = new Latest();
   /** True once `dispose` ran, so a load still in flight wires nothing. */
   private disposed = false;
 
@@ -88,18 +72,19 @@ export class Store {
     this.ws = new WSClient(hass);
 
     this.health = new ConnectionHealth(this.ws);
-    this.facets = new Facets(this.ws, this.health.run, () => this.listSlice.value.filters);
+    this.list = new ItemList(this.ws, this.health.run, (err, details) => this.pushError(err, details));
+    this.facets = new Facets(this.ws, this.health.run, () => this.list.slice.value.filters);
     this.reference = new ReferenceData(
       this.ws,
       this.health.run,
-      () => this.listSlice.value.filters,
-      (filters) => this.countMatching(filters),
+      () => this.list.slice.value.filters,
+      (filters) => this.list.countMatching(filters),
     );
     this.subscriptions = new LiveSubscriptions(
       this.ws,
       this.health,
       (err) => this.pushError(err),
-      () => this.listSlice.value.filters,
+      () => this.list.slice.value.filters,
       options.retryBaseMs ?? 400,
       {
         onItemsEvent: (evt) => this.onItemsEvent(evt),
@@ -110,17 +95,9 @@ export class Store {
         onRestored: () => void this.reloadAll().catch(() => undefined),
       },
     );
-    this.listSlice = new Slice<ListSlice>({
-      items: [],
-      cursor: null,
-      total: null,
-      loading: true,
-      filters: defaultFilters(),
-      selection: new Set<string>(),
-    });
     const slices = {
       connection: this.health.slice,
-      list: this.listSlice,
+      list: this.list.slice,
       errors: this.errors.slice,
       facets: this.facets.slice,
       locations: this.reference.locationsSlice,
@@ -191,7 +168,7 @@ export class Store {
     this.disposed = true;
     this.subscriptions.dispose();
     this.reference.dispose();
-    this.totalRefresh.cancel();
+    this.list.dispose();
     this.facets.dispose();
     this.health.dispose();
   }
@@ -210,38 +187,7 @@ export class Store {
       this.reference.scheduleTreeRefresh();
       return;
     }
-    const items = this.state.value.items.slice();
-    const loadedBefore = items.length;
-    const idx = items.findIndex((x) => x.id === item.id);
-    switch (evt.action) {
-      case 'created':
-      case 'updated':
-      case 'moved':
-      case 'checked_out':
-      case 'checked_in':
-      case 'quantity_changed': {
-        // A change to a row on a page not yet loaded is not a new row: it
-        // arrives with its page, in its place.
-        if (idx >= 0) items[idx] = item;
-        else if (evt.action === 'created' || this.state.value.cursor === null) items.unshift(item);
-        this.forgetRemoved(item.id);
-        break;
-      }
-      case 'deleted': {
-        if (idx >= 0) items.splice(idx, 1);
-        this.noteRemoved(item.id);
-        break;
-      }
-    }
-    // Move `total` by what the event did to the loaded list, so the footer
-    // agrees at once. That is a guess: the subscription is filtered by location
-    // only, so with any filter on the server is asked for the real count.
-    const total = this.state.value.total;
-    const delta = items.length - loadedBefore;
-    this.listSlice.set(
-      total !== null && delta !== 0 ? { items, total: Math.max(0, total + delta) } : { items },
-    );
-    if (activeFilterCount(this.state.value.filters) > 0) this.scheduleTotalRefresh();
+    this.list.applyItemsEvent(evt, item);
     // Coalesced: a batch edit announces one event per row, and each tally is a
     // full scan on the backend.
     if (evt.action === 'created' || evt.action === 'updated' || evt.action === 'deleted') {
@@ -251,22 +197,6 @@ export class Store {
     if (evt.action === 'created' || evt.action === 'deleted' || evt.action === 'moved') {
       this.reference.scheduleTreeRefresh();
     }
-  }
-
-  /** Coalesced, so a burst of events asks once. */
-  private scheduleTotalRefresh(delayMs = 250) {
-    this.totalRefresh.schedule(delayMs, () => void this.refreshTotal().catch(() => undefined));
-  }
-
-  private async refreshTotal(): Promise<void> {
-    const current = this.latestTotal.claim();
-    const filters = this.state.value.filters;
-    const asked = JSON.stringify(toWireFilter(filters));
-    const total = await this.countMatching(filters);
-    // A moved filter is already answered by the `listItems` it triggered.
-    if (!current() || total === null) return;
-    if (JSON.stringify(toWireFilter(this.state.value.filters)) !== asked) return;
-    this.listSlice.set({ total });
   }
 
   private onStatsEvent(evt: LiveEventPayload) {
@@ -332,26 +262,13 @@ export class Store {
 
   // ---------- Attachments ----------
 
-  /**
-   * Take the answered item into the list and hand it back, one version on, so
-   * the caller's form does not save against a stale version.
-   *
-   * Attachment calls skip `run`: their failures are shown per file, and an
-   * upload's HTTP errors carry no code, so they would read as a lost connection.
-   */
-  private async applyResult(call: Promise<Item>): Promise<Item> {
-    const updated = await call;
-    this.applyOptimistic(updated);
-    return updated;
-  }
-
   uploadAttachment(
     itemId: string,
     file: File,
     kind: AttachmentKind = 'picture',
     expectedVersion?: number,
   ): Promise<Item> {
-    return this.applyResult(this.ws.uploadAttachment(itemId, file, kind, expectedVersion));
+    return this.list.uploadAttachment(itemId, file, kind, expectedVersion);
   }
 
   /** Rename one attachment for display, leaving its filename and bytes alone. */
@@ -361,7 +278,7 @@ export class Store {
     title: string,
     expectedVersion?: number,
   ): Promise<Item> {
-    return this.applyResult(this.ws.updateAttachment(itemId, attachmentId, title, expectedVersion));
+    return this.list.updateAttachment(itemId, attachmentId, title, expectedVersion);
   }
 
   /** Renumber one kind's attachments; the first id named becomes position 0. */
@@ -371,17 +288,17 @@ export class Store {
     attachmentIds: string[],
     expectedVersion?: number,
   ): Promise<Item> {
-    return this.applyResult(this.ws.reorderAttachments(itemId, kind, attachmentIds, expectedVersion));
+    return this.list.reorderAttachments(itemId, kind, attachmentIds, expectedVersion);
   }
 
   /** Detach one file; the backend deletes the bytes with it. */
   removeAttachment(itemId: string, attachmentId: string, expectedVersion?: number): Promise<Item> {
-    return this.applyResult(this.ws.removeAttachment(itemId, attachmentId, expectedVersion));
+    return this.list.removeAttachment(itemId, attachmentId, expectedVersion);
   }
 
   /** Sign one attachment's media path so an `<img>` can load it. */
   signMediaPath(path: string, expires: number): Promise<string> {
-    return this.ws.signPath(path, expires);
+    return this.list.signMediaPath(path, expires);
   }
 
   /**
@@ -398,79 +315,35 @@ export class Store {
 
   // ---------- Listing & pagination ----------
   async listItems(reset = false) {
-    const st = this.state.value;
-    const filter = toWireFilter(st.filters);
-    const sort = st.filters.sort;
-    const limit = PAGE_LIMIT;
-    const cursor = reset ? undefined : st.cursor || undefined;
-
-    const key = JSON.stringify({ op: 'list', filter, sort, limit, cursor });
-    if (this.inflight.has(key)) return this.inflight.get(key) as Promise<void>;
-
-    const p = this.health
-      .run(() => this.ws.listItems(filter, sort, limit, cursor))
-      .then((res: ListItemsResult) => {
-        const merged = reset ? res.items : mergeUniqueById(this.state.value.items, res.items);
-        this.listSlice.set({
-          items: merged,
-          cursor: res.next_cursor,
-          total: res.total,
-          loading: false,
-        });
-      })
-      .catch((err: unknown) => {
-        this.listSlice.set({ loading: false });
-        this.pushError(err);
-      })
-      .finally(() => this.inflight.delete(key));
-
-    this.inflight.set(key, p);
-    return p;
+    return this.list.listItems(reset);
   }
 
   /** How many items a filter would match: one row asked for, `total` read off it. */
   async countMatching(filters: StoreFilters): Promise<number | null> {
-    try {
-      const res = await this.health.run(() => this.ws.listItems(toWireFilter(filters), filters.sort, 1));
-      return res.total;
-    } catch {
-      return null;
-    }
+    return this.list.countMatching(filters);
   }
 
   /** Every item matching a filter; no `limit` makes the backend return them all. */
   async listAllMatching(filter: ItemFilter): Promise<Item[]> {
-    const res = await this.health.run(() => this.ws.listItems(filter));
-    return res.items;
+    return this.list.listAllMatching(filter);
   }
 
   /** Load every remaining page of the current filter into the list. */
   async loadAllPages(maxPages = 200): Promise<void> {
-    let pages = 0;
-    while (this.state.value.cursor && pages < maxPages) {
-      const before = this.state.value.cursor;
-      await this.listItems(false);
-      pages += 1;
-      // A failed page leaves the cursor where it was.
-      if (this.state.value.cursor === before) break;
-    }
+    return this.list.loadAllPages(maxPages);
   }
 
   async prefetchIfNeeded(scrollRatio: number) {
-    if (scrollRatio < 0.7) return;
-    if (!this.state.value.cursor) return;
-    await this.listItems(false);
+    return this.list.prefetchIfNeeded(scrollRatio);
   }
 
   // ---------- Filters ----------
   setFilters(patch: Partial<StoreFilters>) {
-    const next = { ...this.state.value.filters, ...patch };
-    const previous = this.state.value.filters;
+    const next = { ...this.list.slice.value.filters, ...patch };
+    const previous = this.list.slice.value.filters;
     const scopeChanged =
       !sameStrings(next.locationIds, previous.locationIds) || next.areaId !== previous.areaId;
-    // Loaded rows stay until the refetch replaces them: blanking them would tear
-    // the scroller, and an open editor with it, down mid-edit.
-    this.listSlice.set({ filters: next, cursor: null, loading: true, selection: new Set<string>() });
+    this.list.applyFilters(next);
     // The items subscription is scoped by location and area only.
     if (scopeChanged) this.subscribeTopics();
     void this.listItems(true);
@@ -483,33 +356,30 @@ export class Store {
 
   /** Drop every filter, keeping the current sort. */
   clearFilters() {
-    this.setFilters({ ...defaultFilters(), sort: this.state.value.filters.sort });
+    this.setFilters({ ...defaultFilters(), sort: this.list.slice.value.filters.sort });
   }
 
   // ---------- Selection (bulk actions) ----------
   toggleSelected(itemId: string) {
-    const next = new Set(this.state.value.selection);
-    if (!next.delete(itemId)) next.add(itemId);
-    this.setSelected(next);
+    this.list.toggleSelected(itemId);
   }
 
   setSelected(itemIds: Iterable<string>) {
-    this.listSlice.set({ selection: new Set(itemIds) });
+    this.list.setSelected(itemIds);
   }
 
   clearSelection() {
-    if (this.state.value.selection.size > 0) this.setSelected([]);
+    this.list.clearSelection();
   }
 
   /** The loaded rows only; `loadAllThenSelectAll` is the explicit "all matching". */
   selectAllLoaded() {
-    this.setSelected(this.state.value.items.map((i) => i.id));
+    this.list.selectAllLoaded();
   }
 
   /** Page in every remaining match, then select the lot. */
   async loadAllThenSelectAll(): Promise<void> {
-    await this.loadAllPages();
-    this.selectAllLoaded();
+    return this.list.loadAllThenSelectAll();
   }
 
   // ---------- Recovery ----------
@@ -522,109 +392,45 @@ export class Store {
   }
 
   // ---------- Optimistic writes ----------
-  /**
-   * Show `patch` on the row while the call is in flight, then take the server's
-   * copy, or restore the row when refused. A null `patch` means the answer
-   * cannot be guessed. `details` lets a conflict banner offer the edit again.
-   */
-  private async optimisticWrite(
-    itemId: string,
-    patch: ((before: Item) => Partial<Item> | ItemUpdate) | null,
-    call: () => Promise<Item>,
-    details?: { itemId?: string; changes?: ItemUpdate },
-  ): Promise<void> {
-    const before = patch ? this.state.value.items.find((i) => i.id === itemId) : undefined;
-    if (patch && before) this.applyOptimistic({ ...before, ...patch(before) } as Item);
-    try {
-      this.applyOptimistic(await this.health.run(call));
-    } catch (err) {
-      this.pushError(err, details);
-      if (before) this.applyOptimistic(before);
-    }
-  }
-
   async createItem(input: ItemCreate) {
-    try {
-      const created = await this.health.run(() => this.ws.createItem(input));
-      // The items event carries this row too, so merge by id.
-      this.listSlice.set({ items: mergeUniqueById(this.state.value.items, [created]) });
-    } catch (err) {
-      this.pushError(err);
-    }
+    return this.list.createItem(input);
   }
 
   async updateItem(itemId: string, changes: ItemUpdate, expectedVersion?: number) {
-    await this.optimisticWrite(
-      itemId,
-      () => changes,
-      () => this.ws.updateItem(itemId, changes, expectedVersion),
-      { itemId, changes },
-    );
+    return this.list.updateItem(itemId, changes, expectedVersion);
   }
 
   async deleteItem(itemId: string, expectedVersion?: number) {
-    const before = this.state.value.items.find((i) => i.id === itemId);
-    if (before) this.removeById(itemId);
-    try {
-      await this.health.run(() => this.ws.deleteItem(itemId, expectedVersion));
-    } catch (err) {
-      this.pushError(err);
-      if (before) this.applyOptimistic(before);
-    }
+    return this.list.deleteItem(itemId, expectedVersion);
   }
 
   async adjustQuantity(itemId: string, delta: number, expectedVersion?: number) {
-    await this.optimisticWrite(
-      itemId,
-      (before) => ({ quantity: before.quantity + delta }),
-      () => this.ws.adjustQuantity(itemId, delta, expectedVersion),
-    );
+    return this.list.adjustQuantity(itemId, delta, expectedVersion);
   }
 
   async setQuantity(itemId: string, quantity: number, expectedVersion?: number) {
-    await this.optimisticWrite(
-      itemId,
-      () => ({ quantity }),
-      () => this.ws.setQuantity(itemId, quantity, expectedVersion),
-    );
+    return this.list.setQuantity(itemId, quantity, expectedVersion);
   }
 
   async checkOut(itemId: string, dueDate?: string | null, expectedVersion?: number) {
-    await this.optimisticWrite(
-      itemId,
-      // No date named keeps the one the item has.
-      (before) => ({ checked_out: true, due_date: dueDate ?? before.due_date }),
-      () => this.ws.checkOut(itemId, dueDate, expectedVersion),
-    );
+    return this.list.checkOut(itemId, dueDate, expectedVersion);
   }
 
   async markCheckedIn(itemId: string, expectedVersion?: number) {
-    await this.optimisticWrite(
-      itemId,
-      () => ({ checked_out: false }),
-      () => this.ws.markCheckedIn(itemId, expectedVersion),
-    );
+    return this.list.markCheckedIn(itemId, expectedVersion);
   }
 
   /** Not optimistic: the next occurrence is month arithmetic from the series anchor. */
   async bumpReminder(itemId: string, expectedVersion?: number) {
-    await this.optimisticWrite(itemId, null, () => this.ws.bumpReminder(itemId, expectedVersion));
+    return this.list.bumpReminder(itemId, expectedVersion);
   }
 
   async setLowStockThreshold(itemId: string, threshold: number | null, expectedVersion?: number) {
-    await this.optimisticWrite(
-      itemId,
-      () => ({ low_stock_threshold: threshold }),
-      () => this.ws.setLowStockThreshold(itemId, threshold, expectedVersion),
-    );
+    return this.list.setLowStockThreshold(itemId, threshold, expectedVersion);
   }
 
   async moveItem(itemId: string, locationId: string | null, expectedVersion?: number) {
-    await this.optimisticWrite(
-      itemId,
-      () => ({ location_id: locationId }),
-      () => this.ws.moveItem(itemId, locationId, expectedVersion),
-    );
+    return this.list.moveItem(itemId, locationId, expectedVersion);
   }
 
   // ---------- Locations ----------
@@ -688,76 +494,18 @@ export class Store {
    * Run a batch of item operations in chunks, reporting progress. Partial
    * failure is normal: successes persist and nothing is rolled back.
    */
-  async bulkExecute(
-    ops: BulkOperation[],
-    opts: {
-      chunkSize?: number;
-      /** Called after every chunk with cumulative counts. */
-      onProgress?: (done: number, total: number, failed: number) => void;
-      /** Checked between chunks; the in-flight chunk always completes. */
-      isCancelled?: () => boolean;
-    } = {},
-  ): Promise<BulkOutcome> {
-    const chunkSize = Math.max(1, opts.chunkSize ?? BULK_CHUNK_SIZE);
-    const succeeded: Item[] = [];
-    const failed: BulkFailure[] = [];
-    const succeededOpIds = new Set<string>();
-    let done = 0;
-    let cancelled = false;
-
-    for (let i = 0; i < ops.length; i += chunkSize) {
-      if (opts.isCancelled?.()) {
-        cancelled = true;
-        break;
-      }
-      const chunk = ops.slice(i, i + chunkSize);
-      const byId = new Map(chunk.map((op) => [op.op_id, op]));
-      try {
-        const { results } = await this.health.run(() => this.ws.bulk(chunk));
-        for (const [opId, result] of Object.entries(results)) {
-          const op = byId.get(opId);
-          if (result.success) {
-            succeededOpIds.add(opId);
-            // `item_delete` succeeds with a null result.
-            if (result.result) {
-              succeeded.push(result.result);
-              this.applyOptimistic(result.result);
-            }
-          } else if (op) {
-            failed.push({ op, error: result.error ?? unknownBulkError(), itemId: opTargetId(op) });
-          }
-        }
-        // A conforming server answers every op_id, and refuses the whole call
-        // when one repeats. An op left unanswered all the same (a backend of
-        // another version, a cut frame) is reported rather than dropped from
-        // both lists.
-        for (const op of chunk) {
-          if (!(op.op_id in results)) {
-            failed.push({
-              op,
-              error: unknownBulkError(t('hv.store.noResult')),
-              itemId: opTargetId(op),
-            });
-          }
-        }
-      } catch (err) {
-        // The whole call failed (envelope validation, transport). Attribute it
-        // to each op in the chunk.
-        const error = {
-          code: errorCode(err),
-          message: serverErrorText(err, t('hv.store.batchFailed')),
-        };
-        for (const op of chunk) failed.push({ op, error, itemId: opTargetId(op) });
-      }
-      done += chunk.length;
-      opts.onProgress?.(done, ops.length, failed.length);
-    }
+  async bulkExecute(ops: BulkOperation[], opts: BulkOptions = {}): Promise<BulkOutcome> {
+    const { succeeded, failed, cancelled, succeededOpIds } = await runBulk(ops, opts, {
+      run: this.health.run,
+      send: (chunk) => this.ws.bulk(chunk),
+      apply: (item) => this.list.applyOptimistic(item),
+    });
 
     // Deletes are not echoed as items — drop them from the list here.
     for (const op of ops) {
       if (op.kind !== 'item_delete' || !succeededOpIds.has(op.op_id)) continue;
       const id = opTargetId(op);
-      if (id) this.removeById(id);
+      if (id) this.list.removeById(id);
     }
 
     // Counts and per-location totals moved; refresh what the UI reads.
@@ -772,7 +520,7 @@ export class Store {
   /** Build a versioned backup document; `scope: 'view'` applies the active filter. */
   async exportDocument(scope: 'all' | 'view' = 'all'): Promise<ExportDocument> {
     return this.health.run(() =>
-      this.ws.exportDocument(scope === 'view' ? toWireFilter(this.state.value.filters) : undefined),
+      this.ws.exportDocument(scope === 'view' ? toWireFilter(this.list.slice.value.filters) : undefined),
     );
   }
 
@@ -810,74 +558,11 @@ export class Store {
   }
 
   async refreshItem(itemId: string) {
-    try {
-      this.applyOptimistic(await this.health.run(() => this.ws.getItem(itemId)));
-    } catch (err) {
-      this.pushError(err);
-    }
-  }
-
-  // ---------- Local mutations ----------
-  private applyOptimistic(item: Item) {
-    const items = this.state.value.items.slice();
-    const idx = items.findIndex((x) => x.id === item.id);
-    if (idx >= 0) items[idx] = item;
-    else items.unshift(item);
-    // A rolled-back delete puts the row back, so it is no longer gone.
-    this.forgetRemoved(item.id);
-    this.listSlice.set({ items });
-  }
-
-  private removeById(itemId: string) {
-    const items = this.state.value.items.filter((x) => x.id !== itemId);
-    this.noteRemoved(itemId);
-    this.listSlice.set({ items });
-  }
-
-  /**
-   * Remember an id the backend no longer has, bounded. An open editor must tell
-   * a row filtered off the page from an item that is gone; a refetch that stops
-   * listing an id is not a removal.
-   */
-  private noteRemoved(itemId: string) {
-    this.removedIds.add(itemId);
-    // A Set iterates in insertion order, so the first entry is the oldest.
-    if (this.removedIds.size > REMOVED_ID_MEMORY) {
-      this.removedIds.delete(this.removedIds.values().next().value as string);
-    }
-  }
-
-  private forgetRemoved(itemId: string) {
-    this.removedIds.delete(itemId);
+    return this.list.refreshItem(itemId);
   }
 
   /** True when this id was removed rather than merely filtered off the page. */
   wasRemoved(itemId: string): boolean {
-    return this.removedIds.has(itemId);
+    return this.list.wasRemoved(itemId);
   }
-}
-
-let bulkOpSeq = 0;
-
-/** Build a batch operation with an `op_id` unique for the process: the backend refuses a call that repeats one. */
-export function makeBulkOp(kind: BulkOperation['kind'], payload: Record<string, unknown>): BulkOperation {
-  bulkOpSeq += 1;
-  const target = typeof payload.item_id === 'string' ? payload.item_id : 'op';
-  return { op_id: `${kind}:${target}:${bulkOpSeq}`, kind, payload };
-}
-
-function opTargetId(op: BulkOperation): string | null {
-  const id = op.payload?.item_id;
-  return typeof id === 'string' ? id : null;
-}
-
-function unknownBulkError(message = t('hv.store.operationFailed')) {
-  return { code: 'unknown_error', message };
-}
-
-/** Existing rows in place (replaced when incoming has them), then the new ones. */
-function mergeUniqueById(existing: Item[], incoming: Item[]): Item[] {
-  const byId = new Map(incoming.map((i) => [i.id, i]));
-  const known = new Set(existing.map((e) => e.id));
-  return existing.map((e) => byId.get(e.id) ?? e).concat(incoming.filter((i) => !known.has(i.id)));
 }
