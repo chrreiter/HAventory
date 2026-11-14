@@ -136,12 +136,18 @@ haventory-card                     Lovelace element; store owner
     ├── hv-list                    rows, skeletons, empty states, near-end scroll
     │   ├── hv-list-row            stepper, badges, hover actions, row ⋮, photo thumbnail,
     │   │                          document marker
-    │   └── hv-item-editor         inline expander (the one edit form); photo and
-    │                              document pickers, cover/reorder controls,
-    │                              per-document title field, per-file retry
+    │   └── hv-item-editor         inline expander (the one edit form): the model,
+    │                              validation, save and cancel, and the grid
     │       ├── hv-chip-input      tag chips with suggestions
-    │       ├── hv-lightbox        the photo strip opens full-size here too
-    │       └── hv-location-tree
+    │       ├── hv-editor-category the category combobox
+    │       ├── hv-editor-location the location picker and its first-run create
+    │       │   └── hv-location-tree
+    │       ├── hv-editor-dates    check-out with its due date, inspection, reminder
+    │       │   └── hv-checkout-popover
+    │       └── hv-editor-attachments  photo and document pickers, cover/reorder
+    │           │                  controls, per-document title, per-file retry
+    │           ├── hv-lightbox    the photo strip opens full-size here too
+    │           └── hv-confirm     the remove guard
     ├── hv-detail-sheet            the narrow read view, on the card and the full
     │   │                          view alike: read + edit in one sheet (a save that
     │   │                          lands returns it to read), photo gallery strip and
