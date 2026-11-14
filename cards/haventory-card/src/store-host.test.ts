@@ -1,9 +1,13 @@
 import { vi } from 'vitest';
 // The entry module registers both hosts: the Lovelace card and the sidebar panel.
 import './index';
+import { loadRuntime } from './runtime-loader';
 import { makeItem, makeMockHass, mountComponent, settle } from './test.utils';
 import type { MockHass } from './test.utils';
 import type { Store } from './store/store';
+
+// A host renders nothing until the lazy runtime is in; `runtime-loader.test.ts` covers the wait.
+await loadRuntime();
 
 /** Both hosts, seen from a test: Home Assistant's property and Lit's promise. */
 type Host = HTMLElement & { hass?: unknown; updateComplete: Promise<unknown> };
@@ -115,5 +119,49 @@ describe.each(['haventory-card', 'haventory-panel'])('%s: the store lifecycle', 
     expect(hass.__topicSubscriberCount('items')).toBe(1);
     expect(hass.__topicSubscriberCount()).toBe(TOPICS_PER_STORE);
     expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(1);
+  });
+});
+
+// Home Assistant assigns a new `hass` to every card on every state change in the
+// instance, so a host that reads its styles on each one pays for the whole
+// house's traffic. Only a new theme, or a new selected theme, earns a read.
+describe.each(['haventory-card', 'haventory-panel'])('%s: style work per hass assignment', (tag) => {
+  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+
+  it('reads no style when the theme did not change', async () => {
+    const themes = { theme: 'default', darkMode: false };
+    const hass = Object.assign(makeMockHass(), { themes });
+    const { el } = await mountComponent<Host>(tag);
+    el.hass = hass;
+    await settle(el);
+    await nextFrame();
+
+    const reads = vi.spyOn(window, 'getComputedStyle');
+    for (let i = 0; i < 5; i++) el.hass = { ...hass, themes };
+    await settle(el);
+    await nextFrame();
+
+    expect(reads).not.toHaveBeenCalled();
+    reads.mockRestore();
+  });
+
+  it('publishes the new scheme once, a frame after the theme changes', async () => {
+    const hass = Object.assign(makeMockHass(), { themes: { darkMode: false } });
+    const { el } = await mountComponent<Host>(tag);
+    el.hass = hass;
+    await settle(el);
+    await nextFrame();
+
+    const reads = vi.spyOn(window, 'getComputedStyle');
+    // HA applies the theme's variables after it has handed the new hass down.
+    el.hass = { ...hass, themes: { darkMode: true } };
+    el.style.setProperty('--primary-background-color', '#111111');
+    el.hass = { ...hass, themes: { darkMode: true } };
+    expect(reads).not.toHaveBeenCalled();
+    await nextFrame();
+
+    expect(reads).toHaveBeenCalledTimes(1);
+    expect(el.style.colorScheme).toBe('dark');
+    reads.mockRestore();
   });
 });

@@ -1,7 +1,11 @@
 import './haventory-panel';
+import { loadRuntime } from './runtime-loader';
 import { makeItem, makeMockHass, mountComponent, q, settle, stubViewport } from './test.utils';
 import { COLUMN_PREFS_STORAGE_KEY, DEFAULT_COLUMNS } from './store/columns';
 import type { HAventoryPanel } from './haventory-panel';
+
+// A host renders nothing until the lazy runtime is in; `runtime-loader.test.ts` covers the wait.
+await loadRuntime();
 
 type Panel = HAventoryPanel & { updateComplete: Promise<unknown> };
 type FullView = HTMLElement & {

@@ -86,12 +86,16 @@ Each module documents its own traps. This is the map to which file to open.
 
 ### Frontend: `cards/haventory-card/`
 Lit + TypeScript + Vite. `src/` holds the `haventory-card` container, the `hv-*` components
-and `store/`. Builds to `custom_components/haventory/www/haventory-card.js`, which is
-git-ignored and inside the integration package, the only tree HACS copies. That directory is
-served at `/haventory_static/` and reached by two loaders on one identical URL. The same
-bundle registers the icon set the backend's `PANEL_ICON` names, which
-`tests/test_frontend_registration.py` pins across a language boundary neither side can check
-alone. Details in `docs/frontend_architecture.md`.
+and `store/`. Builds into `custom_components/haventory/www/`, which is git-ignored and inside
+the integration package, the only tree HACS copies, and is served at `/haventory_static/`.
+The build is three pieces: `haventory-card.js`, a small entry that every page loads and that
+the two loaders reach on one identical versioned URL; `chunks/core-<hash>.js`, everything the
+entry imports statically; and `chunks/runtime-<hash>.js`, the store, the catalogs and every
+element, which downloads when the first card, panel or editor connects. No chunk may import
+the entry, and setup deletes the chunks the build manifest does not name
+(`stale_files.async_sweep_stale_chunks`). The same entry registers the icon set the backend's
+`PANEL_ICON` names, which `tests/test_frontend_registration.py` pins across a language
+boundary neither side can check alone. Details in `docs/frontend_architecture.md`.
 
 ### Docs: link here, don't duplicate
 `docs/` is what a user or contributor of the shipped integration needs: `installing.md`,

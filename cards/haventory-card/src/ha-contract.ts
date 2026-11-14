@@ -46,6 +46,12 @@ export interface HassLike {
   callWS<T>(msg: Record<string, unknown>): Promise<T>;
   /** A BCP-47 tag; absent before the profile loads, which resolves to English. */
   language?: string;
+  /**
+   * Compared by identity only: HA hands down a new object when the theme or
+   * dark mode changes and keeps the old one on a state change.
+   */
+  themes?: unknown;
+  selectedTheme?: unknown;
   /** `fetch` with the user's auth header, for POSTing attachment bytes. */
   fetchWithAuth?(path: string, init?: RequestInit): Promise<Response>;
   connection: {

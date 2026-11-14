@@ -6,10 +6,9 @@ import { normalizeQuickFilters } from './ui/quick-filters';
 import type { QuickFilterKey } from './ui/quick-filters';
 import { registerBrandIcon } from './ui/brand-icon';
 import { defineCardElement } from './register';
-import './components/hv-card-shell';
-// Importing the bundle's other two HA-facing elements puts them in the build.
+import { loadRuntime } from './runtime-loader';
+// The panel's host is eager like this one; the editor is in the lazy runtime.
 import './haventory-panel';
-import './haventory-card-editor';
 
 export class HAventoryCard extends StoreHostElement {
   static override styles = css`
@@ -28,8 +27,12 @@ export class HAventoryCard extends StoreHostElement {
     return { type: 'custom:haventory-card', title: 'HAventory' };
   }
 
-  /** The visual editor the picker opens, created by tag so HA owns its lifecycle. */
-  public static getConfigElement(): HTMLElement {
+  /**
+   * The visual editor the picker opens, created by tag so HA owns its lifecycle.
+   * HA awaits this, which is what lets the editor live in the lazy runtime.
+   */
+  public static async getConfigElement(): Promise<HTMLElement> {
+    await loadRuntime();
     return document.createElement('haventory-card-editor');
   }
 

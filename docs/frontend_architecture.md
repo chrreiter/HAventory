@@ -6,9 +6,10 @@ The HAventory Lovelace card lives in `cards/haventory-card/` and is built with:
 
 - **Framework**: Lit (web components, shadow DOM)
 - **Language**: TypeScript (`strict`)
-- **Build**: Vite, producing a single ESM bundle at
+- **Build**: Vite, producing a small ESM entry at
   `custom_components/haventory/www/haventory-card.js`, which the integration serves at
-  `/haventory_static/haventory-card.js`
+  `/haventory_static/haventory-card.js`, and the hashed chunks beside it (see "Build output
+  and loading" below)
 - **Tests**: Vitest with jsdom
 
 The versions are the ones `package.json` pins. The card is the full inventory UI, updating
@@ -20,9 +21,9 @@ Paths below are relative to `cards/haventory-card/`.
 ## Entry point
 
 `src/index.ts` defines `haventory-card`, the element Home Assistant knows about. It owns the
-`Store` (created on the first `hass` assignment) and the Lovelace interface (`setConfig`,
-`getCardSize`, `getGridOptions`, the statics `getStubConfig` and `getConfigElement`, and
-`window.customCards`), and nothing else of substance:
+`Store` (created on the first `hass` assignment once the runtime is in) and the Lovelace
+interface (`setConfig`, `getCardSize`, `getGridOptions`, the statics `getStubConfig` and
+`getConfigElement`, and `window.customCards`), and nothing else of substance:
 
 ```ts
 setConfig(cfg) → { title?: string; quickFilters?: QuickFilterKey[] | null }
@@ -38,37 +39,42 @@ the default. It decides what is *allowed*; whether an allowed pill draws is stil
 count's call.
 
 `getStubConfig` and `getConfigElement` are **statics on the class**, not module exports:
-Home Assistant reads them off `customElements.get(type)` and never imports from the bundle.
-`getGridOptions` sizes the card in a sections view, while `getCardSize` still answers the
-masonry view.
+Home Assistant reads them off `customElements.get(type)` and never imports from the card's
+files. `getConfigElement` is async and awaits the runtime, which holds the editor; HA awaits
+that call. `getGridOptions` sizes the card in a sections view, while `getCardSize` still
+answers the masonry view.
 
 It also publishes the active HA theme as `color-scheme` on the host, which every nested
-component inherits.
+component inherits. HA assigns a new `hass` on every state change anywhere, so the setter
+compares `hass.themes` and `hass.selectedTheme` by identity and reads computed style only
+when one of them changed. The read waits one animation frame, because HA applies the theme's
+variables after it hands the new `hass` down; `connectedCallback` and `firstUpdated` still
+read once.
 
-`src/haventory-panel.ts` defines `haventory-panel`, the same bundle's second element, which
+`src/haventory-panel.ts` defines `haventory-panel`, the entry's second element, which
 HA's custom-panel loader instantiates for the sidebar page. It renders
 `<hv-full-view embedded open>`.
 
 Both take their store lifecycle from `StoreHostElement` (`src/store-host.ts`), which they
 extend: the `hass` setter that sets the language before anything renders and builds the
 store from the first object, the subscription that survives a disconnect and comes back with
-the element, and the `color-scheme` publish. What each one adds is what it renders and what
-configuration it reads.
+the element, the wait for the runtime, and the `color-scheme` publish. What each one adds is
+what it renders and what configuration it reads.
 
-`src/haventory-card-editor.ts` defines `haventory-card-editor`, the bundle's third HA-facing
-element, which `getConfigElement` creates by tag. It renders one field for `title`, built
-from the card's own input and `--hv-*` tokens rather than HA's `ha-form` (see "The Home
+`src/haventory-card-editor.ts` defines `haventory-card-editor`, the third HA-facing
+element. It is part of the runtime, and `getConfigElement` creates it by tag. It renders one
+field for `title`, built from the card's own input and `--hv-*` tokens rather than HA's `ha-form` (see "The Home
 Assistant contact surface" below), and turns its `input` event into a `config-changed`
 carrying `{ ...config, title }`. The spread is the point: the card ignores unknown keys, so
 `quick_filters` and anything a future version writes survive an edit untouched. An emptied
 title is dropped from the config rather than written as `""`, which hands the heading back
-to the integration-wide option. All three elements register through `defineCardElement`
-(`src/register.ts`), because HA creates each of them by tag after the frontend has swapped
-`window.customElements`.
+to the integration-wide option. The card and the panel register through `defineCardElement`
+(`src/register.ts`) and the editor through the same call in the runtime, because HA creates
+each of them by tag after the frontend has swapped `window.customElements`.
 
 The integration registers that panel at `/haventory` through `panel_custom`, handing it the
 *same* module URL both card loaders get (`frontend_registration.py`,
-`async_apply_sidebar_panel`), so the browser's module map evaluates the bundle once whichever
+`async_apply_sidebar_panel`), so the browser's module map evaluates the entry once whichever
 surface is opened first. The
 registration's `config` carries `{"title": <card title option>}`, which is where the panel's
 heading comes from; the sidebar entry itself is named by the same option. Changing a
@@ -101,10 +107,60 @@ goes, who answers a delete, and which shadow root the open form is in.
 
 ---
 
+## Build output and loading
+
+The build writes four files into `custom_components/haventory/www/`:
+
+| File | Size | Holds |
+|---|---|---|
+| `haventory-card.js` | about 1.5 kB | The entry. Its name is fixed: it is the one URL the loaders get, with `?v=<version>`. |
+| `chunks/core-<hash>.js` | about 25 kB | Lit, `StoreHostElement`, the two host elements and everything else the entry imports statically. |
+| `chunks/runtime-<hash>.js` | about 550 kB | `src/runtime.ts` and its graph: the store, both language catalogs, every `hv-*` element, the card editor and `HostSurfaces`. |
+| `chunks/manifest.json` | | The Vite manifest, which names the chunks of this build. |
+
+A page with no HAventory element loads the entry and the core, about 26.5 kB (about 10 kB
+gzipped). The runtime downloads when the first card, panel or editor connects: they share
+one promise (`src/runtime-loader.ts`), and once it has settled `loadedRuntime()` returns the
+module synchronously.
+
+**What is eager** is what Home Assistant needs before any element exists: the
+`window.customCards` entry, the brand icon set (`window.customIcons`, which draws the
+sidebar icon on pages with no card), and the `haventory-card` and `haventory-panel`
+definitions. Both are defined the moment the entry runs, so HA never shows its "custom
+element doesn't exist" error card for them. A host renders nothing until the runtime is in
+(`shouldUpdate`), so its first render is already in the user's language. Nothing in the entry's static graph may import a value from
+`src/runtime.ts` or below it; a type import is free.
+
+**The core is its own chunk.** A chunk that imported the entry would reach it by its bare
+URL, without `?v=`. The browser treats that as a different module, so the entry would run
+twice and define its elements twice, and the second `define` throws. `vite.config.ts` puts
+every module reachable from the entry through static imports into `core`, so the runtime
+imports the core and never the entry. `scripts/check_release_zip.py` fails a release asset
+in which a chunk names the entry.
+
+**Chunk names carry a content hash.** The entry is fetched fresh because of `?v=`, and it
+names its chunks by content, so a browser can never pair a new entry with an old chunk.
+
+**Upgrades.** HACS extracts a release over the install without deleting, so earlier chunks
+stay on disk. Setup runs `async_sweep_stale_chunks` (`stale_files.py`), which deletes every
+`*.js` in `www/chunks/` that the manifest does not name; with no readable manifest it
+deletes nothing. The build empties `chunks/` before it writes, and the release check
+verifies the zip's chunks against the manifest. `RETIRED_PATHS` lists no chunk, since a
+chunk's name is not known before its build.
+
+A tab that was open across an upgrade holds the old entry. If it never loaded the runtime,
+its import fails once the sweep has removed the old chunk: the loader logs to the console,
+forgets the failed promise, and the next element to connect retries. A page reload brings
+the entry and its chunks back together. A tab that has loaded the runtime once needs no
+further file, which is why the runtime is one chunk.
+
+---
+
 ## The Home Assistant contact surface
 
 `src/ha-contract.ts` is the one module that names what the card asks of Home Assistant, and
-the file to open when an upgrade breaks something: the `HassLike` shape, thin wrappers for
+the file to open when an upgrade breaks something: the `HassLike` shape (whose `themes` and
+`selectedTheme` the hosts compare by identity and never read into), thin wrappers for
 `callWS` and `connection.subscribeMessage`, the `window.customCards` picker registration,
 and the theme variables the card binds. `store/ws.ts` is the only caller of the two
 WebSocket wrappers; `index.ts` is the only caller of the registration; `ui/theme.ts` reads
@@ -270,8 +326,8 @@ Every string in every component comes out of `src/i18n/`.
   literally, so a typo shows rather than blanking a word. **`tn(key, count, params?)`** asks
   `Intl.PluralRules` for the language's category and reads `<key>.<category>`, falling back
   to `<key>.other` and then to English.
-- **The language is `hass.language`**, read in `index.ts`'s and `haventory-panel.ts`'s
-  `set hass` and on `haventory-card-editor`'s first update, resolved exact tag, then primary
+- **The language is `hass.language`**, read in `StoreHostElement`'s `set hass` (and when
+  the runtime arrives) and on `haventory-card-editor`'s first update, resolved exact tag, then primary
   subtag, then `en`. A key a dictionary has not reached falls through to the **English
   string**, never to the key.
 - **A module singleton, not a Lit context.** Half the copy lives in plain functions with no
@@ -756,7 +812,8 @@ Any other key in that record is ignored, so an older or newer payload never brea
 
 ## Data flow
 
-**Startup**: `hass` set, `new Store(hass)`, `init()` warms stats, areas, tree, flat
+**Startup**: the host's `connectedCallback` starts the runtime download, then on the first
+`hass` once it is in, `new Store(hass)`, `init()` warms stats, areas, tree, flat
 locations, distinct values, version and config in parallel, then `listItems(true)`, then
 opens the four topic subscriptions (items, stats, locations, statuses), HA's
 `area_registry_updated`, the connection watch and the day clock.

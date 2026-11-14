@@ -137,18 +137,59 @@ def frontend(hav_init):
     return frontend_of(hav_init)
 
 
-def test_the_card_build_emits_a_single_file() -> None:
-    """The card build keeps code splitting off, so the bundle has no siblings.
+def _vite_config() -> str:
+    return (REPO_ROOT / "cards" / "haventory-card" / "vite.config.ts").read_text(encoding="utf-8")
 
-    Everything the loaders name is one file. A split chunk would land in the
-    served directory beside it, and both the directory's ``.gitignore`` entry and
-    the release-zip check — which asserts the bundle is present, not that it is
-    alone — would pass it through into the HACS asset. ``emptyOutDir: false``
-    then keeps every such chunk across later builds.
+
+def test_the_card_build_names_its_entry_after_the_loaded_file(frontend) -> None:
+    """The entry keeps the one fixed name every loader and ``_CARD_FILENAME`` use.
+
+    A hashed entry name would leave the extra module URL, the Lovelace resource and
+    the static-path check pointing at a file the build no longer writes.
     """
-    config = (REPO_ROOT / "cards" / "haventory-card" / "vite.config.ts").read_text(encoding="utf-8")
+    config = _vite_config()
 
-    assert re.search(r"^\s*codeSplitting: false,?$", config, re.MULTILINE) is not None
+    match = re.search(r"entryFileNames: '([^']+)'", config)
+    assert match is not None
+    assert match.group(1) == frontend._CARD_FILENAME == "haventory-card.js"
+
+
+def test_the_card_build_puts_hashed_chunks_under_chunks() -> None:
+    """Chunks live in ``www/chunks/`` and carry a content hash.
+
+    The setup sweep and the build's own cleanup only look inside ``chunks/``, so a
+    chunk written beside the entry would never be removed. The hash is what makes
+    a changed chunk a new URL; without it a browser keeps the old one.
+    """
+    config = _vite_config()
+
+    match = re.search(r"chunkFileNames: '([^']+)'", config)
+    assert match is not None
+    assert match.group(1).startswith("chunks/")
+    assert "[hash]" in match.group(1)
+
+
+def test_the_card_build_writes_its_manifest_where_the_sweep_reads_it() -> None:
+    """The build manifest goes to ``chunks/manifest.json``.
+
+    The setup sweep decides which chunks are stale from it, and the release check
+    requires it in the zip. Both read that exact path.
+    """
+    config = _vite_config()
+
+    assert re.search(r"manifest: 'chunks/manifest\.json',", config) is not None
+
+
+def test_the_card_build_keeps_the_eager_graph_out_of_the_entry() -> None:
+    """``manualChunks`` moves everything the entry imports into a separate chunk.
+
+    A chunk that imports the entry loads it a second time without its ``?v=`` and
+    defines every custom element twice, so the entry must import chunks and never
+    the other way round.
+    """
+    config = _vite_config()
+
+    assert re.search(r"^\s*manualChunks:", config, re.MULTILINE) is not None
 
 
 @pytest.mark.asyncio

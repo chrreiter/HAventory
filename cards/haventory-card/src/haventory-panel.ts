@@ -4,9 +4,9 @@ import { StoreHostElement } from './store-host';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import type { QuickFilterKey } from './ui/quick-filters';
 import { defineCardElement } from './register';
-import { HostSurfaces } from './host-surfaces';
+import type { HostSurfaces } from './host-surfaces';
+import type { Runtime } from './runtime-loader';
 import type { HvEvent } from './events';
-import './components/hv-full-view';
 
 /** The slice of Home Assistant's panel object this element reads. */
 interface PanelInfo {
@@ -44,7 +44,12 @@ export class HAventoryPanel extends StoreHostElement {
    * No `onItemDeleted` or `onBrowse`: the embedded view closes its own editor,
    * and is itself the page a browse would open.
    */
-  readonly surfaces = new HostSurfaces(this, () => this.store);
+  /** Built from the lazy runtime before the first render; a render never sees it absent. */
+  surfaces!: HostSurfaces;
+
+  protected override runtimeReady(rt: Runtime): void {
+    this.surfaces = new rt.HostSurfaces(this, () => this.store);
+  }
 
   override render() {
     return html`

@@ -1,7 +1,11 @@
 import './index';
+import { loadRuntime } from './runtime-loader';
 import { makeItem, makeMockHass, mountComponent, settle, defined } from './test.utils';
 import { COLUMN_PREFS_STORAGE_KEY, DEFAULT_COLUMNS } from './store/columns';
 import type { HAventoryCard } from './index';
+
+// A host renders nothing until the lazy runtime is in; `runtime-loader.test.ts` covers the wait.
+await loadRuntime();
 
 type Card = HAventoryCard & { updateComplete: Promise<unknown>; hass?: unknown };
 
@@ -172,7 +176,7 @@ describe('haventory-card: the Lovelace element', () => {
   describe('the picker statics, on the surface HA reads', () => {
     type CardClass = CustomElementConstructor & {
       getStubConfig?: () => { type: string; title: string };
-      getConfigElement?: () => HTMLElement;
+      getConfigElement?: () => Promise<HTMLElement>;
     };
     const registered = () => customElements.get('haventory-card') as CardClass;
 
@@ -180,8 +184,8 @@ describe('haventory-card: the Lovelace element', () => {
       expect(registered().getStubConfig?.().type).toBe('custom:haventory-card');
     });
 
-    it('answers with the visual editor rather than leaving HA on the YAML fallback', () => {
-      expect(registered().getConfigElement?.().tagName).toBe('HAVENTORY-CARD-EDITOR');
+    it('answers with the visual editor rather than leaving HA on the YAML fallback', async () => {
+      expect((await registered().getConfigElement?.())?.tagName).toBe('HAVENTORY-CARD-EDITOR');
     });
 
     it('feeds its own stub config back in without complaint', async () => {
