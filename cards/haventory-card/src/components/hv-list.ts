@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { emitter } from '../events';
 import { LitElement, css, html, nothing } from 'lit';
 import type { PropertyValues } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
@@ -160,18 +161,19 @@ export class HVList extends LitElement {
     }
   }
 
+  private readonly _emit = emitter<'hv-list'>(this);
+
   private _onScroll = (e: Event) => {
     const el = e.currentTarget as HTMLElement;
     const ratio = (el.scrollTop + el.clientHeight) / Math.max(1, el.scrollHeight);
-    this.dispatchEvent(new CustomEvent('near-end', { detail: { ratio }, bubbles: true, composed: true }));
+    this._emit('near-end', { ratio });
   };
 
   /** The shared ui/empty-state, as the full view's table draws it. */
   private _renderEmpty() {
     return renderEmptyState(this.emptyKind, {
       locationName: this.emptyLocationName,
-      onAction: (id: EmptyOffer['id']) =>
-        this.dispatchEvent(new CustomEvent('empty-action', { detail: { id }, bubbles: true, composed: true })),
+      onAction: (id: EmptyOffer['id']) => this._emit('empty-action', { id }),
     });
   }
 

@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { emitter } from '../events';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -92,8 +93,10 @@ export class HVChipInput extends LitElement {
 
   @state() private _draft = '';
 
+  private readonly _send = emitter<'hv-chip-input'>(this);
+
   private _emit(values: string[]) {
-    this.dispatchEvent(new CustomEvent('change', { detail: { values }, bubbles: true, composed: true }));
+    this._send('change', { values });
   }
 
   private _add(raw: string) {

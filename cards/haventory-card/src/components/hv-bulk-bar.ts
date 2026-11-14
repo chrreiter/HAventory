@@ -3,6 +3,8 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { icon } from '../ui/icons';
 import { t, tn } from '../i18n';
+import { emitter } from '../events';
+import type { HvEvent } from '../events';
 import { serverErrorText } from '../store/server-error';
 import type { TranslationKey } from '../i18n';
 import { counted } from '../ui/plural';
@@ -249,9 +251,7 @@ export class HVBulkBar extends LitElement {
     this._draft = '';
   }
 
-  private _emit(type: string, detail?: BulkRunDetail) {
-    this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
-  }
+  private readonly _emit = emitter<'hv-bulk-bar'>(this);
 
   private _run(detail: BulkRunDetail) {
     this._open(null);
@@ -284,11 +284,8 @@ export class HVBulkBar extends LitElement {
               .nodes=${this.locationTree}
               .areas=${this.areas}
               showAll
-              @select=${(e: CustomEvent) =>
-                this._run({
-                  action: 'move',
-                  locationId: (e.detail as { locationId: string | null }).locationId,
-                })}
+              @select=${(e: HvEvent<'hv-location-tree', 'select'>) =>
+                this._run({ action: 'move', locationId: e.detail.locationId })}
             ></hv-location-tree>
           </div>
         </div>`;
@@ -301,8 +298,8 @@ export class HVBulkBar extends LitElement {
             data-testid="bulk-tags"
             .values=${this._tags}
             .suggestions=${(this.distinct?.tags ?? []).map((t) => t.value)}
-            @change=${(e: CustomEvent) => {
-              this._tags = (e.detail as { values: string[] }).values;
+            @change=${(e: HvEvent<'hv-chip-input', 'change'>) => {
+              this._tags = e.detail.values;
             }}
           ></hv-chip-input>
           <div class="row">
