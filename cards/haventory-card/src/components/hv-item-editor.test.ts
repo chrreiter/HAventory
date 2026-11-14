@@ -20,6 +20,7 @@ import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
 import type { HVEditorAttachments } from './hv-editor-attachments';
 import type { HVEditorCategory } from './hv-editor-category';
+import type { HVEditorLocation } from './hv-editor-location';
 import type { Item, ItemCreate, ItemUpdate, Location, LocationTreeNode } from '../store/types';
 
 const garage: Location = {
@@ -57,7 +58,7 @@ async function mount(item: Item | null, props: Partial<HVItemEditor> = {}) {
 }
 
 /** The child elements that render some of the form's fields in their own shadow roots. */
-const FIELD_CHILDREN = ['hv-editor-category', 'hv-editor-attachments'] as const;
+const FIELD_CHILDREN = ['hv-editor-category', 'hv-editor-location', 'hv-editor-attachments'] as const;
 
 /**
  * A field by test id, wherever the form draws it: in the editor's own shadow
@@ -705,145 +706,72 @@ describe('hv-item-editor: location and tags', () => {
 
     expect(category.value).toBe('');
     expect(category.placeholder).toBe('No category');
-    expect(q(el, '[data-testid="editor-location"]')?.textContent).toContain('No location');
+    expect(field(el, 'editor-location')?.textContent).toContain('No location');
   });
 
-  it('picks a location from a tree inside the form, never a second dialog', async () => {
+  /** The location child's open tree, which holds the rows a pick clicks. */
+  const locationTree = (el: HVItemEditor) =>
+    q(q(el, 'hv-editor-location') as HVEditorLocation, 'hv-location-tree') as HTMLElement;
+
+  it('files a pick from the location field in the save', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     const saves = onSave(el);
-    expect(q(el, '[data-testid="editor-location-tree"]')).toBe(null);
 
-    (q(el, '[data-testid="editor-location"]') as HTMLButtonElement).click();
-    await el.updateComplete;
-
-    const treeEl = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
+    (field(el, 'editor-location') as HTMLButtonElement).click();
+    await settle(el);
     (
-      treeEl.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="garage"]') as HTMLButtonElement
+      locationTree(el).shadowRoot?.querySelector(
+        '[data-testid="tree-row"][data-id="garage"]',
+      ) as HTMLButtonElement
     ).click();
-    await el.updateComplete;
+    await settle(el);
 
-    // Picked in place, and the tree closed again.
-    expect(q(el, '[data-testid="editor-location"]')?.textContent).toContain('Garage');
-    expect(el.shadowRoot?.querySelector('hv-location-tree')).toBe(null);
+    // The editor hears it back as the field's value, and the tree is shut again.
+    expect(field(el, 'editor-location')?.textContent).toContain('Garage');
+    expect(q(q(el, 'hv-editor-location') as HVEditorLocation, 'hv-location-tree')).toBe(null);
 
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
     expect(saves[0]?.changes?.location_id).toBe('garage');
   });
 
-  // aria-expanded on its own says only that something opened; which element it
-  // opened was left to whatever happened to follow the button in reading order.
-  it('names the holder the location field discloses, open or shut', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
-    const field = () => q(el, '[data-testid="editor-location"]') as HTMLButtonElement;
-    const id = 'editor-location-tree-holder';
-
-    expect(field().getAttribute('aria-controls')).toBe(id);
-    expect(field().getAttribute('aria-expanded')).toBe('false');
-    // The id has to resolve in both states — a button pointing at nothing
-    // announces as controlling nothing — so the holder outlives the tree in it.
-    const shut = el.shadowRoot?.getElementById(id);
-    expect(shut, 'holder shut').toBeTruthy();
-    expect(shut?.querySelector('hv-location-tree'), 'no tree while shut').toBe(null);
-
-    field().click();
-    await el.updateComplete;
-
-    expect(field().getAttribute('aria-expanded')).toBe('true');
-    expect(field().getAttribute('aria-controls')).toBe(id);
-    expect(el.shadowRoot?.getElementById(id)?.querySelector('hv-location-tree')).toBeTruthy();
-  });
-
   // The modal had a dedicated Clear button next to the location field; here the
   // same job belongs to the tree's own clear row, and it has to reach the save
   // payload as a null rather than being quietly dropped.
-  //
-  // That row is called "All items" in the sidebar, where clearing the location
-  // does show every item. In a picker it assigns one, so the same wording
-  // promised a set of items and produced an empty field instead.
   it('puts an item back to no location at all', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'garage' }));
     const saves = onSave(el);
 
-    (q(el, '[data-testid="editor-location"]') as HTMLButtonElement).click();
-    await el.updateComplete;
-    const treeEl = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
-    const clearRow = treeEl.shadowRoot?.querySelector('[data-testid="tree-all"]') as HTMLButtonElement;
-    expect(clearRow.textContent).toContain('No location');
-    expect(clearRow.textContent).not.toContain('All items');
-    clearRow.click();
-    await el.updateComplete;
+    (field(el, 'editor-location') as HTMLButtonElement).click();
+    await settle(el);
+    (locationTree(el).shadowRoot?.querySelector('[data-testid="tree-all"]') as HTMLButtonElement).click();
+    await settle(el);
 
-    expect(q(el, '[data-testid="editor-location"]')?.textContent).toContain('No location');
+    expect(field(el, 'editor-location')?.textContent).toContain('No location');
 
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
     expect(saves[0]?.changes?.location_id).toBeNull();
   });
 
-  it('marks the area behind the chosen location, apart from the path itself', async () => {
+  it('hands the location field what it draws from', async () => {
+    const createLocation = async () => garage;
+    const areas = [{ id: 'area-kitchen', name: 'Kitchen' }];
     const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'garage' }), {
-      locations: [{ ...garage, area_id: 'area-kitchen' }],
-      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
+      areas,
+      createLocation,
     });
-    const field = q(el, '[data-testid="editor-location"]');
-    expect(field?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
-    expect(field?.querySelector('.value')?.textContent).toBe('Garage');
-  });
+    const child = q(el, 'hv-editor-location') as HVEditorLocation;
 
-  // Naming a root after the room it stands in is the ordinary thing a household
-  // does, and the field then printed the same word twice with a chip's edge
-  // between them. Same rule as the rows, the table cell and the sheet's crumb —
-  // the picker elides too, and the pairing survives in the button's title.
-  it('drops the area mark when the chosen path already opens with that name', async () => {
-    const kitchen = { id: 'kitchen', name: 'Kitchen', parent_id: null, area_id: 'area-kitchen' };
-    for (const path of ['Kitchen', 'Kitchen / Pantry']) {
-      const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'kitchen' }), {
-        locations: [
-          {
-            ...kitchen,
-            path: { id_path: ['kitchen'], name_path: [], display_path: path, sort_key: '' },
-          },
-        ],
-        areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
-      });
-      const field = q(el, '[data-testid="editor-location"]');
-      const pretty = path.replace(' / ', ' › ');
-      expect(field?.querySelector('.hv-area-chip'), path).toBe(null);
-      expect(field?.querySelector('.value')?.textContent, path).toBe(pretty);
-      expect(field?.getAttribute('title'), path).toBe(`Area: Kitchen · ${pretty}`);
-      el.remove();
-    }
-  });
+    expect(child.value).toBe('garage');
+    expect(child.locations).toEqual([garage]);
+    expect(child.locationTree).toEqual(tree);
+    expect(child.areas).toBe(areas);
+    expect(child.createLocation).toBe(createLocation);
+    expect(child.classList.contains('cell') && child.classList.contains('span2')).toBe(true);
+    expect(child.mobile).toBe(false);
 
-  it('keeps the mark when the area only reappears further down the path', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'kitchen' }), {
-      locations: [
-        {
-          id: 'kitchen',
-          name: 'Kitchen',
-          parent_id: null,
-          area_id: 'area-kitchen',
-          path: {
-            id_path: ['kitchen'],
-            name_path: [],
-            display_path: 'Cellar / Kitchen',
-            sort_key: '',
-          },
-        },
-      ],
-      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
-    });
-    const field = q(el, '[data-testid="editor-location"]');
-    expect(field?.querySelector('.hv-area-chip')?.textContent).toContain('Kitchen');
-    expect(field?.querySelector('.value')?.textContent).toBe('Cellar › Kitchen');
-  });
-
-  it('shows no area chip for a location in no area', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A', location_id: 'garage' }), {
-      areas: [{ id: 'area-kitchen', name: 'Kitchen' }],
-    });
-    const field = q(el, '[data-testid="editor-location"]');
-    expect(field?.querySelector('.hv-area-chip')).toBeNull();
-    expect(field?.querySelector('.value')?.textContent).toBe('Garage');
+    el.mobile = true;
+    await settle(el);
+    expect(child.mobile).toBe(true);
   });
 
   it('edits tags as chips and lowercases them on commit', async () => {
@@ -1195,17 +1123,19 @@ describe('hv-item-editor: Escape takes back one thing at a time', () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     const cancels = onCancel(el);
 
-    (q(el, '[data-testid="editor-location"]') as HTMLButtonElement).click();
-    await el.updateComplete;
-    expect(q(el, '[data-testid="editor-location-tree"]')).toBeTruthy();
+    const child = q(el, 'hv-editor-location') as HVEditorLocation;
+
+    (field(el, 'editor-location') as HTMLButtonElement).click();
+    await settle(el);
+    expect(field(el, 'editor-location-tree')).toBeTruthy();
 
     esc(el);
-    await el.updateComplete;
+    await settle(el);
 
-    expect(q(el, '[data-testid="editor-location-tree"]')).toBe(null);
+    expect(field(el, 'editor-location-tree')).toBe(null);
     expect(cancels.count).toBe(0);
     // And the control that opened it takes the focus back.
-    expect(el.shadowRoot?.activeElement).toBe(q(el, '[data-testid="editor-location"]'));
+    expect(child.shadowRoot?.activeElement).toBe(field(el, 'editor-location'));
   });
 
   // The popover renders in a shadow root of its own; without the key stopping
@@ -1311,8 +1241,6 @@ describe('hv-item-editor: every close this form owns asks the same question', ()
 // The first minute of a fresh install: an item form whose most important field
 // cannot be satisfied, and no way in sight to make it satisfiable.
 describe('hv-item-editor: creating the first location from the picker', () => {
-  const empty = { locationTree: [] as LocationTreeNode[], locations: [] as Location[] };
-
   const created: Location = {
     id: 'loc-new',
     name: 'Shed',
@@ -1321,28 +1249,11 @@ describe('hv-item-editor: creating the first location from the picker', () => {
     path: { id_path: ['loc-new'], name_path: ['Shed'], display_path: 'Shed', sort_key: 'shed' },
   };
 
-  async function openTree(el: HVItemEditor) {
-    (q(el, '[data-testid="editor-location"]') as HTMLButtonElement).click();
-    await el.updateComplete;
-    const tree = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement & {
-      updateComplete: Promise<unknown>;
-    };
-    await tree.updateComplete;
-    return tree;
-  }
-
-  it('offers no create affordance when the host cannot run the command', async () => {
-    const el = await mount(null, empty);
-    const tree = await openTree(el);
-
-    expect(tree.shadowRoot?.querySelector('[data-testid="tree-empty"]')).toBeTruthy();
-    expect(tree.shadowRoot?.querySelector('[data-testid="tree-create"]')).toBe(null);
-  });
-
   it('creates the location and files the item in it', async () => {
     const names: string[] = [];
     const el = await mount(null, {
-      ...empty,
+      locationTree: [],
+      locations: [],
       createLocation: async (name: string) => {
         names.push(name);
         return created;
@@ -1350,8 +1261,13 @@ describe('hv-item-editor: creating the first location from the picker', () => {
     });
     const saves = onSave(el);
     await type(el, 'editor-name', 'Ladder');
-    const tree = await openTree(el);
 
+    (field(el, 'editor-location') as HTMLButtonElement).click();
+    await settle(el);
+    const tree = q(q(el, 'hv-editor-location') as HVEditorLocation, 'hv-location-tree') as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    await tree.updateComplete;
     (tree.shadowRoot?.querySelector('[data-testid="tree-create"]') as HTMLButtonElement).click();
     await tree.updateComplete;
     const input = tree.shadowRoot?.querySelector('[data-testid="tree-create-name"]') as HTMLInputElement;
@@ -1359,85 +1275,12 @@ describe('hv-item-editor: creating the first location from the picker', () => {
     input.dispatchEvent(new Event('input'));
     await tree.updateComplete;
     (tree.shadowRoot?.querySelector('[data-testid="tree-create-submit"]') as HTMLButtonElement).click();
-    for (let i = 0; i < 4; i += 1) await el.updateComplete;
+    await settle(el);
 
     expect(names).toEqual(['Shed']);
-    // Picked, and the picker closed behind it — the same shape as picking an
-    // existing location.
-    expect(el.shadowRoot?.querySelector('hv-location-tree')).toBe(null);
+    expect(field(el, 'editor-location-tree')).toBe(null);
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
     expect(saves[0]?.create?.location_id).toBe('loc-new');
-  });
-
-  /** Type a name into the empty picker's create row and submit it. */
-  async function submitCreate(el: HVItemEditor, tree: HTMLElement, name: string) {
-    (tree.shadowRoot?.querySelector('[data-testid="tree-create"]') as HTMLButtonElement).click();
-    await (tree as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
-    const input = tree.shadowRoot?.querySelector('[data-testid="tree-create-name"]') as HTMLInputElement;
-    input.value = name;
-    input.dispatchEvent(new Event('input'));
-    await (tree as HTMLElement & { updateComplete: Promise<unknown> }).updateComplete;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-create-submit"]') as HTMLButtonElement).click();
-    for (let i = 0; i < 4; i += 1) await el.updateComplete;
-  }
-
-  // The inline expander reaches this form through a template callback `hv-list`
-  // re-invokes only when one of its own properties changes. A location create
-  // changes none of them, so `locations` can stay empty for as long as the form
-  // is open — and the field would name nothing it had just filled.
-  it('names the location it created even when the host list never catches up', async () => {
-    const el = await mount(null, { ...empty, createLocation: async () => created });
-    const tree = await openTree(el);
-    await submitCreate(el, tree, 'Shed');
-
-    expect(el.locations).toEqual([]);
-    expect(q(el, '[data-testid="editor-location"]')?.textContent).toContain('Shed');
-  });
-
-  it('lists what it created when the picker is reopened', async () => {
-    const el = await mount(null, { ...empty, createLocation: async () => created });
-    await submitCreate(el, await openTree(el), 'Shed');
-    const reopened = await openTree(el);
-
-    // Still the empty state would offer to create the same name a second time.
-    expect(reopened.shadowRoot?.querySelector('[data-testid="tree-empty"]')).toBe(null);
-    expect(reopened.shadowRoot?.textContent).toContain('Shed');
-  });
-
-  it('does not double the row once the host list carries it too', async () => {
-    const el = await mount(null, { ...empty, createLocation: async () => created });
-    await submitCreate(el, await openTree(el), 'Shed');
-
-    el.locations = [created];
-    el.locationTree = [{ ...created, direct_item_count: 0, subtree_item_count: 0, children: [] }];
-    await el.updateComplete;
-    const reopened = await openTree(el);
-
-    const rows = [...(reopened.shadowRoot?.querySelectorAll('[data-testid="tree-row"]') ?? [])];
-    expect(rows.filter((r) => r.textContent?.includes('Shed'))).toHaveLength(1);
-  });
-
-  it('reports a refused name against the field instead of swallowing it', async () => {
-    const el = await mount(null, {
-      ...empty,
-      createLocation: async () => {
-        throw new Error('A location called Shed already exists');
-      },
-    });
-    const tree = await openTree(el);
-
-    (tree.shadowRoot?.querySelector('[data-testid="tree-create"]') as HTMLButtonElement).click();
-    await tree.updateComplete;
-    const input = tree.shadowRoot?.querySelector('[data-testid="tree-create-name"]') as HTMLInputElement;
-    input.value = 'Shed';
-    input.dispatchEvent(new Event('input'));
-    await tree.updateComplete;
-    (tree.shadowRoot?.querySelector('[data-testid="tree-create-submit"]') as HTMLButtonElement).click();
-    for (let i = 0; i < 4; i += 1) await el.updateComplete;
-
-    expect(q(el, '[data-testid="editor-location-error"]')?.textContent).toContain('already exists');
-    // The picker stays open so the name can be corrected where it was typed.
-    expect(el.shadowRoot?.querySelector('hv-location-tree')).toBeTruthy();
   });
 });
 

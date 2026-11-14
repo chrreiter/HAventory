@@ -563,10 +563,13 @@ describe('hv-full-view: sidebar', () => {
     (q(sr, '[data-testid="full-add-item"]') as HTMLButtonElement).click();
     await settle(el);
     const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
-    (editor.shadowRoot?.querySelector('[data-testid="editor-location"]') as HTMLButtonElement).click();
+    const locationField = q(editor, 'hv-editor-location') as HTMLElement;
+    (locationField.shadowRoot?.querySelector('[data-testid="editor-location"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const picker = editor.shadowRoot?.querySelector('[data-testid="editor-location-tree"]') as HTMLElement;
+    const picker = locationField.shadowRoot?.querySelector(
+      '[data-testid="editor-location-tree"]',
+    ) as HTMLElement;
     const head = picker.shadowRoot?.querySelector('[data-testid="tree-area-head"]');
     expect(head, 'the picker groups by area too').toBeTruthy();
     expect(picker.shadowRoot?.querySelector('[data-testid="tree-area-select"]')).toBe(null);

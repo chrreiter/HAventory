@@ -1,5 +1,4 @@
 import { t } from '../i18n';
-import { serverErrorText } from '../store/server-error';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, query, state } from 'lit/decorators.js';
 import { emitter } from '../events';
@@ -7,7 +6,6 @@ import type { HvEvent } from '../events';
 import { tokens, base } from '../ui/tokens';
 import { editorFields } from '../ui/editor-fields';
 import { chip } from '../ui/chip';
-import { areaMarkName, locationPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
 import { DEFAULT_CUSTOM_DAYS, formatDate, isOverdue, relativeTime } from '../ui/relative-time';
 import { dayOffsets, renderDayOffsets } from '../ui/day-offsets';
@@ -16,7 +14,6 @@ import { saveShortcutLabel } from '../ui/keyboard';
 import { counted } from '../ui/plural';
 import type { ConfirmDiscard } from '../ui/discard';
 import { CopyFlash, idRow } from '../ui/clipboard';
-import { LocationPicker } from '../ui/location-picker';
 import {
   REMINDER_UNITS,
   customFieldsFrom,
@@ -45,6 +42,8 @@ import './hv-editor-attachments';
 import type { HVEditorAttachments } from './hv-editor-attachments';
 import './hv-editor-category';
 import type { HVEditorCategory } from './hv-editor-category';
+import './hv-editor-location';
+import type { HVEditorLocation } from './hv-editor-location';
 
 const customFieldTypes = (): { value: CustomFieldType; label: string }[] => [
   { value: 'string', label: t('hv.editor.type.string') },
@@ -52,9 +51,6 @@ const customFieldTypes = (): { value: CustomFieldType; label: string }[] => [
   { value: 'boolean', label: t('hv.editor.type.boolean') },
   { value: 'date', label: t('hv.editor.type.date') },
 ];
-
-/** The location tree's holder, named so `aria-controls` can point at it while closed. */
-const LOCATION_TREE_ID = 'editor-location-tree-holder';
 
 /**
  * The one edit surface: the inline expander, the full view and the mobile
@@ -514,15 +510,9 @@ export class HVItemEditor extends LitElement {
   /** The inspection field's "+X days" row is showing, and owns the date. */
   @state() private _inspectionCustomOpen = false;
   @state() private _inspectionCustomDays = DEFAULT_CUSTOM_DAYS;
-  /** Why creating a first location from the picker failed. */
-  @state() private _locationError: string | null = null;
-  /** Locations this form created, until the `locations` prop carries them. */
-  @state() private _createdLocations: Location[] = [];
 
   /** The "Copied" label on the id row's button. */
   private readonly _copyFlash = new CopyFlash(this);
-  /** The location field: one location, so a pick finishes the job. */
-  private readonly _location = new LocationPicker(this);
   /** The item id `_model` was built from: `undefined` before the first update, `null` to create. */
   private _formItemId: string | null | undefined;
   /**
@@ -541,7 +531,7 @@ export class HVItemEditor extends LitElement {
   @query('#hv-editor-name') private _nameInput!: HTMLInputElement | null;
   @query('hv-editor-category') private _category!: HVEditorCategory | null;
   @query('hv-editor-attachments') private _attachments!: HVEditorAttachments | null;
-  @query(`button[aria-controls="${LOCATION_TREE_ID}"]`) private _locationTrigger!: HTMLElement | null;
+  @query('hv-editor-location') private _locationField!: HVEditorLocation | null;
   @query('#editor-inspection') private _inspectionInput!: HTMLInputElement | null;
 
   /** Focus inside the form so its Escape handler hears the key. */
@@ -631,8 +621,8 @@ export class HVItemEditor extends LitElement {
         category.close();
       } else if (this._checkoutOpen) {
         this._checkoutOpen = false;
-      } else if (this._location.open) {
-        this._closeLocation();
+      } else if (this._locationField?.open) {
+        this._locationField.close();
       } else {
         this._requestCancel();
       }
@@ -645,13 +635,6 @@ export class HVItemEditor extends LitElement {
   /** Rescue focus into the form when a surface over it closes with its opener gone. */
   private _refocus() {
     this._nameInput?.focus();
-  }
-
-  /** Shut the location picker and put focus back on the control that opened it. */
-  private _closeLocation() {
-    this._location.close();
-    this._locationError = null;
-    this._locationTrigger?.focus();
   }
 
   // ---------- Field renderers ----------
@@ -691,99 +674,6 @@ export class HVItemEditor extends LitElement {
         @input=${(e: Event) => this._patch({ description: (e.target as HTMLTextAreaElement).value })}
       ></textarea>
     </div>`;
-  }
-
-  /** The host's flat list, plus anything this form created that it still lacks. */
-  private get _knownLocations(): Location[] {
-    const known = this.locations ?? [];
-    if (!this._createdLocations.length) return known;
-    const extra = this._createdLocations.filter((c) => !known.some((l) => l.id === c.id));
-    return extra.length ? [...known, ...extra] : known;
-  }
-
-  /** The host's tree, plus the same additions as roots, which is all the picker creates. */
-  private get _knownLocationTree(): LocationTreeNode[] {
-    const known = this.locationTree ?? [];
-    if (!this._createdLocations.length) return known;
-    const seen = new Set<string>();
-    const mark = (nodes: LocationTreeNode[]) => {
-      for (const n of nodes) {
-        seen.add(n.id);
-        mark(n.children ?? []);
-      }
-    };
-    mark(known);
-    const extra = this._createdLocations
-      .filter((c) => !seen.has(c.id))
-      .map((c) => ({
-        id: c.id,
-        name: c.name,
-        parent_id: c.parent_id,
-        area_id: c.area_id,
-        path: c.path,
-        direct_item_count: 0,
-        subtree_item_count: 0,
-        children: [],
-      }));
-    return extra.length ? [...known, ...extra] : known;
-  }
-
-  private _renderLocationField() {
-    const locations = this._knownLocations;
-    const loc = locations.find((l) => l.id === this._model.locationId);
-    const parts = locationPathParts(loc, locations, this.areas, t('hv.term.noLocation'));
-    return html`<div class="cell span2">
-      <span class="hv-label">${t('hv.field.location')}</span>
-      ${this._location.render(
-        {
-          triggerClass: `field-button ${this._model.locationId ? '' : 'empty'}`,
-          testid: 'editor-location',
-          title: pathTitle(parts),
-          holderId: LOCATION_TREE_ID,
-          trigger: html`${icon('mapMarker', 15)}${renderAreaChip(
-            areaMarkName(parts.areaName, parts.path),
-          )}<span class="value">${parts.path}</span>${icon('chevronDown', 15)}`,
-        },
-        () => html`<hv-location-tree
-          data-testid="editor-location-tree"
-          .nodes=${this._knownLocationTree}
-          .areas=${this.areas}
-          .selectedId=${this._model.locationId}
-          showAll
-          allLabel=${t('hv.term.noLocation')}
-          allIcon="close"
-          ?allowCreate=${this.createLocation !== null}
-          @select=${(e: HvEvent<'hv-location-tree', 'select'>) => {
-            this._patch({ locationId: e.detail.locationId });
-            this._locationError = null;
-          }}
-          @create-location=${(e: HvEvent<'hv-location-tree', 'create-location'>) => {
-            e.stopPropagation();
-            void this._createLocation(e.detail.name);
-          }}
-        ></hv-location-tree>`,
-      )}
-      ${
-        this._locationError
-          ? html`<span class="field-error" data-testid="editor-location-error">${this._locationError}</span>`
-          : null
-      }
-    </div>`;
-  }
-
-  /** Make a location from the picker and file the item in it in one move. */
-  private async _createLocation(name: string) {
-    const create = this.createLocation;
-    if (!create) return;
-    this._locationError = null;
-    try {
-      const created = await create(name);
-      this._createdLocations = [...this._createdLocations, created];
-      this._patch({ locationId: created.id });
-      this._location.close();
-    } catch (err) {
-      this._locationError = serverErrorText(err, t('hv.editor.locationCreateFailed'));
-    }
   }
 
   /** Re-render at midnight, since the editor marks a past due date overdue. */
@@ -1265,7 +1155,16 @@ export class HVItemEditor extends LitElement {
             testid: 'editor-low-stock',
           })}
           ${this.mobile ? null : html`${this._renderDescriptionField()} ${this._renderStatusField()}`}
-          ${this._renderLocationField()}
+          <hv-editor-location
+            class="cell span2"
+            ?mobile=${this.mobile}
+            .value=${model.locationId}
+            .locations=${this.locations}
+            .locationTree=${this.locationTree}
+            .areas=${this.areas}
+            .createLocation=${this.createLocation}
+            @change=${(e: HvEvent<'hv-editor-location', 'change'>) => this._patch(e.detail)}
+          ></hv-editor-location>
           <hv-editor-category
             class="cell"
             ?mobile=${this.mobile}
