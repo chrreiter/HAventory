@@ -120,43 +120,6 @@ uv pip install --python .venv-integration/bin/python -r requirements-integration
   MSYS_NO_PATHCONV=1 docker exec hav-int bash -lc 'cd /work && bash scripts/test_integration.sh'
   ```
 
-### Online smoke tests (opt-in)
-
-These drive a running Home Assistant over WebSocket: `tests/test_ws_smoke_online.py`,
-`tests/test_ws_smoke_advanced_online.py` and `tests/test_ws_areas_online.py`, marked
-`online`. Everything they create has a unique name and is deleted again.
-
-```bash
-export RUN_ONLINE=1
-export HA_BASE_URL=http://localhost:8123
-export HA_TOKEN=<your-long-lived-token>
-scripts/smoke_online.sh
-# or: uv run pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
-```
-
-Two more flags unlock the rest of the suite, **for a disposable instance only** (the Docker
-dev container, say):
-
-- `HAV_ONLINE_DESTRUCTIVE=1` runs the scenarios that **purge every HAventory item and
-  location** first and then assert exact totals.
-- `HA_ALLOW_AREA_MUTATIONS=1` runs the area-registry test, which creates and deletes areas.
-
-```bash
-export HA_CONTAINER=home-assistant     # lets smoke_online.sh purge and reload_addon.sh deploy
-export HAV_ONLINE_DESTRUCTIVE=1
-export HA_ALLOW_AREA_MUTATIONS=1
-
-# Deploy the working tree into the container and (re)create the config entry, so the
-# instance runs the local schema:
-scripts/reload_addon.sh --container "$HA_CONTAINER"
-
-uv run pytest -q -m online             # all three files
-```
-
-Run them sequentially (no `-n`/xdist): the destructive tests assume exclusive access to the
-instance. With `HA_CONTAINER` set, `smoke_online.sh` deletes the store before it runs, so
-never point it at an inventory you keep.
-
 ### Live-update browser smoke (opt-in)
 
 `cards/haventory-card/e2e/live-updates.smoke.mjs` drives the **real card** in headless
@@ -319,7 +282,7 @@ To run a real Home Assistant with HACS against the working tree, run
 Assistant into `.venv-ha/` with its config in `.ha-config/` (both git-ignored), symlinks the
 integration in and logs HAventory at debug. Open `http://localhost:8123`, onboard, then add
 the integration under *Settings → Devices & services*. A restart from the UI picks up the
-working tree's current code, and the online smokes run against it with
+working tree's current code, and the browser smoke and the skills' helpers run against it with
 `HA_BASE_URL=http://localhost:8123` and a long-lived token from its profile page.
 
 On a Windows or macOS host, clone into a container volume (*Dev Containers: Clone Repository
@@ -337,7 +300,6 @@ Everything under `scripts/` is Linux/bash, and the Python helpers assume a UTF-8
 | `ci_local.sh` | the whole gate in one run, with coverage |
 | `test_integration.sh` | provisions `.venv-integration` and runs the in-process suite |
 | `reload_addon.sh` | deploys the working tree into a running Home Assistant dev container |
-| `smoke_online.sh` | the online WebSocket smoke; purges the store first when `HA_CONTAINER` is set |
 | `ws_init_haventory.py` | creates the config entry through Home Assistant's config-flow REST API, then checks `haventory/version` over WebSocket |
 | `ci_provision_ha.py` | onboards a fresh Home Assistant over REST; what `card-smoke` uses |
 | `probe_attachments.py`, `probe_fixtures.py` | the attachment path against a live instance (below) |

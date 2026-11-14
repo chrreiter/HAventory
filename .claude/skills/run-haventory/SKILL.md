@@ -35,9 +35,6 @@ Docker and filesystem through Git Bash instead; nothing else here depends on the
   helper talks to". Every driver and harness prints the resolved target on stderr before
   it acts (`[target] HA_BASE_URL=…`), the Python ones with the store's counts.
 
-  Do **not** put `HA_CONTAINER` in `.env`: `scripts/smoke_online.sh` purges the
-  HAventory store from that container whenever it's set (see Gotchas).
-
   If `HA_TOKEN` is missing/expired: HA UI → user profile → Security → Long-lived
   access tokens → create, then paste into `.env`.
 
@@ -82,9 +79,8 @@ curl -s "$HA_BASE_URL/haventory_static/haventory-card.js" | sha256sum   # must m
 
 ### Wipe HAventory from the dev HA (fresh-start testing)
 
-`smoke_online.sh` with `HA_CONTAINER` set only removes the store file. For a full purge
-(data, config entry, Lovelace resource, deployed code), remove the config entry via REST
-first (so the integration unloads and can't flush the store back out on shutdown):
+For a full purge (data, config entry, Lovelace resource, deployed code), remove the config
+entry via REST first (so the integration unloads and can't flush the store back out on shutdown):
 
 ```bash
 ENTRY=$(curl -s -H "Authorization: Bearer $HA_TOKEN" \
@@ -640,17 +636,6 @@ vacuously. No HA and no dependency beyond Node:
 cd .claude/skills/run-haventory && node --test
 ```
 
-Online smoke against the running container (non-destructive as long as
-`HA_CONTAINER` is unset; verify with `echo $HA_CONTAINER` first):
-
-```bash
-set -a; . ./.env; set +a
-RUN_ONLINE=1 bash scripts/smoke_online.sh
-```
-
-Expected: `8 passed, 13 skipped` (the skips need `HA_CONTAINER`, i.e. the destructive
-clean-start mode), then `Online smoke test completed successfully.`
-
 ## Gotchas
 
 - [Windows/Git Bash] **Git Bash rewrites any argument that looks like an absolute POSIX
@@ -705,9 +690,6 @@ clean-start mode), then `Online smoke test completed successfully.`
   the profile language over WS (see "Screenshot the setup and options screens"). Only
   `screenshot.mjs` and `probe.mjs` take `--locale`; drive the others by setting the
   profile.
-- **`HA_CONTAINER` turns `smoke_online.sh` destructive**: when set, the script
-  `rm -f`s `haventory_store` inside that container and restarts HA before testing;
-  all dev items/locations are gone. Leave it unset unless you *want* a wiped store.
 - **`item/list` filter key is `q`, not `query`/`search`.** A typo'd key is refused, not
   dropped: the reply is `validation_error` naming it (`unknown filter key(s): …`), in a
   filter and a sort alike. So an empty-looking result is a real result, and a request that

@@ -1,14 +1,15 @@
 ---
 name: test-haventory
-description: Run every HAventory test surface: offline unit gate (pytest/ruff/mypy), frontend gate (eslint/vitest/tsc/build), the adversarial online stress regimen (fuzz/bulk/races/restart), the live-update browser smoke, and the online WS pytest smokes. Use when asked to test HAventory, run the gate, lint/typecheck, or smoke / stress / load / fuzz / break-it test the running app.
+description: Run every HAventory test surface: offline unit gate (pytest/ruff/mypy), frontend gate (eslint/vitest/tsc/build), the adversarial online stress regimen (fuzz/bulk/races/restart), and the live-update browser smoke. Use when asked to test HAventory, run the gate, lint/typecheck, or smoke / stress / load / fuzz / break-it test the running app.
 ---
 
-HAventory has five test surfaces. Two are **offline** (no HA): the backend gate
-(pytest/ruff/mypy) and the frontend gate (eslint/vitest/tsc/build). Three are **online**
+HAventory has four test surfaces here. Two are **offline** (no HA): the backend gate
+(pytest/ruff/mypy) and the frontend gate (eslint/vitest/tsc/build). Two are **online**
 and hit the real HA in Docker (container `home-assistant`, `http://localhost:8123`): the
 adversarial **stress regimen** `.claude/skills/test-haventory/stress.py` (the primary
-break-it driver), the **live-update browser smoke** `cards/haventory-card/e2e/live-updates.smoke.mjs`,
-and the **online WS pytest smokes** (`-m online`).
+break-it driver) and the **live-update browser smoke** `cards/haventory-card/e2e/live-updates.smoke.mjs`.
+The in-process HA suite (`scripts/test_integration.sh`, a real HA core) is documented in
+`docs/developing.md` and not re-verified here.
 
 All paths are relative to the repo root and every command below is **Linux/bash**, which is
 the only development host the repo supports; CI runs `ubuntu-latest`, and on Windows the
@@ -42,18 +43,16 @@ Backend, from the repo root:
 # time here is how a test-only import went missing and how a version literal for
 # ruff drifted from the pin CI runs.
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -q
-# → 1361 passed, 25 skipped
 
 uv run ruff check custom_components tests
 # → All checks passed!
 
 # CI fails on formatting alone; `ruff check` does not cover it.
 uv run ruff format --check .
-# → 184 files already formatted
 
 # mypy against the real HA at the floor; builds .venv-integration first if needed.
 scripts/typecheck.sh
-# → Success: no issues found in 25 source files
+# → Success: no issues found
 ```
 
 Frontend, from `cards/haventory-card`:
@@ -63,15 +62,9 @@ npm ci            # first run, or if node_modules is partial (missing rolldown b
 npx prettier --check . # → All matched files use Prettier code style!
 npm run lint      # eslint  → clean
 npm run typecheck # tsc --noEmit → clean
-npm test          # vitest  → 2044 passed across 79 files
+npm test          # vitest  → all passed
 npm run build     # vite → ../../custom_components/haventory/www/ (git-ignored)
 ```
-
-Those counts are a collection oracle, not a target: a release adds some tests and deletes
-others, so a small move either way is the normal result. A **large drop** (a whole file's
-worth of tests, fewer vitest files, fewer mypy source files) means collection broke and
-part of the suite silently did not run. Re-pin them whenever a release moves them; a stale
-figure read as an exact expectation misdiagnoses a healthy run.
 
 Warm the hooks before committing (never `--no-verify`):
 
@@ -183,21 +176,6 @@ via the sibling skill:
 node .claude/skills/run-haventory/screenshot.mjs --out /tmp/card.png
 ```
 
-## Run (agent path): online WS pytest smokes
-
-Non-destructive WS client tests against the running instance, from the repo root:
-
-```bash
-set -a; source .env; set +a
-RUN_ONLINE=1 uv run python -m pytest -q -m online -k "ws_smoke or ws_smoke_advanced"
-# → 8 passed, 13 skipped (the skips need the destructive/area gates)
-```
-
-The full online gate (adds destructive + area-registry tests, double-gated by
-`HAV_ONLINE_DESTRUCTIVE=1` / `HA_ALLOW_AREA_MUTATIONS=1`) and the in-process HA integration
-suite (`scripts/test_integration.sh`, phacc, real HA core) are documented in
-`docs/developing.md`, not re-verified here.
-
 ## Gotchas
 
 - **`--no-project` is the fallback, not the rule**: plain `uv run` works. Add `--no-project`
@@ -205,7 +183,7 @@ suite (`scripts/test_integration.sh`, phacc, real HA core) are documented in
   [Windows/Git Bash] the way that shows up here is `failed to remove file .venv/lib64`
   with a permission error, a file-sync client holding the symlink.
 - **Offline suite needs Python 3.14** (PEP 758 source) and `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`;
-  `--with aiohttp` is only so the `*_online.py` / stress modules import at collection time.
+  `--with aiohttp` is only so the stress driver imports.
 - **Frontend `node_modules` is often partial** (missing the platform's `@rolldown/binding-*`
   → vitest/vite crash on start). `npm ci` in `cards/haventory-card` fixes it.
 - **`stress.py restart` needs `HA_CONTAINER`**, and leaves the container restarted
