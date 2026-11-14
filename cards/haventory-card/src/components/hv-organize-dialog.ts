@@ -9,17 +9,13 @@ import { ref } from 'lit/directives/ref.js';
 import { emitter } from '../events';
 import type { HvEvent } from '../events';
 import { tokens, base } from '../ui/tokens';
-import { chip, tagLabel } from '../ui/chip';
+import { chip } from '../ui/chip';
 import { Modal, modalChrome } from '../ui/modal';
 import { searchBox } from '../ui/filter-chrome';
 import { LocationPicker } from '../ui/location-picker';
-import { Picker } from '../ui/picker';
 import { icon } from '../ui/icons';
 import type { IconName } from '../ui/icons';
 import { counted } from '../ui/plural';
-import { closestMatch } from '../ui/fuzzy';
-import { describeRewrite, filterForValue, rewriteOps } from '../ui/value-rewrite';
-import type { ValueKind } from '../ui/value-rewrite';
 import { areaChangePreview, areaNameById } from '../ui/area';
 import type { AreaChangePreview } from '../ui/area';
 import { renderAreaChip } from '../ui/location-path';
@@ -28,19 +24,15 @@ import { CopyFlash, idRow } from '../ui/clipboard';
 import { describeFailure } from './hv-bulk-bar';
 import { makeBulkOp } from '../store/store';
 import type { Store } from '../store/store';
-import type { AreaRef, BulkFailure, DistinctValue, Item, LocationTreeNode, StoreState } from '../store/types';
-import './hv-confirm';
+import type { AreaRef, BulkFailure, Item, LocationTreeNode, StoreState } from '../store/types';
 import './hv-organize-statuses';
+import './hv-organize-values';
 
 export type OrganizeTab = 'locations' | 'categories' | 'tags' | 'statuses';
 
 /** Picker holders, named so `aria-controls` can point at them while closed. */
 const LOC_PARENT_TREE_ID = 'location-parent-tree-holder';
 const MERGE_TARGET_TREE_ID = 'merge-target-tree-holder';
-const MERGE_VALUE_LIST_ID = 'merge-value-list-holder';
-
-/** Values the merge list holds before it earns a filter: six fit its 200px box. */
-const VALUE_FILTER_FROM = 6;
 
 /** A kind rather than a label, since each rewrite line is its own sentence per language. */
 type RewriteKind = 'merge' | 'rename' | 'remove';
@@ -182,71 +174,6 @@ export class HVOrganizeDialog extends LitElement {
         overflow-y: auto;
         padding: 4px 14px 16px;
       }
-      .value-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: var(--hv-organize-row-pad) 8px;
-        border-radius: var(--hv-radius-input);
-      }
-      .value-row:hover {
-        background: var(--hv-hover-overlay);
-      }
-      .count-link {
-        border: none;
-        background: none;
-        color: var(--hv-primary-dark);
-        font: 400 12px var(--hv-font);
-        padding: 0;
-        white-space: nowrap;
-        flex: none;
-        /* WCAG 2.2's 24px pointer target, taller than the 12px text. */
-        display: inline-flex;
-        align-items: center;
-        min-height: 24px;
-      }
-      :host([mobile]) .count-link {
-        min-height: var(--hv-tap-min, 44px);
-      }
-      .draft-note {
-        font: 400 12px var(--hv-font);
-        color: var(--hv-text-tertiary);
-        font-style: italic;
-      }
-      .row-actions {
-        margin-left: auto;
-        display: flex;
-        gap: 2px;
-        flex: none;
-      }
-      :host(:not([mobile])) .value-row .row-actions {
-        visibility: hidden;
-      }
-      :host(:not([mobile])) .value-row:hover .row-actions,
-      :host(:not([mobile])) .value-row:focus-within .row-actions {
-        visibility: visible;
-      }
-      .row-actions button {
-        display: inline-grid;
-        place-items: center;
-        width: 26px;
-        height: 26px;
-        border: none;
-        border-radius: 50%;
-        background: none;
-        color: var(--hv-text-secondary);
-        padding: 0;
-      }
-      :host([mobile]) .row-actions button {
-        width: var(--hv-tap-min, 44px);
-        height: var(--hv-tap-min, 44px);
-      }
-      .row-actions button.danger {
-        color: var(--hv-error);
-      }
-      .row-actions button:hover {
-        background: var(--hv-hover-overlay);
-      }
       .expander {
         background: var(--hv-row-hover);
         border-left: 3px solid var(--hv-primary);
@@ -316,48 +243,6 @@ export class HVOrganizeDialog extends LitElement {
         padding: 4px 0;
         margin-top: 6px;
       }
-      .list-filter {
-        display: block;
-        padding: 4px 8px 6px;
-      }
-      .option {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        width: 100%;
-        box-sizing: border-box;
-        border: none;
-        background: none;
-        text-align: left;
-        font: 400 13.5px var(--hv-font);
-        color: var(--hv-text);
-        padding: 7px 12px;
-        border-radius: var(--hv-radius-input);
-      }
-      :host([mobile]) .option {
-        min-height: var(--hv-tap-min, 44px);
-        font-size: 15px;
-      }
-      .option .label {
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .option:hover {
-        background: var(--hv-hover-overlay);
-      }
-      .option[aria-pressed='true'] {
-        background: var(--hv-primary-tint);
-        color: var(--hv-on-primary-tint);
-        font-weight: 500;
-      }
-      .option-empty {
-        padding: 8px 12px;
-        font-size: 12.5px;
-        color: var(--hv-text-tertiary);
-      }
       .actions {
         display: flex;
         align-items: center;
@@ -409,12 +294,6 @@ export class HVOrganizeDialog extends LitElement {
         color: var(--hv-text-tertiary);
         line-height: 1.5;
       }
-      .empty {
-        padding: 24px 10px;
-        text-align: center;
-        color: var(--hv-text-tertiary);
-        font-size: 13px;
-      }
       .sheet-actions {
         display: grid;
         gap: 2px;
@@ -444,12 +323,6 @@ export class HVOrganizeDialog extends LitElement {
   /** The parent picker and the merge target: one location each, so a pick ends it. */
   private readonly _parentPicker = new LocationPicker(this);
   private readonly _mergePicker = new LocationPicker(this);
-  /** The list of values a category or tag merges into; its filter goes with it. */
-  private readonly _valuePicker = new Picker(this, {
-    onClose: () => {
-      this._valueFilter = '';
-    },
-  });
   /** The "Copied" label on the open location editor's id row. */
   private readonly _copyFlash = new CopyFlash(this);
 
@@ -466,20 +339,7 @@ export class HVOrganizeDialog extends LitElement {
   @state() private _mergeTarget: string | null = null;
   /** Location whose actions are open in the touch sheet. */
   @state() private _sheetLocation: string | null = null;
-  /** The value row expanded for rename or merge, if any; the kind comes from the active tab. */
-  @state() private _editingValue: { value: string; mode: 'rename' | 'merge' } | null = null;
-  @state() private _valueDraft = '';
-  /** What narrows the merge target list, for a vocabulary too long to scan. */
-  @state() private _valueFilter = '';
   @state() private _rewrite: RewriteState | null = null;
-  @state() private _confirmRemove: string | null = null;
-  /** The last confirmation's value, kept past the close for the focus rescue. */
-  private _lastConfirmValue: string | null = null;
-  @state() private _sheetValue: string | null = null;
-  /** The "New category"/"New tag" row, open with the name being typed. */
-  @state() private _creatingValue = false;
-  @state() private _newValue = '';
-  @state() private _newValueError: string | null = null;
 
   private _storeUnsub?: () => void;
 
@@ -491,8 +351,8 @@ export class HVOrganizeDialog extends LitElement {
 
   private _subscribe() {
     this._storeUnsub?.();
-    // The dialog reads locations and the distinct values, never the list.
-    this._storeUnsub = this.store.watch(['locations', 'facets'], () => this.requestUpdate());
+    // The dialog reads locations, never the list.
+    this._storeUnsub = this.store.watch(['locations'], () => this.requestUpdate());
   }
 
   override connectedCallback(): void {
@@ -558,15 +418,9 @@ export class HVOrganizeDialog extends LitElement {
   private _resetTransient() {
     this._filter = '';
     this._editingLocation = null;
-    this._editingValue = null;
-    this._valuePicker.close();
     this._guard = null;
     this._locError = null;
     this._rewrite = null;
-    this._sheetValue = null;
-    this._creatingValue = false;
-    this._newValue = '';
-    this._newValueError = null;
     this._mergingLocation = null;
     this._mergeTarget = null;
     this._mergePicker.close();
@@ -822,108 +676,6 @@ export class HVOrganizeDialog extends LitElement {
     }
 
     this._progress('merge', ops.length, ops.length, true, failed, error);
-  }
-
-  // ---------- Categories & tags ----------
-  private get _kind(): ValueKind {
-    return this.tab === 'tags' ? 'tag' : 'category';
-  }
-
-  /** Every value of the open tab's facet. */
-  private get _allValues(): DistinctValue[] {
-    const distinct = this.st?.distinctValuesCache;
-    return (this.tab === 'tags' ? distinct?.tags : distinct?.categories) ?? [];
-  }
-
-  private get _values(): DistinctValue[] {
-    const needle = this._filter.trim().toLowerCase();
-    const list = this._allValues;
-    return needle ? list.filter((v) => v.value.toLowerCase().includes(needle)) : list;
-  }
-
-  /** Singular noun for the tab, for button labels and messages. */
-  private get _noun(): string {
-    return this.tab === 'tags' ? t('hv.organize.noun.tag') : t('hv.organize.noun.category');
-  }
-
-  /** Plural noun for the tab, for the two sentences that count its values. */
-  private get _plural(): string {
-    return this.tab === 'tags' ? t('hv.organize.plural.tags') : t('hv.organize.plural.categories');
-  }
-
-  /** One value of the open tab, chipped the way the rest of the card chips it. */
-  private _valueChip(value: string, opts: { style?: string; testid?: string } = {}) {
-    const style = opts.style ?? '';
-    const testid = opts.testid ?? '';
-    return this.tab === 'tags'
-      ? html`<span class="hv-chip tag" style=${style} data-testid=${testid}>${tagLabel(value)}</span>`
-      : html`<span class="hv-chip" style=${style} data-testid=${testid}>${value}</span>`;
-  }
-
-  /** True while the value exists only on the card, with no item carrying it. */
-  private _isDraft(value: string): boolean {
-    return this.store?.isDraftValue(this._kind, value) ?? false;
-  }
-
-  private _createValue() {
-    const name = this._newValue.trim();
-    if (!name) {
-      this._newValueError = t('hv.organize.valueNeedsName', { noun: this._noun });
-      return;
-    }
-    if (!this.store?.addDraftValue(this._kind, name)) {
-      this._newValueError = t('hv.organize.valueExists', { name });
-      return;
-    }
-    this._creatingValue = false;
-    this._newValue = '';
-    this._newValueError = null;
-  }
-
-  private _startValueEdit(value: string, mode: 'rename' | 'merge') {
-    this._editingValue = { value, mode };
-    this._sheetValue = null;
-    this._rewrite = null;
-    this._valuePicker.close();
-    if (mode === 'merge') {
-      // Pre-fill the closest existing value, which is usually the typo fix.
-      this._valueDraft = closestMatch(value, this._otherValues(value)) ?? '';
-    } else {
-      this._valueDraft = value;
-    }
-  }
-
-  /** Fetch every affected item, then rewrite them in one chunked batch. */
-  private async _runRewrite(from: string, to: string | null, rewrite: RewriteKind) {
-    const kind = this._kind;
-    this._progress(rewrite, 0, 0);
-    let items;
-    try {
-      items = (await this.store?.listAllMatching(filterForValue(kind, from))) ?? [];
-    } catch {
-      this._progress(rewrite, 0, 0, true);
-      return;
-    }
-    const ops = rewriteOps(kind, items, from, to);
-    if (!ops.length) {
-      this._progress(rewrite, 0, 0, true);
-      this._editingValue = null;
-      return;
-    }
-
-    this._progress(rewrite, 0, ops.length);
-    const outcome = await this.store?.bulkExecute(ops, {
-      onProgress: (done, total) => this._progress(rewrite, done, total),
-    });
-    this._progress(rewrite, ops.length, ops.length, true, outcome?.failed ?? []);
-    this._editingValue = null;
-    await this.store?.refreshDistinctValues().catch(() => undefined);
-  }
-
-  private _showValue(value: string) {
-    if (this.tab === 'tags') this.store?.setFilters({ tags: [value], tagsMode: 'any' });
-    else this.store?.setFilters({ categories: [value] });
-    this._browse();
   }
 
   private _showLocation(locationId: string | null) {
@@ -1346,357 +1098,12 @@ export class HVOrganizeDialog extends LitElement {
     </div>`;
   }
 
-  /** The values a merge of `value` can land on: every other one of the tab. */
-  private _otherValues(value: string): string[] {
-    return this._allValues.map((v) => v.value).filter((v) => v !== value);
-  }
-
-  /** The tab's value as the merge target field prints it: a tag wears its mark. */
-  private _valueText(value: string) {
-    return this.tab === 'tags' ? tagLabel(value) : value;
-  }
-
-  /** The merge target's trigger, drawn apart from its full-width list below. */
-  private _renderValueTargetTrigger(others: string[]) {
-    const picked = this._valueDraft.trim();
-    return this._valuePicker.renderTrigger({
-      triggerClass: 'control grow',
-      testid: 'value-target',
-      title: t('hv.organize.mergeInto'),
-      disabled: !others.length,
-      holderId: MERGE_VALUE_LIST_ID,
-      trigger: html`<span class="value"
-          >${picked ? this._valueText(picked) : t('hv.organize.mergeIntoPlaceholder')}</span
-        >${icon('chevronDown', 15)}`,
-    });
-  }
-
-  /**
-   * The values a merge can land on, as the card's own elements: the companion
-   * app's Android WebView draws no `<datalist>` suggestions at all.
-   */
-  private _renderValueTargetList(others: string[]) {
-    const picked = this._valueDraft.trim();
-    const needle = this._valueFilter.trim().toLowerCase();
-    const shown = needle ? others.filter((v) => v.toLowerCase().includes(needle)) : others;
-    return this._valuePicker.renderHolder(
-      { holderId: MERGE_VALUE_LIST_ID },
-      () => html`
-        ${
-          others.length > VALUE_FILTER_FROM
-            ? html`<label class="list-filter">
-              <span class="hv-sr-only">${t('hv.organize.filterValues', { values: this._plural })}</span>
-              <input
-                class="control"
-                data-testid="value-target-filter"
-                placeholder=${t('hv.organize.filterValuesPlaceholder', { values: this._plural })}
-                .value=${this._valueFilter}
-                @input=${(e: Event) => {
-                  this._valueFilter = (e.target as HTMLInputElement).value;
-                }}
-              />
-            </label>`
-            : null
-        }
-        ${
-          shown.length
-            ? shown.map(
-                (v) => html`<button
-                class="option"
-                data-testid="value-target-option"
-                data-value=${v}
-                aria-pressed=${String(v === picked)}
-                @click=${() => {
-                  this._valueDraft = v;
-                  this._valuePicker.close();
-                }}
-              >
-                <span class="label">${this._valueText(v)}</span>
-                ${v === picked ? icon('check', 15) : null}
-              </button>`,
-              )
-            : html`<div class="option-empty" data-testid="value-target-none">
-              ${t('hv.organize.noValuesMatch', { values: this._plural })}
-            </div>`
-        }
-      `,
-    );
-  }
-
-  private _renderValueEditor(value: string, count: number) {
-    const editing = this._editingValue!;
-    const merging = editing.mode === 'merge';
-    const others = merging ? this._otherValues(value) : [];
-    const target = this._valueDraft.trim();
-
-    return keyed(
-      `${editing.mode}:${value}`,
-      html`<div
-        class="expander"
-        data-testid="value-editor"
-        data-mode=${editing.mode}
-        data-field=${merging ? 'button[aria-controls]' : '#org-value-target'}
-        ${ref(this._reveal)}
-      >
-        <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
-          ${this._valueChip(value, { style: merging ? 'text-decoration: line-through' : undefined })}
-          <span style="font-size:12.5px;color:var(--hv-text-secondary)">${counted(count, 'item')}</span>
-          ${
-            merging
-              ? html`${icon('arrowRight', 18)}${this._renderValueTargetTrigger(others)}`
-              : html`<label style="display:flex;align-items:center;gap:8px;flex:1;min-width:180px">
-                <span class="hv-sr-only">${t('hv.organize.newName')}</span>
-                <input
-                  id="org-value-target"
-                  class="control"
-                  data-testid="value-target"
-                  placeholder=${t('hv.organize.newNamePlaceholder')}
-                  .value=${this._valueDraft}
-                  @input=${(e: Event) => {
-                    this._valueDraft = (e.target as HTMLInputElement).value;
-                  }}
-                />
-              </label>`
-          }
-        </div>
-        ${merging ? this._renderValueTargetList(others) : null}
-        <span class="note" data-testid="value-effect">
-          ${
-            merging && !others.length
-              ? t('hv.organize.mergeNoOther', { values: this._plural })
-              : target
-                ? describeRewrite(this._kind, count, value, target)
-                : t('hv.organize.pickNameToContinue')
-          }
-        </span>
-        ${this._renderFooter({
-          cancelTestid: 'value-cancel',
-          onCancel: () => {
-            this._editingValue = null;
-          },
-          testid: 'value-apply',
-          label: merging ? t('hv.action.merge') : t('hv.action.rename'),
-          disabled: !target || target === value,
-          onCommit: () => void this._runRewrite(value, target, merging ? 'merge' : 'rename'),
-        })}
-      </div>`,
-    );
-  }
-
-  private _renderValueCreator() {
-    return html`<div class="expander" data-testid="value-create">
-      <label style="display:flex;align-items:center;gap:8px">
-        <span class="hv-sr-only">${t('hv.organize.newValue', { noun: this._noun })}</span>
-        <input
-          class="control"
-          data-testid="new-value-name"
-          placeholder=${t('hv.organize.newValuePlaceholder', { noun: this._noun })}
-          .value=${this._newValue}
-          @input=${(e: Event) => {
-            this._newValue = (e.target as HTMLInputElement).value;
-            this._newValueError = null;
-          }}
-          @keydown=${(e: KeyboardEvent) => {
-            if (e.key === 'Enter') this._createValue();
-          }}
-        />
-      </label>
-      ${this._failure('new-value-error', this._newValueError)}
-      <span class="note">${t('hv.organize.draftNote', { noun: this._noun })}</span>
-      ${this._renderFooter({
-        cancelTestid: 'new-value-cancel',
-        onCancel: () => {
-          this._creatingValue = false;
-          this._newValueError = null;
-        },
-        testid: 'new-value-create',
-        label: t('hv.action.create'),
-        disabled: !this._newValue.trim(),
-        onCommit: () => this._createValue(),
-      })}
-    </div>`;
-  }
-
-  private _renderValuesTab() {
-    const values = this._values;
-    const noun = this._plural;
-    return html`
-      ${this._renderToolbar({
-        search: {
-          label: t('hv.organize.filterValues', { values: noun }),
-          placeholder: t('hv.organize.filterValuesPlaceholder', { values: noun }),
-        },
-        count: counted(values.length, this.tab === 'tags' ? 'tag' : 'category'),
-        countTestid: 'organize-value-count',
-        newTestid: 'organize-new-value',
-        newLabel: t('hv.organize.newValue', { noun: this._noun }),
-        onNew: () => {
-          this._creatingValue = true;
-          this._newValue = '';
-          this._newValueError = null;
-          this._editingValue = null;
-        },
-      })}
-      <div class="body">
-        ${this._creatingValue ? this._renderValueCreator() : null}
-        ${this._rewrite ? this._renderRewrite(this._rewrite) : null}
-        ${
-          values.length
-            ? values.map(
-                (v) => html`
-                <div class="value-row" data-testid="value-row" data-value=${v.value}>
-                  ${this._valueChip(v.value)}
-                  ${
-                    this._isDraft(v.value)
-                      ? html`<span class="draft-note" data-testid="value-draft">
-                        ${t('hv.organize.draftBadge')}
-                      </span>`
-                      : html`<button
-                        class="count-link"
-                        data-testid="value-count"
-                        @click=${() => this._showValue(v.value)}
-                      >
-                        ${counted(v.count, 'item')}
-                      </button>`
-                  }
-                  <span class="row-actions">
-                    ${
-                      this._isDraft(v.value)
-                        ? html`<button
-                          class="danger"
-                          data-testid="value-discard"
-                          aria-label=${t('hv.organize.discardValue', { value: v.value })}
-                          title=${t('hv.action.discard')}
-                          @click=${() => this.store?.removeDraftValue(this._kind, v.value)}
-                        >
-                          ${icon('del', 16)}
-                        </button>`
-                        : this.mobile
-                          ? html`<button
-                          data-testid="value-more"
-                          aria-label=${t('hv.organize.actionsFor', { value: v.value })}
-                          @click=${() => {
-                            this._sheetValue = v.value;
-                          }}
-                        >
-                          ${icon('dotsVertical', 17)}
-                        </button>`
-                          : html`
-                          <button
-                            data-testid="value-rename"
-                            aria-label=${t('hv.organize.renameValue', { value: v.value })}
-                            title=${t('hv.action.rename')}
-                            @click=${() => this._startValueEdit(v.value, 'rename')}
-                          >
-                            ${icon('pencil', 16)}
-                          </button>
-                          <button
-                            data-testid="value-merge"
-                            aria-label=${t('hv.organize.mergeValue', { value: v.value })}
-                            title=${t('hv.organize.mergeIntoAnother')}
-                            @click=${() => this._startValueEdit(v.value, 'merge')}
-                          >
-                            ${icon('callMerge', 16)}
-                          </button>
-                          <button
-                            class="danger"
-                            data-testid="value-remove"
-                            aria-label=${t('hv.organize.removeValue', { value: v.value })}
-                            title=${t('hv.organize.removeFromEveryItem')}
-                            @click=${() => {
-                              this._confirmRemove = v.value;
-                            }}
-                          >
-                            ${icon('del', 16)}
-                          </button>
-                        `
-                    }
-                  </span>
-                </div>
-                ${this._editingValue?.value === v.value ? this._renderValueEditor(v.value, v.count) : null}
-                ${this._sheetValue === v.value ? this._renderValueSheet(v.value, v.count) : null}
-              `,
-              )
-            : html`<div class="empty" data-testid="organize-empty">
-              ${
-                this._filter.trim()
-                  ? t('hv.organize.noValuesMatch', { values: noun })
-                  : t('hv.organize.noValuesYet', { values: noun })
-              }
-            </div>`
-        }
-      </div>
-    `;
-  }
-
-  private _renderValueSheet(value: string, count: number) {
-    const suggestion = closestMatch(value, this._otherValues(value));
-    return this._renderActionSheet('value-sheet', value, [
-      {
-        testid: 'sheet-show',
-        glyph: 'magnify',
-        label: t('hv.organize.showItems', { items: counted(count, 'item') }),
-        onPick: () => this._showValue(value),
-      },
-      {
-        testid: 'sheet-rename',
-        glyph: 'pencil',
-        label: t('hv.organize.renameEllipsis'),
-        onPick: () => this._startValueEdit(value, 'rename'),
-      },
-      {
-        testid: 'sheet-merge',
-        glyph: 'callMerge',
-        label: t('hv.organize.mergeIntoEllipsis'),
-        trailing: suggestion
-          ? this._valueChip(suggestion, {
-              style: 'margin-left:auto',
-              testid: 'sheet-merge-suggestion',
-            })
-          : null,
-        onPick: () => this._startValueEdit(value, 'merge'),
-      },
-      {
-        testid: 'sheet-remove',
-        glyph: 'del',
-        label: t('hv.organize.removeFromAllItems'),
-        danger: true,
-        onPick: () => {
-          this._sheetValue = null;
-          this._confirmRemove = value;
-        },
-      },
-    ]);
-  }
-
-  /**
-   * Focus for a closed delete confirmation whose ✕ opener is hidden in
-   * hover-revealed row actions: the row takes it (`:focus-within` re-reveals
-   * the actions), or the panel once a removal has taken the row away.
-   */
-  private _refocusConfirmRow = () => {
-    const value = this._lastConfirmValue;
-    // Matched on `dataset`: a quote in a tag would end an attribute selector.
-    const row =
-      value === null
-        ? null
-        : (Array.from(this.renderRoot.querySelectorAll<HTMLElement>('.value-row')).find(
-            (r) => r.dataset.value === value,
-          ) ?? null);
-    const target = row ?? this.renderRoot.querySelector<HTMLElement>('.panel');
-    if (!target) return;
-    if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
-    target.focus({ preventScroll: true });
-  };
-
   // The cache keeps the statuses tab's open editor across a close, as it is kept across a tab switch.
   override render() {
     return cache(this.open ? this._renderOpen() : nothing);
   }
 
   private _renderOpen() {
-    const removeCount = this._allValues.find((v) => v.value === this._confirmRemove)?.count ?? 0;
-
     return html`
       ${this._modal.render(
         { label: t('hv.organize.title'), testid: 'organize-dialog', onClose: this._close },
@@ -1754,38 +1161,19 @@ export class HVOrganizeDialog extends LitElement {
                 ></hv-organize-statuses>`
               : html`${keyed(
                   `${this._openings}:${this.tab}`,
-                  this.tab === 'locations' ? this._renderLocationsTab() : this._renderValuesTab(),
+                  this.tab === 'locations'
+                    ? this._renderLocationsTab()
+                    : html`<hv-organize-values
+                        ?mobile=${this.mobile}
+                        .store=${this.store}
+                        .kind=${this.tab === 'tags' ? 'tag' : 'category'}
+                        .opening=${this._isOpening}
+                        @browse=${this._onTabBrowse}
+                      ></hv-organize-values>`,
                 )}`,
           )}
         `,
       )}
-
-      <!-- Its events stop here: an escaping cancel reads to the host as "close Organize". -->
-      <hv-confirm
-        data-testid="organize-confirm"
-        ?open=${this._confirmRemove !== null}
-        ?mobile=${this.mobile}
-        .heading=${t('hv.organize.removeHeading', {
-          value: this._confirmRemove ?? '',
-          items: counted(removeCount, 'item'),
-        })}
-        .message=${t('hv.organize.removeMessage')}
-        .confirmLabel=${t('hv.action.remove')}
-        destructive
-        .onOpenerGone=${this._refocusConfirmRow}
-        @confirm=${(e: HvEvent<'hv-confirm', 'confirm'>) => {
-          e.stopPropagation();
-          const value = this._confirmRemove;
-          this._lastConfirmValue = value;
-          this._confirmRemove = null;
-          if (value) void this._runRewrite(value, null, 'remove');
-        }}
-        @cancel=${(e: HvEvent<'hv-confirm', 'cancel'>) => {
-          e.stopPropagation();
-          this._lastConfirmValue = this._confirmRemove;
-          this._confirmRemove = null;
-        }}
-      ></hv-confirm>
     `;
   }
 }
