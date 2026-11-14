@@ -8,7 +8,6 @@ import type {
   ReminderUnit,
   ScalarValue,
 } from '../store/types';
-import { itemStatus } from './status';
 
 /** Form model and payload building for the item edit surfaces, as pure functions. */
 
@@ -95,7 +94,7 @@ export function formFromItem(item: Item | null): ItemFormModel {
     name: item?.name ?? '',
     description: item?.description ?? '',
     quantity: item?.quantity ?? 1,
-    status: item ? itemStatus(item) : 'ok',
+    status: item?.status ?? 'ok',
     lowStock: item?.low_stock_threshold ?? null,
     category: item?.category ?? '',
     tags: [...(item?.tags ?? [])],

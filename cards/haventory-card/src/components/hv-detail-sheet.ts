@@ -9,7 +9,7 @@ import { formatDate, isDue, isOverdue, relativeTime } from '../ui/relative-time'
 import { customFieldLabel } from '../ui/field-label';
 import { canBumpReminder, hasReminder, isReminderDue, reminderSummary } from '../ui/reminder';
 import { inferType } from '../ui/item-form';
-import { DEFAULT_STATUS, itemStatus, renderStatusChip } from '../ui/status';
+import { DEFAULT_STATUS, renderStatusChip } from '../ui/status';
 import { isLowStock } from '../ui/row-chrome';
 import {
   areaMarkName,
@@ -658,8 +658,8 @@ export class HVDetailSheet extends LitElement {
               : null
           }
           ${
-            itemStatus(item) !== DEFAULT_STATUS
-              ? renderStatusChip(itemStatus(item), this.statuses, { testid: 'sheet-status' })
+            item.status !== DEFAULT_STATUS
+              ? renderStatusChip(item.status, this.statuses, { testid: 'sheet-status' })
               : null
           }
           ${

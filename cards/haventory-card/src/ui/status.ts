@@ -1,7 +1,7 @@
 import { html } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import type { TemplateResult } from 'lit';
-import type { Item, StatsCounts, StatusColor, StatusDefinition } from '../store/types';
+import type { StatsCounts, StatusColor, StatusDefinition } from '../store/types';
 import { t } from '../i18n';
 import type { TranslationKey } from '../i18n';
 import { ICONS, icon } from './icons';
@@ -74,11 +74,6 @@ export function statusList(defs: readonly StatusDefinition[] | null | undefined)
   return defs && defs.length > 0 ? defs : BUILT_IN_STATUSES;
 }
 
-/** An item's status; absent reads as the default. */
-export function itemStatus(item: Pick<Item, 'status'>): string {
-  return item.status ?? DEFAULT_STATUS;
-}
-
 function definitionOf(
   slug: string,
   defs: readonly StatusDefinition[] | null | undefined,
@@ -105,15 +100,11 @@ export function statusLabel(slug: string, defs: readonly StatusDefinition[] | nu
 
 /**
  * How many items carry a slug, for every surface that prices a status. `null`
- * means no number to show, never zero: a slug the map lacks is one the counts
- * do not define yet. Without the map, only the two flagged built-ins are known.
+ * means no number to show, never zero: no counts yet, or a slug the counts do
+ * not define yet.
  */
 export function statusCount(counts: StatsCounts | null | undefined, slug: string): number | null {
-  const perSlug = counts?.status_counts;
-  if (perSlug) return perSlug[slug] ?? null;
-  if (slug === 'missing') return counts?.missing_count ?? null;
-  if (slug === 'needs_repair') return counts?.needs_repair_count ?? null;
-  return null;
+  return counts?.status_counts[slug] ?? null;
 }
 
 /** A stored colour that is a literal rather than one of the tone tokens. */

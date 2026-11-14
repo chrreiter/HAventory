@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { serverErrorText } from './server-error';
 import type {
   AnyEventPayload,
+  LiveEventPayload,
   AttachmentKind,
   BulkFailure,
   BulkOperation,
@@ -454,7 +455,7 @@ export class Store {
     const onError = (err: unknown) => this.onSubscribeSettled(round, { err });
     const opts = { onError, onOpen };
     // The teardown signal arrives on every open topic; handle it ahead of them.
-    const onEvent = (handle: (evt: AnyEventPayload) => void) => (evt: AnyEventPayload) => {
+    const onEvent = (handle: (evt: LiveEventPayload) => void) => (evt: AnyEventPayload) => {
       if (evt.action === BACKEND_UNAVAILABLE_ACTION) this.onBackendUnavailable();
       else handle(evt);
     };
@@ -596,7 +597,7 @@ export class Store {
     this.stateObs.set({ connected: { items: false, stats: false } });
   }
 
-  private onItemsEvent(evt: AnyEventPayload) {
+  private onItemsEvent(evt: LiveEventPayload) {
     if (evt.topic !== 'items') return;
     const item = evt.item;
     if (evt.action === 'reloaded' || item === undefined) {
@@ -673,12 +674,12 @@ export class Store {
     this.facetRefresh.schedule(delayMs, () => void this.refreshDistinctValues().catch(() => undefined));
   }
 
-  private onStatsEvent(evt: AnyEventPayload) {
-    if (evt.topic !== 'stats' || evt.action !== 'counts') return;
+  private onStatsEvent(evt: LiveEventPayload) {
+    if (evt.topic !== 'stats') return;
     this.stateObs.set({ statsCounts: evt.counts });
   }
 
-  private onLocationsEvent(evt: AnyEventPayload) {
+  private onLocationsEvent(evt: LiveEventPayload) {
     if (evt.topic !== 'locations') return;
     void Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]).catch(() => undefined);
     // Moving or renaming a location rewrites every `location_path` in its subtree.
@@ -1272,7 +1273,10 @@ export class Store {
             failed.push({ op, error: result.error ?? unknownBulkError(), itemId: opTargetId(op) });
           }
         }
-        // The endpoint collapses duplicate op_ids, so a missing one is reported.
+        // A conforming server answers every op_id, and refuses the whole call
+        // when one repeats. An op left unanswered all the same (a backend of
+        // another version, a cut frame) is reported rather than dropped from
+        // both lists.
         for (const op of chunk) {
           if (!(op.op_id in results)) {
             failed.push({
@@ -1416,7 +1420,7 @@ export class Store {
 
 let bulkOpSeq = 0;
 
-/** Build a batch operation with an `op_id` unique for the process: the backend keeps only the last duplicate. */
+/** Build a batch operation with an `op_id` unique for the process: the backend refuses a call that repeats one. */
 export function makeBulkOp(kind: BulkOperation['kind'], payload: Record<string, unknown>): BulkOperation {
   bulkOpSeq += 1;
   const target = typeof payload.item_id === 'string' ? payload.item_id : 'op';

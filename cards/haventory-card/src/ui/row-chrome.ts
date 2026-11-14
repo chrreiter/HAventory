@@ -3,7 +3,7 @@ import type { TemplateResult } from 'lit';
 import { t } from '../i18n';
 import { icon } from './icons';
 import { formatDate, isOverdue } from './relative-time';
-import { DEFAULT_STATUS, itemStatus, renderStatusChip } from './status';
+import { DEFAULT_STATUS, renderStatusChip } from './status';
 import { MEDIA_VARIANT_THUMB, ROW_THUMB_SIZE, attachmentNameToken, pictureAlt, pictures } from './media';
 import type { MediaUrls, PictureFallback } from './media';
 import type { Item, StatusDefinition } from '../store/types';
@@ -148,7 +148,7 @@ export function renderNameChips(
   statuses: readonly StatusDefinition[] | null | undefined,
   opts: NameChipOptions,
 ): TemplateResult {
-  const status = itemStatus(item);
+  const status = item.status;
   const overdue = isOverdue(item.due_date);
   return html`${
     opts.lowChip !== false && isLowStock(item)

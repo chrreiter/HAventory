@@ -113,12 +113,12 @@ export function pictureAlt(itemName: string, index: number, total: number): stri
     : t('hv.media.photoAltOnly', { name: itemName });
 }
 
-/** One kind of attachment by its per-kind `order`, list position standing in when absent. */
+/** One kind of attachment by its per-kind `order`, list position breaking a tie. */
 function ofKind(attachments: Attachment[] | undefined, kind: AttachmentKind): Attachment[] {
   return (attachments ?? [])
     .filter((a) => a.kind === kind)
     .map((a, index) => ({ a, index }))
-    .sort((x, y) => (x.a.order ?? x.index) - (y.a.order ?? y.index) || x.index - y.index)
+    .sort((x, y) => x.a.order - y.a.order || x.index - y.index)
     .map((e) => e.a);
 }
 

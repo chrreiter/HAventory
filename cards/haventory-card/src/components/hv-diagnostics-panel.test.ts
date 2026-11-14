@@ -1,7 +1,7 @@
 import './hv-diagnostics-panel';
 import type { HVDiagnosticsPanel } from './hv-diagnostics-panel';
-import type { DegradedState, StatsCounts } from '../store/types';
-import { mountComponent, q, settle } from '../test.utils';
+import type { DegradedState } from '../store/types';
+import { makeCounts, mountComponent, q, settle } from '../test.utils';
 // The clipboard itself is `ui/clipboard`'s own test; what this panel owes is
 // asking the helper and believing its answer, which needs both answers.
 vi.mock('../ui/clipboard', async (importOriginal) => ({
@@ -10,13 +10,13 @@ vi.mock('../ui/clipboard', async (importOriginal) => ({
 }));
 import { copyText } from '../ui/clipboard';
 
-const counts: StatsCounts = {
+const counts = makeCounts({
   items_total: 250,
   low_stock_count: 6,
   checked_out_count: 3,
   locations_total: 13,
   no_location_count: 3,
-};
+});
 
 const NO_DEGRADATION: DegradedState = {
   connectionLost: false,

@@ -189,7 +189,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             throw { code: 'validation_error', message: 'the default status cannot be deleted' };
           const index = statuses.findIndex((d) => d.slug === slug);
           if (index < 0) throw { code: 'not_found', message: 'status not found' };
-          const carrying = items.filter((i) => (i.status ?? 'ok') === slug);
+          const carrying = items.filter((i) => i.status === slug);
           const target = msg.reassign_to as string | undefined;
           if (carrying.length > 0 && !target) {
             throw { code: 'validation_error', message: `status '${slug}' is on ${carrying.length} item(s)` };
@@ -201,6 +201,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         case 'haventory/stats': {
           const counts: StatsCounts = {
             items_total: items.length,
+            reminder_due_count: 0,
             low_stock_count: items.filter(
               (i) => typeof i.low_stock_threshold === 'number' && i.quantity <= i.low_stock_threshold,
             ).length,
@@ -209,10 +210,10 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             checked_out_due_count: items.filter((i) => isMockCheckedOutDue(i)).length,
             inspection_overdue_count: items.filter((i) => isMockInspectionOverdue(i)).length,
             inspection_due_count: items.filter((i) => isMockInspectionDue(i)).length,
-            missing_count: items.filter((i) => (i.status ?? 'ok') === 'missing').length,
-            needs_repair_count: items.filter((i) => (i.status ?? 'ok') === 'needs_repair').length,
+            missing_count: items.filter((i) => i.status === 'missing').length,
+            needs_repair_count: items.filter((i) => i.status === 'needs_repair').length,
             status_counts: Object.fromEntries(
-              statuses.map((d) => [d.slug, items.filter((i) => (i.status ?? 'ok') === d.slug).length]),
+              statuses.map((d) => [d.slug, items.filter((i) => i.status === d.slug).length]),
             ),
             locations_total: locations.length,
             no_location_count: items.filter((i) => i.location_id == null).length,
@@ -282,13 +283,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             policy: policy as ImportSummary['policy'],
             items: { total: items.length, add: items.length, update: 0, conflict: 0, unchanged: 0 },
             locations: { total: locations.length, add: locations.length, update: 0, conflict: 0, unchanged: 0 },
-            totals: {
-              items_total: items.length,
-              low_stock_count: 0,
-              checked_out_count: 0,
-              locations_total: locations.length,
-              no_location_count: 0,
-            },
+            totals: makeCounts({ items_total: items.length, locations_total: locations.length }),
           };
           return summary as unknown as T;
         }
@@ -498,6 +493,12 @@ export function makeMockHass(initial?: MockConfig): MockHass {
               display_path: '',
               sort_key: '',
             },
+            status: 'ok',
+            reminder_date: null,
+            reminder_anchor: null,
+            reminder_interval: null,
+            effective_area_id: null,
+            attachments: [],
           };
           items.unshift(created);
           return created as unknown as T;
@@ -890,7 +891,7 @@ function applyMockSort(list: Item[], rawSort: unknown): Item[] {
       case 'inspection_date':
         return dateKey(it.inspection_date);
       case 'reminder_date':
-        return dateKey(it.reminder_date ?? null);
+        return dateKey(it.reminder_date);
       case 'location':
         return pathKey(it.location_path?.sort_key ?? '');
       case 'created_at':
@@ -926,6 +927,24 @@ const FIXTURE_TS = '2026-01-01T00:00:00.000Z';
  * lexical order — what the id tie-break compares — follows creation order. */
 let anonymousItems = 0;
 
+/** A full counts payload: every count the backend always sends, all zero. */
+export function makeCounts(partial?: Partial<StatsCounts>): StatsCounts {
+  return {
+    items_total: 0,
+    locations_total: 0,
+    no_location_count: 0,
+    low_stock_count: 0,
+    checked_out_count: 0,
+    overdue_count: 0,
+    checked_out_due_count: 0,
+    inspection_overdue_count: 0,
+    inspection_due_count: 0,
+    reminder_due_count: 0,
+    status_counts: {},
+    ...partial,
+  };
+}
+
 export function makeItem(partial?: Partial<Item>): Item {
   const id = partial?.id ?? `fixture-item-${String((anonymousItems += 1)).padStart(4, '0')}`;
   const now = FIXTURE_TS;
@@ -946,14 +965,12 @@ export function makeItem(partial?: Partial<Item>): Item {
     updated_at: partial?.updated_at ?? now,
     version: partial?.version ?? 1,
     location_path: partial?.location_path ?? { id_path: [], name_path: [], display_path: '', sort_key: '' },
-    // Optional on the wire, so it stays off the object unless a caller asks for
-    // it — an item built without one looks exactly like an older backend's.
-    ...(partial?.effective_area_id === undefined ? {} : { effective_area_id: partial.effective_area_id }),
-    ...(partial?.status === undefined ? {} : { status: partial.status }),
-    ...(partial?.attachments === undefined ? {} : { attachments: partial.attachments }),
-    ...(partial?.reminder_date === undefined ? {} : { reminder_date: partial.reminder_date }),
-    ...(partial?.reminder_anchor === undefined ? {} : { reminder_anchor: partial.reminder_anchor }),
-    ...(partial?.reminder_interval === undefined ? {} : { reminder_interval: partial.reminder_interval }),
+    effective_area_id: partial?.effective_area_id ?? null,
+    status: partial?.status ?? 'ok',
+    attachments: partial?.attachments ?? [],
+    reminder_date: partial?.reminder_date ?? null,
+    reminder_anchor: partial?.reminder_anchor ?? null,
+    reminder_interval: partial?.reminder_interval ?? null,
   };
 }
 
@@ -968,10 +985,8 @@ export function makeAttachment(partial?: Partial<Attachment>): Attachment {
     mime: partial?.mime ?? 'image/png',
     size: partial?.size ?? 2048,
     uploaded_at: partial?.uploaded_at ?? FIXTURE_TS,
-    // Left off unless asked for, so a bare fixture is shaped like the payload
-    // a backend that predates these two fields sends.
-    ...(partial?.title === undefined ? {} : { title: partial.title }),
-    ...(partial?.order === undefined ? {} : { order: partial.order }),
+    title: partial?.title ?? '',
+    order: partial?.order ?? 0,
   };
 }
 
