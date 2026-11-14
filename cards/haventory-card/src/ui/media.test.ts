@@ -16,18 +16,11 @@ import {
   pictureAlt,
   pictures,
 } from './media';
+import { makeAttachment } from '../test.utils';
 import type { Attachment } from '../store/types';
 
 function attachment(overrides: Partial<Attachment> = {}): Attachment {
-  return {
-    id: 'att-1',
-    kind: 'picture',
-    filename: 'photo.png',
-    mime: 'image/png',
-    size: 1234,
-    uploaded_at: '2026-08-05T10:00:00Z',
-    ...overrides,
-  };
+  return makeAttachment({ id: 'att-1', size: 1234, uploaded_at: '2026-08-05T10:00:00Z', ...overrides });
 }
 
 /** A host that records how many times the component was asked to re-render. */
@@ -156,12 +149,6 @@ describe('pictures', () => {
 
     expect(pictures(list).map((p) => p.id)).toEqual(['p']);
     expect(manuals(list).map((m) => m.id)).toEqual(['m']);
-  });
-
-  it('falls back to list order for a payload written before order existed', () => {
-    const list = [attachment({ id: 'a' }), attachment({ id: 'b' }), attachment({ id: 'c' })];
-
-    expect(pictures(list).map((p) => p.id)).toEqual(['a', 'b', 'c']);
   });
 
   it('treats an item with no attachments field as having none', () => {

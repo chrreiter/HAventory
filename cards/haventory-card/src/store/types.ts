@@ -34,9 +34,9 @@ export interface StatusDefinition {
   slug: string;
   label: string;
   order: number;
-  color?: StatusColorValue;
+  color: StatusColorValue;
   /** One of the glyph names in `ui/icons.ts`. */
-  icon?: string;
+  icon: string;
 }
 
 export type AttachmentKind = 'picture' | 'manual';
@@ -53,9 +53,9 @@ export interface Attachment {
   size: number;
   uploaded_at: string;
   /** What the user called it. Empty means show `filename` instead. */
-  title?: string;
+  title: string;
   /** Position within the item's attachments of this kind; 0 is the cover. */
-  order?: number;
+  order: number;
 }
 
 export interface LocationPath {
@@ -86,8 +86,7 @@ export interface Item {
   name: string;
   description: string | null;
   quantity: number;
-  /** Absent reads as `ok`. */
-  status?: ItemStatus;
+  status: ItemStatus;
   checked_out: boolean;
   due_date: string | null;
   inspection_date: string | null;
@@ -96,9 +95,9 @@ export interface Item {
    * occurrence of a series. `reminder_anchor` is what the series is measured
    * from and only the backend writes it, so it is absent from the write shapes.
    */
-  reminder_date?: string | null;
-  reminder_anchor?: string | null;
-  reminder_interval?: ReminderInterval | null;
+  reminder_date: string | null;
+  reminder_anchor: string | null;
+  reminder_interval: ReminderInterval | null;
   location_id: string | null;
   tags: string[];
   category: string | null;
@@ -107,10 +106,11 @@ export interface Item {
   created_at: string;
   updated_at: string;
   version: number;
-  effective_area_id?: string | null;
+  /** Resolved from the location tree's root on every read; stored nowhere. */
+  effective_area_id: string | null;
   location_path: LocationPath;
   /** Written only by the attachment commands, never by an item save. */
-  attachments?: Attachment[];
+  attachments: Attachment[];
 }
 
 export interface ItemCreate {
@@ -214,15 +214,15 @@ export interface StatsCounts {
    * The date-derived counts can change with no event to announce them. `*_overdue`
    * counts dates before today; `*_due` counts include today.
    */
-  overdue_count?: number;
-  checked_out_due_count?: number;
-  inspection_overdue_count?: number;
-  inspection_due_count?: number;
-  reminder_due_count?: number;
+  overdue_count: number;
+  checked_out_due_count: number;
+  inspection_overdue_count: number;
+  inspection_due_count: number;
+  reminder_due_count: number;
   missing_count?: number;
   needs_repair_count?: number;
   /** Every defined status slug to its item count, `ok` included. */
-  status_counts?: Record<string, number>;
+  status_counts: Record<string, number>;
   locations_total: number;
   /** Items without a location (location_id == null). */
   no_location_count: number;
@@ -329,7 +329,23 @@ export interface BulkOpError {
   code: string;
   /** English; what the row shows when the catalog has no `translation_key` for it. */
   message: string;
-  context?: Record<string, unknown>;
+  context: Record<string, unknown>;
+  translation_domain?: string;
+  translation_key?: string;
+  translation_placeholders?: Record<string, string>;
+}
+
+/**
+ * The `error` of a refused call, which is what the call's promise rejects with.
+ * Home Assistant answers some refusals before a handler runs (`invalid_format`,
+ * `unknown_command`), and those carry only `code` and `message`.
+ */
+export interface ServerError {
+  code: string;
+  /** English; what is shown when the catalog has no `translation_key` for it. */
+  message: string;
+  /** The operation and the request fields the refusal concerns. */
+  data?: Record<string, unknown>;
   translation_domain?: string;
   translation_key?: string;
   translation_placeholders?: Record<string, string>;
@@ -345,7 +361,8 @@ export interface BulkResults {
 /** A failed operation paired back up with the op that produced it. */
 export interface BulkFailure {
   op: BulkOperation;
-  error: BulkOpError;
+  /** No `context` when the card reports the failure itself (a lost call, a missing result). */
+  error: Omit<BulkOpError, 'context'> & Partial<Pick<BulkOpError, 'context'>>;
   /** Item id the op targeted, when it had one — lets the UI name the row. */
   itemId: string | null;
 }
@@ -440,7 +457,6 @@ export interface ImportSummary {
 // WS subscription event payloads
 export interface BaseEventPayload {
   domain: 'haventory';
-  // A `statuses` event only signals a re-read, so it has no payload shape below.
   topic: 'items' | 'locations' | 'stats' | 'statuses';
   action: string;
   ts: string;
@@ -448,6 +464,11 @@ export interface BaseEventPayload {
 
 /** Sent on every open subscription when the config entry serving it tears down. */
 export type TeardownAction = 'unavailable';
+
+/** The teardown notice: the same four keys on every topic, and nothing else. */
+export interface BackendUnavailableEventPayload extends BaseEventPayload {
+  action: TeardownAction;
+}
 
 export interface ItemsEventPayload extends BaseEventPayload {
   topic: 'items';
@@ -461,23 +482,39 @@ export interface ItemsEventPayload extends BaseEventPayload {
     | 'checked_out'
     | 'checked_in'
     | 'quantity_changed'
-    | 'reloaded'
-    | TeardownAction;
+    | 'reloaded';
 }
 
 export interface LocationsEventPayload extends BaseEventPayload {
   topic: 'locations';
+  // Absent on `reloaded`.
   location?: Location;
-  action: 'created' | 'renamed' | 'moved' | 'deleted' | 'reloaded' | TeardownAction;
+  action: 'created' | 'renamed' | 'moved' | 'deleted' | 'reloaded';
 }
 
 export interface StatsEventPayload extends BaseEventPayload {
   topic: 'stats';
-  action: 'counts' | TeardownAction;
+  action: 'counts';
   counts: StatsCounts;
 }
 
-export type AnyEventPayload = ItemsEventPayload | LocationsEventPayload | StatsEventPayload;
+/** `statuses` carries the whole vocabulary after a reorder; `status` the one entry otherwise. */
+export interface StatusesEventPayload extends BaseEventPayload {
+  topic: 'statuses';
+  action: 'created' | 'updated' | 'deleted' | 'reordered';
+  status?: StatusDefinition;
+  statuses?: StatusDefinition[];
+}
+
+export type AnyEventPayload =
+  | ItemsEventPayload
+  | LocationsEventPayload
+  | StatsEventPayload
+  | StatusesEventPayload
+  | BackendUnavailableEventPayload;
+
+/** What a topic handler receives once the teardown notice is taken out. */
+export type LiveEventPayload = Exclude<AnyEventPayload, BackendUnavailableEventPayload>;
 
 export type Unsubscribe = () => void;
 

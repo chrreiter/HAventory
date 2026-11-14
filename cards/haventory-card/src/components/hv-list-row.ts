@@ -7,7 +7,7 @@ import { areaMarkName, elideMobilePath, itemPathParts, pathTitle, renderAreaChip
 import { icon } from '../ui/icons';
 import { onDayChange } from '../ui/day-clock';
 import { formatDate, isDue, isOverdue } from '../ui/relative-time';
-import { itemStatus, statusLabel } from '../ui/status';
+import { statusLabel } from '../ui/status';
 import {
   isLowStock,
   renderNameChips,
@@ -390,7 +390,7 @@ export class HVListRow extends LitElement {
     const secondaryFull = [pathTitle(parts), item.category].filter(Boolean).join(' · ');
     // A phone line leads with the most interrupting thing it has: who has the
     // item, then its flagged status, then an inspection. The location follows.
-    const status = itemStatus(item);
+    const status = item.status;
     const flagged = status !== 'ok';
     // The tone follows what the line says; a passed date outranks the rest.
     const mobileState =

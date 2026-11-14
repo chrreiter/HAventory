@@ -1,14 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'lit';
 import type { StatsCounts, StatusDefinition } from '../store/types';
+import { makeCounts } from '../test.utils';
 import { DICTIONARIES, setLanguage, t } from '../i18n';
 import type { TranslationKey } from '../i18n';
 import {
   BUILT_IN_STATUSES,
-  DEFAULT_STATUS,
   displayLabel,
   isHexColor,
-  itemStatus,
   knownIcon,
   renderStatusChip,
   slugFromLabel,
@@ -37,11 +36,6 @@ describe('ui/status: the vocabulary', () => {
   it('prefers the backend copy even for the built-in slugs', () => {
     // A household can rename "OK"; the local copy must not win over that.
     expect(statusLabel('ok', CUSTOM)).toBe('Fine');
-  });
-
-  it('reads an absent status as the default', () => {
-    expect(itemStatus({ status: undefined })).toBe(DEFAULT_STATUS);
-    expect(itemStatus({ status: 'lent_out' })).toBe('lent_out');
   });
 });
 
@@ -159,15 +153,21 @@ describe('ui/status: the built-in three in the reader’s language', () => {
   // only the exact stored English means "nobody chose this".
   it('takes any difference from the seed as the household’s own words', () => {
     setLanguage('de');
-    expect(displayLabel({ slug: 'missing', label: 'missing', order: 1, color: 'amber' })).toBe('missing');
-    expect(displayLabel({ slug: 'missing', label: 'Missing ', order: 1, color: 'amber' })).toBe('Missing ');
+    expect(displayLabel({ slug: 'missing', label: 'missing', order: 1, color: 'amber', icon: 'help' })).toBe(
+      'missing',
+    );
+    expect(displayLabel({ slug: 'missing', label: 'Missing ', order: 1, color: 'amber', icon: 'help' })).toBe(
+      'Missing ',
+    );
   });
 
   // A household's own status carries its own words whatever they are — even a
   // slug that looks built-in on a store this card has been told nothing about.
   it('leaves a household’s own status exactly as stored', () => {
     setLanguage('de');
-    expect(displayLabel({ slug: 'lent_out', label: 'Missing', order: 3, color: 'blue' })).toBe('Missing');
+    expect(displayLabel({ slug: 'lent_out', label: 'Missing', order: 3, color: 'blue', icon: 'hand' })).toBe(
+      'Missing',
+    );
   });
 
   // Rule three. The stand-in stands in for a fresh store, so a chip drawn
@@ -222,13 +222,7 @@ describe('ui/status: deriving a slug from a label', () => {
 });
 
 describe('ui/status: pricing a slug', () => {
-  const base: StatsCounts = {
-    items_total: 998,
-    low_stock_count: 0,
-    checked_out_count: 0,
-    locations_total: 0,
-    no_location_count: 0,
-  };
+  const base = makeCounts({ items_total: 998 });
 
   it('reads the per-slug map, zeroes included', () => {
     const counts: StatsCounts = {
@@ -249,20 +243,6 @@ describe('ui/status: pricing a slug', () => {
   it('reports nothing for a slug the map that arrived does not carry', () => {
     const counts: StatsCounts = { ...base, status_counts: { ok: 998 } };
     expect(statusCount(counts, 'mystery')).toBeNull();
-  });
-
-  it('falls back to the legacy fields for exactly the two flagged built-ins', () => {
-    const counts: StatsCounts = { ...base, missing_count: 3, needs_repair_count: 4 };
-    expect(statusCount(counts, 'missing')).toBe(3);
-    expect(statusCount(counts, 'needs_repair')).toBe(4);
-    // Not derivable from the two halves that arrived, so it is not derived.
-    expect(statusCount(counts, 'ok')).toBeNull();
-    expect(statusCount(counts, 'lent_out')).toBeNull();
-  });
-
-  it('prices nothing when the payload carries neither shape', () => {
-    expect(statusCount(base, 'ok')).toBeNull();
-    expect(statusCount(base, 'missing')).toBeNull();
   });
 
   it('prices nothing before any counts have arrived', () => {

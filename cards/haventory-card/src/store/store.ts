@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { serverErrorText } from './server-error';
 import type {
   AnyEventPayload,
+  LiveEventPayload,
   AttachmentKind,
   BulkFailure,
   BulkOperation,
@@ -454,7 +455,7 @@ export class Store {
     const onError = (err: unknown) => this.onSubscribeSettled(round, { err });
     const opts = { onError, onOpen };
     // The teardown signal arrives on every open topic; handle it ahead of them.
-    const onEvent = (handle: (evt: AnyEventPayload) => void) => (evt: AnyEventPayload) => {
+    const onEvent = (handle: (evt: LiveEventPayload) => void) => (evt: AnyEventPayload) => {
       if (evt.action === BACKEND_UNAVAILABLE_ACTION) this.onBackendUnavailable();
       else handle(evt);
     };
@@ -596,7 +597,7 @@ export class Store {
     this.stateObs.set({ connected: { items: false, stats: false } });
   }
 
-  private onItemsEvent(evt: AnyEventPayload) {
+  private onItemsEvent(evt: LiveEventPayload) {
     if (evt.topic !== 'items') return;
     const item = evt.item;
     if (evt.action === 'reloaded' || item === undefined) {
@@ -673,12 +674,12 @@ export class Store {
     this.facetRefresh.schedule(delayMs, () => void this.refreshDistinctValues().catch(() => undefined));
   }
 
-  private onStatsEvent(evt: AnyEventPayload) {
-    if (evt.topic !== 'stats' || evt.action !== 'counts') return;
+  private onStatsEvent(evt: LiveEventPayload) {
+    if (evt.topic !== 'stats') return;
     this.stateObs.set({ statsCounts: evt.counts });
   }
 
-  private onLocationsEvent(evt: AnyEventPayload) {
+  private onLocationsEvent(evt: LiveEventPayload) {
     if (evt.topic !== 'locations') return;
     void Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]).catch(() => undefined);
     // Moving or renaming a location rewrites every `location_path` in its subtree.

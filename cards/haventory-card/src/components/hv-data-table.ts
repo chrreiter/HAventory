@@ -30,7 +30,7 @@ import {
   rowMenuEntries,
 } from '../ui/row-chrome';
 import './hv-overflow-menu';
-import { itemStatus, renderStatusChip } from '../ui/status';
+import { renderStatusChip } from '../ui/status';
 import {
   areaMarkName,
   elideMobilePath,
@@ -419,7 +419,7 @@ export class HVDataTable extends LitElement {
         return cell(`qty ${isLowStock(item) ? 'low' : ''}`, item.quantity);
       case 'status':
         // Every row's status, "OK" included, as a chip.
-        return cell('', renderStatusChip(itemStatus(item), this.statuses));
+        return cell('', renderStatusChip(item.status, this.statuses));
       case 'category':
         return cell('', item.category || '—', item.category ?? '');
       case 'location': {

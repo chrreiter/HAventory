@@ -1,7 +1,7 @@
 import './hv-import-sheet';
 import type { HVImportSheet } from './hv-import-sheet';
 import type { ImportPreview, ImportSummary } from '../store/types';
-import { all, mountComponent, q, settle } from '../test.utils';
+import { all, makeCounts, mountComponent, q, settle } from '../test.utils';
 import { setLanguage } from '../i18n';
 // The clipboard itself is `ui/clipboard`'s own test; what this sheet owes is
 // asking the helper and believing its answer, which needs both answers.
@@ -40,13 +40,7 @@ function summary(): ImportSummary {
     policy: 'merge',
     items: { total: 192, add: 128, update: 64, conflict: 0, unchanged: 0 },
     locations: { total: 4, add: 4, update: 0, conflict: 0, unchanged: 0 },
-    totals: {
-      items_total: 250,
-      low_stock_count: 0,
-      checked_out_count: 0,
-      locations_total: 13,
-      no_location_count: 0,
-    },
+    totals: makeCounts({ items_total: 250, locations_total: 13 }),
   };
 }
 

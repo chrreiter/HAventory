@@ -2114,7 +2114,7 @@ export class HVItemEditor extends LitElement {
             html`<input
                 class="hv-input doc-title"
                 data-testid="editor-document-title"
-                .value=${doc.title ?? ''}
+                .value=${doc.title}
                 placeholder=${doc.filename}
                 aria-label=${t('hv.editor.titleFor', { filename: doc.filename })}
                 @change=${(e: Event) => void this._retitle(doc.id, (e.target as HTMLInputElement).value.trim())}

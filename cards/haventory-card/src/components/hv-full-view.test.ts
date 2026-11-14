@@ -1068,31 +1068,6 @@ describe('hv-full-view: sidebar status', () => {
     ).toEqual(['needs_repair']);
   });
 
-  // A backend too old to send the map still prices the two flagged built-ins in
-  // their own fields; the default is not knowable there, and stays unpriced
-  // rather than being derived from the halves that did arrive.
-  it('falls back to the legacy fields when the per-slug map is absent', async () => {
-    const { el, store, sr } = await mount({ items: flagged });
-    const counts = store.state.value.statsCounts as unknown as Record<string, unknown>;
-    delete counts.status_counts;
-    el.requestUpdate();
-    await settle(el);
-
-    expect(tallies(sr)).toEqual([null, '1', '2']);
-  });
-
-  it('drops every tally when the backend prices no statuses at all', async () => {
-    const { el, store, sr } = await mount({ items: flagged });
-    const counts = store.state.value.statsCounts as unknown as Record<string, unknown>;
-    delete counts.status_counts;
-    delete counts.missing_count;
-    delete counts.needs_repair_count;
-    el.requestUpdate();
-    await settle(el);
-
-    expect(tallies(sr)).toEqual([null, null, null]);
-  });
-
   // Categories and tags tally how many rows they hold; here that number counts
   // the household's vocabulary, not the inventory the facet navigates.
   it('heads the section without a tally', async () => {
@@ -2182,7 +2157,7 @@ describe('hv-full-view: selection and bulk actions', () => {
       if (doomed) {
         res.results[doomed.op_id] = {
           success: false,
-          error: { code: 'conflict', message: 'version conflict' },
+          error: { code: 'conflict', message: 'version conflict', context: {} },
         };
       }
       return res;

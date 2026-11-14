@@ -1044,7 +1044,10 @@ describe('hv-organize-dialog: tags and categories', () => {
     store['ws'].bulk = async (ops) => {
       const res = await realBulk(ops);
       const first = defined(ops[0], 'first op');
-      res.results[first.op_id] = { success: false, error: { code: 'conflict', message: 'version conflict' } };
+      res.results[first.op_id] = {
+        success: false,
+        error: { code: 'conflict', message: 'version conflict', context: {} },
+      };
       return res;
     };
 

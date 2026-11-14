@@ -1,28 +1,11 @@
 import { html, render } from 'lit';
 import { renderStatBadges } from './stat-badges';
 import { defaultFilters } from '../store/store';
+import { makeCounts } from '../test.utils';
 import type { StatBadgeOptions, StatBadgeState } from './stat-badges';
 import type { StatsCounts, StoreFilters } from '../store/types';
 
-const NO_COUNTS: StatsCounts = {
-  items_total: 0,
-  locations_total: 0,
-  no_location_count: 0,
-  low_stock_count: 0,
-  checked_out_count: 0,
-  overdue_count: 0,
-  inspection_due_count: 0,
-  reminder_due_count: 0,
-};
-
-/** What an older backend sends: the required counts and none of the derived ones. */
-const OLDER_BACKEND: StatsCounts = {
-  items_total: 3,
-  locations_total: 0,
-  no_location_count: 0,
-  low_stock_count: 0,
-  checked_out_count: 0,
-};
+const NO_COUNTS = makeCounts();
 
 function state(counts: Partial<StatsCounts>, filters: Partial<StoreFilters> = {}): StatBadgeState {
   return {
@@ -95,13 +78,6 @@ describe('renderStatBadges', () => {
     const { host, badges } = draw(state({ items_total: 1 }), ['low_stock', 'checked_out'], cardOptions());
     expect(testids(host)).toEqual([]);
     expect(badges?.any).toBe(false);
-  });
-
-  // The calendar-derived counts are optional, because an older backend does not
-  // send them; absent has to read as none rather than as a pill saying NaN.
-  it('reads a count an older backend never sent as nothing to report', () => {
-    const { host } = draw({ statsCounts: OLDER_BACKEND, filters: defaultFilters() }, null, cardOptions());
-    expect(testids(host)).toEqual(['badge-total']);
   });
 
   it('turns its own filter on when pressed', () => {

@@ -10,7 +10,7 @@ import type {
   StatusDefinition,
   StoreFilters,
 } from '../store/types';
-import { all, componentCss, mountComponent, q } from '../test.utils';
+import { all, componentCss, makeCounts, mountComponent, q } from '../test.utils';
 
 const distinct: DistinctValues = {
   categories: [
@@ -192,14 +192,14 @@ describe('hv-filter-panel: status', () => {
       {},
       {
         statuses,
-        counts: {
+        counts: makeCounts({
           items_total: 998,
           low_stock_count: 0,
           checked_out_count: 0,
           locations_total: 0,
           no_location_count: 0,
           status_counts: { ok: 856, lent_out: 100, in_transit: 0 },
-        },
+        }),
       },
     );
     const chips = all(el, '[data-testid="filter-status"]');
@@ -207,31 +207,6 @@ describe('hv-filter-panel: status', () => {
       'OK 856',
       'Lent out 100',
       'In transit 0',
-    ]);
-  });
-
-  // A backend too old to send the per-slug map still prices the two flagged
-  // built-ins in their own fields; nothing else is knowable there.
-  it('prices only the two flagged statuses when the per-slug map is absent', async () => {
-    const el = await mount(
-      {},
-      {
-        counts: {
-          items_total: 10,
-          low_stock_count: 0,
-          checked_out_count: 0,
-          missing_count: 2,
-          needs_repair_count: 1,
-          locations_total: 0,
-          no_location_count: 0,
-        },
-      },
-    );
-    const chips = all(el, '[data-testid="filter-status"]');
-    expect(chips.map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual([
-      'OK',
-      'Missing 2',
-      'Needs repair 1',
     ]);
   });
 
@@ -605,14 +580,14 @@ describe('hv-filter-panel: show only vs sort', () => {
     const el = await mount(
       {},
       {
-        counts: {
+        counts: makeCounts({
           items_total: 556,
           locations_total: 26,
           low_stock_count: 102,
           checked_out_count: 82,
           overdue_count: 32,
           no_location_count: 26,
-        },
+        }),
       },
     );
     const tallyOf = (testid: string) =>
@@ -634,14 +609,14 @@ describe('hv-filter-panel: show only vs sort', () => {
       {},
       {
         mobile: true,
-        counts: {
+        counts: makeCounts({
           items_total: 9,
           locations_total: 2,
           low_stock_count: 4,
           checked_out_count: 3,
           overdue_count: 1,
           no_location_count: 2,
-        },
+        }),
       },
     );
     expect(q(el, '[data-testid="filter-overdue"]')!.textContent).toContain('1');
@@ -1047,7 +1022,7 @@ describe('hv-filter-panel: inspection due', () => {
         {},
         {
           mobile,
-          counts: {
+          counts: makeCounts({
             items_total: 9,
             locations_total: 2,
             low_stock_count: 4,
@@ -1057,7 +1032,7 @@ describe('hv-filter-panel: inspection due', () => {
             inspection_overdue_count: 4,
             inspection_due_count: 5,
             no_location_count: 2,
-          },
+          }),
         },
       );
       const chip = q(el, '[data-testid="filter-inspection-due"]')!;
