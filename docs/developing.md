@@ -278,8 +278,7 @@ Assistant contact surface, the phone breakpoints and the known gaps) is
   Conventional-Commit PR-title check run as their own workflows.
 - **Action pinning.** Third-party actions, `docker://` images included, name an immutable
   revision (a commit SHA or an image digest), because a tag can be repointed by whoever owns
-  it. GitHub's own `actions/*` are pinned by major tag. `tests/test_repo_hardening_offline.py`
-  enforces both.
+  it. GitHub's own `actions/*` are pinned by major tag.
 - **`ha-latest`** runs the in-process suite against the newest Home Assistant on the 8th of
   each month and on demand. **`card-smoke`**, on the same schedule, boots Home Assistant
   `stable` and `beta`, onboards them over REST (`scripts/ci_provision_ha.py`), installs the
@@ -303,10 +302,9 @@ Assistant contact surface, the phone breakpoints and the known gaps) is
 - **Brand assets** in `custom_components/haventory/brand/` are what Home Assistant shows
   for the integration, served at `/api/brands/integration/haventory/<file>`; a custom
   integration's own images win over the brands CDN. `icon.png` there is also what the HACS
-  `brands` check reads, so CI runs the HACS action with no `ignore:` and
-  `tests/test_hacs_validation.py` keeps it that way. Regenerate them with
-  `uv run python scripts/render_brand_assets.py` rather than editing them;
-  `tests/test_brand_assets.py` fails when artwork and mark drift apart.
+  `brands` check reads, so CI runs the HACS action with no `ignore:`. Regenerate them with
+  `uv run python scripts/render_brand_assets.py` after a change to the mark, rather than
+  editing them.
 - **The social preview** is `docs/assets/social-preview.png`, rendered from the `.html`
   beside it. GitHub has no API for it; upload it under *Settings → General*.
 - **Releases** are cut by release-please: [CONTRIBUTING.md](../CONTRIBUTING.md#releases).
