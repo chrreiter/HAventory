@@ -5,6 +5,7 @@ import { t } from '../i18n';
 import { icon } from './icons';
 import type { MediaBindings } from './media';
 import type { Item } from '../store/types';
+import type { HvEvent } from '../events';
 import '../components/hv-lightbox';
 
 /**
@@ -161,7 +162,7 @@ export function renderLightboxHost(opts: LightboxHost): TemplateResult {
     .media=${opts.media}
     .index=${opts.index}
     .onOpenerGone=${opts.onOpenerGone}
-    @close=${(e: Event) => {
+    @close=${(e: HvEvent<'hv-lightbox', 'close'>) => {
       e.stopPropagation();
       opts.onClose();
     }}

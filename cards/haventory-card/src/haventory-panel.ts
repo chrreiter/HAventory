@@ -5,7 +5,7 @@ import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import type { QuickFilterKey } from './ui/quick-filters';
 import { defineCardElement } from './register';
 import { HostSurfaces } from './host-surfaces';
-import type { OrganizeTab } from './components/hv-organize-dialog';
+import type { HvEvent } from './events';
 import './components/hv-full-view';
 
 /** The slice of Home Assistant's panel object this element reads. */
@@ -60,8 +60,8 @@ export class HAventoryPanel extends StoreHostElement {
         .menuEntries=${this.surfaces.menuEntries()}
         .confirmDiscard=${this.surfaces.confirmDiscard}
         @menu-action=${this._onMenuAction}
-        @request-delete=${(e: CustomEvent) =>
-          this.surfaces.requestDeleteById((e.detail as { itemId: string }).itemId)}
+        @request-delete=${(e: HvEvent<'hv-full-view', 'request-delete'>) =>
+          this.surfaces.requestDeleteById(e.detail.itemId)}
       ></hv-full-view>
 
       ${this.surfaces.renderSurfaces()}
@@ -84,8 +84,8 @@ export class HAventoryPanel extends StoreHostElement {
   }
 
   /** The view answers `select-items` itself; the shared surfaces cover the rest. */
-  private _onMenuAction = (e: CustomEvent): void => {
-    const { id, tab } = e.detail as { id: string; tab?: OrganizeTab };
+  private _onMenuAction = (e: HvEvent<'hv-full-view', 'menu-action'>): void => {
+    const { id, tab } = e.detail;
     this.surfaces.handleAction(id, tab);
   };
 }

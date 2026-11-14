@@ -2,6 +2,7 @@ import { t, tn } from '../i18n';
 import { serverErrorText } from '../store/server-error';
 import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { emitter } from '../events';
 import { tokens, base } from '../ui/tokens';
 import { Modal, modalChrome, modalSheet } from '../ui/modal';
 import { icon } from '../ui/icons';
@@ -70,6 +71,8 @@ function policyTitle(id: ImportPolicy): string {
  */
 @customElement('hv-import-sheet')
 export class HVImportSheet extends LitElement {
+  private readonly _send = emitter<'hv-import-sheet'>(this);
+
   static override styles = [
     tokens,
     base,
@@ -349,11 +352,11 @@ export class HVImportSheet extends LitElement {
   }
 
   private _close = () => {
-    this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+    this._send('cancel');
   };
 
   private _invalidate = () => {
-    this.dispatchEvent(new CustomEvent('invalidate-preview', { bubbles: true, composed: true }));
+    this._send('invalidate-preview');
   };
 
   private _alert(testid: string, content: unknown, glyph: 'alert' | 'alertCircle' = 'alert', role?: string) {
@@ -366,12 +369,10 @@ export class HVImportSheet extends LitElement {
     return this.errorMessage ? this._alert('import-error', this.errorMessage, 'alertCircle', 'alert') : null;
   }
 
-  private _emit(name: string) {
+  private _emit(name: 'preview' | 'execute') {
     const document = this._parsed();
     if (document === null) return;
-    this.dispatchEvent(
-      new CustomEvent(name, { detail: { document, policy: this._policy }, bubbles: true, composed: true }),
-    );
+    this._send(name, { document, policy: this._policy });
   }
 
   private async _onFile(e: Event) {

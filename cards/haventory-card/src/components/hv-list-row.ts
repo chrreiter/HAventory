@@ -1,4 +1,6 @@
 import { t } from '../i18n';
+import { emitter } from '../events';
+import type { HvEvent, HvEventName, RowEventDetail } from '../events';
 import { LitElement, css, html, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
@@ -299,10 +301,10 @@ export class HVListRow extends LitElement {
     this._urls.configure(this.media?.sign ?? null);
   }
 
-  private _emit(name: string, detail: Record<string, unknown> = {}) {
-    this.dispatchEvent(
-      new CustomEvent(name, { detail: { itemId: this.item.id, ...detail }, bubbles: true, composed: true }),
-    );
+  private readonly _send = emitter<'hv-list-row'>(this);
+
+  private _emit(name: HvEventName<'hv-list-row'>, detail: Omit<RowEventDetail, 'itemId'> = {}) {
+    this._send(name, { itemId: this.item.id, ...detail });
   }
 
   private _onKeydown = (e: KeyboardEvent) => {
@@ -311,7 +313,7 @@ export class HVListRow extends LitElement {
   };
 
   /** A click handler that emits `name` without the click reaching the row. */
-  private _emitOnly(name: string) {
+  private _emitOnly(name: HvEventName<'hv-list-row'>) {
     return (e: Event) => {
       e.stopPropagation();
       this._emit(name);
@@ -505,12 +507,11 @@ export class HVListRow extends LitElement {
             label=${t('hv.row.actionsFor', { name: item.name })}
             .entries=${rowMenuEntries(item)}
             @click=${(e: Event) => e.stopPropagation()}
-            @select=${(e: CustomEvent) => {
+            @select=${(e: HvEvent<'hv-overflow-menu', 'select'>) => {
               e.stopPropagation();
-              const { id } = e.detail as { id: string };
               // The check-out popover anchors to the menu.
               const anchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              this._emit('row-action', { action: id, anchor });
+              this._emit('row-action', { action: e.detail.id, anchor });
             }}
           ></hv-overflow-menu>
         </span>

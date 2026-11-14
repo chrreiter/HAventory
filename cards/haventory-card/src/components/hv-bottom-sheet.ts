@@ -4,6 +4,7 @@ import { customElement, property, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { onEscape } from '../ui/keyboard';
 import { nextZBase } from '../utils/zindex';
+import { emitter } from '../events';
 
 /**
  * The mobile surface for everything that would be a popup on desktop. Nested
@@ -110,13 +111,15 @@ export class HVBottomSheet extends LitElement {
     }
   }
 
+  private readonly _emit = emitter<'hv-bottom-sheet'>(this);
+
   /**
    * Report the dismissal and leave the closing to the host. A sheet that closed
    * itself would fall out of step with the host's `open` binding, which Lit
    * then never sets back, so a host that asks first could not keep it up.
    */
   private _cancel = () => {
-    this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+    this._emit('cancel');
   };
 
   // ---------- Drag to dismiss ----------

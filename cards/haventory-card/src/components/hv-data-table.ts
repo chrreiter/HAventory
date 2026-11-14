@@ -1,4 +1,6 @@
 import { t } from '../i18n';
+import { emitter } from '../events';
+import type { HvEvent } from '../events';
 import { LitElement, css, html, unsafeCSS } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
@@ -377,9 +379,7 @@ export class HVDataTable extends LitElement {
     return normalizeColumns(this.columns);
   }
 
-  private _emit(name: string, detail: Record<string, unknown> = {}) {
-    this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
-  }
+  private readonly _emit = emitter<'hv-data-table'>(this);
 
   private _onSort(field: SortField) {
     // The sorted column flips; a fresh one opens on its default direction.
@@ -450,7 +450,14 @@ export class HVDataTable extends LitElement {
   }
 
   /** A row action button: it acts on `item` without the click reaching the row. */
-  private _rowButton(item: Item, event: string, label: string, glyph: unknown, disabled = false, cls = '') {
+  private _rowButton(
+    item: Item,
+    event: 'increment' | 'decrement' | 'edit',
+    label: string,
+    glyph: unknown,
+    disabled = false,
+    cls = '',
+  ) {
     return html`<button
       class=${cls}
       data-testid=${`table-${event}`}
@@ -585,10 +592,9 @@ export class HVDataTable extends LitElement {
                       label=${t('hv.row.actionsFor', { name: item.name })}
                       .entries=${rowMenuEntries(item)}
                       @click=${(e: Event) => e.stopPropagation()}
-                      @select=${(e: CustomEvent) => {
+                      @select=${(e: HvEvent<'hv-overflow-menu', 'select'>) => {
                         e.stopPropagation();
-                        const { id } = e.detail as { id: string };
-                        this._emit('row-action', { itemId: item.id, action: id });
+                        this._emit('row-action', { itemId: item.id, action: e.detail.id });
                       }}
                     ></hv-overflow-menu>
                   </span>

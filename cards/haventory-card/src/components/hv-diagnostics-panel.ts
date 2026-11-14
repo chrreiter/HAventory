@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
+import { emitter } from '../events';
 import { tokens, base } from '../ui/tokens';
 import { Modal, modalChrome, modalSheet } from '../ui/modal';
 import { icon } from '../ui/icons';
@@ -15,6 +16,8 @@ import type { DegradedState, StatsCounts, VersionInfo } from '../store/types';
  */
 @customElement('hv-diagnostics-panel')
 export class HVDiagnosticsPanel extends LitElement {
+  private readonly _emit = emitter<'hv-diagnostics-panel'>(this);
+
   static override styles = [
     tokens,
     base,
@@ -167,7 +170,7 @@ export class HVDiagnosticsPanel extends LitElement {
   }
 
   private _close = () => {
-    this.dispatchEvent(new CustomEvent('cancel', { bubbles: true, composed: true }));
+    this._emit('cancel');
   };
 
   /** Everything the panel shows, as text worth pasting into an issue. */
@@ -201,7 +204,7 @@ export class HVDiagnosticsPanel extends LitElement {
             class="hv-pill outline"
             data-testid="health-refresh"
             ?disabled=${this.busy}
-            @click=${() => this.dispatchEvent(new CustomEvent('refresh', { bubbles: true, composed: true }))}
+            @click=${() => this._emit('refresh')}
           >
             ${icon('refresh', 15)}${this.busy ? t('hv.diagnostics.refreshing') : t('hv.action.refresh')}
           </button>

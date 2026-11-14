@@ -1,5 +1,5 @@
 import { LitElement, css, html, nothing } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, query, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { tokens, base } from '../ui/tokens';
 import { chip } from '../ui/chip';
@@ -43,12 +43,13 @@ import {
 import { renderStatBadges } from '../ui/stat-badges';
 import { ViewportNarrow } from '../ui/responsive';
 import { ItemWorkspace } from '../item-workspace';
-import type { RowEventDetail } from '../item-workspace';
+import { emitter } from '../events';
+import type { HvEvent, MenuActionDetail } from '../events';
 import { statusCount, statusLabel, statusList } from '../ui/status';
 import type { EmptyOffer } from '../ui/empty-state';
 import type { Store } from '../store/store';
 import type { ColumnKey } from '../store/columns';
-import type { DistinctValue, Item, Sort, StoreFilters, StoreState } from '../store/types';
+import type { DistinctValue, Item, StoreFilters, StoreState } from '../store/types';
 import type { OverflowMenuEntry } from './hv-overflow-menu';
 import { makeBulkOp } from '../store/store';
 import type { BulkOperation, BulkOutcome } from '../store/types';
@@ -679,9 +680,10 @@ export class HVFullView extends LitElement {
     editor: () => this._editor,
     openItem: (itemId) => this._openItem(itemId),
     editItem: (itemId) => this._openItem(itemId),
-    requestDelete: (detail) =>
-      this.dispatchEvent(new CustomEvent('request-delete', { detail, bubbles: true, composed: true })),
+    requestDelete: (detail) => this._emit('request-delete', detail),
   });
+
+  private readonly _emit = emitter<'hv-full-view'>(this);
 
   @property({ type: Boolean, reflect: true }) open = false;
   @property({ type: String }) heading = DEFAULT_CARD_TITLE;
@@ -833,7 +835,7 @@ export class HVFullView extends LitElement {
 
   /** The rows of one facet list, in the order they are drawn. */
   private _facetRows(section: FacetSection): HTMLElement[] {
-    return [...this.renderRoot.querySelectorAll<HTMLElement>(`[data-testid="sidebar-${section}-row"]`)];
+    return [...this.renderRoot.querySelectorAll<HTMLElement>(`#${sectionPanelId(section)} .value-row`)];
   }
 
   /** Leave one row of `section` in the tab order, read off the rendered rows. */
@@ -859,13 +861,15 @@ export class HVFullView extends LitElement {
     next.focus();
   }
 
+  @query('#sidebar-new-location-input') private _newLocationInput?: HTMLInputElement;
+
   private get _tree(): HVLocationTree | null {
     return this.shadowRoot?.querySelector('hv-location-tree') ?? null;
   }
 
   private _close = () => {
     this.open = false;
-    this.dispatchEvent(new CustomEvent('close', { bubbles: true, composed: true }));
+    this._emit('close');
   };
 
   private get _editor(): HVItemEditor | null {
@@ -873,8 +877,8 @@ export class HVFullView extends LitElement {
   }
 
   /** Hand an action to the host's `HostSurfaces`, as its ⋮ menu entries do. */
-  private _menuAction(detail: Record<string, unknown>) {
-    this.dispatchEvent(new CustomEvent('menu-action', { detail, bubbles: true, composed: true }));
+  private _menuAction(detail: MenuActionDetail) {
+    this._emit('menu-action', detail);
   }
 
   /** What the shared banner stacks act through; Refresh is the host's menu action. */
@@ -968,8 +972,8 @@ export class HVFullView extends LitElement {
     return { label: t(label), ops: items.map(op) };
   }
 
-  private _onBulkRun = (e: CustomEvent) => {
-    const detail = e.detail as BulkRunDetail;
+  private _onBulkRun = (e: HvEvent<'hv-bulk-bar', 'run'>) => {
+    const detail = e.detail;
     if (detail.action === 'delete') {
       this._pendingDelete = true;
       return;
@@ -1246,6 +1250,7 @@ export class HVFullView extends LitElement {
           this._creatingLocation
             ? html`<div class="new-location">
               <input
+                id="sidebar-new-location-input"
                 data-testid="sidebar-new-location-name"
                 placeholder=${t('hv.fullView.newLocationName')}
                 aria-label=${t('hv.fullView.newLocationName')}
@@ -1258,10 +1263,7 @@ export class HVFullView extends LitElement {
                 class="hv-pill"
                 data-testid="sidebar-new-location-save"
                 @click=${() => {
-                  const input = this.shadowRoot?.querySelector<HTMLInputElement>(
-                    '[data-testid="sidebar-new-location-name"]',
-                  );
-                  void this._createLocation(input?.value ?? '');
+                  void this._createLocation(this._newLocationInput?.value ?? '');
                 }}
               >
                 ${t('hv.card.addShort')}
@@ -1290,15 +1292,15 @@ export class HVFullView extends LitElement {
           .totalCount=${st?.statsCounts?.items_total ?? null}
           .orphanCount=${st?.statsCounts?.no_location_count ?? null}
           .matchingTotalCount=${st?.locationMatchTotal ?? null}
-          @select=${(e: CustomEvent) =>
+          @select=${(e: HvEvent<'hv-location-tree', 'select'>) =>
             this.store?.setFilters({
-              locationIds: this._toggledLocations((e.detail as { locationId: string | null }).locationId),
+              locationIds: this._toggledLocations(e.detail.locationId),
               orphansOnly: false,
             })}
           @select-orphans=${() => this.store?.setFilters({ locationIds: [], orphansOnly: true })}
-          @select-area=${(e: CustomEvent) =>
+          @select-area=${(e: HvEvent<'hv-location-tree', 'select-area'>) =>
             this.store?.setFilters({
-              areaId: (e.detail as { areaId: string }).areaId,
+              areaId: e.detail.areaId,
               locationIds: [],
               orphansOnly: false,
             })}
@@ -1318,7 +1320,7 @@ export class HVFullView extends LitElement {
 
   // Resolved per click: on the render that first draws the panel it does not exist yet.
   private _panel() {
-    return this.renderRoot?.querySelector<HVFilterPanel>('[data-testid="full-filter-panel"]');
+    return this.renderRoot?.querySelector<HVFilterPanel>('hv-filter-panel');
   }
 
   /** The phone panel's commit row, without which its staged edits have no way out. */
@@ -1605,9 +1607,9 @@ export class HVFullView extends LitElement {
             onPrimary
             data-testid="full-overflow"
             .entries=${this.menuEntries}
-            @select=${(e: CustomEvent<Record<string, unknown>>) => {
+            @select=${(e: HvEvent<'hv-overflow-menu', 'select'>) => {
               if (e.detail.id === 'select-items') this._selecting = true;
-              else this._menuAction(e.detail);
+              else this._menuAction({ id: e.detail.id });
             }}
           ></hv-overflow-menu>
         </div>
@@ -1692,16 +1694,14 @@ export class HVFullView extends LitElement {
               ?selectable=${this._selecting}
               ?narrow=${this._viewport.narrow}
               .selection=${selection}
-              @sort-change=${(e: CustomEvent) => this.store?.setFilters({ sort: (e.detail as { sort: Sort }).sort })}
-              @near-end=${(e: CustomEvent) =>
-                void this.store?.prefetchIfNeeded((e.detail as { ratio: number }).ratio)}
-              @increment=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('increment', e.detail)}
-              @decrement=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('decrement', e.detail)}
-              @edit=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('edit', e.detail)}
-              @open-item=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowEvent('open-item', e.detail)}
-              @row-action=${(e: CustomEvent<RowEventDetail>) => this._workspace.onRowAction(e.detail)}
-              @toggle-select=${(e: CustomEvent) =>
-                this.store?.toggleSelected((e.detail as { itemId: string }).itemId)}
+              @sort-change=${(e: HvEvent<'hv-data-table', 'sort-change'>) => this.store?.setFilters({ sort: e.detail.sort })}
+              @near-end=${(e: HvEvent<'hv-data-table', 'near-end'>) => void this.store?.prefetchIfNeeded(e.detail.ratio)}
+              @increment=${(e: HvEvent<'hv-data-table', 'increment'>) => this._workspace.onRowEvent('increment', e.detail)}
+              @decrement=${(e: HvEvent<'hv-data-table', 'decrement'>) => this._workspace.onRowEvent('decrement', e.detail)}
+              @edit=${(e: HvEvent<'hv-data-table', 'edit'>) => this._workspace.onRowEvent('edit', e.detail)}
+              @open-item=${(e: HvEvent<'hv-data-table', 'open-item'>) => this._workspace.onRowEvent('open-item', e.detail)}
+              @row-action=${(e: HvEvent<'hv-data-table', 'row-action'>) => this._workspace.onRowAction(e.detail)}
+              @toggle-select=${(e: HvEvent<'hv-data-table', 'toggle-select'>) => this.store?.toggleSelected(e.detail.itemId)}
               @select-all-loaded=${() => this.store?.selectAllLoaded()}
               @clear-selection=${() => this.store?.clearSelection()}
             >
@@ -1780,8 +1780,8 @@ export class HVFullView extends LitElement {
           ?open=${this._pendingBulkCheckout}
           ?touch=${this._viewport.narrow}
           .itemName=${counted(selection.size, 'item')}
-          @check-out=${(e: CustomEvent) => {
-            const { dueDate } = e.detail as { dueDate: string | null };
+          @check-out=${(e: HvEvent<'hv-checkout-popover', 'check-out'>) => {
+            const { dueDate } = e.detail;
             this._pendingBulkCheckout = false;
             void this._execute(this._opsFor({ action: 'check-out', dueDate }, this._selectedItems));
           }}

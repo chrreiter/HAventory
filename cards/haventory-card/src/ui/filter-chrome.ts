@@ -4,6 +4,7 @@ import type { TemplateResult } from 'lit';
 import { t, tn } from '../i18n';
 import { icon } from './icons';
 import { debounce } from '../utils/debounce';
+import type { HvEvent } from '../events';
 import { defaultFilters } from '../store/store';
 import type { Store } from '../store/store';
 import type { StoreFilters, StoreState } from '../store/types';
@@ -147,7 +148,7 @@ export function renderFilterChips(st: StoreState | null, opts: FilterActions): T
     .filters=${st?.filters ?? defaultFilters()}
     .locations=${st?.locationsFlatCache ?? null}
     .areas=${st?.areasCache?.areas ?? []}
-    @remove-filter=${(e: CustomEvent) => opts.setFilters((e.detail as { patch: Partial<StoreFilters> }).patch)}
+    @remove-filter=${(e: HvEvent<'hv-filter-chips', 'remove-filter'>) => opts.setFilters(e.detail.patch)}
     @clear-filters=${opts.clearFilters}
   ></hv-filter-chips>`;
 }
@@ -176,9 +177,9 @@ export function renderFilterPanel(st: StoreState | null, opts: FilterPanelOption
     .grandTotal=${st?.statsCounts?.items_total ?? null}
     .counts=${st?.statsCounts ?? null}
     ?mobile=${opts.mobile}
-    @change=${(e: CustomEvent) => opts.setFilters(e.detail as Partial<StoreFilters>)}
-    @stage=${(e: CustomEvent) => opts.onStage((e.detail as { filters: StoreFilters }).filters)}
-    @apply=${(e: CustomEvent) => opts.onApply(e.detail as StoreFilters)}
+    @change=${(e: HvEvent<'hv-filter-panel', 'change'>) => opts.setFilters(e.detail)}
+    @stage=${(e: HvEvent<'hv-filter-panel', 'stage'>) => opts.onStage(e.detail.filters)}
+    @apply=${(e: HvEvent<'hv-filter-panel', 'apply'>) => opts.onApply(e.detail)}
     @clear-filters=${opts.clearFilters}
   ></hv-filter-panel>`;
 }

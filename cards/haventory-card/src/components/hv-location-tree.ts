@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 import type { TranslationKey } from '../i18n';
 import { LitElement, css, html } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, query, state } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import type { TemplateResult } from 'lit';
 import { tokens, base } from '../ui/tokens';
@@ -15,6 +15,7 @@ import { rovingTarget, syncRovingTabindex } from '../ui/roving-list';
 import { counted } from '../ui/plural';
 import type { AreaGroup } from '../store/location-tree';
 import type { AreaRef, LocationTreeNode } from '../store/types';
+import { emitter } from '../events';
 
 /** The tail of ungrouped roots, keyed like a group so it collapses like one. */
 const NO_AREA_KEY = 'no-area';
@@ -40,7 +41,13 @@ const placeholderTwisty = () =>
   html`<span class="twisty hv-browse-row-lead placeholder">${icon('chevronRight', 17)}</span>`;
 
 /** The desktop manage actions: testid, event, accessible name, title, glyph. */
-const MANAGE_ACTIONS: [string, string, TranslationKey, TranslationKey, IconName][] = [
+const MANAGE_ACTIONS: [
+  string,
+  'merge-location' | 'edit-location' | 'delete-location',
+  TranslationKey,
+  TranslationKey,
+  IconName,
+][] = [
   ['tree-merge', 'merge-location', 'hv.tree.merge', 'hv.tree.mergeTitle', 'callMerge'],
   ['tree-edit', 'edit-location', 'hv.row.editNamed', 'hv.tree.editTitle', 'pencil'],
   ['tree-delete', 'delete-location', 'hv.tree.delete', 'hv.tree.deleteTitle', 'del'],
@@ -280,9 +287,13 @@ export class HVLocationTree extends LitElement {
   /** Which node holds the tree's one roving tab stop (`_nodeKey`); null until `updated` resolves it. */
   @state() private _activeKey: string | null = null;
 
+  @query('.create-row input') private _createInput!: HTMLInputElement | null;
+
+  private readonly _emit = emitter<'hv-location-tree'>(this);
+
   protected override updated(changed: Map<string, unknown>) {
     if (changed.has('_creating') && this._creating) {
-      this.renderRoot.querySelector<HTMLInputElement>('[data-testid="tree-create-name"]')?.focus();
+      this._createInput?.focus();
     }
     this._syncRovingTabindex();
   }
@@ -292,9 +303,8 @@ export class HVLocationTree extends LitElement {
    * what is visible. Excluded rows cannot be chosen and are left out.
    */
   private _walk(): HTMLElement[] {
-    const rows = this.renderRoot.querySelectorAll<HTMLElement>(
-      '[data-testid="tree-area-head"], [data-testid="tree-row"]',
-    );
+    // Only location rows and area headers are tree items; "All" and "No location" are not.
+    const rows = this.renderRoot.querySelectorAll<HTMLElement>('[role="treeitem"]');
     return [...rows].filter((el) => el.getAttribute('aria-disabled') !== 'true');
   }
 
@@ -378,10 +388,6 @@ export class HVLocationTree extends LitElement {
     if (excluded) return;
     this._activeKey = `loc:${node.id}`;
     this._emit('select', { locationId: node.id, node });
-  }
-
-  private _emit(name: string, detail: Record<string, unknown>) {
-    this.dispatchEvent(new CustomEvent(name, { detail, bubbles: true, composed: true }));
   }
 
   /** A node stays visible when it matches (as the organize toolbar's tally counts) or a descendant does. */
@@ -753,7 +759,7 @@ export class HVLocationTree extends LitElement {
               <button
                 class="row hv-browse-row orphans ${this.orphansSelected ? 'selected' : ''}"
                 data-testid="tree-orphans"
-                @click=${() => this._emit('select-orphans', {})}
+                @click=${() => this._emit('select-orphans')}
               >
                 ${placeholderTwisty()} ${icon('mapMarkerOff', 18)}
                 <span class="name hv-browse-row-label">${t('hv.term.noLocation')}</span>

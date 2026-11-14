@@ -1,6 +1,7 @@
 import { t } from '../i18n';
+import { emitter } from '../events';
 import { LitElement, css, html } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { customElement, property, query, state } from 'lit/decorators.js';
 import { tokens, base } from '../ui/tokens';
 import { onEscape } from '../ui/keyboard';
 import { icon } from '../ui/icons';
@@ -255,9 +256,14 @@ export class HVOverflowMenu extends LitElement {
     this._reflowTargets = [];
   }
 
+  private readonly _emit = emitter<'hv-overflow-menu'>(this);
+
+  @query('#trigger') private _triggerEl?: HTMLElement;
+  @query('#menu') private _menuEl?: HTMLElement;
+
   private _place() {
-    const trigger = this.renderRoot.querySelector<HTMLElement>('[data-testid="overflow-trigger"]');
-    const menu = this.renderRoot.querySelector<HTMLElement>('[data-testid="overflow-menu"]');
+    const trigger = this._triggerEl;
+    const menu = this._menuEl;
     if (!trigger || !menu) return;
     const { top, left } = placeMenu(
       trigger.getBoundingClientRect(),
@@ -272,9 +278,7 @@ export class HVOverflowMenu extends LitElement {
     // Placement first: focusing an unplaced menu would let the browser scroll
     // a (0, 0) box into view before the coordinates land.
     if (this._open) this._place();
-    this._dialogFocus.sync(this._open, () =>
-      this.renderRoot.querySelector<HTMLElement>('[data-testid="overflow-menu"]'),
-    );
+    this._dialogFocus.sync(this._open, () => this._menuEl);
   }
 
   override disconnectedCallback(): void {
@@ -304,7 +308,7 @@ export class HVOverflowMenu extends LitElement {
   private _choose(item: OverflowMenuItem) {
     if (item.disabled) return;
     this.close();
-    this.dispatchEvent(new CustomEvent('select', { detail: { id: item.id }, bubbles: true, composed: true }));
+    this._emit('select', { id: item.id });
   }
 
   override render() {
@@ -313,6 +317,7 @@ export class HVOverflowMenu extends LitElement {
     const z = this._zBase || 10000;
     return html`
       <button
+        id="trigger"
         class="hv-icon-button trigger ${this.onPrimary ? 'on-primary' : ''}"
         data-testid="overflow-trigger"
         aria-haspopup="menu"
@@ -327,6 +332,7 @@ export class HVOverflowMenu extends LitElement {
         this._open
           ? html`<div class="scrim" role="presentation" data-testid="overflow-scrim" style="z-index: ${z};"></div>
           <div
+            id="menu"
             class="menu"
             role="menu"
             data-testid="overflow-menu"
