@@ -87,14 +87,6 @@ and the PR-title check.
 
 ## Conventions
 
-- **Test-driven.** Every feature or fix ships with tests: the happy path plus at least one
-  edge or error case. Default to offline tests (HA is stubbed in `tests/conftest.py`); async
-  tests use `@pytest.mark.asyncio`. The WebSocket stub applies each command's schema before
-  dispatch, so an offline test sends frames a real client could send. Dispatch a command with
-  `ws_send` from `tests/ws_helpers.py`, never a private copy: it returns the full result
-  envelope and takes an optional `conn=`. A card component test mounts through
-  `mountComponent` from `cards/haventory-card/src/test.utils.ts` and reads it with `q`,
-  `all`, `settle` and `componentCss` from the same place, never a per-file copy.
 - **Conventional Commits** for commit messages *and PR titles* (a CI check enforces the PR
   title). Examples: `feat: add low-stock filter`, `fix: preserve location_path on move`.
 - **Keep the API docs in sync.** A WebSocket or API change updates `ws.py`,
@@ -132,6 +124,26 @@ and the PR-title check.
   `location_name`, not `name`.
 - Update `README.md` when behavior changes. Report out-of-scope findings under a
   "Follow-ups" note rather than fixing them in the same PR.
+
+### Tests earn their place
+
+Every feature or fix ships with tests: the happy path, plus the edge or error case a user
+could run into. A test earns its place by being able to fail for a reason a user of the
+integration would notice: a wrong answer, a refused or lost write, a screen that does not
+update. An edge case that can lose data always gets its test. Any other test is only code the
+next change has to read and keep green.
+
+- Extend a table or a parametrized case before adding a function, and a function before a file.
+- Cover a fix once, where its behaviour can be observed, not once for each layer it crosses.
+- No test of a guard's own detector (a repository sweep proving it can find something), and
+  none about housekeeping (badges, artwork, CI wiring) unless a release breaks without it.
+- Deleting a test that no longer earns its place is welcome; the PR says which, and why.
+- A test file's docstring is a sentence or two. A constraint goes on the test it belongs to.
+
+Tests are offline by default ([`docs/developing.md`](docs/developing.md#testing)). Commands
+go through `ws_send` from `tests/ws_helpers.py`, and card components mount through
+`mountComponent` and read through `q`, `all`, `settle` and `componentCss` from
+`cards/haventory-card/src/test.utils.ts`, never a private copy.
 
 ### Comments explain constraints, not history
 

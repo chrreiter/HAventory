@@ -122,9 +122,8 @@ mode**. phacc must load, and the flag makes it silently collect nothing.
 
 ## Conventions
 
-- **TDD**: every feature or fix ships with tests, happy path plus at least one edge or error
-  case, offline by default (`@pytest.mark.asyncio` for async ones). Both gate halves green
-  before each commit.
+- **Tests**: what to test and how much is [`CONTRIBUTING.md`](CONTRIBUTING.md) → "Tests
+  earn their place". Both gate halves green before each commit.
 - **The WebSocket contract lives in `docs/`**: an API change moves `ws.py`,
   `backend_api_contract.md` and `data_shapes.md` together.
 - **The core invariants**: case-insensitive search, the denormalized `location_path`,
@@ -154,19 +153,8 @@ mode**. phacc must load, and the flag makes it silently collect nothing.
 
 ## Scope decisions that stay true
 
-- **HAventory keeps all of its pillars.** Core HA has shipped no first-party inventory
-  feature and has no nested location tree. It is capped at floor and area, which is the
-  differentiator. Do not migrate a pillar onto a core primitive on the theory that it
-  duplicates one.
-- **Areas are HA's, not ours.** The integration reads the area registry and never creates
-  one. An item's is inherited from its location tree's root as `effective_area_id`.
-- **One declared HA floor.** No second, lower "runs on" number beside a higher "recommended"
-  one. The older releases the integration also works on live in git history and in
-  [#235](https://github.com/chrreiter/HAventory/issues/235).
-- **Reminders and the calendar ride HA-native primitives.** Occurrences are **derived on
-  read**, never scheduled and never stored; notifications are the household's own
-  automations. Do not add a timer, a queue or a stored occurrence table. The only
-  time-driven piece is a midnight state rewrite so "next event" rolls over.
+[`README.md`](README.md) → "Design decisions" has the four, each with its reason. None is
+reversed in a pull request.
 
 ## Where work is tracked
 

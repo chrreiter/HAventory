@@ -22,7 +22,7 @@ Closes #
 ## Checklist
 
 - [ ] PR title follows [Conventional Commits](https://www.conventionalcommits.org/) (e.g. `feat: …`, `fix: …`).
-- [ ] Tests added or updated (happy path plus at least one edge or error case).
+- [ ] Tests follow `CONTRIBUTING.md` → "Tests earn their place"; a deleted test is named above with its reason.
 - [ ] Docs updated where behavior changed (`README.md`, `docs/backend_api_contract.md`, `docs/data_shapes.md`).
 - [ ] WebSocket API changes keep `ws.py`, `docs/backend_api_contract.md` and `docs/data_shapes.md` in sync.
 - [ ] Core invariants preserved (case-insensitive search, denormalized `location_path`, optimistic `version`).
