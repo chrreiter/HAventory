@@ -12,6 +12,7 @@ import '../components/hv-item-editor';
 import '../components/hv-list-row';
 import '../components/hv-location-tree';
 import '../components/hv-organize-dialog';
+import '../components/hv-organize-statuses';
 import { sheetsOf } from '../test.utils';
 
 /** Every surface that marks something with a chip. */
@@ -27,6 +28,7 @@ const CHIPPED = [
   'hv-list-row',
   'hv-location-tree',
   'hv-organize-dialog',
+  'hv-organize-statuses',
 ];
 
 describe('ui/chip: the shared fragment', () => {

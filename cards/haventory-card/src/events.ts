@@ -175,6 +175,7 @@ export interface HvEventMap {
     'create-location': { name: string };
   };
   'hv-organize-dialog': { cancel: None; browse: None };
+  'hv-organize-statuses': { browse: None };
   'hv-overflow-menu': { select: { id: string } };
 }
 
