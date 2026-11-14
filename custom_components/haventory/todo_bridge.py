@@ -133,6 +133,8 @@ async def async_reconcile(hass: HomeAssistant) -> None:
     try:
         async with runtime.todo.lock:
             await _async_reconcile_locked(hass, runtime)
+    # The pass drives another integration's to-do entity; "never raises" holds whatever
+    # it raises.
     except Exception:
         LOGGER.exception(
             "Failed to reconcile the to-do list",
@@ -354,6 +356,8 @@ async def _async_load_links(store: Store[dict[str, Any]]) -> dict[str, dict[str,
 
     try:
         payload = await store.async_load()
+    # An unreadable file raises HomeAssistantError, a hand-edited one KeyError or a
+    # migration's error; each starts the map empty.
     except Exception:
         LOGGER.warning(
             "Could not read the to-do link map; starting from an empty one",
@@ -385,6 +389,8 @@ async def _async_save_links(runtime: HAventoryRuntime) -> None:
 
     try:
         await store.async_save({"links": runtime.todo.links})
+    # Store logs WriteError itself; what it lets through costs duplicates, never the
+    # inventory.
     except Exception:
         LOGGER.warning(
             "Could not save the to-do link map; lines already on the list may be written again",

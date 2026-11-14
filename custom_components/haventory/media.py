@@ -219,6 +219,8 @@ def _encode_thumbnail_blocking(source: Path, target: Path) -> bool:
             staging = target.with_name(f"{target.name}.part")
             oriented.save(staging, format="WEBP", quality=THUMBNAIL_QUALITY)
             staging.replace(target)
+    # Pillow's decoders raise more than OSError (DecompressionBombError, SyntaxError,
+    # ValueError), and the docstring promises False for every reason.
     except Exception:
         LOGGER.debug(
             "Serving the original: this picture could not be thumbnailed",
@@ -366,7 +368,7 @@ def _sweep_blocking(
             continue
         try:
             resolved.unlink()
-        except OSError:  # pragma: no cover - defensive
+        except OSError:
             LOGGER.warning(
                 "Could not remove an orphaned attachment file",
                 extra={"op": "attachment_sweep", "path": str(resolved)},

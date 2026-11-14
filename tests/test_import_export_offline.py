@@ -170,6 +170,25 @@ def test_round_trip_into_empty_reproduces_data() -> None:
     assert reexport["locations"] == doc["locations"]
 
 
+def test_an_imported_item_without_a_quantity_lands_with_one() -> None:
+    source = Repository()
+    ids = _seed(source)
+    doc = ie.build_export_document(source, schema_version=CURRENT_SCHEMA_VERSION)
+    for item_doc in doc["items"]:
+        if item_doc["id"] == ids["nails"]:
+            item_doc.pop("quantity")
+
+    target = Repository()
+    report, payload = ie.plan_import(
+        target, doc, policy="merge", current_schema_version=CURRENT_SCHEMA_VERSION
+    )
+    assert report["valid"] is True
+    assert payload is not None
+    target.load_state(payload)
+
+    assert target.get_item(ids["nails"]).quantity == 1
+
+
 @pytest.mark.asyncio
 async def test_round_trip_via_ws_execute() -> None:
     """End-to-end round-trip through the export + execute WS commands."""

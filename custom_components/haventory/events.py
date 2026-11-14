@@ -94,7 +94,9 @@ def notify_mutation(
             return
         _fire_low_stock_transitions(hass, runtime, bodies=_by_id([item] if item else []))
         _repaint_and_count(hass, runtime, repaint=True, counts=counts)
-    except Exception:  # pragma: no cover - defensive
+    # The announcement runs after the save; a failure here must not turn a saved write
+    # into an error.
+    except Exception:
         LOGGER.exception(
             "Failed to notify a mutation",
             extra={"op": "notify_mutation", "action": action},
@@ -144,7 +146,9 @@ def notify_bulk_mutation(
         _fire_low_stock_transitions(hass, runtime, bodies=_by_id(items))
 
         _repaint_and_count(hass, runtime, repaint=True, counts=True)
-    except Exception:  # pragma: no cover - defensive
+    # The announcement runs after the save; a failure here must not turn a saved write
+    # into an error.
+    except Exception:
         LOGGER.exception(
             "Failed to notify a bulk mutation",
             extra={"op": "notify_bulk_mutation", "action": action},

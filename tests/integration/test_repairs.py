@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+from custom_components.haventory import repairs as repairs_module
 from custom_components.haventory.const import (
     CONF_ALLOW_LOSSY_LOAD,
     CORRUPT_BACKUP_STORAGE_KEY,
@@ -157,6 +159,30 @@ async def test_a_corrupt_row_offers_a_fix_that_backs_up_reloads_and_clears(
     assert repo.get_counts()["items_total"] == 1
     assert repo.get_item(READABLE_ITEM_ID).name == "Hammer"
     assert CONF_ALLOW_LOSSY_LOAD not in entry.options
+
+
+async def test_a_failed_copy_aborts_the_fix_and_loads_nothing_lossily(
+    hass: HomeAssistant, hass_storage: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert await async_setup_component(hass, "repairs", {})
+    hass_storage[STORAGE_KEY] = _stored(_corrupt_store_data())
+    entry = await _added_entry(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id) is False
+    await hass.async_block_till_done()
+
+    async def _boom(_hass: HomeAssistant) -> bool:
+        raise RuntimeError("unreadable")
+
+    monkeypatch.setattr(repairs_module, "async_backup_store", _boom)
+    flow_manager = repairs_flow_manager(hass)
+    assert flow_manager is not None
+    result = await flow_manager.async_init(DOMAIN, data={"issue_id": ISSUE_CORRUPT_STORE})
+    result = await flow_manager.async_configure(result["flow_id"], {})
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "backup_failed"
+    assert CONF_ALLOW_LOSSY_LOAD not in entry.options
+    assert entry.state is ConfigEntryState.SETUP_ERROR
 
 
 async def test_a_clean_store_leaves_no_issue_behind(

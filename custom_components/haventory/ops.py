@@ -528,7 +528,7 @@ async def _save(
 
     try:
         await async_persist_repo(hass)
-    except Exception:
+    except Exception:  # Whatever failed, the op's change is in memory and must be undone first.
         repo.restore(before)
         # The storage layer logged the failure itself, at ERROR with the trace.
         LOGGER.warning("Undid a write whose save failed", extra={"op": name})

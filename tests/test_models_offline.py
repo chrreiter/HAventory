@@ -575,6 +575,22 @@ def test_a_stored_reminder_without_an_anchor_reads_as_its_own_date() -> None:
     assert Item.from_dict({"id": str(item.id), "name": "Ladder"}).reminder_anchor is None
 
 
+def test_a_stored_row_without_a_quantity_loads_as_one() -> None:
+    """The dataclass, the service schema and the create path all default to one."""
+
+    item = Item.from_dict({"id": "3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f", "name": "Ladder"})
+
+    assert item.quantity == 1
+
+
+def test_a_stored_quantity_of_zero_stays_zero() -> None:
+    item = Item.from_dict(
+        {"id": "3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f", "name": "Ladder", "quantity": 0}
+    )
+
+    assert item.quantity == 0
+
+
 def test_a_reminder_survives_creation_and_serialization() -> None:
     item = create_item_from_create(
         ItemCreate(

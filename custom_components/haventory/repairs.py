@@ -47,7 +47,9 @@ class LossyLoadRepairFlow(RepairsFlow):
 
         try:
             copied = await async_backup_store(self.hass)
-        except Exception:  # pragma: no cover - defensive
+        # `Store.async_load` raises whatever the stored file provokes; any failure to make
+        # the copy means no lossy load.
+        except Exception:
             LOGGER.error(
                 "Failed to copy the HAventory store aside; not loading it lossily",
                 extra={"op": "repair_lossy_load"},
