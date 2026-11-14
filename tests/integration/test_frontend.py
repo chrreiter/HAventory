@@ -36,6 +36,8 @@ BUNDLE = (
     / "haventory-card.js"
 )
 
+CHUNKS_DIR = BUNDLE.parent / "chunks"
+
 needs_bundle = pytest.mark.skipif(
     not BUNDLE.is_file(),
     reason="card bundle not built (npm run build in cards/haventory-card)",
@@ -74,6 +76,27 @@ async def test_bundle_is_served_without_cache_control(
     assert "Cache-Control" not in response.headers
     assert response.headers.get("ETag")
     assert await response.read() == BUNDLE.read_bytes()
+
+
+@needs_bundle
+async def test_a_chunk_the_build_manifest_names_is_served(
+    hass: HomeAssistant, hass_client_no_auth: ClientSessionGenerator, setup_entry
+) -> None:
+    """The static path covers ``chunks/``, where the entry's imports resolve.
+
+    The entry imports its chunks by relative URL, so a chunk the route does not
+    serve leaves the card unable to start.
+    """
+    manifest = json.loads((CHUNKS_DIR / "manifest.json").read_text(encoding="utf-8"))
+    chunk = next(
+        record["file"] for record in manifest.values() if record["file"].startswith("chunks/")
+    )
+    await setup_entry()
+
+    response = await (await hass_client_no_auth()).get(f"/haventory_static/{chunk}")
+
+    assert response.status == HTTP_OK
+    assert await response.read() == (BUNDLE.parent / chunk).read_bytes()
 
 
 @needs_bundle
