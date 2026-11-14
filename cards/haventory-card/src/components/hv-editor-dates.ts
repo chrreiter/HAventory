@@ -112,12 +112,11 @@ export class HVEditorDates extends LitElement {
       .checkout-body .group-hint {
         grid-area: hint;
       }
+      /* The gap and the weight are .field-button's, from editorFields. */
       .checkout-action {
         grid-area: action;
         justify-content: center;
-        gap: 7px;
         min-height: var(--hv-tap-min, auto);
-        font-weight: 500;
         cursor: pointer;
       }
       .checkout-action:hover {
