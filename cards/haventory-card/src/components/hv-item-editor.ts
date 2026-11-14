@@ -5,6 +5,7 @@ import { customElement, property, query, state } from 'lit/decorators.js';
 import { emitter } from '../events';
 import type { HvEvent } from '../events';
 import { tokens, base } from '../ui/tokens';
+import { editorFields } from '../ui/editor-fields';
 import { chip } from '../ui/chip';
 import { areaMarkName, locationPathParts, pathTitle, renderAreaChip } from '../ui/location-path';
 import { icon } from '../ui/icons';
@@ -56,6 +57,8 @@ import type {
 import './hv-chip-input';
 import './hv-confirm';
 import './hv-checkout-popover';
+import './hv-editor-category';
+import type { HVEditorCategory } from './hv-editor-category';
 
 const customFieldTypes = (): { value: CustomFieldType; label: string }[] => [
   { value: 'string', label: t('hv.editor.type.string') },
@@ -64,11 +67,8 @@ const customFieldTypes = (): { value: CustomFieldType; label: string }[] => [
   { value: 'date', label: t('hv.editor.type.date') },
 ];
 
-/** The two disclosures' holders, named so `aria-controls` can point at them while closed. */
+/** The location tree's holder, named so `aria-controls` can point at it while closed. */
 const LOCATION_TREE_ID = 'editor-location-tree-holder';
-const CATEGORY_LIST_ID = 'editor-category-list';
-/** The category label names the listbox, which has no text of its own, and the combobox with it. */
-const CATEGORY_LABEL_ID = 'editor-category-label';
 
 /**
  * One file the picker is working through. A failed entry keeps the `File` so
@@ -111,6 +111,7 @@ export class HVItemEditor extends LitElement {
   static override styles = [
     tokens,
     base,
+    editorFields,
     chip,
     dayOffsets,
     docIcon,
@@ -258,9 +259,6 @@ export class HVItemEditor extends LitElement {
       .checkout-body .group-hint {
         grid-area: hint;
       }
-      .hv-label.muted {
-        color: var(--hv-text-tertiary);
-      }
       .checkout-action {
         grid-area: action;
         justify-content: center;
@@ -303,137 +301,10 @@ export class HVItemEditor extends LitElement {
       :host([mobile]) .checkout-action {
         margin-bottom: 8px;
       }
-      label.hv-label {
-        display: block;
-      }
-      .field-button {
-        box-sizing: border-box;
-        width: 100%;
-        min-width: 0;
-        background: var(--hv-surface);
-        border: 1px solid var(--hv-input-border);
-        border-radius: var(--hv-radius-input);
-        padding: 9px 11px;
-        font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
-        color: var(--hv-text);
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        text-align: left;
-      }
-      :host([mobile]) .hv-input,
-      :host([mobile]) .field-button {
-        min-height: 48px;
-        font-size: var(--hv-input-font, 14.5px);
-      }
-      /* The browser's disabled colour is indistinguishable on a dark HA theme. */
-      .hv-input:disabled {
-        background: var(--hv-input-bg);
-        border-color: var(--hv-divider);
-        color: var(--hv-text-tertiary);
-        -webkit-text-fill-color: var(--hv-text-tertiary);
-        cursor: not-allowed;
-      }
       textarea.hv-input {
         min-height: 44px;
         line-height: 1.5;
         resize: vertical;
-      }
-      .field-button .value {
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .field-button.empty .value {
-        color: var(--hv-text-tertiary);
-      }
-      .invalid .hv-input,
-      .invalid .field-button {
-        border-color: var(--hv-error);
-      }
-      .field-error {
-        font-size: var(--hv-editor-note);
-        color: var(--hv-error);
-      }
-      /* In flow rather than overlaid, so a scroll cannot move them off their field. */
-      .tree-holder,
-      .list-holder {
-        margin-top: 6px;
-        border: 1px solid var(--hv-divider);
-        border-radius: var(--hv-radius-input);
-        background: var(--hv-surface);
-        max-height: 220px;
-        overflow: auto;
-        padding: 4px 0;
-      }
-      .combo {
-        position: relative;
-        display: flex;
-        align-items: center;
-      }
-      .combo .hv-input {
-        padding-right: 34px;
-      }
-      .combo-arrow {
-        position: absolute;
-        right: 4px;
-        display: inline-grid;
-        place-items: center;
-        width: 26px;
-        height: 26px;
-        border: none;
-        border-radius: 50%;
-        background: none;
-        color: var(--hv-text-tertiary);
-        padding: 0;
-      }
-      .combo-arrow:hover {
-        background: var(--hv-hover-overlay);
-      }
-      :host([mobile]) .combo-arrow {
-        right: 2px;
-        width: var(--hv-tap-min, 32px);
-        height: var(--hv-tap-min, 32px);
-      }
-      .option {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        width: 100%;
-        box-sizing: border-box;
-        border: none;
-        background: none;
-        text-align: left;
-        font: 400 13.5px var(--hv-font);
-        color: var(--hv-text);
-        padding: 7px 12px;
-        border-radius: var(--hv-radius-input);
-      }
-      .option .label {
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-      .option:hover,
-      .option.active {
-        background: var(--hv-hover-overlay);
-      }
-      .option.selected {
-        background: var(--hv-primary-tint);
-        color: var(--hv-on-primary-tint);
-        font-weight: 500;
-      }
-      .option.active {
-        box-shadow: inset 0 0 0 1px var(--hv-primary);
-      }
-      .option-empty {
-        padding: 8px 12px;
-        font-size: var(--hv-editor-note);
-        color: var(--hv-text-tertiary);
       }
       .toggle {
         display: inline-flex;
@@ -927,11 +798,6 @@ export class HVItemEditor extends LitElement {
   @state() private _model: ItemFormModel = formFromItem(null);
   @state() private _errors: FieldError[] = [];
   @state() private _showErrors = false;
-  @state() private _categoryOpen = false;
-  /** Opened from the arrow: list everything, ignoring what is already typed. */
-  @state() private _categoryShowAll = false;
-  /** Keyboard cursor into the visible category options; -1 = nothing active. */
-  @state() private _categoryIndex = -1;
   /** The check-out dialog, and the button it hangs from on a wide screen. */
   @state() private _checkoutOpen = false;
   @state() private _checkoutAnchor: DOMRect | null = null;
@@ -977,6 +843,7 @@ export class HVItemEditor extends LitElement {
   private readonly _emit = emitter<'hv-item-editor'>(this);
 
   @query('#hv-editor-name') private _nameInput!: HTMLInputElement | null;
+  @query('hv-editor-category') private _category!: HVEditorCategory | null;
   @query(`button[aria-controls="${LOCATION_TREE_ID}"]`) private _locationTrigger!: HTMLElement | null;
   @query('#editor-inspection') private _inspectionInput!: HTMLInputElement | null;
 
@@ -1067,8 +934,9 @@ export class HVItemEditor extends LitElement {
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      if (this._categoryOpen) {
-        this._closeCategory();
+      const category = this._category;
+      if (category?.open) {
+        category.close();
       } else if (this._checkoutOpen) {
         this._checkoutOpen = false;
       } else if (this._location.open) {
@@ -1226,26 +1094,6 @@ export class HVItemEditor extends LitElement {
     }
   }
 
-  /** What the dropdown shows: typing narrows it, the arrow and focus show all. */
-  private get _categoryOptions(): string[] {
-    const query = this._model.category.trim().toLowerCase();
-    if (this._categoryShowAll || !query) return this.categorySuggestions;
-    return this.categorySuggestions.filter((c) => c.toLowerCase().includes(query));
-  }
-
-  private _openCategory(showAll: boolean) {
-    if (!this.categorySuggestions.length) return;
-    this._categoryShowAll = showAll;
-    this._categoryOpen = true;
-    this._categoryIndex = -1;
-  }
-
-  private _closeCategory() {
-    this._categoryOpen = false;
-    this._categoryShowAll = false;
-    this._categoryIndex = -1;
-  }
-
   /** Re-render at midnight, since the editor marks a past due date overdue. */
   override connectedCallback(): void {
     super.connectedCallback();
@@ -1256,145 +1104,9 @@ export class HVItemEditor extends LitElement {
     super.disconnectedCallback();
     this._dayUnsub?.();
     this._dayUnsub = undefined;
-    this._closeCategory();
   }
 
   private _dayUnsub?: () => void;
-
-  private _chooseCategory(value: string) {
-    this._patch({ category: value });
-    this._closeCategory();
-  }
-
-  private _onCategoryKeydown(e: KeyboardEvent) {
-    const options = this._categoryOptions;
-    switch (e.key) {
-      case 'ArrowDown':
-      case 'ArrowUp': {
-        e.preventDefault();
-        if (!this._categoryOpen) {
-          this._openCategory(false);
-          this._categoryIndex = 0;
-          return;
-        }
-        if (!options.length) return;
-        const step = e.key === 'ArrowDown' ? 1 : -1;
-        this._categoryIndex = (this._categoryIndex + step + options.length) % options.length;
-        break;
-      }
-      case 'Enter':
-        if (this._categoryOpen) {
-          const chosen = options[this._categoryIndex];
-          if (!chosen) break;
-          e.preventDefault();
-          e.stopPropagation();
-          this._chooseCategory(chosen);
-        }
-        break;
-      case 'Escape':
-        // Dismiss the list only — the editor's own Escape would discard the edit.
-        if (this._categoryOpen) {
-          e.preventDefault();
-          e.stopPropagation();
-          this._closeCategory();
-        }
-        break;
-      case 'Tab':
-        this._closeCategory();
-        break;
-    }
-  }
-
-  private _renderCategoryField() {
-    const typed = this._model.category.trim();
-    const options = this._categoryOptions;
-    return html`<div class="cell">
-      <label class="hv-label" id=${CATEGORY_LABEL_ID} for="editor-category">${t('hv.field.category')}</label>
-      <div class="combo">
-        <input
-          id="editor-category"
-          class="hv-input"
-          data-testid="editor-category"
-          role="combobox"
-          aria-labelledby=${CATEGORY_LABEL_ID}
-          autocomplete="off"
-          placeholder=${t('hv.editor.categoryPlaceholder')}
-          aria-autocomplete="list"
-          aria-expanded=${String(this._categoryOpen)}
-          aria-controls=${CATEGORY_LIST_ID}
-          aria-activedescendant=${
-            this._categoryOpen && this._categoryIndex >= 0
-              ? `editor-category-option-${this._categoryIndex}`
-              : ''
-          }
-          .value=${this._model.category}
-          @focus=${() => this._openCategory(true)}
-          @input=${(e: Event) => {
-            this._patch({ category: (e.target as HTMLInputElement).value });
-            this._openCategory(false);
-          }}
-          @keydown=${this._onCategoryKeydown}
-          @blur=${() => this._closeCategory()}
-        />
-        ${
-          this.categorySuggestions.length
-            ? html`<button
-              class="combo-arrow"
-              data-testid="editor-category-toggle"
-              tabindex="-1"
-              aria-label=${t('hv.editor.showAllCategories')}
-              title=${t('hv.editor.showAllCategories')}
-              @mousedown=${(e: Event) => e.preventDefault()}
-              @click=${() => {
-                // Only a second click on the *full* list closes it — pressing the
-                // arrow while a typed filter is showing means "show me the rest".
-                if (this._categoryOpen && this._categoryShowAll) this._closeCategory();
-                else this._openCategory(true);
-              }}
-            >
-              ${icon('chevronDown', 18)}
-            </button>`
-            : null
-        }
-      </div>
-      <div
-        class="list-holder"
-        role="listbox"
-        id=${CATEGORY_LIST_ID}
-        aria-labelledby=${CATEGORY_LABEL_ID}
-        data-testid="editor-category-list"
-        ?hidden=${!this._categoryOpen}
-      >
-        ${
-          this._categoryOpen
-            ? html`${
-                options.length
-                  ? options.map(
-                      (c, i) => html`<button
-                    class="option ${i === this._categoryIndex ? 'active' : ''} ${
-                      c.toLowerCase() === typed.toLowerCase() ? 'selected' : ''
-                    }"
-                    id=${`editor-category-option-${i}`}
-                    role="option"
-                    aria-selected=${String(c.toLowerCase() === typed.toLowerCase())}
-                    data-testid="editor-category-option"
-                    data-value=${c}
-                    @mousedown=${(e: Event) => e.preventDefault()}
-                    @click=${() => this._chooseCategory(c)}
-                  >
-                    <span class="label">${c}</span>
-                    ${c.toLowerCase() === typed.toLowerCase() ? icon('check', 15) : null}
-                  </button>`,
-                    )
-                  : html`<div class="option-empty" data-testid="editor-category-empty">
-                  ${t('hv.editor.categoryEmpty', { typed })}
-                </div>`
-              }`
-            : null
-        }
-      </div>
-    </div>`;
-  }
 
   private _renderStatusField() {
     return html`<div class="cell">
@@ -2290,7 +2002,14 @@ export class HVItemEditor extends LitElement {
             testid: 'editor-low-stock',
           })}
           ${this.mobile ? null : html`${this._renderDescriptionField()} ${this._renderStatusField()}`}
-          ${this._renderLocationField()} ${this._renderCategoryField()}
+          ${this._renderLocationField()}
+          <hv-editor-category
+            class="cell"
+            ?mobile=${this.mobile}
+            .value=${model.category}
+            .suggestions=${this.categorySuggestions}
+            @change=${(e: HvEvent<'hv-editor-category', 'change'>) => this._patch(e.detail)}
+          ></hv-editor-category>
           ${this.mobile ? this._renderStatusField() : null}
           <div class="cell span3">
             <span class="hv-label"

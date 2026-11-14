@@ -21,6 +21,7 @@ import type { ClipboardStub } from '../test.utils';
 import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays } from '../ui/relative-time';
 import type { HVItemEditor } from './hv-item-editor';
+import type { HVEditorCategory } from './hv-editor-category';
 import type { Item, ItemCreate, ItemUpdate, Location, LocationTreeNode } from '../store/types';
 
 const garage: Location = {
@@ -55,6 +56,25 @@ async function mount(item: Item | null, props: Partial<HVItemEditor> = {}) {
     ...props,
   });
   return el;
+}
+
+/** The child elements that render some of the form's fields in their own shadow roots. */
+const FIELD_CHILDREN = ['hv-editor-category'] as const;
+
+/**
+ * A field by test id, wherever the form draws it: in the editor's own shadow
+ * root or one level down, in a child element's.
+ */
+function field<T extends HTMLElement = HTMLElement>(el: HVItemEditor, testid: string): T | null {
+  const selector = `[data-testid="${testid}"]`;
+  const own = q<T>(el, selector);
+  if (own) return own;
+  for (const tag of FIELD_CHILDREN) {
+    const child = q(el, tag);
+    const hit = child ? q<T>(child, selector) : null;
+    if (hit) return hit;
+  }
+  return null;
 }
 
 /**
@@ -159,7 +179,7 @@ describe('hv-item-editor: field parity', () => {
       'editor-inspection-date',
       'editor-cf-add',
     ]) {
-      expect(q(el, `[data-testid="${testid}"]`), testid).toBeTruthy();
+      expect(field(el, testid), testid).toBeTruthy();
     }
   });
 
@@ -167,7 +187,7 @@ describe('hv-item-editor: field parity', () => {
     const item = makeItem({ id: '1', name: 'Multimeter', quantity: 1, version: 9, category: 'Tools' });
     const el = await mount(item);
     expect((q(el, '[data-testid="editor-name"]') as HTMLInputElement).value).toBe('Multimeter');
-    expect((q(el, '[data-testid="editor-category"]') as HTMLInputElement).value).toBe('Tools');
+    expect(field<HTMLInputElement>(el, 'editor-category')?.value).toBe('Tools');
     expect(q(el, '[data-testid="editor-version"]')?.textContent).toContain('v9');
     expect(q(el, '[data-testid="editor-heading"]')?.textContent).toContain('Multimeter — editing');
   });
@@ -696,7 +716,7 @@ describe('hv-item-editor: location and tags', () => {
   // rather than as nothing selected — loudest on the phone add-sheet.
   it('names the empty category the way the location field names an empty location', async () => {
     const el = await mount(makeItem({ id: '1', category: '' }));
-    const category = q(el, '[data-testid="editor-category"]') as HTMLInputElement;
+    const category = field(el, 'editor-category') as HTMLInputElement;
 
     expect(category.value).toBe('');
     expect(category.placeholder).toBe('No category');
@@ -857,163 +877,67 @@ describe('hv-item-editor: location and tags', () => {
   });
 });
 
+// The combobox itself is `hv-editor-category`'s spec. What the form owes is
+// the wiring: the suggestions go in, a pick lands in the save, and Escape
+// takes the list back before the form.
 describe('hv-item-editor: category picker', () => {
-  const options = (el: HVItemEditor) =>
-    all(el, '[data-testid="editor-category-option"]').map((o) => o.dataset.value);
+  const category = (el: HVItemEditor) => q(el, 'hv-editor-category') as HVEditorCategory;
+  const inCategory = (el: HVItemEditor, testid: string) =>
+    q(category(el), `[data-testid="${testid}"]`) as HTMLElement;
 
-  /**
-   * The listbox is the element the combobox names, so it stays put and empties
-   * out instead of leaving — shut means hidden with nothing in it, not gone.
-   */
-  function expectListShut(el: HVItemEditor) {
-    const list = q<HTMLElement>(el, '[data-testid="editor-category-list"]');
-    expect(list).toBeTruthy();
-    expect(list?.hidden).toBe(true);
-    expect(list?.children).toHaveLength(0);
-  }
-
-  async function focusCategory(el: HVItemEditor) {
-    const input = q(el, '[data-testid="editor-category"]') as HTMLInputElement;
-    input.focus();
-    await el.updateComplete;
-    return input;
-  }
-
-  // A listbox is announced by its name when focus moves into it, and it has
-  // no text of its own to fall back on.
-  it('names the listbox and its combobox after the field label', async () => {
-    const el = await mount(null);
-    const label = el.shadowRoot?.querySelector('label[for="editor-category"]');
-    const labelId = label?.id ?? '';
-
-    expect(labelId).not.toBe('');
-    expect(label?.textContent?.trim()).toBe(t('hv.field.category'));
-    expect(q(el, '[data-testid="editor-category-list"]')?.getAttribute('aria-labelledby')).toBe(labelId);
-    expect(q(el, '[data-testid="editor-category"]')?.getAttribute('aria-labelledby')).toBe(labelId);
+  it('hands the field the household categories and the phone flag', async () => {
+    const el = await mount(null, { mobile: true });
+    expect(category(el).suggestions).toEqual(['Hardware', 'Tools']);
+    expect(category(el).hasAttribute('mobile')).toBe(true);
+    // It sits in the grid as one cell, label and control together.
+    expect(category(el).classList.contains('cell')).toBe(true);
   });
 
-  it('shows every existing category on focus, before a single keystroke', async () => {
-    const el = await mount(null);
-    expectListShut(el);
-
-    await focusCategory(el);
-    expect(options(el)).toEqual(['Hardware', 'Tools']);
-  });
-
-  // The list belongs to the field above it, so it opens under that field and
-  // pushes the form down — the same disclosure the location tree in this form
-  // already is. Placed against the viewport it needed a measurement, two window
-  // listeners and a stacking base, and drifted off its own input whenever the
-  // surface behind it scrolled.
-  it('opens the list in flow under its input, like the location tree', async () => {
-    const el = await mount(null);
-    await focusCategory(el);
-
-    const list = q(el, '[data-testid="editor-category-list"]');
-    expect(list?.classList.contains('floating')).toBe(false);
-    expect(list?.getAttribute('style')).toBeNull();
-
-    const css = componentCss('hv-item-editor');
-    expect(css).not.toMatch(/position: fixed/);
-    expect(css).toMatch(/\.tree-holder,\s*\.list-holder \{[^}]*margin-top: 6px/);
-  });
-
-  // The combobox always named its listbox, but the listbox left the DOM with
-  // the options — so while shut the name pointed at nothing.
-  it('names a listbox that is there whether or not it is showing', async () => {
-    const el = await mount(null);
-    const input = () => q(el, '[data-testid="editor-category"]') as HTMLInputElement;
-    const id = 'editor-category-list';
-
-    expect(input().getAttribute('aria-controls')).toBe(id);
-    expect(input().getAttribute('aria-expanded')).toBe('false');
-    expect(el.shadowRoot?.getElementById(id), 'listbox shut').toBeTruthy();
-    expectListShut(el);
-
-    await focusCategory(el);
-
-    expect(input().getAttribute('aria-expanded')).toBe('true');
-    expect(input().getAttribute('aria-controls')).toBe(id);
-    const open = el.shadowRoot?.getElementById(id);
-    expect(open?.getAttribute('role'), 'the popup itself, not a wrapper').toBe('listbox');
-    expect(open?.hidden).toBe(false);
-    expect(options(el)).toEqual(['Hardware', 'Tools']);
-  });
-
-  it('narrows the list while typing', async () => {
-    const el = await mount(null);
-    await focusCategory(el);
-
-    await type(el, 'editor-category', 'too');
-    expect(options(el)).toEqual(['Tools']);
-  });
-
-  it('reopens the full list from the arrow, whatever is typed', async () => {
-    const el = await mount(null);
-    await type(el, 'editor-category', 'too');
-    expect(options(el)).toEqual(['Tools']);
-
-    (q(el, '[data-testid="editor-category-toggle"]') as HTMLButtonElement).click();
-    await el.updateComplete;
-    expect(options(el)).toEqual(['Hardware', 'Tools']);
-
-    // The same button closes it again.
-    (q(el, '[data-testid="editor-category-toggle"]') as HTMLButtonElement).click();
-    await el.updateComplete;
-    expectListShut(el);
-  });
-
-  it('fills the field from a picked option and saves it', async () => {
+  it('saves a picked option', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     const saves = onSave(el);
-    await focusCategory(el);
+    (inCategory(el, 'editor-category') as HTMLInputElement).focus();
+    await settle(el);
 
-    (all(el, '[data-testid="editor-category-option"]')[1] as HTMLButtonElement).click();
-    await el.updateComplete;
+    (all(category(el), '[data-testid="editor-category-option"]')[1] as HTMLButtonElement).click();
+    await settle(el);
 
-    expect((q(el, '[data-testid="editor-category"]') as HTMLInputElement).value).toBe('Tools');
-    expectListShut(el);
-
+    expect((inCategory(el, 'editor-category') as HTMLInputElement).value).toBe('Tools');
     (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
     expect(saves[0]?.changes?.category).toBe('Tools');
   });
 
-  it('picks with the keyboard and closes on Escape without discarding the edit', async () => {
+  it('saves what was typed, with the list narrowing on it', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const saves = onSave(el);
+    const input = inCategory(el, 'editor-category') as HTMLInputElement;
+    input.focus();
+    input.value = 'too';
+    input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    await settle(el);
+
+    expect(all(category(el), '[data-testid="editor-category-option"]').map((o) => o.dataset.value)).toEqual([
+      'Tools',
+    ]);
+    (q(el, '[data-testid="editor-save"]') as HTMLButtonElement).click();
+    expect(saves[0]?.changes?.category).toBe('too');
+  });
+
+  it('closes the list on Escape in the field without discarding the edit', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
     let cancels = 0;
     el.addEventListener('cancel', () => {
       cancels += 1;
     });
-    const input = await focusCategory(el);
+    const input = inCategory(el, 'editor-category') as HTMLInputElement;
+    input.focus();
+    await settle(el);
+    expect(category(el).open).toBe(true);
 
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    await el.updateComplete;
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    await el.updateComplete;
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    await el.updateComplete;
-    expect(input.value).toBe('Tools');
-
-    (q(el, '[data-testid="editor-category-toggle"]') as HTMLButtonElement).click();
-    await el.updateComplete;
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await el.updateComplete;
-    expectListShut(el);
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }));
+    await settle(el);
+    expect(category(el).open).toBe(false);
     expect(cancels).toBe(0);
-  });
-
-  it('says so when what you typed is a brand new category', async () => {
-    const el = await mount(null);
-    await type(el, 'editor-category', 'Camping');
-    expect(options(el)).toEqual([]);
-    expect(q(el, '[data-testid="editor-category-empty"]')?.textContent).toContain('Camping');
-  });
-
-  it('drops the arrow when there is nothing to list yet', async () => {
-    const el = await mount(null, { categorySuggestions: [] });
-    expect(q(el, '[data-testid="editor-category-toggle"]')).toBe(null);
-    await focusCategory(el);
-    expectListShut(el);
   });
 });
 
@@ -1262,6 +1186,25 @@ describe('hv-item-editor: Escape takes back one thing at a time', () => {
     });
     return seen;
   }
+
+  // The arrow opens the list without taking focus, so Escape can come from
+  // another field; the list still goes first.
+  it('closes the category list before the form, wherever focus is', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+    const cancels = onCancel(el);
+    const category = q(el, 'hv-editor-category') as HVEditorCategory;
+    (q(category, '[data-testid="editor-category-toggle"]') as HTMLButtonElement).click();
+    await settle(el);
+    expect(category.open).toBe(true);
+
+    esc(el, q(el, '[data-testid="editor-name"]') as HTMLElement);
+    await settle(el);
+    expect(category.open).toBe(false);
+    expect(cancels.count).toBe(0);
+
+    esc(el, q(el, '[data-testid="editor-name"]') as HTMLElement);
+    expect(cancels.count).toBe(1);
+  });
 
   it('closes the location picker and leaves the form standing', async () => {
     const el = await mount(makeItem({ id: '1', name: 'A' }));
