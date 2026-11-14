@@ -30,15 +30,14 @@ import { ConnectionHealth } from './connection-health';
 import type { ConnectionSlice } from './connection-health';
 import { Facets } from './facets';
 import type { FacetsSlice } from './facets';
+import { ReferenceData } from './reference-data';
+import type { ConfigSlice, LocationsSlice, StatsSlice } from './reference-data';
 import { ErrorQueue, errorCode } from './error-queue';
 import type { ErrorDetails, ErrorsSlice } from './error-queue';
 import { activeFilterCount, defaultFilters, sameStrings, toWireFilter } from './filters';
 import { Coalesced, Latest } from './scheduling';
 import { Slice, combineSlices } from './slice';
 import type { Observable } from './slice';
-import { onDayChange } from '../ui/day-clock';
-import { normalizeQuickFilters } from '../ui/quick-filters';
-import { sortLocationTree } from './location-tree';
 
 const PAGE_LIMIT = 50;
 
@@ -74,12 +73,6 @@ export function subscribeRetryDelayMs(attempt: number, baseMs: number): number {
 }
 
 type ListSlice = Pick<StoreState, 'items' | 'cursor' | 'total' | 'loading' | 'filters' | 'selection'>;
-type LocationsSlice = Pick<
-  StoreState,
-  'areasCache' | 'locationTreeCache' | 'locationMatchTotal' | 'locationsFlatCache'
->;
-type StatsSlice = Pick<StoreState, 'statsCounts'>;
-type ConfigSlice = Pick<StoreState, 'versionInfo' | 'cardTitle' | 'quickFilters' | 'mediaConfig' | 'statuses'>;
 
 export interface StoreOptions {
   /** Base backoff for the re-subscribe ladder; set to 0 in tests. */
@@ -94,6 +87,7 @@ export class Store {
   private readonly errors = new ErrorQueue();
   private readonly health: ConnectionHealth;
   private readonly facets: Facets;
+  private readonly reference: ReferenceData;
   /** Each part's state, notified on its own; `state` reads them as one. */
   readonly slices: {
     connection: Observable<ConnectionSlice>;
@@ -105,9 +99,6 @@ export class Store {
     config: Observable<ConfigSlice>;
   };
   private readonly listSlice: Slice<ListSlice>;
-  private readonly locationsSlice: Slice<LocationsSlice>;
-  private readonly statsSlice: Slice<StatsSlice>;
-  private readonly configSlice: Slice<ConfigSlice>;
   private readonly combined: Observable<Readonly<StoreState>>;
   private inflight: Map<string, Promise<unknown>> = new Map();
   /** Ids removed since this store connected — see `noteRemoved`. */
@@ -119,12 +110,9 @@ export class Store {
   private areaRegistryUnsub: Unsubscribe | null = null;
   private retryBaseMs: number;
   /** The deferred work: every one of these is cancelled by `dispose`. */
-  private readonly treeRefresh = new Coalesced();
-  private readonly areasRefresh = new Coalesced();
   private readonly totalRefresh = new Coalesced();
   private readonly subscribeRetry = new Coalesced();
   private readonly areaRegistryRetry = new Coalesced();
-  private readonly latestTree = new Latest();
   private readonly latestTotal = new Latest();
   private readonly latestSubscribeRound = new Latest();
   private readonly latestAreaWatch = new Latest();
@@ -136,7 +124,6 @@ export class Store {
   private subscribeAttempt = 0;
   /** Re-opens of the area-registry watch already spent on the current refusal. */
   private areaRegistryAttempt = 0;
-  private dayChangeUnsub: Unsubscribe | null = null;
   /** True once `dispose` ran, so a load still in flight wires nothing. */
   private disposed = false;
 
@@ -146,6 +133,12 @@ export class Store {
 
     this.health = new ConnectionHealth(this.ws);
     this.facets = new Facets(this.ws, this.health.run, () => this.listSlice.value.filters);
+    this.reference = new ReferenceData(
+      this.ws,
+      this.health.run,
+      () => this.listSlice.value.filters,
+      (filters) => this.countMatching(filters),
+    );
     this.listSlice = new Slice<ListSlice>({
       items: [],
       cursor: null,
@@ -154,28 +147,14 @@ export class Store {
       filters: defaultFilters(),
       selection: new Set<string>(),
     });
-    this.locationsSlice = new Slice<LocationsSlice>({
-      areasCache: null,
-      locationTreeCache: null,
-      locationMatchTotal: null,
-      locationsFlatCache: null,
-    });
-    this.statsSlice = new Slice<StatsSlice>({ statsCounts: null });
-    this.configSlice = new Slice<ConfigSlice>({
-      versionInfo: null,
-      cardTitle: null,
-      quickFilters: null,
-      mediaConfig: null,
-      statuses: null,
-    });
     const slices = {
       connection: this.health.slice,
       list: this.listSlice,
       errors: this.errors.slice,
       facets: this.facets.slice,
-      locations: this.locationsSlice,
-      stats: this.statsSlice,
-      config: this.configSlice,
+      locations: this.reference.locationsSlice,
+      stats: this.reference.statsSlice,
+      config: this.reference.configSlice,
     };
     this.slices = slices;
     this.combined = combineSlices(slices);
@@ -220,22 +199,13 @@ export class Store {
         this.subscribeTopics();
         this.watchAreaRegistry();
         this.health.watchConnectionGaps(() => {
-          this.scheduleAreasRefresh();
+          this.reference.scheduleAreasRefresh();
           // The events fired while the socket was down went nowhere.
           void this.reloadAll().catch(() => undefined);
         });
-        this.watchDayChange();
+        this.reference.watchDayChange();
       }
     }
-  }
-
-  /**
-   * Re-read the counts when the browser's day turns over. The backend's midnight
-   * broadcast is the primary path; this catches a device that slept through it.
-   */
-  private watchDayChange() {
-    this.dayChangeUnsub?.();
-    this.dayChangeUnsub = onDayChange(() => void this.refreshStats().catch(() => undefined));
   }
 
   /** Keep the area cache current while mounted; any registry event triggers a refetch. */
@@ -246,9 +216,9 @@ export class Store {
     const catchUp = this.areaRegistryAttempt > 0;
     const current = this.latestAreaWatch.claim();
     this.areaRegistryUnsub?.();
-    this.areaRegistryUnsub = this.ws.subscribeAreaRegistry(() => this.scheduleAreasRefresh(), {
+    this.areaRegistryUnsub = this.ws.subscribeAreaRegistry(() => this.reference.scheduleAreasRefresh(), {
       onOpen: () => {
-        if (catchUp && current()) this.scheduleAreasRefresh();
+        if (catchUp && current()) this.reference.scheduleAreasRefresh();
       },
       onError: () => {
         if (current()) this.onAreaRegistryRefused();
@@ -262,11 +232,6 @@ export class Store {
     const delay = subscribeRetryDelayMs(this.areaRegistryAttempt, this.retryBaseMs);
     this.areaRegistryAttempt += 1;
     this.areaRegistryRetry.schedule(delay, () => this.watchAreaRegistry(false));
-  }
-
-  /** Coalesce area refetches: editing a handful of areas fires one event each. */
-  private scheduleAreasRefresh(delayMs = 250) {
-    this.areasRefresh.schedule(delayMs, () => void this.refreshAreas().catch(() => undefined));
   }
 
   /**
@@ -406,19 +371,15 @@ export class Store {
     this.locationsUnsub?.();
     this.statusesUnsub?.();
     this.areaRegistryUnsub?.();
-    // Held by the module-level day clock, which outlives every card.
-    this.dayChangeUnsub?.();
     this.itemsUnsub = this.statsUnsub = this.locationsUnsub = this.statusesUnsub = null;
     this.areaRegistryUnsub = null;
-    this.dayChangeUnsub = null;
     this.latestSubscribeRound.invalidate();
     this.latestAreaWatch.invalidate();
     this.subscribeRetry.cancel();
     this.areaRegistryRetry.cancel();
-    this.treeRefresh.cancel();
+    this.reference.dispose();
     this.totalRefresh.cancel();
     this.facets.dispose();
-    this.areasRefresh.cancel();
     this.health.dispose();
   }
 
@@ -433,7 +394,7 @@ export class Store {
         .catch(() => undefined)
         .finally(() => this.health.setDegraded({ reloading: false }));
       void this.refreshDistinctValues().catch(() => undefined);
-      this.scheduleTreeRefresh();
+      this.reference.scheduleTreeRefresh();
       return;
     }
     const items = this.state.value.items.slice();
@@ -475,7 +436,7 @@ export class Store {
     }
     // Per-location counts ride the tree, which is not pushed.
     if (evt.action === 'created' || evt.action === 'deleted' || evt.action === 'moved') {
-      this.scheduleTreeRefresh();
+      this.reference.scheduleTreeRefresh();
     }
   }
 
@@ -495,13 +456,9 @@ export class Store {
     this.listSlice.set({ total });
   }
 
-  private scheduleTreeRefresh(delayMs = 250) {
-    this.treeRefresh.schedule(delayMs, () => void this.refreshLocationTree().catch(() => undefined));
-  }
-
   private onStatsEvent(evt: LiveEventPayload) {
     if (evt.topic !== 'stats') return;
-    this.statsSlice.set({ statsCounts: evt.counts });
+    this.reference.applyStatsCounts(evt.counts);
   }
 
   private onLocationsEvent(evt: LiveEventPayload) {
@@ -517,13 +474,11 @@ export class Store {
   // Every command goes through `run`, so transport failures on any of them grade
   // the connection. The attachment family is the exception, and says why.
   async refreshStats() {
-    const counts = await this.health.run(() => this.ws.stats());
-    this.statsSlice.set({ statsCounts: counts });
+    return this.reference.refreshStats();
   }
 
   async refreshAreas() {
-    const areas = await this.health.run(() => this.ws.listAreas());
-    this.locationsSlice.set({ areasCache: areas });
+    return this.reference.refreshAreas();
   }
 
   /** Refresh distinct categories/tags with counts. */
@@ -550,25 +505,16 @@ export class Store {
   }
 
   async refreshVersion() {
-    const info = await this.health.run(() => this.ws.version());
-    this.configSlice.set({ versionInfo: info });
+    return this.reference.refreshVersion();
   }
 
   async refreshStatuses() {
-    const statuses = await this.health.run(() => this.ws.listStatuses()).catch(() => null);
-    if (statuses) this.configSlice.set({ statuses });
+    return this.reference.refreshStatuses();
   }
 
   /** Card heading, quick-filter pills, statuses and attachment caps; all cosmetic, so a failure keeps the defaults. */
   async refreshConfig() {
-    const config = await this.health.run(() => this.ws.config()).catch(() => null);
-    const title = config?.card_title;
-    if (typeof title === 'string' && title) this.configSlice.set({ cardTitle: title });
-    if (config && 'quick_filters' in config) {
-      this.configSlice.set({ quickFilters: normalizeQuickFilters(config.quick_filters) });
-    }
-    if (config?.media) this.configSlice.set({ mediaConfig: config.media });
-    if (config?.statuses?.length) this.configSlice.set({ statuses: config.statuses });
+    return this.reference.refreshConfig();
   }
 
   // ---------- Attachments ----------
@@ -630,32 +576,11 @@ export class Store {
    * the tree itself chooses, and are priced whenever any filter is on.
    */
   async refreshLocationTree() {
-    const current = this.latestTree.claim();
-    const counting = {
-      ...this.state.value.filters,
-      locationIds: [],
-      includeSubtree: true,
-      orphansOnly: false,
-    };
-    const filtered = activeFilterCount(this.state.value.filters) > 0;
-    const tree = await this.health.run(() =>
-      this.ws.getLocationTree(filtered ? toWireFilter(counting) : undefined),
-    );
-    if (!current()) return;
-    // The API returns insertion order; sorted once here for every consumer.
-    this.locationsSlice.set({ locationTreeCache: sortLocationTree(tree) });
-    // The tree covers filed items only; "No location" is this total's remainder.
-    const matchTotal = filtered ? await this.countMatching(counting) : null;
-    if (!current()) return;
-    this.locationsSlice.set({ locationMatchTotal: matchTotal });
+    return this.reference.refreshLocationTree();
   }
 
   async refreshLocationsFlat() {
-    const locs = await this.health.run(() => this.ws.listLocations());
-    const list = locs
-      .slice()
-      .sort((a, b) => a.path.sort_key.localeCompare(b.path.sort_key, undefined, { sensitivity: 'base' }));
-    this.locationsSlice.set({ locationsFlatCache: list });
+    return this.reference.refreshLocationsFlat();
   }
 
   // ---------- Listing & pagination ----------
@@ -738,7 +663,7 @@ export class Store {
     void this.listItems(true);
     // The counts move with every filter but not with the sort.
     if (Object.keys(patch).some((key) => key !== 'sort')) {
-      this.scheduleTreeRefresh();
+      this.reference.scheduleTreeRefresh();
       this.facets.scheduleRefresh();
     }
   }
@@ -890,63 +815,49 @@ export class Store {
   }
 
   // ---------- Locations ----------
-  /** Run a location change and re-read the flat list and the tree, neither of which is pushed. */
-  private async afterLocationChange<T>(call: () => Promise<T>): Promise<T> {
-    const result = await this.health.run(call);
-    await Promise.all([this.refreshLocationsFlat(), this.refreshLocationTree()]);
-    return result;
-  }
-
   async createLocation(name: string, parentId?: string | null, areaId?: string | null): Promise<Location> {
-    return this.afterLocationChange(() => this.ws.createLocation(name, parentId ?? null, areaId ?? undefined));
+    return this.reference.createLocation(name, parentId, areaId);
   }
 
   async updateLocation(
     locationId: string,
     changes: { name?: string; areaId?: string | null; newParentId?: string | null },
   ): Promise<Location> {
-    return this.afterLocationChange(() => this.ws.updateLocation(locationId, changes));
+    return this.reference.updateLocation(locationId, changes);
   }
 
   /** Delete an empty location. Rejects with validation_error when it still has children or items. */
   async deleteLocation(locationId: string): Promise<void> {
-    await this.afterLocationChange(() => this.ws.deleteLocation(locationId));
+    await this.reference.deleteLocation(locationId);
   }
 
   /** Move a whole subtree under a new parent (null = top level). Descendant paths update live. */
   async moveLocationSubtree(locationId: string, newParentId: string | null): Promise<Location> {
-    const moved = await this.afterLocationChange(() => this.ws.moveLocationSubtree(locationId, newParentId));
+    const moved = await this.reference.moveLocationSubtree(locationId, newParentId);
     // Denormalized item location_path values changed for the whole subtree.
     await this.listItems(true);
     return moved;
   }
 
   // ---------- Status definitions ----------
-  /** Run a status change and re-read the whole vocabulary, whose order is part of it. */
-  private async afterStatusChange<T>(call: () => Promise<T>): Promise<T> {
-    const result = await this.health.run(call);
-    await this.refreshStatuses();
-    return result;
-  }
-
   async createStatus(status: {
     slug: string;
     label: string;
     color?: StatusColorValue;
     icon?: string;
   }): Promise<StatusDefinition> {
-    return this.afterStatusChange(() => this.ws.createStatus(status));
+    return this.reference.createStatus(status);
   }
 
   async updateStatus(
     slug: string,
     changes: { label?: string; color?: StatusColorValue; icon?: string },
   ): Promise<StatusDefinition> {
-    return this.afterStatusChange(() => this.ws.updateStatus(slug, changes));
+    return this.reference.updateStatus(slug, changes);
   }
 
   async reorderStatuses(slugs: string[]): Promise<StatusDefinition[]> {
-    return this.afterStatusChange(() => this.ws.reorderStatuses(slugs));
+    return this.reference.reorderStatuses(slugs);
   }
 
   /**
@@ -954,7 +865,7 @@ export class Store {
    * carry it and no target is given. A reassignment re-reads items and counts.
    */
   async deleteStatus(slug: string, reassignTo?: string): Promise<number> {
-    const { reassigned } = await this.afterStatusChange(() => this.ws.deleteStatus(slug, reassignTo));
+    const { reassigned } = await this.reference.deleteStatus(slug, reassignTo);
     if (reassigned > 0) await Promise.all([this.listItems(true), this.refreshStats()]);
     return reassigned;
   }
@@ -1039,7 +950,7 @@ export class Store {
     // Counts and per-location totals moved; refresh what the UI reads.
     void this.refreshStats().catch(() => undefined);
     void this.refreshDistinctValues().catch(() => undefined);
-    this.scheduleTreeRefresh();
+    this.reference.scheduleTreeRefresh();
 
     return { succeeded, failed, cancelled };
   }
