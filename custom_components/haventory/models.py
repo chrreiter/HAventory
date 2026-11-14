@@ -308,7 +308,7 @@ class Item:
             id=parse_uuid4(str(data.get("id", fallback_id)), field_name="item.id"),
             name=validate_required_name(data.get("name")),
             description=data.get("description"),
-            quantity=int(data.get("quantity", 0)),
+            quantity=int(data.get("quantity", 1)),
             status=validate_item_status(
                 data.get("status"), known_statuses=known_statuses, default=DEFAULT_ITEM_STATUS
             ),
