@@ -122,6 +122,8 @@ export interface HvEventMap {
     cancel: None;
   };
   'hv-diagnostics-panel': { refresh: None; cancel: None };
+  /** The item editor's attachments; focus lost to a surface that closed is the editor's to catch. */
+  'hv-editor-attachments': { 'focus-stranded': None };
   /** The item editor's own fields, each sending the slice of the form it changed. */
   'hv-editor-category': { change: Partial<ItemFormModel> };
   'hv-filter-chips': {
