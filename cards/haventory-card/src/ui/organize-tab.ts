@@ -1,13 +1,11 @@
 import { css, html } from 'lit';
-import type { ReactiveController, ReactiveControllerHost } from 'lit';
 import { keyed } from 'lit/directives/keyed.js';
 import { ref } from 'lit/directives/ref.js';
 import { t } from '../i18n';
 import type { TranslationKey } from '../i18n';
 import { describeFailure } from '../components/hv-bulk-bar';
 import { serverErrorText } from '../store/server-error';
-import type { Store } from '../store/store';
-import type { BulkFailure, StoreState } from '../store/types';
+import type { BulkFailure } from '../store/types';
 import { icon } from './icons';
 import type { IconName } from './icons';
 import { counted } from './plural';
@@ -250,51 +248,6 @@ export const organizeTab = css`
 /** The failed request's own refusal, or the card's fallback sentence. */
 export function errorText(err: unknown, fallback: TranslationKey, params?: Record<string, string>): string {
   return serverErrorText(err, t(fallback, params));
-}
-
-/**
- * Re-render `host` when one of the store slices it reads moves, for as long as
- * it is connected. A tab re-attached after its dialog was closed renders once
- * on the way in, since the slices kept moving while it was away.
- */
-export class SliceWatch implements ReactiveController {
-  private _store?: Store;
-  private _off?: () => void;
-
-  constructor(
-    private readonly _host: ReactiveControllerHost & { readonly store?: Store },
-    private readonly _slices: readonly (keyof Store['slices'])[],
-  ) {
-    _host.addController(this);
-  }
-
-  /** The store's state as the tab renders it, or null before a store is set. */
-  get state(): StoreState | null {
-    return this._host.store?.state.value ?? null;
-  }
-
-  hostConnected(): void {
-    this._sync();
-    this._host.requestUpdate();
-  }
-
-  hostUpdate(): void {
-    this._sync();
-  }
-
-  hostDisconnected(): void {
-    this._off?.();
-    this._off = undefined;
-    this._store = undefined;
-  }
-
-  private _sync() {
-    const store = this._host.store;
-    if (store === this._store) return;
-    this._off?.();
-    this._store = store;
-    this._off = store?.watch(this._slices, () => this._host.requestUpdate());
-  }
 }
 
 /**

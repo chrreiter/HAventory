@@ -603,7 +603,8 @@ the type checker, and `set` is the only way to change it, so no write can skip t
 | `browse-row.ts` | The metrics of a browse row, shared by `hv-location-tree` and the full view's facet lists so a name starts at the same inset in both. |
 | `discard.ts` | `discardPrompt()`, the one question asked before typed edits are thrown away. |
 | `editor-error.ts` | What an open editor says about a save that did not land. |
-| `organize-tab.ts` | What the organize dialog's three tab elements share: the toolbar, row, inline disclosure and its commit row, guard, rewrite progress and touch sheet, their styles, and `SliceWatch`, which re-renders a tab only for the store slices it reads. |
+| `organize-tab.ts` | What the organize dialog's three tab elements share: the toolbar, row, inline disclosure and its commit row, guard, rewrite progress and touch sheet, and their styles. |
+| `slice-watch.ts` | `SliceWatch`, which re-renders a container element only for the store slices it reads, for as long as it is connected. |
 | `reminder.ts` | Reading a reminder off an item: whether it has one, and whether it has come round. |
 | `field-label.ts` | A custom field's key written for reading (`purchase_price` → `Purchase price`); editing surfaces keep the key as typed. |
 | `clipboard.ts` | Copying one string, falling back to `execCommand` where `navigator.clipboard` is missing (plain `http://`). |
@@ -651,8 +652,8 @@ autocompletes read, what `haventory/config` answered, and the connection state t
 render from. Each part holds its keys in a `Slice` (`slice.ts`), which is replaced on write
 and notifies only when a value moved. `store.state` reads every slice as one flat,
 read-only object and notifies on any of them; `store.watch(['locations', 'facets'], cb)`
-notifies only for the slices named, which is how each organize tab (`SliceWatch` in
-`ui/organize-tab.ts`) stays quiet while the list changes.
+notifies only for the slices named, which is how each container below the root (`SliceWatch` in
+`ui/slice-watch.ts`) stays quiet while a slice it does not read changes.
 
 **Notable methods**
 

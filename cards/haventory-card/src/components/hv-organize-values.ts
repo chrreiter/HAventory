@@ -15,7 +15,6 @@ import { closestMatch } from '../ui/fuzzy';
 import { describeRewrite, filterForValue, rewriteOps } from '../ui/value-rewrite';
 import type { ValueKind } from '../ui/value-rewrite';
 import {
-  SliceWatch,
   organizeTab,
   renderActionSheet,
   renderFailure,
@@ -25,6 +24,7 @@ import {
   reveal,
   rewriteState,
 } from '../ui/organize-tab';
+import { SliceWatch } from '../ui/slice-watch';
 import type { RewriteKind, RewriteState } from '../ui/organize-tab';
 import type { Store } from '../store/store';
 import type { DistinctValue, StoreState } from '../store/types';

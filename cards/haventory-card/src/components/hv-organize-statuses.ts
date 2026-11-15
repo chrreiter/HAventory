@@ -23,15 +23,8 @@ import {
   statusLabel,
   statusList,
 } from '../ui/status';
-import {
-  SliceWatch,
-  errorText,
-  organizeTab,
-  renderFailure,
-  renderFooter,
-  renderToolbar,
-  reveal,
-} from '../ui/organize-tab';
+import { errorText, organizeTab, renderFailure, renderFooter, renderToolbar, reveal } from '../ui/organize-tab';
+import { SliceWatch } from '../ui/slice-watch';
 import type { Store } from '../store/store';
 import type { StatusColorValue, StatusDefinition, StoreState } from '../store/types';
 
