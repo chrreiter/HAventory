@@ -198,7 +198,7 @@ to it.
 
 **The integration.** Copy `custom_components/haventory/translations/en.json` to `<tag>.json`
 and translate the values. The key tree has to stay identical:
-`tests/test_config_flow_offline.py` compares it against `strings.json`, checks that every
+`tests/integration/test_translations.py` compares it against `strings.json`, checks that every
 `{placeholder}` survives, and rejects an inline URL (a link belongs in the `{docs_url}`
 placeholder). Home Assistant discovers the file by name; nothing registers it.
 

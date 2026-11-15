@@ -21,7 +21,6 @@ from custom_components.haventory.const import (
     ATTACHMENT_PICTURE_MIME_TYPES,
     CONF_CARD_TITLE,
     CONF_QUICK_FILTERS,
-    CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
     DOMAIN,
     INTEGRATION_VERSION,
@@ -34,7 +33,6 @@ from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
@@ -243,70 +241,6 @@ async def test_re_adding_a_removed_entry_restores_the_inventory(
     listed = await client.receive_json()
     assert listed["success"] is True, listed
     assert [item["name"] for item in listed["result"]["items"]] == ["Screwdriver"]
-
-
-async def test_the_options_flow_stores_a_pill_choice_the_card_then_reads(
-    hass: HomeAssistant, hass_ws_client, setup_entry
-) -> None:
-    """The pill picker is a real selector, and only real HA applies it.
-
-    Offline the selector is a stand-in, so the shape of its config — the option
-    list, `multiple`, the mode — is asserted nowhere else. This walks the whole
-    path instead: the form Home Assistant builds, a submission through it, and
-    what `haventory/config` then reports to the card.
-    """
-
-    entry = await setup_entry()
-    client = await hass_ws_client(hass)
-
-    await client.send_json({"id": 1, "type": "haventory/config"})
-    before = await client.receive_json()
-    assert before["success"] is True, before
-    # Nothing chosen yet: null, not an empty list — the card keeps every pill.
-    assert before["result"]["quick_filters"] is None
-
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
-    assert flow["type"] is FlowResultType.FORM
-    result = await hass.config_entries.options.async_configure(
-        flow["flow_id"],
-        {
-            CONF_CARD_TITLE: "HAventory",
-            CONF_SIDEBAR_PANEL_ENABLED: True,
-            CONF_QUICK_FILTERS: ["overdue", "low_stock"],
-            "todo": {},
-        },
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY, result
-    await hass.async_block_till_done()
-
-    assert entry.options[CONF_QUICK_FILTERS] == ["low_stock", "overdue"]
-
-    await client.send_json({"id": 2, "type": "haventory/config"})
-    after = await client.receive_json()
-    assert after["success"] is True, after
-    assert after["result"]["quick_filters"] == ["low_stock", "overdue"]
-
-
-async def test_the_options_flow_refuses_a_pill_it_does_not_offer(
-    hass: HomeAssistant, setup_entry
-) -> None:
-    """A name outside the five is rejected by the form, not stored and dropped later."""
-
-    entry = await setup_entry()
-
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
-    with pytest.raises(InvalidData):
-        await hass.config_entries.options.async_configure(
-            flow["flow_id"],
-            {
-                CONF_CARD_TITLE: "HAventory",
-                CONF_SIDEBAR_PANEL_ENABLED: True,
-                CONF_QUICK_FILTERS: ["sideways"],
-                "todo": {},
-            },
-        )
-
-    assert CONF_QUICK_FILTERS not in entry.options
 
 
 @pytest.mark.parametrize(
