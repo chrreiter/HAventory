@@ -1,17 +1,124 @@
-"""Integration: the context survives a real Home Assistant log record.
+"""Integration: what a person reading a pasted Home Assistant log depends on.
 
-The offline suite reads `record.getMessage()` off a stub-driven call. What only a
-real core shows is that the fields are still there after Home Assistant's own
-logging setup has had the record — that nothing in its handler chain, its
-formatter or its filters puts them back where they were.
+The line names the operation it is about, its level says whether anyone has to
+act, and a traceback appears only where it adds something. The fields also have
+to survive Home Assistant's own logging chain.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
+import pytest
+from custom_components.haventory import ops as ops_module
 from custom_components.haventory.const import DOMAIN
+from custom_components.haventory.ops import OPS
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
+
+WS_LOGGER = "custom_components.haventory.ws"
+SERVICES_LOGGER = "custom_components.haventory.services"
+BULK_ROW_OP = "items_bulk_op_failed"
+
+
+def _boom(*_args: Any, **_kwargs: Any) -> Any:
+    raise RuntimeError("boom")
+
+
+async def _item_id(ws) -> str:
+    return (await ws.send("haventory/item/create", name="Drill"))["result"]["id"]
+
+
+# (name, logger, op in the line, level, traceback, further context the line carries).
+# Each is provoked by `_provoke`.
+LINES = [
+    ("ws_validation", WS_LOGGER, "item_set_quantity", logging.WARNING, False, ""),
+    ("ws_not_found", WS_LOGGER, "item_get", logging.WARNING, False, "item_id=nope"),
+    ("ws_conflict", WS_LOGGER, "item_update", logging.WARNING, False, ""),
+    ("ws_storage", WS_LOGGER, "item_create", logging.ERROR, True, ""),
+    ("ws_unknown", WS_LOGGER, "item_create", logging.ERROR, True, ""),
+    ("ws_not_loaded", WS_LOGGER, "item_create", logging.WARNING, False, ""),
+    ("bulk_conflict", WS_LOGGER, BULK_ROW_OP, logging.WARNING, False, ""),
+    ("bulk_unknown", WS_LOGGER, BULK_ROW_OP, logging.ERROR, True, ""),
+    ("service_conflict", SERVICES_LOGGER, "item_update", logging.WARNING, False, ""),
+    ("service_storage", SERVICES_LOGGER, "item_create", logging.ERROR, True, ""),
+    ("service_not_loaded", SERVICES_LOGGER, "item_create", logging.WARNING, False, ""),
+]
+
+
+async def _provoke(  # noqa: PLR0913, PLR0917 - one input per thing a row may touch
+    case, hass, entry, ws, item_id, call_service, fail_next_save, monkeypatch
+):
+    """Do the one thing that makes the integration log `case`."""
+
+    bulk = {"op_id": "r1", "kind": "item_update", "payload": {"item_id": item_id}}
+    match case:
+        case "ws_validation":
+            await ws.send("haventory/item/set_quantity", item_id=item_id, quantity=-1)
+        case "ws_not_found":
+            await ws.send("haventory/item/get", item_id="nope")
+        case "ws_conflict":
+            await ws.send("haventory/item/update", item_id=item_id, expected_version=999)
+        case "ws_storage":
+            fail_next_save()
+            await ws.send("haventory/item/create", name="X")
+        case "ws_unknown":
+            monkeypatch.setattr(ops_module, "serialize_item", _boom)
+            await ws.send("haventory/item/create", name="X")
+        case "ws_not_loaded":
+            await hass.config_entries.async_unload(entry.entry_id)
+            await ws.send("haventory/item/create", name="X")
+        case "bulk_conflict":
+            bulk["payload"]["expected_version"] = 999
+            await ws.send("haventory/items/bulk", operations=[bulk])
+        case "bulk_unknown":
+            monkeypatch.setitem(OPS, "item_update", _boom)
+            await ws.send("haventory/items/bulk", operations=[bulk])
+        case "service_conflict":
+            with pytest.raises(HomeAssistantError):
+                await call_service("item_update", item_id=item_id, expected_version=999, name="X")
+        case "service_storage":
+            fail_next_save()
+            with pytest.raises(HomeAssistantError):
+                await call_service("item_create", name="X")
+        case "service_not_loaded":
+            await hass.config_entries.async_unload(entry.entry_id)
+            with pytest.raises(HomeAssistantError):
+                await call_service("item_create", name="X")
+
+
+@pytest.mark.parametrize(("case", "logger", "op", "level", "traceback", "says"), LINES)
+async def test_a_refusal_is_one_line_naming_its_op_at_the_right_level(  # noqa: PLR0913, PLR0917
+    case,
+    logger,
+    op,
+    level,
+    traceback,
+    says,
+    hass,
+    caplog,
+    monkeypatch,
+    setup_entry,
+    ws_connect,
+    call_service,
+    fail_next_save,
+) -> None:
+    """ERROR with a traceback only where someone must act; a retryable refusal is a WARNING."""
+
+    entry = await setup_entry()
+    ws = await ws_connect()
+    item_id = await _item_id(ws)
+    caplog.clear()
+    caplog.set_level(logging.DEBUG, logger=logger)
+
+    await _provoke(case, hass, entry, ws, item_id, call_service, fail_next_save, monkeypatch)
+
+    lines = [r for r in caplog.records if r.name == logger and f"op={op}" in r.getMessage()]
+    assert len(lines) == 1, [(r.name, r.getMessage()) for r in caplog.records]
+    assert lines[0].levelno == level
+    assert (lines[0].exc_info is not None) is traceback
+    assert says in lines[0].getMessage()
 
 
 async def test_a_service_mutation_logs_a_greppable_persist_line(
@@ -33,31 +140,6 @@ async def test_a_service_mutation_logs_a_greppable_persist_line(
     assert "elapsed_ms=" in complete[-1]
     # The name is what a user filters on, and it is still the module's own.
     assert "[custom_components.haventory.storage]" in complete[-1]
-
-
-async def test_a_refusal_logs_the_operation_it_refused(
-    hass: HomeAssistant, hass_ws_client, caplog, setup_entry
-) -> None:
-    """The other half: a rejection says which command it was, in the message.
-
-    The taxonomy already logs every rejection once with the same structured
-    context the envelope carries; this is that context arriving where somebody
-    reading the log can see it.
-    """
-
-    await setup_entry()
-    client = await hass_ws_client(hass)
-    caplog.clear()
-    caplog.set_level(logging.WARNING, logger="custom_components.haventory.ws")
-
-    await client.send_json({"id": 1, "type": "haventory/item/get", "item_id": "nope"})
-    result = await client.receive_json()
-    assert result["success"] is False
-    assert result["error"]["code"] == "not_found"
-
-    refusals = [r.getMessage() for r in caplog.records if "op=item_get" in r.getMessage()]
-    assert refusals, [r.getMessage() for r in caplog.records]
-    assert "item_id=nope" in refusals[-1]
 
 
 async def test_the_setup_line_carries_the_numbers_a_boot_is_diagnosed_from(
