@@ -45,7 +45,7 @@ from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_
 from homeassistant.core import SupportsResponse
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers.storage import Store
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import CLIENT_ID, MockConfigEntry
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -174,15 +174,21 @@ class WsClient:
 
 
 @pytest.fixture
-def ws_connect(hass: HomeAssistant, hass_ws_client: Any) -> Callable[[], Awaitable[WsClient]]:
+def ws_connect(
+    hass: HomeAssistant, hass_ws_client: Any, hass_admin_user: Any
+) -> Callable[[], Awaitable[WsClient]]:
     """Open a WebSocket connection; call it after ``setup_entry``.
 
     Connecting starts Home Assistant's HTTP app, after which the entry can no
-    longer register its views, so the entry loads first.
+    longer register its views, so the entry loads first. The token is minted
+    when the connection opens, so a test that froze the clock first connects
+    under it: a token issued after the frozen instant is refused.
     """
 
     async def _connect() -> WsClient:
-        return WsClient(await hass_ws_client(hass))
+        refresh_token = await hass.auth.async_create_refresh_token(hass_admin_user, CLIENT_ID)
+        token = hass.auth.async_create_access_token(refresh_token)
+        return WsClient(await hass_ws_client(hass, token))
 
     return _connect
 

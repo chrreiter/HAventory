@@ -10,6 +10,7 @@ other field.
 from __future__ import annotations
 
 import pytest
+from custom_components.haventory.const import MAX_MANUALS_PER_ITEM, MAX_PICTURES_PER_ITEM
 from custom_components.haventory.exceptions import ConflictError, NotFoundError, ValidationError
 from custom_components.haventory.item_writes import ItemCreate
 from custom_components.haventory.models import AttachmentMeta, new_uuid4
@@ -121,3 +122,20 @@ def test_reordering_must_name_every_attachment_of_that_kind() -> None:
 
     with pytest.raises(ValidationError, match="every attachment"):
         repo.reorder_attachments(item.id, "picture", [str(first.id)])
+
+
+def test_the_cap_is_per_kind_and_the_eleventh_picture_is_refused() -> None:
+    """The repository enforces it whatever the card checked first."""
+
+    repo = Repository()
+    item = repo.create_item(ItemCreate(name="Drill"))
+    for _ in range(MAX_PICTURES_PER_ITEM):
+        repo.add_attachment(item.id, _attachment(), max_per_kind=MAX_PICTURES_PER_ITEM)
+
+    with pytest.raises(ValidationError, match="already has 10 attachment"):
+        repo.add_attachment(item.id, _attachment(), max_per_kind=MAX_PICTURES_PER_ITEM)
+    assert len(repo.get_item(item.id).attachments) == MAX_PICTURES_PER_ITEM
+
+    manual = _attachment(kind="manual", filename="m.pdf", mime="application/pdf")
+    updated = repo.add_attachment(item.id, manual, max_per_kind=MAX_MANUALS_PER_ITEM)
+    assert [a.kind for a in updated.attachments].count("manual") == 1

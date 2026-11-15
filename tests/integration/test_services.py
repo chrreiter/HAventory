@@ -99,15 +99,22 @@ async def test_every_service_dispatches_its_handler(
     assert renamed["location"]["name"] == "Workshop"
 
     created = await call_service(
-        "item_create", name="Hammer", quantity=1, location_id=location_id, tags=["tools"]
+        "item_create",
+        name="Hammer",
+        quantity=1,
+        location_id=location_id,
+        tags=["tools"],
+        status="missing",
     )
     item_id = created["item"]["id"]
     assert created["item"]["tags"] == ["tools"]
+    assert created["item"]["status"] == "missing"
     assert created["item"]["location_path"]["display_path"] == "Workshop"
 
-    assert (await item_step("item_update", item_id=item_id, description="Claw hammer"))[
-        "description"
-    ] == "Claw hammer"
+    updated = await item_step(
+        "item_update", item_id=item_id, description="Claw hammer", status="ok"
+    )
+    assert (updated["description"], updated["status"]) == ("Claw hammer", "ok")
     adjusted, reset = 5, 2
     assert (await item_step("item_adjust_quantity", item_id=item_id, delta=4))[
         "quantity"

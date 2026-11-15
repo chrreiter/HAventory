@@ -18,7 +18,7 @@ from custom_components.haventory import media, ops
 from custom_components.haventory.exceptions import StorageError
 from custom_components.haventory.models import AttachmentMeta, new_uuid4
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.storage import STORAGE_KEY
+from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.core import HomeAssistant
 
 from repository_invariants import collect_index_issues, internal_indexes
@@ -153,6 +153,20 @@ WRITES: list[tuple[str, str, str, Callable[[Seed], dict[str, Any]]]] = [
                     "payload": {"item_id": s.item_id, "tags": ["new"]},
                 },
             ]
+        },
+    ),
+    (
+        "import_execute",
+        "ws",
+        "haventory/import/execute",
+        lambda _s: {
+            "document": {
+                "haventory_export_version": 1,
+                "schema_version": CURRENT_SCHEMA_VERSION,
+                "items": [{"id": "44444444-4444-4444-8444-444444444444", "name": "Screwdriver"}],
+                "locations": [],
+            },
+            "policy": "merge",
         },
     ),
     (

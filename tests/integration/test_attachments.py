@@ -3,15 +3,18 @@
 An upload crosses core's `/api/file_upload`, the commands consume it and edit the
 item, and the media view serves the bytes to an authenticated request only.
 
-The validation itself — the sniffed allow-list, the caps, the path containment
-and the orphan sweep — is covered offline in `tests/test_media_offline.py`; what
-is here is the transport and the view around it.
+The sniffed allow-list and the path containment are also tabled without Home
+Assistant in `tests/test_media.py`; what is here is the transport, the view and
+the sweep at setup.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import io
+import logging
+import os
 import shutil
 import threading
 from http import HTTPStatus
@@ -27,7 +30,6 @@ from custom_components.haventory.const import (
     MEDIA_NAME_TOKEN_PARAM,
     MEDIA_SUBDIR,
     THUMBNAIL_MAX_EDGE,
-    THUMBNAIL_SUFFIX,
 )
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
@@ -83,6 +85,20 @@ def _rfc5987_filename(disposition: str) -> str:
     marker = "filename*=UTF-8''"
     assert marker in disposition, disposition
     return unquote(disposition.split(marker, 1)[1])
+
+
+@pytest.fixture(autouse=True)
+def clean_media_root(hass: HomeAssistant):
+    """Start and leave every test with no attachment files.
+
+    The test config directory is shared between tests and runs, and a leftover
+    file would change what the setup sweep and its report see.
+    """
+
+    root = media.media_root(hass)
+    shutil.rmtree(root, ignore_errors=True)
+    yield
+    shutil.rmtree(root, ignore_errors=True)
 
 
 @pytest.fixture
@@ -166,6 +182,81 @@ def _transparent_logo(size: tuple[int, int] = (600, 600)) -> bytes:
     return buffer.getvalue()
 
 
+def _palette_sprite() -> bytes:
+    """A palette PNG whose transparency is an index, not a band."""
+
+    picture = Image.new("P", (300, 300), 1)
+    picture.paste(0, (100, 100, 200, 200))
+    picture.putpalette([255, 0, 0] + [0, 0, 255] * 255)
+    buffer = io.BytesIO()
+    picture.save(buffer, format="PNG", transparency=1)
+    return buffer.getvalue()
+
+
+def _jpeg(size: tuple[int, int], orientation: int | None = None) -> bytes:
+    """A JPEG photo, optionally tagged with an EXIF orientation."""
+
+    picture = Image.new("RGB", size, (12, 120, 200))
+    exif = picture.getexif()
+    if orientation is not None:
+        exif[274] = orientation
+    buffer = io.BytesIO()
+    picture.save(buffer, format="JPEG", exif=exif)
+    return buffer.getvalue()
+
+
+@pytest.fixture
+def encodes(monkeypatch) -> list[Path]:
+    """The targets of every thumbnail encode, which the real encoder still runs.
+
+    Counting is the one private reference here: nothing a client sees tells an
+    encode from a read of the tile an earlier request wrote.
+    """
+
+    calls: list[Path] = []
+    real = media._encode_thumbnail_blocking
+
+    def counting(source: Path, target: Path) -> bool:
+        calls.append(target)
+        return real(source, target)
+
+    monkeypatch.setattr(media, "_encode_thumbnail_blocking", counting)
+    return calls
+
+
+def _picture_row(item_id: str, attachment_id: str) -> dict:
+    """A stored item carrying one picture, as the store holds it."""
+
+    return {
+        "id": item_id,
+        "name": "Drill",
+        "attachments": [
+            {
+                "id": attachment_id,
+                "kind": "picture",
+                "filename": "drill.png",
+                "mime": "image/png",
+                "size": len(PNG_BYTES),
+                "uploaded_at": "2026-08-01T09:00:00Z",
+                "title": "",
+                "order": 0,
+            }
+        ],
+    }
+
+
+def _seed_one_picture(hass_storage: dict, item_id: str, attachment_id: str) -> None:
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "items": {item_id: _picture_row(item_id, attachment_id)},
+            "locations": {},
+        },
+    }
+
+
 STALE_VERSION = 99
 MISSING_ID = "11111111-1111-4111-8111-111111111111"
 
@@ -212,11 +303,17 @@ async def _attach(
 
 
 async def test_a_real_png_round_trips_through_upload_and_the_view(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    hass_ws_client,
+    setup_entry,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Upload, attach, then GET the same bytes back with an image content type."""
 
     await setup_entry()
+    # A first boot with no files says nothing about a sweep.
+    assert not [r for r in caplog.records if "op=attachment_sweep" in r.getMessage()]
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
@@ -255,14 +352,16 @@ async def test_a_real_png_round_trips_through_upload_and_the_view(
 
 
 async def test_size_thumb_serves_a_real_webp_tile_and_writes_it_once(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    hass_ws_client,
+    setup_entry,
+    encodes: list[Path],
 ) -> None:
     """The whole `?size=thumb` path against the real encoder.
 
-    Only real here: Pillow is not a dependency of this integration and is not in
-    the offline environment, but Home Assistant brings it, so this is where the
-    bytes a row actually downloads can be looked at. The offline suite covers
-    the logic around it — the once-only encode, the refusals, the sweep.
+    Pillow is not a dependency of this integration, but Home Assistant brings
+    it, so this is where the bytes a row actually downloads can be looked at.
     """
 
     photo = _photograph()
@@ -273,9 +372,14 @@ async def test_size_thumb_serves_a_real_webp_tile_and_writes_it_once(
     attachment = await _attach(ws, client, item, file=(photo, "shelf.png"))
 
     url = f"/api/haventory/media/{item['id']}/{attachment['id']}"
-    served = await client.get(f"{url}?size=thumb")
-    assert served.status == HTTPStatus.OK
+    # Two tabs opening the same page must not both decode the same file.
+    served, other = await asyncio.gather(
+        client.get(f"{url}?size=thumb"), client.get(f"{url}?size=thumb")
+    )
+    assert served.status == other.status == HTTPStatus.OK
     tile = await served.read()
+    assert await other.read() == tile
+    assert len(encodes) == 1
 
     # A tile, not the picture: WebP whatever the original was, capped on its
     # longest edge, and a fraction of the bytes the full picture costs.
@@ -306,27 +410,63 @@ async def test_size_thumb_serves_a_real_webp_tile_and_writes_it_once(
     again = await client.get(f"{url}?size=thumb")
     assert await again.read() == tile
     assert on_disk.stat().st_mtime_ns == mtime
+    assert len(encodes) == 1
 
     # Nothing is left behind mid-encode: the staging name never survives.
     assert not list(on_disk.parent.glob("*.part"))
 
+    # Removing the picture takes the tile, and the directory with the last file.
+    await ws.send_json(
+        {
+            "id": 91,
+            "type": "haventory/item/attachment/remove",
+            "item_id": item["id"],
+            "attachment_id": attachment["id"],
+        }
+    )
+    assert (await ws.receive_json())["success"] is True
+    assert not media.attachment_path(root, item["id"], attachment["id"], "image/png").exists()
+    assert not on_disk.exists()
+    assert not on_disk.parent.exists()
+    assert media.media_root(hass).is_dir()
 
-async def test_a_transparent_picture_keeps_its_alpha_through_the_view(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
+
+@pytest.mark.parametrize(
+    ("source", "mode", "tile_size", "red"),
+    [
+        pytest.param(_transparent_logo(), "RGBA", None, True, id="rgba_logo"),
+        pytest.param(_palette_sprite(), "RGBA", None, False, id="palette_transparency"),
+        pytest.param(_jpeg((300, 300)), "RGB", (THUMBNAIL_MAX_EDGE,) * 2, False, id="jpeg_photo"),
+        pytest.param(
+            _jpeg((400, 200), orientation=6),
+            "RGB",
+            (THUMBNAIL_MAX_EDGE // 2, THUMBNAIL_MAX_EDGE),
+            False,
+            id="exif_rotated_jpeg",
+        ),
+    ],
+)
+async def test_a_tile_keeps_the_channels_and_orientation_of_its_picture(  # noqa: PLR0913, PLR0917 - fixtures plus one parameter per expectation
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    hass_ws_client,
+    setup_entry,
+    source: bytes,
+    mode: str,
+    tile_size: tuple[int, int] | None,
+    red: bool,
 ) -> None:
-    """A logo or a screenshot saved as a transparent PNG keeps its background.
+    """Flattening a transparent picture would show its shape on the encoder's black.
 
-    Flattening it would leave the shape on the encoder's black, so the row and
-    the opened item would show two different pictures — and against the light
-    theme the row reads as a black square.
+    The row and the opened item would then show two different pictures. A photo
+    gets no alpha it never had, and a tagged one comes out upright.
     """
 
-    logo = _transparent_logo()
     await setup_entry()
     client = await hass_client()
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
-    attachment = await _attach(ws, client, item, file=(logo, "logo.png"))
+    attachment = await _attach(ws, client, item, file=(source, "picture.img"))
 
     url = f"/api/haventory/media/{item['id']}/{attachment['id']}"
     served = await client.get(f"{url}?size=thumb")
@@ -334,29 +474,38 @@ async def test_a_transparent_picture_keeps_its_alpha_through_the_view(
     assert served.headers["Content-Type"] == "image/webp"
 
     with Image.open(io.BytesIO(await served.read())) as tile:
-        assert tile.mode == "RGBA"
-        assert max(tile.size) == THUMBNAIL_MAX_EDGE
-        # What was fully transparent still is.
-        assert tile.getpixel((0, 0))[3] == 0
-        centre = tile.getpixel((tile.width // 2, tile.height // 2))
-        assert centre[3] == OPAQUE_ALPHA
-        assert centre[0] > RED_FLOOR
-        assert max(centre[1], centre[2]) < OTHER_CHANNEL_CEILING
+        assert tile.mode == mode
+        if tile_size is None:
+            assert max(tile.size) == THUMBNAIL_MAX_EDGE
+        else:
+            assert tile.size == tile_size
+        if mode == "RGBA":
+            # What was fully transparent still is.
+            assert tile.getpixel((0, 0))[3] == 0
+            centre = tile.getpixel((tile.width // 2, tile.height // 2))
+            assert centre[3] == OPAQUE_ALPHA
+            if red:
+                assert centre[0] > RED_FLOOR
+                assert max(centre[1], centre[2]) < OTHER_CHANNEL_CEILING
 
     # The original is untouched, which is the picture the opened item shows.
-    original = await client.get(url)
-    assert await original.read() == logo
+    assert await (await client.get(url)).read() == source
 
 
 async def test_a_picture_the_decoder_refuses_serves_the_original(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    hass_ws_client,
+    setup_entry,
+    encodes: list[Path],
 ) -> None:
     """Fail open, with a file that really does defeat the decoder.
 
     `PNG_BYTES` carries a genuine PNG signature — which is all the upload
     allow-list reads — and Pillow cannot identify it, which is what a truncated
     or corrupt upload looks like. The row shows the picture the browser can
-    still render, and the page is slower rather than broken.
+    still render, and the page is slower rather than broken. The refusal is
+    remembered, so a second request does not decode the same bytes again.
     """
 
     await setup_entry()
@@ -365,11 +514,13 @@ async def test_a_picture_the_decoder_refuses_serves_the_original(
     item = await _create_item(ws)
     attachment = await _attach(ws, client, item)
 
-    served = await client.get(f"/api/haventory/media/{item['id']}/{attachment['id']}?size=thumb")
-
-    assert served.status == HTTPStatus.OK
-    assert served.headers["Content-Type"] == "image/png"
-    assert await served.read() == PNG_BYTES
+    url = f"/api/haventory/media/{item['id']}/{attachment['id']}?size=thumb"
+    for _ in range(2):
+        served = await client.get(url)
+        assert served.status == HTTPStatus.OK
+        assert served.headers["Content-Type"] == "image/png"
+        assert await served.read() == PNG_BYTES
+    assert len(encodes) == 1
     root = Path(hass.config.path(MEDIA_SUBDIR))
     assert not media.thumbnail_path(root, item["id"], attachment["id"]).exists()
 
@@ -522,11 +673,9 @@ async def test_an_id_no_metadata_claims_is_a_404(
     ws = await hass_ws_client(hass)
     item = await _create_item(ws)
 
-    missing = await client.get(
-        f"/api/haventory/media/{item['id']}/11111111-1111-4111-8111-111111111111"
-    )
-
-    assert missing.status == HTTPStatus.NOT_FOUND
+    for owner in (item["id"], MISSING_ID):
+        missing = await client.get(f"/api/haventory/media/{owner}/{MISSING_ID}")
+        assert missing.status == HTTPStatus.NOT_FOUND, owner
 
 
 async def test_a_non_image_is_refused_and_leaves_nothing_behind(
@@ -762,31 +911,6 @@ async def test_the_item_delete_service_deletes_the_item_files(
     assert not path.exists()
 
 
-async def test_setup_sweeps_a_file_no_metadata_references(
-    hass: HomeAssistant, hass_storage: dict, setup_entry
-) -> None:
-    """A save that never landed, on a store that still holds the inventory."""
-
-    item_id = "5c4b3a29-1d0e-4f8a-9b7c-6d5e4f3a2b1c"
-    hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "key": STORAGE_KEY,
-        "data": {
-            "schema_version": CURRENT_SCHEMA_VERSION,
-            "items": {item_id: {"id": item_id, "name": "Drill", "attachments": []}},
-            "locations": {},
-        },
-    }
-    root = Path(hass.config.path(MEDIA_SUBDIR))
-    orphan = root / "some-item" / "some-attachment.png"
-    orphan.parent.mkdir(parents=True, exist_ok=True)
-    orphan.write_bytes(PNG_BYTES)
-
-    await setup_entry()
-
-    assert not orphan.exists()
-
-
 #: What the corrupt-store backup holds a row for, each named a different way: a
 #: key that is not a uuid, a key that differs from the `id` inside the row (both
 #: name the item), and a row with no body.
@@ -846,11 +970,7 @@ async def test_setup_keeps_the_files_of_every_item_the_backup_holds_a_row_for(
 
     await setup_entry()
 
-    try:
-        assert [path.exists() for path in files] == [kept] * len(files)
-    finally:
-        # The test config directory is shared, so a kept file would reach the next test.
-        shutil.rmtree(media.media_root(hass), ignore_errors=True)
+    assert [path.exists() for path in files] == [kept] * len(files)
 
 
 async def test_setup_keeps_every_file_when_the_store_holds_no_items(
@@ -878,63 +998,6 @@ async def test_setup_keeps_every_file_when_the_store_holds_no_items(
     kept = [r for r in caplog.records if "op=attachment_sweep" in r.getMessage()]
     assert [r.levelname for r in kept] == ["WARNING"]
     assert "files=1" in kept[0].getMessage()
-
-
-async def test_setup_sweeps_a_tile_an_earlier_encoder_generation_wrote(
-    hass: HomeAssistant, hass_storage: dict, setup_entry
-) -> None:
-    """An install upgraded across a change to the encode.
-
-    A tile is written once and served from there, so nothing about the new
-    encoder would reach a picture that already has one. The name carries the
-    generation instead: the tile the old encoder wrote is named by no metadata
-    and the sweep at setup takes it, leaving the picture it came from.
-    """
-
-    item_id = "5c4b3a29-1d0e-4f8a-9b7c-6d5e4f3a2b1c"
-    attachment_id = "11111111-1111-4111-8111-111111111111"
-    hass_storage[STORAGE_KEY] = {
-        "version": 1,
-        "key": STORAGE_KEY,
-        "data": {
-            "schema_version": CURRENT_SCHEMA_VERSION,
-            "items": {
-                item_id: {
-                    "id": item_id,
-                    "name": "Drill",
-                    "attachments": [
-                        {
-                            "id": attachment_id,
-                            "kind": "picture",
-                            "filename": "drill.png",
-                            "mime": "image/png",
-                            "size": len(PNG_BYTES),
-                            "uploaded_at": "2026-08-01T09:00:00Z",
-                            "title": "",
-                            "order": 0,
-                        }
-                    ],
-                }
-            },
-            "locations": {},
-        },
-    }
-    root = Path(hass.config.path(MEDIA_SUBDIR))
-    original = media.attachment_path(root, item_id, attachment_id, "image/png")
-    original.parent.mkdir(parents=True, exist_ok=True)
-    original.write_bytes(PNG_BYTES)
-    # Generation 1's name, which is what an install running 0.7.0 has on disk.
-    stale = original.with_name(f"{attachment_id}.thumb.webp")
-    stale.write_bytes(b"RIFF\x24\x00\x00\x00WEBP\x00\x00\x00\x00")
-
-    await setup_entry()
-
-    assert not stale.exists()
-    assert original.read_bytes() == PNG_BYTES
-    current = media.thumbnail_path(root, item_id, attachment_id)
-    assert current.name.endswith(THUMBNAIL_SUFFIX)
-    # Nothing pre-writes a tile: the next `?size=thumb` encodes it.
-    assert not current.exists()
 
 
 async def test_a_pdf_round_trips_as_a_manual_and_can_be_retitled(
@@ -999,22 +1062,6 @@ async def test_a_pdf_round_trips_as_a_manual_and_can_be_retitled(
     assert disposition.startswith("inline;")
     assert _rfc5987_filename(disposition) == "Dishwasher manual (EN)"
     assert await served.read() == PDF_BYTES
-
-    # A title outside US-ASCII is the case the quoted `filename` cannot carry.
-    await ws.send_json(
-        {
-            "id": 4,
-            "type": "haventory/item/attachment/update",
-            "item_id": item["id"],
-            "attachment_id": attachment["id"],
-            "title": "Spülmaschine - Anleitung (DE)",
-        }
-    )
-    assert (await ws.receive_json())["success"] is True
-
-    non_ascii = await client.get(url)
-    served = _rfc5987_filename(non_ascii.headers["Content-Disposition"])
-    assert served == "Spülmaschine - Anleitung (DE)"
 
 
 async def test_only_a_name_versioned_url_may_be_cached(
@@ -1087,3 +1134,163 @@ async def test_a_pdf_is_refused_as_a_picture(
     assert refused["success"] is False
     assert refused["error"]["code"] == "validation_error"
     assert find_runtime(hass).repository.get_item(item["id"]).attachments == ()
+
+
+async def test_setup_sweeps_what_no_metadata_names_and_nothing_else(  # noqa: PLR0913, PLR0917 - one fixture per hazard
+    hass: HomeAssistant,
+    hass_storage: dict,
+    setup_entry,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """One media root holding every case the sweep has to get right."""
+
+    item_id = "5c4b3a29-1d0e-4f8a-9b7c-6d5e4f3a2b1c"
+    attachment_id = "11111111-1111-4111-8111-111111111111"
+    _seed_one_picture(hass_storage, item_id, attachment_id)
+    root = media.media_root(hass)
+    original = media.attachment_path(root, item_id, attachment_id, "image/png")
+    tile = media.thumbnail_path(root, item_id, attachment_id)
+    orphan = original.parent / "00000000-0000-4000-8000-000000000000.png"
+    # Generation 1's tile name, which an install running 0.7.0 has on disk.
+    old_dir = root / "22222222-2222-4222-8222-222222222222"
+    old_tile = old_dir / "44444444-4444-4444-8444-444444444444.thumb.webp"
+    loose = root / "loose.png"
+    stuck_dir = root / "33333333-3333-4333-8333-333333333333"
+    stuck = stuck_dir / "stuck.png"
+    outside = tmp_path / "elsewhere"
+    precious = outside / "not-ours.png"
+    for path in (original, tile, orphan, old_tile, stuck, precious):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(PNG_BYTES)
+    loose.write_bytes(PNG_BYTES)
+    # `rglob` follows a symlinked directory, so containment is re-checked per file.
+    os.symlink(outside, root / "linked")
+    stuck_resolved = stuck.resolve()
+    real_unlink = Path.unlink
+
+    def _unlink(self: Path, *args: object, **kwargs: object) -> None:
+        if self == stuck_resolved:
+            raise PermissionError("read-only")
+        real_unlink(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(Path, "unlink", _unlink)
+    caplog.set_level(logging.WARNING)
+
+    await setup_entry()
+
+    assert original.is_file()
+    assert tile.is_file()
+    assert not orphan.exists()
+    assert not old_dir.exists()
+    assert not loose.exists()
+    assert root.is_dir()
+    assert precious.is_file()
+    # One file that will not go does not stop the rest, or the setup.
+    assert stuck.is_file()
+    assert "Could not remove an orphaned attachment file" in caplog.text
+
+
+async def test_a_picture_whose_file_is_gone_is_a_404_and_can_still_be_removed(
+    hass: HomeAssistant,
+    hass_storage: dict,
+    hass_client: ClientSessionGenerator,
+    ws_connect,
+    setup_entry,
+) -> None:
+    """A restored backup can hold metadata whose files did not come with it."""
+
+    item_id = "5c4b3a29-1d0e-4f8a-9b7c-6d5e4f3a2b1c"
+    attachment_id = "11111111-1111-4111-8111-111111111111"
+    _seed_one_picture(hass_storage, item_id, attachment_id)
+    await setup_entry()
+    client = await hass_client()
+    ws = await ws_connect()
+
+    url = f"/api/haventory/media/{item_id}/{attachment_id}"
+    assert (await client.get(url)).status == HTTPStatus.NOT_FOUND
+    assert (await client.get(f"{url}?size=thumb")).status == HTTPStatus.NOT_FOUND
+
+    removed = await ws.send(
+        "haventory/item/attachment/remove", item_id=item_id, attachment_id=attachment_id
+    )
+    assert removed["success"] is True, removed
+    assert removed["result"]["attachments"] == []
+
+
+# (title, the quoted fallback or None to skip). "<id>" stands for the attachment
+# id, which a title with nothing printable falls back to. A stored title is user
+# text and this is a header.
+DISPOSITION_ROWS = [
+    ("Dishwasher manual", "Dishwasher manual"),
+    ("   ", "scan_0142.pdf"),
+    ("Spülmaschine - Anleitung (DE)", "Splmaschine - Anleitung (DE)"),
+    ("説明書", "<id>"),
+    ('evil"; filename="owned.exe', None),
+    ("line\r\nX-Injected: yes", None),
+    ("back\\slash", None),
+]
+
+
+async def test_the_served_name_follows_the_title_and_cannot_break_the_header(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, ws_connect, setup_entry
+) -> None:
+    await setup_entry()
+    client = await hass_client()
+    ws = await ws_connect()
+    item = (await ws.send("haventory/item/create", name="Dishwasher"))["result"]
+    file_id = await _upload(client, PDF_BYTES, "scan_0142.pdf")
+    added = await ws.send(
+        "haventory/item/attachment/add",
+        item_id=item["id"],
+        file_id=file_id,
+        kind="manual",
+        filename="scan_0142.pdf",
+    )
+    attachment = added["result"]["attachments"][0]
+    url = f"/api/haventory/media/{item['id']}/{attachment['id']}"
+
+    for title, quoted_expected in DISPOSITION_ROWS:
+        updated = await ws.send(
+            "haventory/item/attachment/update",
+            item_id=item["id"],
+            attachment_id=attachment["id"],
+            title=title,
+        )
+        assert updated["success"] is True, (title, updated)
+        value = (await client.get(url)).headers["Content-Disposition"]
+
+        assert value.startswith("inline;")
+        assert "\r" not in value
+        assert "\n" not in value
+        _, quoted = value.split('filename="', 1)
+        quoted_name, rest = quoted.split('"', 1)
+        assert '"' not in quoted_name
+        assert "\\" not in quoted_name
+        # Nothing after the quoted name opens a parameter, or a header, of its own.
+        assert '"' not in rest
+        if quoted_expected is not None:
+            assert quoted_name == quoted_expected.replace("<id>", attachment["id"])
+        # The real name always travels in the RFC 5987 half.
+        assert _rfc5987_filename(value) == (title.strip() or "scan_0142.pdf")
+
+    # Without a client-sent name the command stores the attachment id; the
+    # header cuts a name no longer than it allows to the limit.
+    for sent, shown in ((None, "<id>"), ("x" * 500, "x" * media.DISPOSITION_NAME_MAX_CHARS)):
+        extra = {} if sent is None else {"filename": sent}
+        file_id = await _upload(client, PDF_BYTES, "scan.pdf")
+        plain = (
+            await ws.send(
+                "haventory/item/attachment/add",
+                item_id=item["id"],
+                file_id=file_id,
+                kind="manual",
+                **extra,
+            )
+        )["result"]["attachments"][-1]
+        served = await client.get(f"/api/haventory/media/{item['id']}/{plain['id']}")
+        assert (
+            f'filename="{shown.replace("<id>", plain["id"])}"'
+            in served.headers["Content-Disposition"]
+        )
