@@ -641,7 +641,6 @@ upgrade.
 
 ### Testing against the contract
 
-The offline suite validates the envelope against the stubs in `tests/conftest.py`, which
-apply each command's schema before dispatch; the in-process suite (`tests/integration/`)
-validates it against a real Home Assistant core. [`developing.md`](developing.md) → "Testing"
-covers both.
+`tests/integration/` sends each command over a real Home Assistant WebSocket connection, so
+the schema, the envelope and the error codes are the ones a card meets.
+[`developing.md`](developing.md) → "Testing" says how to run it.

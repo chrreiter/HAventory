@@ -14,7 +14,7 @@ The released version lives in `custom_components/haventory/manifest.json` and
 the two together. Never hand-edit either.
 
 **Platform floors** are declared once each: Home Assistant in `hacs.json` (what HACS enforces,
-and what `requirements-integration.txt` pins the in-process suite to), Python as
+and what `requirements-integration.txt` pins the tests to), Python as
 `requires-python` in `pyproject.toml`, Node as `engines` in the card's `package.json`.
 `tests/test_min_ha_version.py` and `tests/test_toolchain_pins.py` enumerate every copy, fail
 when one drifts, and sweep the tree so a copy in a file they do not list fails too. **Add a
@@ -110,15 +110,9 @@ disagrees with an issue is stale.
 
 Backend at the repo root, frontend in `cards/haventory-card`. The gate, both halves, green
 before every commit, is written out once in [`CONTRIBUTING.md`](CONTRIBUTING.md) → "The
-gate", audit level included. [`docs/developing.md`](docs/developing.md) carries the
-bootstrap, the helper scripts and the live-update browser smoke.
-
-In-process HA tests are a **second, separate mode**: the integration inside a real HA core
-via `pytest-homeassistant-custom-component`, run with `scripts/test.sh`. What it
-installs, what it covers, the container recipe a Windows host needs and the traps that are
-not discoverable from the code are in `docs/developing.md` → "In-process HA integration
-tests". The one that bites hardest: **do not set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` for that
-mode**. phacc must load, and the flag makes it silently collect nothing.
+gate", audit level included; its backend tests run on the real Home Assistant at the floor.
+[`docs/developing.md`](docs/developing.md) carries the bootstrap, the test layout and its
+traps, the helper scripts and the live-update browser smoke.
 
 ## Conventions
 
