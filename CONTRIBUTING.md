@@ -116,7 +116,7 @@ and the PR-title check.
   plus `translations/<tag>.json`. See "Adding a language" below for the shape, and
   `docs/frontend_architecture.md` for why copy cannot be a module constant.
 - **Logging.** Every module takes its logger from `logs.context_logger(__name__)`, never
-  `logging.getLogger` (`tests/test_logs_offline.py` checks). Attach context through
+  `logging.getLogger` (`tests/test_logs.py` checks). Attach context through
   `extra=`: `context_logger` folds it into the message text as `key=value` pairs, because
   Home Assistant's formatter drops everything else. `%`-args work as usual alongside it,
   whatever the values contain. Leave `domain` out (the logger name already carries it, and
