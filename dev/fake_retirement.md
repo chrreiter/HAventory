@@ -94,11 +94,28 @@ The pull request says which tests rules 1 and 2 deleted, and why.
 Collected tests per file, before each batch moves them. Each name is
 `tests/<name>_offline.py`, except `tests/test_frontend_registration.py`.
 
-- **04, WebSocket commands (224):** `test_ws_areas` 1, `_bulk` 6, `_distinct_values` 9,
+- **04, WebSocket commands (224): done.** `test_ws_areas` 1, `_bulk` 6, `_distinct_values` 9,
   `_effective_area` 21, `_error_mapping` 12, `_guard` 7, `_items` 34, `_locations` 8,
   `_logging` 17, `_reminders` 30, `_schema_validation` 14, `_storage_error` 21,
   `_subscriptions` 24, `_utils` 12, `_wrappers` 5, and `test_wire_shapes` 3.
-  `test_ws_statuses` moved in session 03.
+  `test_ws_statuses` moved in session 03. 146 behaviours moved into 86 real-core tests, 52
+  tests were already covered and 26 checked the fake or a private detail. No helper was
+  added. What the next batches can use:
+  - Several subscriptions on one connection are told apart by the `id` of each frame in
+    `ws.event_frames`. A `reloaded` event comes from `haventory/export` imported back with
+    `policy="replace"`; the `unavailable` notice from a real unload, read with
+    `ws.socket.receive_json()` because `drain()` pings, which refuses once unloaded.
+  - A command runs as a background task that a client disconnect does not cancel; only
+    Home Assistant stopping does. A test that cancels a command models nothing real.
+  - A service call missing a required field is refused by Home Assistant's own service
+    schema before the integration runs, and the integration logs nothing.
+  - Batch 05 overlaps what moved here: every mutation shape's failed save is
+    `test_a_failed_write_is_not_announced` (`test_ws_errors.py`), and the bulk delete's
+    file rule under a failed save is in `test_attachments.py`.
+  - Combined coverage gave up `subscriptions.py` 210-211 (a real connection's
+    `send_message` raises for no single connection: a closed one is a logged no-op and a
+    full queue cancels it) and 259-261 (the counts broadcast with no loaded entry, reachable
+    only by calling it bare). `timestamps.py` 36 is now covered.
 - **05, writes and storage (147):** `test_services` 25, `test_events` 34,
   `test_service_broadcast` 7, `test_delete_surfaces` 3, `test_failed_save_undo` 15,
   `test_storage` 40, `test_storage_concurrency` 2, `test_migrations` 6,
@@ -205,7 +222,10 @@ Today the real-core run is 713 tests in about 16 s of pytest time (18 s wall): 1
 in-process tests at about 80 ms each, and 520 that need no hass in about 3 s together. The
 moved status file costs the same, 23 tests in 1.8 s.
 
-881 tests still run on the fake. Moved one for one, they add about 70 s, so the whole run
+After batch 04 the real-core run is 799 tests in about 25 s of pytest time (27 s wall),
+with the card built.
+
+881 tests ran on the fake before batch 04, 657 after it. Moved one for one, they add about 70 s, so the whole run
 lands near 90 s; rules 1 and 2 bring it lower. That is under two minutes, so the suite
 stays in one process.
 

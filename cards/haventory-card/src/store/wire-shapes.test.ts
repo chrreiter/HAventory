@@ -27,7 +27,7 @@ import type {
 /**
  * The interfaces in `types.ts` against the keys the backend actually sends.
  *
- * `tests/test_wire_shapes_offline.py` drives the real commands and serializers
+ * `tests/integration/test_wire_shapes.py` drives the real commands and serializers
  * and writes what they sent to `tests/fixtures/wire_shapes.json`: per output
  * shape, the keys in every sample (`required`) and those in only some
  * (`optional`); per input shape, the keys of the `TypedDict` the backend

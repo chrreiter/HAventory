@@ -1,9 +1,7 @@
-"""Integration: attachment upload and serving, against a real Home Assistant core.
+"""Integration: attachment upload, the attachment commands and serving, on a real core.
 
-The offline `HomeAssistant` stub has no HTTP layer and no `file_upload`
-component, so nothing there can observe an upload crossing core's
-`/api/file_upload`, an authenticated GET on the media view, or the refusal an
-unauthenticated one gets. This file is the only place any of that is asserted.
+An upload crosses core's `/api/file_upload`, the commands consume it and edit the
+item, and the media view serves the bytes to an authenticated request only.
 
 The validation itself — the sniffed allow-list, the caps, the path containment
 and the orphan sweep — is covered offline in `tests/test_media_offline.py`; what
@@ -165,6 +163,17 @@ def _transparent_logo(size: tuple[int, int] = (600, 600)) -> bytes:
     buffer = io.BytesIO()
     picture.save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+STALE_VERSION = 99
+MISSING_ID = "11111111-1111-4111-8111-111111111111"
+
+
+async def _add(ws, client, item_id: str, **extra) -> dict:
+    """Upload a picture and attach it, returning the whole answer."""
+
+    file_id = await _upload(client)
+    return await ws.send("haventory/item/attachment/add", item_id=item_id, file_id=file_id, **extra)
 
 
 async def _create_item(ws_client, name: str = "Drill") -> dict:
@@ -558,6 +567,101 @@ async def test_a_non_image_is_refused_and_leaves_nothing_behind(
     assert not temp_dir.exists()
 
 
+async def test_attachment_lifecycle_versions_announces_and_frees_files(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, ws_connect, setup_entry
+) -> None:
+    """Add, reorder, retitle and remove each bump the item's version and say so."""
+
+    await setup_entry()
+    client = await hass_client()
+    ws = await ws_connect()
+    await ws.subscribe("items")
+    item = (await ws.send("haventory/item/create", name="Drill"))["result"]
+    ws.event_frames.clear()
+
+    version = item["version"]
+    for _ in range(2):
+        added = (await _add(ws, client, item["id"]))["result"]
+        assert added["version"] == version + 1
+        version = added["version"]
+    assert [e["action"] for e in ws.events("items")] == ["updated", "updated"]
+    first, second = added["attachments"]
+
+    reordered = await ws.send(
+        "haventory/item/attachment/reorder",
+        item_id=item["id"],
+        kind="picture",
+        attachment_ids=[second["id"], first["id"]],
+    )
+    ordered = sorted(reordered["result"]["attachments"], key=lambda a: a["order"])
+    assert [a["id"] for a in ordered] == [second["id"], first["id"]]
+
+    retitled = await ws.send(
+        "haventory/item/attachment/update",
+        item_id=item["id"],
+        attachment_id=first["id"],
+        title="Warranty",
+    )
+    assert retitled["result"]["version"] == reordered["result"]["version"] + 1
+
+    removed = await ws.send(
+        "haventory/item/attachment/remove", item_id=item["id"], attachment_id=first["id"]
+    )
+    assert removed["result"]["version"] == retitled["result"]["version"] + 1
+    assert [a["id"] for a in removed["result"]["attachments"]] == [second["id"]]
+    root = media.media_root(hass)
+    assert not media.attachment_path(root, item["id"], first["id"], first["mime"]).exists()
+    assert media.attachment_path(root, item["id"], second["id"], second["mime"]).is_file()
+
+
+async def test_attachment_refusals(
+    hass: HomeAssistant, hass_client: ClientSessionGenerator, ws_connect, setup_entry
+) -> None:
+    """Each refusal names its reason, and a stale add keeps the upload for a retry."""
+
+    await setup_entry()
+    client = await hass_client()
+    ws = await ws_connect()
+    item = (await ws.send("haventory/item/create", name="Drill"))["result"]
+    item_id = item["id"]
+
+    file_id = await _upload(client)
+    stale = await ws.send(
+        "haventory/item/attachment/add",
+        item_id=item_id,
+        file_id=file_id,
+        expected_version=STALE_VERSION,
+    )
+    assert stale["error"]["code"] == "conflict"
+    retry = await ws.send("haventory/item/attachment/add", item_id=item_id, file_id=file_id)
+    assert retry["success"] is True
+    first = retry["result"]["attachments"][0]
+    await _add(ws, client, item_id)
+
+    refusals = [
+        ("add", {"item_id": MISSING_ID, "file_id": await _upload(client)}, "not_found"),
+        ("remove", {"item_id": item_id, "attachment_id": MISSING_ID}, "not_found"),
+        (
+            "update",
+            {
+                "item_id": item_id,
+                "attachment_id": first["id"],
+                "title": "x",
+                "expected_version": STALE_VERSION,
+            },
+            "conflict",
+        ),
+        (
+            "reorder",
+            {"item_id": item_id, "kind": "picture", "attachment_ids": [first["id"]]},
+            "validation_error",
+        ),
+    ]
+    for command, payload, code in refusals:
+        res = await ws.send(f"haventory/item/attachment/{command}", **payload)
+        assert res["error"]["code"] == code, command
+
+
 async def test_deleting_the_item_deletes_its_files(
     hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
@@ -592,35 +696,48 @@ async def test_deleting_the_item_deletes_its_files(
     assert media.media_root(hass).is_dir()
 
 
-async def test_a_bulk_delete_deletes_the_item_files(
-    hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
+async def test_bulk_delete_frees_files_only_after_a_write_that_lands(
+    hass: HomeAssistant,
+    hass_client: ClientSessionGenerator,
+    ws_connect,
+    setup_entry,
+    fail_next_save,
 ) -> None:
-    """The card's bulk bar and the organize dialog delete through `items/bulk`."""
+    """A failed save leaves every file; a refused row keeps its own."""
 
     await setup_entry()
     client = await hass_client()
-    ws = await hass_ws_client(hass)
-    item = await _create_item(ws)
-    attachment = await _attach(ws, client, item)
-    path = media.attachment_path(
-        media.media_root(hass), item["id"], attachment["id"], attachment["mime"]
-    )
-    assert path.is_file()
-
-    await ws.send_json(
+    ws = await ws_connect()
+    items = [(await ws.send("haventory/item/create", name=n))["result"] for n in ("Drill", "Saw")]
+    paths = []
+    for item in items:
+        att = (await _add(ws, client, item["id"]))["result"]["attachments"][0]
+        paths.append(
+            media.attachment_path(media.media_root(hass), item["id"], att["id"], att["mime"])
+        )
+    batch = [
+        {"op_id": "a", "kind": "item_delete", "payload": {"item_id": items[0]["id"]}},
         {
-            "id": 91,
-            "type": "haventory/items/bulk",
-            "operations": [
-                {"op_id": "d", "kind": "item_delete", "payload": {"item_id": item["id"]}}
-            ],
-        }
-    )
-    deleted = await ws.receive_json()
-    assert deleted["success"] is True, deleted
-    assert deleted["result"]["results"]["d"]["success"] is True, deleted
+            "op_id": "b",
+            "kind": "item_delete",
+            "payload": {"item_id": items[1]["id"], "expected_version": STALE_VERSION},
+        },
+    ]
 
-    assert not path.exists()
+    fail_next_save()
+    failed = await ws.send("haventory/items/bulk", operations=batch)
+
+    assert failed["error"]["code"] == "storage_error"
+    assert all(path.is_file() for path in paths)
+
+    results = (await ws.send("haventory/items/bulk", operations=batch))["result"]["results"]
+
+    assert results["a"]["success"] is True
+    assert results["b"]["error"]["code"] == "conflict"
+    assert not paths[0].exists()
+    assert paths[1].is_file()
+    kept = await ws.send("haventory/item/get", item_id=items[1]["id"])
+    assert len(kept["result"]["attachments"]) == 1
 
 
 async def test_the_item_delete_service_deletes_the_item_files(
