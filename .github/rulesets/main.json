@@ -30,7 +30,6 @@
           { "context": "backend (3.14)", "integration_id": 15368 },
           { "context": "frontend (22)", "integration_id": 15368 },
           { "context": "frontend (24)", "integration_id": 15368 },
-          { "context": "integration", "integration_id": 15368 },
           { "context": "actionlint", "integration_id": 15368 },
           { "context": "validation", "integration_id": 15368 },
           { "context": "review", "integration_id": 15368 },

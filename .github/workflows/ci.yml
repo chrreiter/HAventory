@@ -19,13 +19,11 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
-        # The declared HA 2026.7.0 runtime. The source is 3.14-only (PEP 758
-        # `except A, B:` syntax emitted by the 2026 ruff formatter).
+        # The interpreter the declared HA 2026.7.0 runtime supports, and the only
+        # one: the source is 3.14-only (PEP 758 `except A, B:` syntax emitted by
+        # the 2026 ruff formatter). The ruleset requires this job by its name.
         python-version: [ '3.14' ]
-    env:
-      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
     steps:
       - uses: actions/checkout@v7
       - name: Set up uv
@@ -34,45 +32,6 @@ jobs:
           enable-cache: true
       - name: Install Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
-      - name: Sync dev environment
-        run: uv sync --python ${{ matrix.python-version }}
-      - name: Lint (ruff)
-        run: uv run ruff check .
-      - name: Format (ruff format --check)
-        # Backstop for authors without the pre-commit hooks installed.
-        run: uv run ruff format --check .
-      - name: Test (pytest offline w/ coverage)
-        run: >
-          uv run pytest -q -p pytest_cov
-          --cov=custom_components/haventory
-          --cov-report=xml --cov-report=term-missing:skip-covered
-          --junitxml=junit.xml
-      - name: Backend coverage summary
-        if: success() && hashFiles('coverage.xml') != ''
-        run: |
-          rate=$(uv run python -c "import xml.etree.ElementTree as ET; r=ET.parse('coverage.xml').getroot(); print(f\"{100*float(r.get('line-rate',0)):.2f}\")")
-          echo "Backend coverage (py${{ matrix.python-version }}): ${rate}%" >> "$GITHUB_STEP_SUMMARY"
-      - name: Upload backend artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: backend-artifacts-py${{ matrix.python-version }}
-          path: |
-            coverage.xml
-            junit.xml
-
-  integration:
-    # Runs in a real HA core in a separate venv; plugin autoload stays ON because
-    # phacc must load, so there is no PYTEST_DISABLE_PLUGIN_AUTOLOAD here. The
-    # type check runs here too, because it needs the same environment.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Set up uv
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
-        with:
-          enable-cache: true
-      - name: Install Python 3.14
-        run: uv python install 3.14
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -82,29 +41,40 @@ jobs:
         # The bundle is git-ignored; without it the frontend tests skip instead of run.
         run: npm ci --no-audit --no-fund && npm run build
         working-directory: cards/haventory-card
-      - name: Create integration environment (phacc + real HA core)
+      - name: Create the test environment (the real Home Assistant at the floor)
         run: |
-          uv venv --python 3.14 .venv-integration
+          uv venv --python ${{ matrix.python-version }} .venv-integration
           uv pip install --python .venv-integration/bin/python -r requirements-integration.txt
       - name: Sync dev environment
-        run: uv sync
-      - name: Types (mypy against the real HA core)
-        # mypy runs from the dev environment; `python_executable` in pyproject.toml
-        # resolves its imports from .venv-integration, the HA release pinned above.
+        run: uv sync --python ${{ matrix.python-version }}
+      - name: Lint (ruff)
+        run: uv run ruff check .
+      - name: Format (ruff format --check)
+        # Backstop for authors without the pre-commit hooks installed.
+        run: uv run ruff format --check .
+      - name: Types (mypy against the real Home Assistant)
+        # `python_executable` in pyproject.toml resolves mypy's imports from
+        # .venv-integration, the Home Assistant release pinned above.
         run: uv run mypy
-      - name: Integration tests (in-process HA via phacc)
-        # phacc requires pytest-asyncio's auto mode.
+      - name: Test (pytest w/ coverage)
         run: >
-          .venv-integration/bin/python -m pytest -q
-          -o asyncio_mode=auto
-          tests/integration
-          --junitxml=integration-junit.xml
-      - name: Upload integration artifacts
+          .venv-integration/bin/python -m pytest -q tests
+          --cov=custom_components/haventory
+          --cov-report=xml --cov-report=term-missing:skip-covered
+          --junitxml=junit.xml
+      - name: Backend coverage summary
+        if: success() && hashFiles('coverage.xml') != ''
+        run: |
+          rate=$(.venv-integration/bin/python -c "import xml.etree.ElementTree as ET; r=ET.parse('coverage.xml').getroot(); print(f\"{100*float(r.get('line-rate',0)):.2f}\")")
+          echo "Backend coverage: ${rate}%" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload backend artifacts
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: integration-artifacts
-          path: integration-junit.xml
+          name: backend-artifacts
+          path: |
+            coverage.xml
+            junit.xml
 
   frontend:
     runs-on: ubuntu-latest

@@ -95,7 +95,7 @@ RUFF_TARGET_VERSION = re.compile(r"target-version *= *\"py3(\d\d)\"")
 # naming the patch-level floor).
 PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
     ("pyproject.toml", 5, 2),
-    (".github/workflows/ci.yml", 5, 0),
+    (".github/workflows/ci.yml", 2, 0),
     (".github/workflows/codeql.yml", 1, 0),
     (".github/workflows/ha-latest.yml", 3, 0),
     (".github/workflows/card-smoke.yml", 3, 0),
