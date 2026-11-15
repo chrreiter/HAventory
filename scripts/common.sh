@@ -20,14 +20,13 @@ UV="$(find_uv || true)"
 
 # Prefer `uv run` (the locked dev environment), else the bare tool.
 py()        { if [ -n "${UV:-}" ]; then "$UV" run python "$@"; else python3 "$@"; fi; }
-pytest_run(){ if [ -n "${UV:-}" ]; then "$UV" run pytest "$@"; else python3 -m pytest "$@"; fi; }
 ruff_run()  { if [ -n "${UV:-}" ]; then "$UV" run ruff "$@"; else ruff "$@"; fi; }
 mypy_run()  { if [ -n "${UV:-}" ]; then "$UV" run mypy "$@"; else mypy "$@"; fi; }
 
-# The environment the in-process suite runs in and mypy resolves imports from:
-# the interpreter series the declared HA floor runs on, and the real
-# Home Assistant that requirements-integration.txt pins to the declared floor.
-# Kept apart from the offline `.venv`, which must stay Home-Assistant-free.
+# The environment the tests run in and mypy resolves imports from: the
+# interpreter series the declared HA floor runs on, and the real Home Assistant
+# that requirements-integration.txt pins to the declared floor. Kept apart from
+# the locked `.venv`, which holds the lint and hook tooling.
 INT_VENV="$REPO_ROOT/.venv-integration"
 INT_VENV_PYTHON="$INT_VENV/bin/python"
 
@@ -44,6 +43,6 @@ ensure_integration_venv() {
     info "Creating integration venv at $INT_VENV..."
     "$UV" venv --python "$py_version" "$INT_VENV"
   fi
-  info 'Installing integration deps (phacc + HA core) from requirements-integration.txt...'
+  info 'Installing the test environment (Home Assistant and its test harness) from requirements-integration.txt...'
   "$UV" pip install --python "$INT_VENV_PYTHON" -r "$REPO_ROOT/requirements-integration.txt"
 }

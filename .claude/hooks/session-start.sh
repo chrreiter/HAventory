@@ -5,7 +5,7 @@
 #   * syncs the backend env from pyproject.toml + uv.lock (`uv sync`), falling
 #     back to venv + `pip install --group dev` only where uv is absent
 #   * runs `npm ci` in cards/haventory-card only when node_modules is absent
-#   * provisions the separate integration env (.venv-integration), best-effort
+#   * provisions the test env (.venv-integration), best-effort
 #
 # Runs synchronously so tests/lint/build are ready before the agent starts.
 set -euo pipefail
@@ -81,34 +81,32 @@ else
   log "npm not found; skipping frontend bootstrap"
 fi
 
-# --- Integration test harness (in-process HA via phacc) --------------------
-# The second test mode (tests/integration/) runs against a REAL Home Assistant
-# core, which needs Python 3.14 and a full HA install (phacc, from
-# requirements-integration.txt). It uses a DEDICATED env (.venv-integration) so
-# the offline `.venv` above stays Home-Assistant-free.
+# --- Test environment (the real Home Assistant) ----------------------------
+# Every backend test runs against a real Home Assistant core, which needs
+# Python 3.14 and a full HA install (from requirements-integration.txt), in its
+# own env (.venv-integration) beside the locked `.venv` above.
 #
-# This is heavy and needs a Python 3.14 interpreter plus network for the HA core,
-# so it is strictly best-effort: it must NEVER fail session bootstrap (e.g. in
-# restricted-egress sandboxes that can't fetch Python 3.14). The offline suite is
-# unaffected either way. Run the suite with: scripts/test.sh
+# This is heavy and needs network for the HA core, so it is best-effort: it must
+# NEVER fail session bootstrap (e.g. in restricted-egress sandboxes).
+# scripts/test.sh builds it on first use too.
 INT_VENV=".venv-integration"
 if [ "$POSIX_VENV_HOST" -eq 0 ]; then
-  log "Windows shell detected; skipping the integration env (scripts/test.sh is POSIX-only)"
+  log "Windows shell detected; skipping the test env (scripts/test.sh is POSIX-only)"
 elif ! command -v uv >/dev/null 2>&1; then
-  log "uv not found; skipping integration env bootstrap"
+  log "uv not found; skipping the test env bootstrap"
 elif [ -x "$INT_VENV/bin/python" ]; then
-  log "integration env present; skipping"
+  log "test env present; skipping"
 else
-  log "provisioning integration test env ($INT_VENV) — best-effort"
+  log "provisioning the test env ($INT_VENV) — best-effort"
   if uv python install 3.14 >/dev/null 2>&1 \
      && uv venv --python 3.14 "$INT_VENV" >/dev/null 2>&1 \
      && uv pip install --python "$INT_VENV/bin/python" \
           -r requirements-integration.txt >/dev/null 2>&1; then
-    log "integration env ready; run scripts/test.sh"
+    log "test env ready; run scripts/test.sh"
   else
     # Only reachable when this run just tried to build the env, so this removes a
     # half-provisioned directory rather than a working one somebody else made.
-    log "integration env unavailable (needs Python 3.14 + network for HA core); skipping"
+    log "test env unavailable (needs Python 3.14 + network for HA core); skipping"
     rm -rf "$INT_VENV" 2>/dev/null || true
   fi
 fi

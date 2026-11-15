@@ -101,11 +101,10 @@ PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
     (".github/workflows/card-smoke.yml", 3, 0),
     ("docs/developing.md", 1, 0),
     ("requirements-integration.txt", 2, 0),
-    ("scripts/test.sh", 2, 0),
     ("scripts/common.sh", 2, 0),
     (".devcontainer/Dockerfile", 1, 0),
     (".devcontainer/develop.sh", 2, 0),
-    (".claude/hooks/session-start.sh", 8, 0),
+    (".claude/hooks/session-start.sh", 6, 0),
     (".claude/skills/run-haventory/SKILL.md", 1, 0),
     (".claude/skills/test-haventory/SKILL.md", 3, 0),
 )

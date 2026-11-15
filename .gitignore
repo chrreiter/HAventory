@@ -2,7 +2,7 @@
 __pycache__/
 *.py[codz]
 
-# Virtual environments: .venv is the offline one, .venv-integration the one
+# Virtual environments: .venv is the locked tooling one, .venv-integration the one
 # scripts/test.sh builds and .venv-ha the one .devcontainer/develop.sh
 # runs from, so Home Assistant never lands in .venv.
 .venv

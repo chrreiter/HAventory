@@ -5,7 +5,7 @@
 # uv) with the integration symlinked in, so edits are picked up on restart. This
 # is current stable, not the declared floor. Requires network access.
 #
-# HA lives in .venv-ha/ (git-ignored), never in the offline .venv, and persists
+# HA lives in .venv-ha/ (git-ignored), never in the locked .venv, and persists
 # across runs so the component requirements it installs at startup are not
 # reinstalled each time. Delete .venv-ha/ to move to a newer stable.
 #

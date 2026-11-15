@@ -1,23 +1,15 @@
 #!/usr/bin/env bash
-# Run the tests against a real in-process Home Assistant core: tests/integration/
-# and every top-level test file that does not need the offline stubs.
+# Run every backend test against the real Home Assistant at the declared floor.
 #
-# Loads a real Home Assistant core via pytest-homeassistant-custom-component
-# (phacc), so it needs:
-#   * Python 3.14 (the declared HA runtime; the integration source is 3.14-only), and
-#   * the phacc harness from requirements-integration.txt.
-#
-# A dedicated .venv-integration keeps the offline `.venv` Home-Assistant-free.
-# Extra args are forwarded to pytest.
+# Builds or refreshes .venv-integration from requirements-integration.txt (a
+# no-op once it is current), then runs pytest there. Extra args are forwarded
+# to pytest, e.g. `scripts/test.sh --cov=custom_components/haventory`.
 source "$(dirname "$0")/common.sh"
 
 cd "$REPO_ROOT"
 
 ensure_integration_venv
 
-# phacc needs plugin autoload on; do not inherit the offline flag.
-unset PYTEST_DISABLE_PLUGIN_AUTOLOAD
-
-info 'Running in-process HA integration tests (phacc)...'
-"$INT_VENV_PYTHON" -m pytest -q -o asyncio_mode=auto tests "$@"
-ok 'Integration tests OK'
+info 'Running the backend tests...'
+"$INT_VENV_PYTHON" -m pytest -q tests "$@"
+ok 'Backend tests OK'
