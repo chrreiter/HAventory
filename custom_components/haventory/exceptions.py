@@ -8,7 +8,7 @@ any other error a service raises, which an automation author cannot act on.
 carry. A refusal a person can meet also names a translation key and its
 placeholders: Home Assistant's frontend renders a service error from
 ``strings.json`` → ``exceptions`` by them, and the card from its own catalog,
-which ``tests/test_exception_translations_offline.py`` holds to the same keys.
+which ``tests/test_exception_translations.py`` holds to the same keys.
 
 The taxonomy also owns how each error is logged, so the WebSocket and service
 boundaries agree on severity.

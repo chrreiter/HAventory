@@ -27,12 +27,14 @@ listeners first and then asks for the step:
 * ``ws_connect`` opens a WebSocket connection: ``send`` answers with the result
   envelope, and the event frames that arrived on the way are kept on the client.
 * ``call_service`` calls a ``haventory.*`` service and returns its response.
-* ``fail_next_save`` makes the next save of the integration's store raise.
+* ``fail_next_save`` makes the next save of the integration's store raise, and
+  can hold it open while a second write queues behind it.
 * ``add_areas`` creates areas in Home Assistant's own registry.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -210,20 +212,34 @@ def fail_next_save(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     for its own key, so Home Assistant's registries keep saving. ``Store``
     catches the error a full disk raises and only logs it, so the default is a
     bare ``OSError``: what ``Store`` lets through to the integration.
+
+    ``started`` and ``until`` hold that save open, for a test that lines a second
+    write up behind it: ``started`` is set as the save begins, and the save waits
+    for ``until`` before it raises.
     """
 
-    pending: list[BaseException] = []
+    pending: list[tuple[BaseException, asyncio.Event | None, asyncio.Event | None]] = []
     real_save = Store.async_save
 
     async def _save(self: Store[Any], data: Any) -> None:
         if self.key == STORAGE_KEY and pending:
-            raise pending.pop(0)
+            error, started, until = pending.pop(0)
+            if started is not None:
+                started.set()
+            if until is not None:
+                await until.wait()
+            raise error
         await real_save(self, data)
 
     monkeypatch.setattr(Store, "async_save", _save)
 
-    def _arm(error: BaseException | None = None) -> None:
-        pending.append(error if error is not None else OSError("disk full"))
+    def _arm(
+        error: BaseException | None = None,
+        *,
+        started: asyncio.Event | None = None,
+        until: asyncio.Event | None = None,
+    ) -> None:
+        pending.append((error if error is not None else OSError("disk full"), started, until))
 
     return _arm
 

@@ -1,55 +1,57 @@
 """Integration: persistence round-trips through the real HA Store.
 
-Confirms a mutation is written through Home Assistant's ``Store`` backend and can
-be read back by a fresh store instance — the real serialize/deserialize path,
-not the offline in-memory stub. The unload flush and the reload after it are
-here because only a real core sequences an entry's teardown around them.
+What a save writes, and the unload flush and the reload after it, which only a
+real core sequences around an entry's teardown. What a failed save leaves
+behind is in ``test_failed_save_undo.py``.
 """
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 from custom_components.haventory.const import DOMAIN
+from custom_components.haventory.repository import Repository
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import (
     CURRENT_SCHEMA_VERSION,
     STORAGE_KEY,
-    DomainStore,
-    async_persist_immediate,
+    STORE_COLLECTIONS,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
-async def test_store_write_and_reload_roundtrip(hass: HomeAssistant, hass_storage: dict) -> None:
-    """An item survives a write to Store and a reload by a new store instance."""
+async def test_store_write_and_reload_roundtrip(
+    hass: HomeAssistant, hass_storage: dict, setup_entry, ws_connect
+) -> None:
+    """A save writes every stored collection whole, and nothing beyond them and the stamp.
 
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
+    A load keeps whatever the file holds, but a save writes only what the
+    repository emits, so a collection the repository forgot to emit survives a
+    restart and is erased by the first save after it, with nothing logged.
+    """
+
+    source = Repository()
+    garage = source.create_location(name="Garage")
+    source.create_item({"name": "Drill", "location_id": str(garage.id)})
+    source.create_status({"slug": "lent_out", "label": "Lent out"})
+    seeded = source.export_state()
+    assert all(seeded[name] for name in STORE_COLLECTIONS), "seed every stored collection"
+
+    entry = await setup_entry(stored=source)
+    ws = await ws_connect()
+    assert (await ws.send("haventory/item/create", name="Saw"))["success"] is True
+
+    saved = hass_storage[STORAGE_KEY]["data"]
+    assert set(saved) == {"schema_version", *STORE_COLLECTIONS}
+    assert saved["schema_version"] == CURRENT_SCHEMA_VERSION
+    for name in STORE_COLLECTIONS:
+        assert set(saved[name]) >= set(seeded[name]), name
+
+    assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
-
-    quantity = 7
-    repo = find_runtime(hass).repository
-    created = repo.create_item({"name": "Flashlight", "quantity": quantity})
-
-    # Persist synchronously through the real HA Store backend.
-    await async_persist_immediate(hass)
-
-    # The write landed in HA's storage backend (mocked by hass_storage).
-    assert STORAGE_KEY in hass_storage
-    persisted = hass_storage[STORAGE_KEY]["data"]
-    assert persisted["schema_version"] == CURRENT_SCHEMA_VERSION
-    assert any(i["name"] == "Flashlight" for i in persisted["items"].values())
-
-    # A brand-new store instance reads the same payload back off the backend.
-    reloaded = await DomainStore(hass, key=STORAGE_KEY, version=CURRENT_SCHEMA_VERSION).async_load()
-    assert reloaded["schema_version"] == CURRENT_SCHEMA_VERSION
-    reloaded_item = reloaded["items"][str(created.id)]
-    assert reloaded_item["name"] == "Flashlight"
-    assert reloaded_item["quantity"] == quantity
+    items = (await ws.send("haventory/item/list"))["result"]["items"]
+    assert sorted(i["name"] for i in items) == ["Drill", "Saw"]
+    statuses = (await ws.send("haventory/status/list"))["result"]
+    assert "lent_out" in {s["slug"] for s in statuses}
 
 
 async def test_the_unload_flush_reaches_the_store_it_is_giving_up(
@@ -102,34 +104,3 @@ async def test_setup_after_unload_reads_back_what_the_flush_wrote(
     assert second_runtime is not first_runtime
     names = [item.name for item in second_runtime.repository.list_items()["items"]]
     assert names == ["Across the reload"]
-
-
-async def test_a_write_whose_save_failed_is_not_saved_by_the_next_one(
-    hass: HomeAssistant, hass_storage: dict, hass_ws_client
-) -> None:
-    """The real `Store` raises, the write is undone, and the next save omits it.
-
-    `Store` itself catches `WriteError`, the error a full disk raises, and only
-    logs it, so the failure is injected below that catch as a bare `OSError`,
-    which `Store.async_save` lets through to the integration.
-    """
-
-    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
-    entry.add_to_hass(hass)
-    assert await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    client = await hass_ws_client(hass)
-
-    with patch.object(Store, "_async_write_data", side_effect=OSError("disk full")):
-        await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Lost"})
-        failed = await client.receive_json()
-    assert failed["success"] is False
-    assert failed["error"]["code"] == "storage_error"
-    assert find_runtime(hass).repository.list_items()["items"] == []
-
-    await client.send_json({"id": 2, "type": "haventory/item/create", "name": "Kept"})
-    kept = await client.receive_json()
-    assert kept["success"] is True
-
-    stored = hass_storage[STORAGE_KEY]["data"]
-    assert [item["name"] for item in stored["items"].values()] == ["Kept"]

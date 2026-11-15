@@ -12,10 +12,11 @@ import ast
 import inspect
 import textwrap
 from collections.abc import Callable
+from pathlib import Path
 from types import ModuleType
 from typing import Any
 
-from custom_components.haventory import ops, services, ws
+from custom_components.haventory import events, ops, services, ws
 from custom_components.haventory.repository import Repository
 
 COMMITS = {"commit", "commit_batch"}
@@ -156,15 +157,22 @@ def test_every_op_is_reached_by_a_surface() -> None:
     assert sorted(set(ops.OPS) - literals) == []
 
 
-def test_detector_reports_a_direct_persist_call() -> None:
-    """The scan names a handler that persists itself, so a pass is not a blind one."""
+def test_nothing_but_events_py_reaches_the_broadcaster() -> None:
+    """One door: a write path announces through here, or subscribers hear nothing.
 
-    src = (
-        "async def ws_bad(hass, conn, msg):\n"
-        "    await async_persist_repo(hass)\n"
-        "    notify_item_created(x)\n"
-        "    repo.create_item(p)\n"
-    )
-    assert _forbidden(_reached(ws.ws_ping, ws, src)) == {
-        "async_persist_repo", "notify_item_created", "create_item",
-    }  # fmt: skip
+    A module calling `subscriptions.broadcast_event` itself would reach a card
+    without firing the bus event, diffing the low-stock set or repainting the
+    entities beside it, so the same edit would look different depending on which
+    surface was watching. Read from the source rather than by importing.
+    """
+
+    package = Path(events.__file__).parent
+    offenders = []
+    for path in sorted(package.glob("*.py")):
+        if path.name in {"events.py", "subscriptions.py"}:
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            if "broadcast_event(" in line or "broadcast_counts(" in line:
+                offenders.append(f"{path.name}:{number}: {line.strip()}")
+
+    assert offenders == [], "announce through events.py: it covers the bus and the entities too"

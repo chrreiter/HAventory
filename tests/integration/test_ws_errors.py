@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 from custom_components.haventory import ops
+from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.ws import UNEXPECTED_ERROR_MESSAGE
 from homeassistant.core import HomeAssistant
 
@@ -243,3 +244,74 @@ async def test_a_failed_write_is_not_announced(
 
     assert res["error"]["code"] == "storage_error", res
     assert ws.event_frames == []
+
+
+_UNKNOWN_ID = "6f1c2b9e-3f7a-4c1d-9b2e-8a7d6c5b4a3f"
+
+
+async def test_a_conflict_names_its_key_and_placeholders_on_the_wire(
+    setup_entry, ws_connect
+) -> None:
+    """The card words a refusal from `translation_key`, filling its placeholders as strings."""
+
+    await setup_entry()
+    ws = await ws_connect()
+    item = (await ws.send("haventory/item/create", name="Drill"))["result"]
+
+    res = await ws.send(
+        "haventory/item/update",
+        item_id=item["id"],
+        name="Drill 2",
+        expected_version=item["version"] + 5,
+    )
+
+    error = res["error"]
+    assert error["code"] == "conflict", res
+    assert error["message"].startswith("version conflict")
+    assert error["translation_domain"] == DOMAIN
+    assert error["translation_key"] == "version_conflict"
+    assert error["translation_placeholders"] == {
+        "expected": str(item["version"] + 5),
+        "actual": str(item["version"]),
+    }
+
+
+async def test_a_refusal_with_no_key_carries_only_its_message(setup_entry, ws_connect) -> None:
+    await setup_entry()
+    ws = await ws_connect()
+
+    res = await ws.send("haventory/subscribe", topic="nope")
+
+    assert res["error"]["code"] == "validation_error", res
+    assert "translation_key" not in res["error"]
+
+
+async def test_a_refused_bulk_row_names_its_key(setup_entry, ws_connect) -> None:
+    await setup_entry()
+    ws = await ws_connect()
+
+    res = await ws.send(
+        "haventory/items/bulk",
+        operations=[{"op_id": "a", "kind": "item_delete", "payload": {"item_id": _UNKNOWN_ID}}],
+    )
+
+    row = res["result"]["results"]["a"]
+    assert row["success"] is False, res
+    assert row["error"]["translation_key"] == "item_not_found"
+
+
+async def test_an_invalid_import_names_its_key_and_keys_each_row_it_can(
+    setup_entry, ws_connect
+) -> None:
+    await setup_entry()
+    ws = await ws_connect()
+    document = (await ws.send("haventory/export"))["result"]
+    document["items"] = [{"id": _UNKNOWN_ID, "name": "", "quantity": -1}]
+
+    res = await ws.send("haventory/import/execute", document=document)
+
+    error = res["error"]
+    assert error["translation_key"] == "import_document_invalid", res
+    rows: list[dict[str, Any]] = error["data"]["errors"]
+    assert {"name_required", "quantity_negative"} <= {row.get("translation_key") for row in rows}
+    assert all(row["message"] for row in rows)

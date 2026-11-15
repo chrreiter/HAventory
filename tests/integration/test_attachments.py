@@ -22,6 +22,7 @@ import pytest
 from aiohttp import FormData
 from custom_components.haventory import media
 from custom_components.haventory.const import (
+    CORRUPT_BACKUP_STORAGE_KEY,
     DOMAIN,
     MEDIA_NAME_TOKEN_PARAM,
     MEDIA_SUBDIR,
@@ -784,6 +785,61 @@ async def test_setup_sweeps_a_file_no_metadata_references(
     await setup_entry()
 
     assert not orphan.exists()
+
+
+#: What the corrupt-store backup holds a row for, each named a different way: a
+#: key that is not a uuid, a key that differs from the `id` inside the row (both
+#: name the item), and a row with no body.
+BACKUP_ROWS = {
+    "not-a-uuid": {"id": "not-a-uuid", "name": "Broken"},
+    "keyed": {"id": "named-inside", "name": "Moved"},
+    "no-body": None,
+}
+BACKUP_HELD_DIRS = ("not-a-uuid", "keyed", "named-inside", "no-body")
+
+
+@pytest.mark.parametrize(
+    ("backup", "kept"),
+    [
+        pytest.param(
+            {"schema_version": CURRENT_SCHEMA_VERSION, "items": BACKUP_ROWS, "locations": {}},
+            True,
+            id="rows_of_every_shape",
+        ),
+        pytest.param(None, False, id="no_backup"),
+        pytest.param({"items": ["not", "a", "mapping"]}, False, id="items_is_a_list"),
+        pytest.param(["not a dict"], False, id="not_a_dict"),
+    ],
+)
+async def test_setup_keeps_the_files_of_every_item_the_backup_holds_a_row_for(
+    hass: HomeAssistant, hass_storage: dict, setup_entry, backup: object, kept: bool
+) -> None:
+    """The rows the build refused are the point: their files are what a restore needs."""
+
+    item_id = "5c4b3a29-1d0e-4f8a-9b7c-6d5e4f3a2b1c"
+    hass_storage[STORAGE_KEY] = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {
+            "schema_version": CURRENT_SCHEMA_VERSION,
+            "items": {item_id: {"id": item_id, "name": "Drill"}},
+            "locations": {},
+        },
+    }
+    if backup is not None:
+        hass_storage[CORRUPT_BACKUP_STORAGE_KEY] = {
+            "version": 1,
+            "key": CORRUPT_BACKUP_STORAGE_KEY,
+            "data": backup,
+        }
+    files = [media.media_root(hass) / name / "some-attachment.png" for name in BACKUP_HELD_DIRS]
+    for path in files:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(PNG_BYTES)
+
+    await setup_entry()
+
+    assert [path.exists() for path in files] == [kept] * len(files)
 
 
 async def test_setup_keeps_every_file_when_the_store_holds_no_items(

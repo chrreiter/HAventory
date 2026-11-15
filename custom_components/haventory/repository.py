@@ -1187,7 +1187,8 @@ class Repository:
         """The storage payload: ``items``, ``locations`` and ``statuses``, id-keyed.
 
         ``async_persist_repo`` saves exactly this, so a collection omitted here
-        is erased by the next save; ``tests/test_storage_offline.py`` pins that.
+        is erased by the next save; ``test_store_write_and_reload_roundtrip`` in
+        ``tests/integration/test_persistence.py`` pins that.
         """
 
         return {

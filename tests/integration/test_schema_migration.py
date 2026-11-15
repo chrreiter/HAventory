@@ -1,20 +1,22 @@
-"""Integration: the two schema refusals against real Home Assistant.
+"""Integration: what setup does with each schema stamp a stored file can carry.
 
-Seeds HA's storage backend with a store this build will not read — one stamped
-before the schema was collapsed, one stamped above every number this project
-ever used — and confirms each stops setup with `ConfigEntryError`, carrying the
-wording that names its own way out, with the file left exactly as it was. Abort
-instead of retry is HA's own dispatch, which the offline stub cannot show.
+Seeds HA's storage backend and sets the entry up through `hass.config_entries`. A
+readable stamp loads, and is restamped only when it was below the current one.
+A stamp this build will not read, or a payload that is no mapping, ends in the
+entry state HA gives that failure, with the file left exactly as it was. Abort
+instead of retry is HA's own dispatch.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from copy import deepcopy
 
 import pytest
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
+from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -22,6 +24,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 ITEM_ID = str(uuid.uuid4())
 FLAGGED_ITEM_ID = str(uuid.uuid4())
+
+HUGE_STAMP = "x" * 5000
 
 #: One above every stamp this project used before the collapse: a store only a
 #: genuinely newer build could have written.
@@ -44,6 +48,22 @@ def _store_data(schema_version: int) -> dict:
         },
         "locations": {},
     }
+
+
+def _seed_store(hass_storage: dict, data: object) -> None:
+    """Put ``data`` on disk under HAventory's key, exactly as written."""
+
+    hass_storage[STORAGE_KEY] = {"version": 1, "key": STORAGE_KEY, "data": data}
+
+
+async def _setup_expecting_failure(hass: HomeAssistant) -> MockConfigEntry:
+    """Set the entry up knowing it will not load, and hand it back to be read."""
+
+    entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id) is False
+    await hass.async_block_till_done()
+    return entry
 
 
 @pytest.mark.parametrize("stored_version", sorted(PRE_COLLAPSE_SCHEMA_VERSIONS))
@@ -84,6 +104,120 @@ async def test_a_store_from_a_newer_build_stops_setup_and_is_left_alone(
     assert entry.state is ConfigEntryState.SETUP_ERROR
     assert str(FROM_A_NEWER_BUILD) in entry.reason
     assert f"({CURRENT_SCHEMA_VERSION})" in entry.reason
+    assert find_runtime(hass) is None
 
     # Refusing means refusing to write: the file is what it was.
     assert hass_storage[STORAGE_KEY]["data"] == stored
+
+
+@pytest.mark.parametrize(
+    ("extra", "rewritten"),
+    [
+        pytest.param({}, True, id="absent"),
+        pytest.param({"schema_version": 0}, True, id="zero"),
+        # A key a dev build wrote: kept as is, and no reason to rewrite the file.
+        pytest.param(
+            {"schema_version": CURRENT_SCHEMA_VERSION, "_generation": 17},
+            False,
+            id="stale_generation",
+        ),
+        pytest.param({"schema_version": CURRENT_SCHEMA_VERSION}, False, id="current"),
+    ],
+)
+async def test_a_store_at_or_below_the_current_stamp_loads(
+    hass_storage: dict, setup_entry, ws_connect, extra: dict, rewritten: bool
+) -> None:
+    """An older or unstamped file loads and is restamped; a current one is not rewritten.
+
+    `hass_storage` replaces its entry on every write, so the seeded object still
+    being there means nothing wrote the store.
+    """
+
+    rows = {ITEM_ID: {"id": ITEM_ID, "name": "Hammer", "quantity": 2}}
+    seeded = {
+        "version": 1,
+        "key": STORAGE_KEY,
+        "data": {**extra, "items": deepcopy(rows), "locations": {}},
+    }
+    hass_storage[STORAGE_KEY] = seeded
+
+    await setup_entry()
+    ws = await ws_connect()
+    listed = await ws.send("haventory/item/list")
+
+    assert [item["name"] for item in listed["result"]["items"]] == ["Hammer"]
+    if rewritten:
+        assert hass_storage[STORAGE_KEY] is not seeded
+        data = hass_storage[STORAGE_KEY]["data"]
+        assert data["schema_version"] == CURRENT_SCHEMA_VERSION
+        assert data["items"] == rows
+    else:
+        assert hass_storage[STORAGE_KEY] is seeded
+
+
+@pytest.mark.parametrize(
+    "stamp",
+    [
+        pytest.param(None, id="none"),
+        pytest.param("4", id="numeric_string"),
+        pytest.param("abc", id="word"),
+        pytest.param(4.0, id="float"),
+        pytest.param(True, id="bool"),
+        pytest.param([4], id="list"),
+        pytest.param({"v": 4}, id="dict"),
+        pytest.param(HUGE_STAMP, id="huge"),
+    ],
+)
+async def test_an_unreadable_schema_version_stops_the_entry_with_its_own_message(
+    hass: HomeAssistant, hass_storage: dict, stamp: object
+) -> None:
+    """A hand-edited store says nothing about its schema; guessing is the bug.
+
+    The message quotes the stamp, so `"4"` is told from `4`, and cuts a huge one
+    short instead of pasting it into the entry's error state.
+    """
+
+    data = {"schema_version": stamp, "items": {}, "locations": {}}
+    _seed_store(hass_storage, deepcopy(data))
+
+    entry = await _setup_expecting_failure(hass)
+
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert "corrupt schema_version" in entry.reason
+    if stamp is HUGE_STAMP:
+        assert stamp not in entry.reason
+        assert "…" in entry.reason
+        assert len(entry.reason) < len(stamp)
+    else:
+        assert repr(stamp) in entry.reason
+    assert find_runtime(hass) is None
+    assert hass_storage[STORAGE_KEY]["data"] == data
+
+
+async def test_a_store_that_cannot_be_read_right_now_is_retried_instead(
+    hass: HomeAssistant, hass_storage: dict, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The counter-case that gives the refusals above their meaning.
+
+    A payload that is not a mapping at all is a plain storage failure, not a
+    verdict about which schema wrote it, so it takes the retry path. Without
+    this case "raises ConfigEntryError" and "raises ConfigEntryNotReady" would
+    be indistinguishable from the outside.
+    """
+
+    caplog.set_level(logging.ERROR)
+    _seed_store(hass_storage, ["not", "a", "mapping"])
+
+    entry = await _setup_expecting_failure(hass)
+
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert find_runtime(hass) is None
+    # Home Assistant's formatter drops record attributes, so the context a log
+    # reader needs is in the message text.
+    logged = [
+        record.getMessage()
+        for record in caplog.records
+        if record.levelno == logging.ERROR and "op=migrate" in record.getMessage()
+    ]
+    assert len(logged) == 1
+    assert STORAGE_KEY in logged[0]

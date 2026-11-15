@@ -11,10 +11,15 @@ every registered service through it and assert the repository actually changed.
 
 from __future__ import annotations
 
+import json
 from datetime import date
+from pathlib import Path
+from typing import Any
 
 import pytest
 import voluptuous as vol
+import yaml
+from custom_components.haventory import services as services_mod
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.exceptions import NotFoundError, StorageError, ValidationError
 from custom_components.haventory.repository import Repository
@@ -33,12 +38,6 @@ DUE_DATE = "2030-01-01"
 async def _call(hass: HomeAssistant, service: str, data: dict) -> None:
     await hass.services.async_call(DOMAIN, service, data, blocking=True)
     await hass.async_block_till_done()
-
-
-def _only_location_id(repo: Repository) -> str:
-    locations = [str(loc.id) for loc in repo.iter_locations()]
-    assert len(locations) == 1, locations
-    return locations[0]
 
 
 def _only_item_id(repo: Repository) -> str:
@@ -68,62 +67,79 @@ async def test_all_services_are_registered(hass: HomeAssistant, setup_entry) -> 
     }
 
 
-async def test_every_service_dispatches_its_handler(hass: HomeAssistant, setup_entry) -> None:
-    """Calling each service through HA runs the handler and mutates the repository.
+async def test_every_service_dispatches_its_handler(
+    hass: HomeAssistant, setup_entry, call_service
+) -> None:
+    """Calling each service through HA runs the handler and answers with the entity.
 
     One walk covers the whole catalog: a location is created, renamed and finally
     deleted around an item that is created, edited, re-quantified, checked out and
-    back in, moved and deleted. Every assertion would fail if HA had dispatched the
-    handler to the executor instead of awaiting it.
+    back in, moved and deleted. Each answer is the envelope `docs/data_shapes.md`
+    gives the WebSocket surface (the whole entity, so the next call has the
+    `version` its `expected_version` needs), and every answer would be missing if
+    HA had dispatched the handler to the executor instead of awaiting it.
     """
 
     await setup_entry()
     repo = find_runtime(hass).repository
 
-    await _call(hass, "location_create", {"name": "Garage"})
-    location_id = _only_location_id(repo)
-    assert repo.get_location(location_id).name == "Garage"
+    async def item_step(service: str, **data: Any) -> dict:
+        response = await call_service(service, **data)
+        assert set(response) == {"item"}, service
+        assert response["item"]["id"] == item_id, service
+        assert response["item"]["version"] == repo.get_item(item_id).version, service
+        return response["item"]
 
-    await _call(hass, "location_update", {"location_id": location_id, "name": "Workshop"})
-    assert repo.get_location(location_id).name == "Workshop"
+    created_location = await call_service("location_create", name="Garage")
+    assert set(created_location) == {"location"}
+    location_id = created_location["location"]["id"]
 
-    await _call(
-        hass,
-        "item_create",
-        {"name": "Hammer", "quantity": 1, "location_id": location_id, "tags": ["tools"]},
+    renamed = await call_service("location_update", location_id=location_id, name="Workshop")
+    assert renamed["location"]["id"] == location_id
+    assert renamed["location"]["name"] == "Workshop"
+
+    created = await call_service(
+        "item_create", name="Hammer", quantity=1, location_id=location_id, tags=["tools"]
     )
-    item_id = _only_item_id(repo)
-    item = repo.get_item(item_id)
-    assert item.name == "Hammer"
-    assert item.tags == ("tools",)
-    assert item.location_path.display_path == "Workshop"
+    item_id = created["item"]["id"]
+    assert created["item"]["tags"] == ["tools"]
+    assert created["item"]["location_path"]["display_path"] == "Workshop"
 
-    await _call(hass, "item_update", {"item_id": item_id, "description": "Claw hammer"})
-    assert repo.get_item(item_id).description == "Claw hammer"
+    assert (await item_step("item_update", item_id=item_id, description="Claw hammer"))[
+        "description"
+    ] == "Claw hammer"
+    adjusted, reset = 5, 2
+    assert (await item_step("item_adjust_quantity", item_id=item_id, delta=4))[
+        "quantity"
+    ] == adjusted
+    assert (await item_step("item_set_quantity", item_id=item_id, quantity=reset))[
+        "quantity"
+    ] == reset
 
-    adjusted_quantity = 5
-    await _call(hass, "item_adjust_quantity", {"item_id": item_id, "delta": 4})
-    assert repo.get_item(item_id).quantity == adjusted_quantity
+    checked_out = await item_step("item_check_out", item_id=item_id, due_date=DUE_DATE)
+    assert (checked_out["checked_out"], checked_out["due_date"]) == (True, DUE_DATE)
+    assert (await item_step("item_check_in", item_id=item_id))["checked_out"] is False
 
-    set_quantity = 2
-    await _call(hass, "item_set_quantity", {"item_id": item_id, "quantity": set_quantity})
-    assert repo.get_item(item_id).quantity == set_quantity
+    assert (await item_step("item_move", item_id=item_id, new_location_id=None))[
+        "location_id"
+    ] is None
 
-    await _call(hass, "item_check_out", {"item_id": item_id, "due_date": DUE_DATE})
-    checked_out = repo.get_item(item_id)
-    assert checked_out.checked_out is True
-    assert checked_out.due_date == DUE_DATE
+    await item_step(
+        "item_update",
+        item_id=item_id,
+        reminder_date="2026-09-01",
+        reminder_interval={"unit": "months", "count": 3},
+    )
+    await item_step("reminder_bump", item_id=item_id)
 
-    await _call(hass, "item_check_in", {"item_id": item_id})
-    assert repo.get_item(item_id).checked_out is False
-
-    await _call(hass, "item_move", {"item_id": item_id, "new_location_id": None})
-    assert repo.get_item(item_id).location_id is None
-
-    await _call(hass, "item_delete", {"item_id": item_id})
+    removed_item = await call_service("item_delete", item_id=item_id)
+    assert set(removed_item) == {"item"}
+    assert removed_item["item"]["id"] == item_id
     assert repo.get_counts()["items_total"] == 0
 
-    await _call(hass, "location_delete", {"location_id": location_id})
+    removed_location = await call_service("location_delete", location_id=location_id)
+    assert set(removed_location) == {"location"}
+    assert removed_location["location"]["id"] == location_id
     assert repo.get_counts()["locations_total"] == 0
 
 
@@ -172,44 +188,71 @@ async def test_service_call_after_removal_refuses(hass: HomeAssistant, hass_stor
     assert [i["name"] for i in hass_storage[STORAGE_KEY]["data"]["items"].values()] == ["Torch"]
 
 
-async def test_service_call_rejects_a_bad_payload(hass: HomeAssistant, setup_entry) -> None:
-    """HA validates against the registered schema before the handler runs."""
+async def test_service_call_rejects_a_bad_payload(
+    hass: HomeAssistant, setup_entry, call_service
+) -> None:
+    """HA's schema refuses a malformed call; what passes it, the model layer refuses.
+
+    An action is typed by hand, and the refusal is all its author is shown, so
+    the message has to name the field.
+    """
 
     await setup_entry()
     repo = find_runtime(hass).repository
+    item_id = (await call_service("item_create", name="Boiler"))["item"]["id"]
 
-    # ``item_create`` requires a name; the registered schema rejects the call.
     with pytest.raises(vol.Invalid):
-        await _call(hass, "item_create", {"quantity": 1})
-
-    # A well-typed but domain-invalid value gets past the schema and is rejected
-    # by the model layer, which the handler re-raises.
+        await call_service("item_create", quantity=1)
     with pytest.raises(ValidationError):
-        await _call(hass, "item_create", {"name": "   "})
+        await call_service("item_create", name="   ")
+    with pytest.raises(ValidationError) as refusal:
+        await call_service("item_update", item_id=item_id, inspection_date="2026-02-30")
 
-    assert repo.get_counts()["items_total"] == 0
+    assert str(refusal.value) == "inspection_date must be a valid calendar date (YYYY-MM-DD)"
+    assert repo.get_item(item_id).inspection_date is None
+    assert repo.get_counts()["items_total"] == 1
 
 
 async def test_services_answer_when_the_caller_asks_for_a_response(
-    hass: HomeAssistant, setup_entry
+    hass: HomeAssistant, setup_entry, hass_ws_client
 ) -> None:
     """``return_response`` hands back the entity, so a script can chain calls.
 
-    ``supports_response`` lives in the real service registry — the offline stub
-    has none, so nothing about this classification is observable there.
+    The first call goes over a WebSocket as the frontend makes it, so Home
+    Assistant's own JSON encoding is what checks the response: a payload with a
+    date, a tuple or a UUID in it fails there and nowhere a direct call looks.
     """
 
     await setup_entry()
     repo = find_runtime(hass).repository
 
-    created = await hass.services.async_call(
-        DOMAIN, "item_create", {"name": "Torch"}, blocking=True, return_response=True
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id(
+        {
+            "type": "call_service",
+            "domain": DOMAIN,
+            "service": "item_create",
+            "service_data": {
+                "name": "Torch",
+                "quantity": 2,
+                "tags": ["blue"],
+                "checked_out": True,
+                "due_date": DUE_DATE,
+                "inspection_date": "2031-06-30",
+                "custom_fields": {"sku": "A-1", "count": 3, "fragile": True},
+            },
+            "return_response": True,
+        }
     )
-    await hass.async_block_till_done()
+    answer = await client.receive_json()
+    assert answer["success"] is True, answer
+    created = answer["result"]["response"]
 
     assert set(created) == {"item"}
     item_id = created["item"]["id"]
     assert created["item"]["name"] == "Torch"
+    assert created["item"]["inspection_date"] == "2031-06-30"
+    assert created["item"]["custom_fields"] == {"sku": "A-1", "count": 3, "fragile": True}
     assert item_id == _only_item_id(repo)
     assert created["item"]["version"] == repo.get_item(item_id).version
 
@@ -253,7 +296,7 @@ async def test_a_caller_that_ignores_the_response_still_mutates(
 
 
 async def test_delete_answers_with_the_body_it_removed(hass: HomeAssistant, setup_entry) -> None:
-    """The response is the item as it last stood, and the repository is empty after."""
+    """The response is the item as it last stood; nothing is left, and a repeat refuses."""
 
     quantity = 3
     await setup_entry()
@@ -270,6 +313,10 @@ async def test_delete_answers_with_the_body_it_removed(hass: HomeAssistant, setu
     assert removed["item"]["name"] == "Torch"
     assert removed["item"]["quantity"] == quantity
     assert repo.get_counts()["items_total"] == 0
+
+    # A second delete is an error, not an empty envelope.
+    with pytest.raises(NotFoundError):
+        await _call(hass, "item_delete", {"item_id": item_id})
 
 
 async def test_reminders_are_reachable_from_an_automation(hass: HomeAssistant, setup_entry) -> None:
@@ -364,3 +411,60 @@ async def test_a_refused_service_call_reaches_a_german_caller_by_its_key(
         "Dieser Gegenstand wurde zwischenzeitlich geändert (erwartete Version 99, aktuell 1). "
         "Lade ihn neu und wiederhole die Änderung."
     )
+
+
+async def test_service_catalog_agrees_across_registration_yaml_and_strings(
+    hass: HomeAssistant, setup_entry
+) -> None:
+    """Every registered service, and every field it takes, is declared and translated.
+
+    Home Assistant renders a service in the UI from three files that nothing joins
+    up: the registry (the schema `services.py` registers), `services.yaml` (fields
+    and selectors) and `strings.json` (every piece of text). A service or field
+    missing from one still works over the API, so the gap shows as a bare key in
+    Developer Tools. `services.yaml` carries no text: HA falls back to it where a
+    translation is missing, so a name left there would render in every language.
+    Each field has an `example` (else the author gets an empty box with no hint
+    of its shape), and a field name has one selector across services (`tags` was
+    `text:` on create and `object:` on update).
+    """
+
+    await setup_entry()
+    package = Path(services_mod.__file__).parent
+    registered = hass.services.async_services_for_domain(DOMAIN)
+    documented = yaml.safe_load((package / "services.yaml").read_text(encoding="utf-8"))
+    translated = json.loads((package / "strings.json").read_text(encoding="utf-8"))["services"]
+
+    assert set(documented) == set(registered), "services.yaml and the registry disagree"
+    assert set(translated) == set(registered), "strings.json and the registry disagree"
+
+    selectors: dict[str, tuple[str, object]] = {}
+    for service, registration in registered.items():
+        accepted = {str(marker) for marker in registration.schema.schema}
+        declared = documented[service]["fields"]
+        entry = translated[service]
+
+        assert set(documented[service]) == {"fields"}, (
+            f"services.yaml's {service} carries text that belongs in strings.json"
+        )
+        assert set(declared) == accepted, (
+            f"services.yaml and the schema disagree about {service}'s fields"
+        )
+        for field, spec in declared.items():
+            assert {"name", "description"}.isdisjoint(spec), (
+                f"services.yaml's {service}.{field} carries text that belongs in strings.json"
+            )
+            assert "example" in spec, f"services.yaml's {service}.{field} shows no example"
+            first_service, first = selectors.setdefault(field, (service, spec["selector"]))
+            assert spec["selector"] == first, (
+                f"{service}.{field} and {first_service}.{field} declare different selectors"
+            )
+
+        assert entry.keys() == {"name", "description", "fields"}, service
+        assert all(entry[key].strip() for key in ("name", "description")), service
+        assert set(entry["fields"]) == accepted, (
+            f"strings.json and the schema disagree about {service}'s fields"
+        )
+        for field, text in entry["fields"].items():
+            assert text.keys() == {"name", "description"}, f"{service}.{field}"
+            assert all(value.strip() for value in text.values()), f"{service}.{field}"

@@ -12,6 +12,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
+import pytest
 from custom_components.haventory.const import DOMAIN, EVENT_ITEM_CHANGED, EVENT_LOW_STOCK
 from custom_components.haventory.runtime import find_runtime
 from homeassistant.core import Event, HomeAssistant
@@ -32,18 +33,38 @@ def _data(events: list[Event]) -> list[dict[str, Any]]:
 
 
 async def test_a_service_call_reaches_a_bus_listener(hass: HomeAssistant, setup_entry) -> None:
-    """`hass.bus.async_listen` sees `haventory_item_changed` from a service."""
+    """A bus listener sees `haventory_item_changed` from a service, with its documented keys."""
 
     await setup_entry()
     captured = async_capture_events(hass, EVENT_ITEM_CHANGED)
+    garage = (
+        await hass.services.async_call(
+            DOMAIN, "location_create", {"name": "Garage"}, blocking=True, return_response=True
+        )
+    )["location"]
 
     await hass.services.async_call(
-        DOMAIN, "item_create", {"name": "Torch", "quantity": CREATED_QUANTITY}, blocking=True
+        DOMAIN,
+        "item_create",
+        {
+            "name": "Torch",
+            "quantity": CREATED_QUANTITY,
+            "location_id": garage["id"],
+            "description": "Bright",
+            "custom_fields": {"colour": "red"},
+        },
+        blocking=True,
     )
     await hass.async_block_till_done()
 
     assert len(captured) == 1
     payload = _data(captured)[0]
+    assert set(payload) == {
+        "action", "item_id", "name", "quantity", "location_id", "location_path",
+        "effective_area_id", "version", "ts",
+    }  # fmt: skip
+    assert payload["location_id"] == garage["id"]
+    assert payload["location_path"] == "Garage"
     assert payload["action"] == "created"
     assert payload["name"] == "Torch"
     assert payload["quantity"] == CREATED_QUANTITY
@@ -90,11 +111,28 @@ async def test_low_stock_fires_entered_and_cleared(hass: HomeAssistant, setup_en
     assert _data(captured)[0]["item_id"] == item_id
     assert _data(captured)[0]["low_stock_threshold"] == LOW_THRESHOLD
 
+    # A further drop is still low stock: the set did not change, so nothing fires.
+    await hass.services.async_call(
+        DOMAIN, "item_set_quantity", {"item_id": item_id, "quantity": 0}, blocking=True
+    )
+    await hass.async_block_till_done()
+    assert [p["action"] for p in _data(captured)] == ["entered"]
+
     await hass.services.async_call(
         DOMAIN, "item_set_quantity", {"item_id": item_id, "quantity": 10}, blocking=True
     )
     await hass.async_block_till_done()
     assert [p["action"] for p in _data(captured)] == ["entered", "cleared"]
+
+    # A deleted item is gone from the store; the event still names it.
+    for call, data in (
+        ("item_set_quantity", {"item_id": item_id, "quantity": 1}),
+        ("item_delete", {"item_id": item_id}),
+    ):
+        await hass.services.async_call(DOMAIN, call, data, blocking=True)
+    await hass.async_block_till_done()
+    assert [p["action"] for p in _data(captured)] == ["entered", "cleared", "entered", "cleared"]
+    assert _data(captured)[-1]["name"] == "Batteries"
 
 
 async def test_a_real_automation_triggers_on_low_stock(hass: HomeAssistant, setup_entry) -> None:
@@ -177,9 +215,15 @@ async def test_a_restart_re_announces_nothing(
     assert captured == []
     assert find_runtime(hass).repository.low_stock_item_ids
 
+    # Nothing diffs until the next write, so an unrelated one is what shows the
+    # setup-time snapshot held the item that was already low.
+    await hass.services.async_call(DOMAIN, "item_create", {"name": "Tape"}, blocking=True)
+    await hass.async_block_till_done()
+    assert captured == []
+
 
 async def test_a_status_reassignment_reaches_the_bus_once_per_item(
-    hass: HomeAssistant, hass_ws_client, setup_entry
+    hass: HomeAssistant, setup_entry, ws_connect
 ) -> None:
     """A bulk rewrite is still a set of item edits, and each one is announced.
 
@@ -190,26 +234,17 @@ async def test_a_status_reassignment_reaches_the_bus_once_per_item(
     """
 
     await setup_entry()
-    client = await hass_ws_client(hass)
+    ws = await ws_connect()
 
-    await client.send_json(
-        {"id": 1, "type": "haventory/status/create", "slug": "lent_out", "label": "Lent out"}
-    )
-    assert (await client.receive_json())["success"]
-    moved = []
-    for index, name in enumerate(("Drill", "Ladder", "Torch"), start=2):
-        await client.send_json(
-            {"id": index, "type": "haventory/item/create", "name": name, "status": "lent_out"}
-        )
-        moved.append((await client.receive_json())["result"]["id"])
-    await client.send_json({"id": 10, "type": "haventory/item/create", "name": "Untouched"})
-    assert (await client.receive_json())["success"]
+    await ws.send("haventory/status/create", slug="lent_out", label="Lent out")
+    moved = [
+        (await ws.send("haventory/item/create", name=name, status="lent_out"))["result"]["id"]
+        for name in ("Drill", "Ladder", "Torch")
+    ]
+    await ws.send("haventory/item/create", name="Untouched")
 
     captured = async_capture_events(hass, EVENT_ITEM_CHANGED)
-    await client.send_json(
-        {"id": 11, "type": "haventory/status/delete", "slug": "lent_out", "reassign_to": "ok"}
-    )
-    result = await client.receive_json()
+    result = await ws.send("haventory/status/delete", slug="lent_out", reassign_to="ok")
     assert result["success"], result
     assert result["result"]["reassigned"] == len(moved)
     await hass.async_block_till_done()
@@ -217,6 +252,163 @@ async def test_a_status_reassignment_reaches_the_bus_once_per_item(
     payloads = _data(captured)
     assert {p["item_id"] for p in payloads} == set(moved)
     assert {p["action"] for p in payloads} == {"updated"}
+    # The version the reassignment wrote, not the one before it.
+    assert {p["version"] for p in payloads} == {2}
+    assert len(payloads) == len(moved)
+
+
+async def test_a_bulk_batch_announces_each_row_and_settles_once(
+    hass: HomeAssistant, setup_entry, ws_connect
+) -> None:
+    """Each row keeps its `items` event and its low-stock crossing; the batch counts once."""
+
+    await setup_entry()
+    ws = await ws_connect()
+    ids = {
+        name: (
+            await ws.send(
+                "haventory/item/create",
+                name=name,
+                quantity=10,
+                low_stock_threshold=LOW_THRESHOLD,
+            )
+        )["result"]["id"]
+        for name in ("Batteries", "Bulbs", "Candles", "Dowels")
+    }
+    await ws.subscribe("items")
+    await ws.subscribe("stats")
+    low_stock = async_capture_events(hass, EVENT_LOW_STOCK)
+    ws.event_frames.clear()
+
+    def batch(kind: str, rows: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {"op_id": name, "kind": kind, "payload": {"item_id": ids[name], **payload}}
+            for name, payload in rows.items()
+        ]
+
+    result = await ws.send(
+        "haventory/items/bulk",
+        operations=batch(
+            "item_set_quantity",
+            {"Batteries": {"quantity": 1}, "Bulbs": {"quantity": 1}, "Candles": {"quantity": 5}},
+        ),
+    )
+    assert result["success"] is True, result
+    # One diff after every row's own events; each crossing carries its own name.
+    assert len(ws.events("items")) == 3  # noqa: PLR2004
+    assert [e["action"] for e in ws.events("stats")] == ["counts"]
+    await hass.async_block_till_done()
+    assert sorted((p["action"], p["name"]) for p in _data(low_stock)) == [
+        ("entered", "Batteries"),
+        ("entered", "Bulbs"),
+    ]
+
+    # A deleted item is gone from the store; its row names it.
+    ws.event_frames.clear()
+    low_stock.clear()
+    await ws.send(
+        "haventory/items/bulk", operations=batch("item_delete", {"Batteries": {}, "Dowels": {}})
+    )
+    await hass.async_block_till_done()
+    assert [
+        (p["action"], p["item_id"], p["name"], p["quantity"], p["low_stock_threshold"])
+        for p in _data(low_stock)
+    ] == [("cleared", ids["Batteries"], "Batteries", 1, LOW_THRESHOLD)]
+
+    # A batch whose only row fails announces nothing at all.
+    ws.event_frames.clear()
+    low_stock.clear()
+    failed = await ws.send(
+        "haventory/items/bulk",
+        operations=[{"op_id": "a", "kind": "item_set_quantity", "payload": {"item_id": "nope"}}],
+    )
+    assert failed["result"]["results"]["a"]["success"] is False
+    await hass.async_block_till_done()
+    assert ws.event_frames == []
+    assert low_stock == []
+
+
+async def test_an_import_announces_the_low_stock_crossings_it_makes(
+    hass: HomeAssistant, setup_entry, ws_connect
+) -> None:
+    """An import announces no row of its own, so each crossing is named from the store.
+
+    A restock done by importing an edited export is still a restock.
+    """
+
+    await setup_entry()
+    ws = await ws_connect()
+    ids = {
+        name: (
+            await ws.send(
+                "haventory/item/create",
+                name=name,
+                quantity=quantity,
+                low_stock_threshold=LOW_THRESHOLD,
+            )
+        )["result"]["id"]
+        for name, quantity in (("Batteries", 10), ("Bulbs", 1))
+    }
+    document = (await ws.send("haventory/export"))["result"]
+    rows = {row["id"]: row for row in document["items"]}
+    rows[ids["Batteries"]]["quantity"] = 1
+    rows[ids["Bulbs"]]["quantity"] = 10
+    document["items"] = list(rows.values())
+    low_stock = async_capture_events(hass, EVENT_LOW_STOCK)
+
+    result = await ws.send("haventory/import/execute", document=document, policy="replace")
+    assert result["success"] is True, result
+    await hass.async_block_till_done()
+
+    announced = {p["item_id"]: (p["action"], p["name"]) for p in _data(low_stock)}
+    assert announced == {
+        ids["Batteries"]: ("entered", "Batteries"),
+        ids["Bulbs"]: ("cleared", "Bulbs"),
+    }
+
+
+@pytest.mark.parametrize("bulk", [False, True], ids=["single_write", "bulk_mutation"])
+async def test_a_failing_announcement_does_not_fail_the_write(
+    setup_entry,
+    ws_connect,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    bulk: bool,
+) -> None:
+    """The write is on disk before it is announced, so a failed announcement only logs."""
+
+    message = "Failed to notify a bulk mutation" if bulk else "Failed to notify a mutation"
+    await setup_entry()
+    ws = await ws_connect()
+    await ws.send("haventory/status/create", slug="lent_out", label="Lent out")
+    seeded = (await ws.send("haventory/item/create", name="Drill", status="lent_out"))["result"]
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("dispatcher down")
+
+    monkeypatch.setattr("custom_components.haventory.events.async_dispatcher_send", _boom)
+
+    with caplog.at_level("ERROR", logger="custom_components.haventory.events"):
+        if bulk:
+            result = await ws.send("haventory/status/delete", slug="lent_out", reassign_to="ok")
+            assert result["success"] is True, result
+            item_id = seeded["id"]
+        else:
+            result = await ws.send("haventory/item/create", name="Ladder")
+            assert result["success"] is True, result
+            item_id = result["result"]["id"]
+
+    listed = await ws.send("haventory/item/list")
+    stored = {row["id"]: row for row in listed["result"]["items"]}
+    assert item_id in stored
+    if bulk:
+        assert stored[item_id]["status"] == "ok"
+    assert any(
+        r.levelname == "ERROR"
+        and r.name == "custom_components.haventory.events"
+        and message in r.getMessage()
+        for r in caplog.records
+    )
 
 
 # 11:00 UTC on 22 August is 23:00 the same day in New Zealand, and 12:00:30 UTC

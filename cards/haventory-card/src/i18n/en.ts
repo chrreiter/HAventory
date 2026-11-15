@@ -469,7 +469,7 @@ export const en = {
   // store/server-error — a backend refusal, by the `translation_key` its error
   // envelope names. `strings.json` → `exceptions` carries the same sentences
   // for Home Assistant's own screens, and
-  // `tests/test_exception_translations_offline.py` holds the two together. The
+  // `tests/test_exception_translations.py` holds the two together. The
   // segment after the prefix is the backend's key, so it stays snake_case.
   'hv.serverError.not_loaded':
     'HAventory is not loaded right now. Wait for it to finish starting, or enable the integration again.',
