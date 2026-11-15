@@ -4,8 +4,8 @@
 the serializers here produce. Neither language can read the other, so the two
 meet in ``tests/fixtures/wire_shapes.json``:
 
-* this module drives the real commands, serializers and event doors, and
-  derives each output shape's keys from what they actually sent: a key in every
+* this module drives the real commands over a WebSocket connection to Home
+  Assistant, and derives each output shape's keys from what they actually sent: a key in every
   sample is ``required``, a key in only some is ``optional``. For the input
   shapes it reads the ``TypedDict`` key sets the backend validates against.
 * ``wire-shapes.test.ts`` holds a key spec per TypeScript interface that the
@@ -24,31 +24,27 @@ that names no translation.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-import pytest
-from custom_components.haventory.events import notify_dataset_replaced
 from custom_components.haventory.item_writes import ItemCreate, ItemUpdate
 from custom_components.haventory.query import ITEM_FILTER_KEYS, SORT_FIELDS, SORT_ORDERS, Sort
 from custom_components.haventory.repository import Repository
-from custom_components.haventory.subscriptions import notify_backend_unavailable
 from homeassistant.core import HomeAssistant
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from runtime_helpers import ws_hass
-from ws_helpers import RecordingConn, ws_send
-
-FIXTURES = Path(__file__).resolve().parent / "fixtures"
+FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 WIRE_SHAPES = FIXTURES / "wire_shapes.json"
 GOLDEN = FIXTURES / "stored_payload.json"
 REGENERATE_ENV = "HAVENTORY_WRITE_WIRE_SHAPES"
 REGENERATE_COMMAND = (
-    f"{REGENERATE_ENV}=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 "
-    "uv run pytest -q tests/test_wire_shapes_offline.py"
+    f"{REGENERATE_ENV}=1 .venv-integration/bin/python -m pytest -q -o asyncio_mode=auto "
+    "tests/integration/test_wire_shapes.py"
 )
 
 TOPICS = ("items", "locations", "stats", "statuses")
@@ -60,31 +56,21 @@ EVENT_SHAPES = {
     "statuses": "StatusesEventPayload",
 }
 TEARDOWN_ACTION = "unavailable"
+TEARDOWN_TIMEOUT = 5.0
 
 Samples = dict[str, list[dict[str, Any]]]
 
 
-class _Sender:
-    """Sends frames with fresh ids and asserts the ones that must succeed did."""
+async def ok(ws: Any, type_: str, **payload: Any) -> Any:
+    envelope = await ws.send(type_, **payload)
+    assert envelope["success"] is True, (type_, envelope)
+    return envelope["result"]
 
-    def __init__(self, hass: HomeAssistant, conn: RecordingConn) -> None:
-        self.hass = hass
-        self.conn = conn
-        self.next_id = 1
 
-    async def send(self, type_: str, **payload: Any) -> dict[str, Any]:
-        self.next_id += 1
-        return await ws_send(self.hass, self.next_id, type_, conn=self.conn, **payload)
-
-    async def ok(self, type_: str, **payload: Any) -> Any:
-        envelope = await self.send(type_, **payload)
-        assert envelope["success"] is True, (type_, envelope)
-        return envelope["result"]
-
-    async def refused(self, type_: str, **payload: Any) -> dict[str, Any]:
-        envelope = await self.send(type_, **payload)
-        assert envelope["success"] is False, (type_, envelope)
-        return envelope["error"]  # type: ignore[no-any-return]
+async def refused(ws: Any, type_: str, **payload: Any) -> dict[str, Any]:
+    envelope = await ws.send(type_, **payload)
+    assert envelope["success"] is False, (type_, envelope)
+    return envelope["error"]  # type: ignore[no-any-return]
 
 
 def _walk_tree(nodes: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
@@ -93,20 +79,21 @@ def _walk_tree(nodes: Iterable[dict[str, Any]]) -> Iterable[dict[str, Any]]:
         yield from _walk_tree(node["children"])
 
 
-async def collect_samples() -> Samples:
+async def collect_samples(
+    hass: HomeAssistant,
+    ws: Any,
+    entry: MockConfigEntry,
+) -> Samples:
     """Every output shape the card types, as the backend sends it today."""
 
-    repo = Repository.from_state(json.loads(GOLDEN.read_text(encoding="utf-8")))
-    hass = ws_hass(repository=repo)
-    conn = RecordingConn()
-    ws = _Sender(hass, conn)
     for topic in TOPICS:
-        await ws.ok("haventory/subscribe", topic=topic)
+        await ws.subscribe(topic)
 
-    listed = await ws.ok("haventory/item/list")
-    locations = await ws.ok("haventory/location/list")
+    listed = await ok(ws, "haventory/item/list")
+    locations = await ok(ws, "haventory/location/list")
     garage = next(loc for loc in locations if loc["parent_id"] is None)
-    created = await ws.ok(
+    created = await ok(
+        ws,
         "haventory/item/create",
         name="Glue",
         quantity=1,
@@ -114,19 +101,20 @@ async def collect_samples() -> Samples:
         reminder_date="2027-01-01",
         reminder_interval={"unit": "weeks", "count": 2},
     )
-    await ws.ok(
-        "haventory/item/update", item_id=created["id"], expected_version=1, name="Wood glue"
+    await ok(
+        ws, "haventory/item/update", item_id=created["id"], expected_version=1, name="Wood glue"
     )
-    await ws.ok("haventory/location/create", name="Attic")
+    await ok(ws, "haventory/location/create", name="Attic")
     trees = [
-        *await ws.ok("haventory/location/tree"),
-        *await ws.ok("haventory/location/tree", filter={"q": "drill"}),
+        *await ok(ws, "haventory/location/tree"),
+        *await ok(ws, "haventory/location/tree", filter={"q": "drill"}),
     ]
-    stats = await ws.ok("haventory/stats")
-    statuses = await ws.ok("haventory/status/list")
-    await ws.ok("haventory/status/create", slug="borrowed", label="Borrowed")
-    await ws.ok("haventory/status/reorder", slugs=[s["slug"] for s in statuses] + ["borrowed"])
-    bulk = await ws.ok(
+    stats = await ok(ws, "haventory/stats")
+    statuses = await ok(ws, "haventory/status/list")
+    await ok(ws, "haventory/status/create", slug="borrowed", label="Borrowed")
+    await ok(ws, "haventory/status/reorder", slugs=[s["slug"] for s in statuses] + ["borrowed"])
+    bulk = await ok(
+        ws,
         "haventory/items/bulk",
         operations=[
             {
@@ -139,18 +127,26 @@ async def collect_samples() -> Samples:
     )
     errors = [
         # A refusal that names a translation and fills placeholders.
-        await ws.refused(
-            "haventory/item/update", item_id=created["id"], expected_version=1, name="x"
+        await refused(
+            ws, "haventory/item/update", item_id=created["id"], expected_version=1, name="x"
         ),
         # One Home Assistant answers before any handler runs: no translation, no data.
-        await ws.refused("haventory/item/create"),
-        await ws.refused("haventory/item/get", item_id=str(uuid.uuid4())),
+        await refused(ws, "haventory/item/create"),
+        await refused(ws, "haventory/item/get", item_id=str(uuid.uuid4())),
     ]
-    notify_dataset_replaced(hass)
-    notify_backend_unavailable(hass)
+    # Importing a full backup over the dataset reloads it wholesale.
+    document = await ok(ws, "haventory/export")
+    await ok(ws, "haventory/import/execute", document=document, policy="replace")
+
+    # Unloading the entry tells every open subscription the backend is gone.
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    async with asyncio.timeout(TEARDOWN_TIMEOUT):
+        while sum(e["action"] == TEARDOWN_ACTION for e in ws.events()) < len(TOPICS):
+            ws.event_frames.append(await ws.socket.receive_json())
 
     items: list[dict[str, Any]] = [*listed["items"], created]
-    events = conn.events()
+    events = ws.events()
     samples: Samples = {
         "Item": items,
         "LocationPath": [
@@ -241,11 +237,16 @@ def describe_drift(pinned: Mapping[str, Any], live: Mapping[str, Any]) -> list[s
     return lines
 
 
-@pytest.mark.asyncio
-async def test_the_pinned_wire_shapes_are_what_the_backend_sends() -> None:
-    """The file the card's types are checked against matches the live serializers."""
+async def test_the_pinned_wire_shapes_are_what_the_backend_sends(
+    hass: HomeAssistant,
+    setup_entry: Callable[..., Awaitable[MockConfigEntry]],
+    ws_connect: Callable[[], Awaitable[Any]],
+) -> None:
+    """The file the card's types are checked against matches what the backend sends."""
 
-    live = build_document(await collect_samples())
+    entry = await setup_entry(stored=Repository.from_state(json.loads(GOLDEN.read_text())))
+    ws = await ws_connect()
+    live = build_document(await collect_samples(hass, ws, entry))
     if os.environ.get(REGENERATE_ENV):
         WIRE_SHAPES.write_text(dumped(live), encoding="utf-8")
 
@@ -260,21 +261,3 @@ async def test_the_pinned_wire_shapes_are_what_the_backend_sends() -> None:
     )
     # The drift report reads key sets; this also holds the lists' sorted order.
     assert pinned == live
-
-
-def test_a_key_in_only_some_samples_is_optional() -> None:
-    assert key_spec([{"a": 1, "b": 2}, {"a": 3}]) == {"required": ["a"], "optional": ["b"]}
-
-
-def test_the_drift_report_names_the_field() -> None:
-    pinned = {"outputs": {"Item": {"required": ["id", "name"], "optional": []}}}
-    live = {"outputs": {"Item": {"required": ["id"], "optional": ["name", "tags"]}}}
-
-    assert describe_drift(pinned, live) == [
-        "outputs.Item: `name` is now optional",
-        "outputs.Item: `tags` is new and optional",
-    ]
-    assert describe_drift(live, pinned) == [
-        "outputs.Item: `name` is now required",
-        "outputs.Item: `tags` is no longer sent",
-    ]
