@@ -223,7 +223,7 @@ async def test_unload_removes_the_entity(hass: HomeAssistant, setup_entry) -> No
 
 
 async def test_a_location_rename_reaches_the_calendar_at_once(
-    hass: HomeAssistant, setup_entry
+    hass: HomeAssistant, setup_entry, ws_connect
 ) -> None:
     """The event description is the item's stored path, held in a cached state.
 
@@ -258,6 +258,21 @@ async def test_a_location_rename_reaches_the_calendar_at_once(
     await hass.async_block_till_done()
 
     assert hass.states.get(ENTITY_ID).attributes["description"] == "Workshop"
+
+    # A subtree move rewrites every path below the moved node the same way.
+    cellar = (
+        await hass.services.async_call(
+            DOMAIN, "location_create", {"name": "Cellar"}, blocking=True, return_response=True
+        )
+    )["location"]
+    ws = await ws_connect()
+    moved = await ws.send(
+        "haventory/location/move_subtree", location_id=garage["id"], new_parent_id=cellar["id"]
+    )
+    assert moved["success"] is True, moved
+    await hass.async_block_till_done()
+
+    assert hass.states.get(ENTITY_ID).attributes["description"] == "Cellar / Workshop"
 
 
 async def test_a_write_repaints_the_calendar_without_sorting_the_inventory(
