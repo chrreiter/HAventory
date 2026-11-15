@@ -20,6 +20,7 @@ from homeassistant.exceptions import HomeAssistantError
 WS_LOGGER = "custom_components.haventory.ws"
 SERVICES_LOGGER = "custom_components.haventory.services"
 BULK_ROW_OP = "items_bulk_op_failed"
+GHOST_ID = "00000000-0000-4000-8000-000000000000"
 
 
 def _boom(*_args: Any, **_kwargs: Any) -> Any:
@@ -44,10 +45,19 @@ LINES = [
     ("service_conflict", SERVICES_LOGGER, "item_update", logging.WARNING, False, ""),
     ("service_storage", SERVICES_LOGGER, "item_create", logging.ERROR, True, ""),
     ("service_not_loaded", SERVICES_LOGGER, "item_create", logging.WARNING, False, ""),
+    (
+        "service_move_unknown",
+        SERVICES_LOGGER,
+        "item_move",
+        logging.WARNING,
+        False,
+        f"item_id={GHOST_ID} new_location_id=shelf-9",
+    ),
+    ("service_blank_name", SERVICES_LOGGER, "item_create", logging.WARNING, False, "item_name="),
 ]
 
 
-async def _provoke(  # noqa: PLR0913, PLR0917 - one input per thing a row may touch
+async def _provoke(  # noqa: PLR0912, PLR0913, PLR0917 - a branch per row, one input per thing a row may touch
     case, hass, entry, ws, item_id, call_service, fail_next_save, monkeypatch
 ):
     """Do the one thing that makes the integration log `case`."""
@@ -82,6 +92,12 @@ async def _provoke(  # noqa: PLR0913, PLR0917 - one input per thing a row may to
             fail_next_save()
             with pytest.raises(HomeAssistantError):
                 await call_service("item_create", name="X")
+        case "service_move_unknown":
+            with pytest.raises(HomeAssistantError):
+                await call_service("item_move", item_id=GHOST_ID, new_location_id="shelf-9")
+        case "service_blank_name":
+            with pytest.raises(HomeAssistantError):
+                await call_service("item_create", name="   ")
         case "service_not_loaded":
             await hass.config_entries.async_unload(entry.entry_id)
             with pytest.raises(HomeAssistantError):
