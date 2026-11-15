@@ -160,6 +160,27 @@ async def test_a_store_at_or_below_the_current_stamp_loads(
         assert hass_storage[STORAGE_KEY] is seeded
 
 
+async def test_a_store_written_before_the_status_field_reads_every_item_as_ok(
+    setup_entry, ws_connect
+) -> None:
+    """A row with no status, or one naming an undefined slug, reads as the default."""
+
+    ids = [str(uuid.uuid4()) for _ in range(3)]
+    rows = {
+        ids[0]: {"id": ids[0], "name": "Hammer"},
+        ids[1]: {"id": ids[1], "name": "Drill", "status": "needs_repair"},
+        ids[2]: {"id": ids[2], "name": "Wrench", "status": "shattered"},
+    }
+    await setup_entry(stored={"schema_version": 0, "items": rows, "locations": {}})
+    ws = await ws_connect()
+
+    listed = await ws.send("haventory/item/list")
+    statuses = {item["name"]: item["status"] for item in listed["result"]["items"]}
+    assert statuses == {"Hammer": "ok", "Drill": "needs_repair", "Wrench": "ok"}
+    defined = await ws.send("haventory/status/list")
+    assert sorted(s["slug"] for s in defined["result"]) == ["missing", "needs_repair", "ok"]
+
+
 @pytest.mark.parametrize(
     "stamp",
     [
