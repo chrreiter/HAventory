@@ -102,8 +102,7 @@ uv pip install --python .venv-integration/bin/python -r requirements-integration
 
 The run also collects every top-level file in `tests/` whose name does not end in
 `_offline.py`: those need no Home Assistant, so they pass against the real package too. The
-`_offline.py` files, and `tests/test_frontend_registration.py`, need the stubs and run
-offline only.
+`_offline.py` files need the stubs and run offline only.
 
 - **Do not set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` here.** phacc must load, and with the flag
   the run silently collects nothing. `tests/conftest.py` sees the real `homeassistant`

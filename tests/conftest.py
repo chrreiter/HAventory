@@ -1147,9 +1147,7 @@ if _INTEGRATION_MODE:
     # Integration mode: a real Home Assistant core (via phacc) drives the tests
     # and plugin autoload is enabled. Install no stubs and let
     # tests/integration/conftest.py handle the fixtures. The files that need the
-    # stubs are left out: every `*_offline.py`, and the frontend registration
-    # file, which keeps its name because the card's source cites it.
-    collect_ignore = ["test_frontend_registration.py"]
+    # stubs are left out: every `*_offline.py`.
     collect_ignore_glob = ["test_*_offline.py"]
 else:
     # Offline mode: stub Home Assistant.
