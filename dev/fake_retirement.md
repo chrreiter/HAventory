@@ -179,9 +179,34 @@ Collected tests per file, before each batch moves them. Each name is
     `runtime is None` guards at `events.py` 47, `storage.py` 287 and `todo_bridge.py` 76
     and 85, reachable only by calling the function with no loaded entry. Session 08 can
     type these away.
-- **07, features (299):** `test_import_export` 125, `test_media` 61, `test_todo_bridge` 20,
-  `test_item_status` 29, `test_item_input_validation` 41, `test_serialized_shapes` 14,
-  `test_local_day` 9. The sensor catalog needs no fake and already runs on the real core.
+- **07, features (299): done.** `test_import_export` 125, `test_media` 61, `test_todo_bridge`
+  20, `test_item_status` 29, `test_item_input_validation` 41, `test_serialized_shapes` 14,
+  `test_local_day` 9. Counted by test function, 194 in all: 100 stayed pure (most folded into
+  tables in `tests/test_import_export_plan.py`, `test_media.py`, `test_item_status.py`,
+  `test_item_input_validation.py`, `test_serialized_shapes.py`, and two rows in
+  `test_repository_attachments.py`), 56 moved onto the real core, 28 were already covered
+  and 10 checked the fake, a private detail or a test's own fixture. The 299 collected
+  tests became 180 pure and 40 in-process ones. One helper changed: `ws_connect` mints its
+  token when it connects, so a test can freeze the clock first. What the next batch can use:
+  - No `*_offline.py` file is left, and nothing imports `runtime_helpers.py` or
+    `ws_helpers.py`. The offline mode collects 745 tests, every one pure; the stubs are
+    still what lets the files that import the integration's modules load there.
+    `tests/test_exception_translations.py` imports `homeassistant` itself.
+  - `test_events.py`'s `_frozen_clock_client` predates the `ws_connect` change and can
+    become `ws_connect`.
+  - The to-do tests use a to-do entity of the suite's own on the real `todo` component:
+    `local_todo` needs `ical`, which `requirements-integration.txt` does not install.
+    `todo_bridge.TODO_FEATURE_DELETE_ITEM` and `const.HaventorySensorDescription` are still
+    there for session 08 to remove.
+  - `tests/integration/test_attachments.py` empties the media root before and after every
+    test (an autouse fixture), because the test config directory is shared. Two pytest
+    processes running at once still break each other's attachment and failed-save tests,
+    which is the `TMPDIR` note under "Time" applied to the config directory too.
+  - Combined coverage gave up `import_export.py` 704 (`plan_import`'s own policy check: the
+    command refuses a bad policy first, and `ws.py` 987, that refusal, is now covered),
+    `media.py` 277 (a thumbnail of a missing original: the view checks the file first, so
+    only a delete racing the request reaches it) and `todo_bridge.py` 131 (the `runtime is
+    None` guard, like 76 and 85).
 - **08:** delete the fake, `runtime_helpers.py`, `ws_helpers.py`,
   the mode switch and this file; drop the offline gate line and CI job; set
   `asyncio_mode = auto` in `pytest.ini`; rename the script.
@@ -279,11 +304,12 @@ moved status file costs the same, 23 tests in 1.8 s.
 After batch 04 the real-core run is 799 tests in about 25 s of pytest time (27 s wall),
 with the card built. After batch 05 it is 848 tests in about 32 s (34 s wall), on a
 machine where the 799 took 33 s. After batch 06 it is 937 tests in about 31 s (33 s wall).
+After batch 07 it is 1157 tests in about 48 s (51 s wall), on a machine where the 937
+took 48 s with coverage on.
 
-881 tests ran on the fake before batch 04, 657 after it, 510 after batch 05 and 299 after
-batch 06. Moved one for one, they add about 70 s, so the whole run
-lands near 90 s; rules 1 and 2 bring it lower. That is under two minutes, so the suite
-stays in one process.
+881 tests ran on the fake before batch 04, 657 after it, 510 after batch 05, 299 after
+batch 06 and none after batch 07. The whole run is under two minutes, so the suite stays in
+one process.
 
 If it ever passes two minutes, `pytest-xdist` is already in phacc's stack (`-n auto`). Give
 each worker its own `TMPDIR` first: Home Assistant's `file_upload` keeps uploads in
