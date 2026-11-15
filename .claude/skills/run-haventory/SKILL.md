@@ -591,8 +591,8 @@ rejects before `ws_guard` runs, a refused `haventory.*` service call (core's
 `call_service` logs every `HomeAssistantError` at ERROR, its own `ServiceValidationError`
 included) and the REST `/api/services` view's 500 for the same refusal, surfaced without
 failing the sweep, because no change in the integration can quiet them. Exits 1 on any
-blocking finding. Run it after every online layer: offline stubs stay green while real HA
-throws, which is how the `__slots__` bug was found.
+blocking finding. Run it after every online layer: the test suite can pass while a running
+instance throws, which is how the `__slots__` bug was found.
 
 ### Lifecycle probe (restarts HA, edits `.storage`)
 
@@ -618,9 +618,9 @@ the disposable dev instance.
 
 ## Test
 
-The repository's test surfaces are the sibling `/test-haventory` skill's job: the offline
-gate and its expected counts, the stress regimen, the browser smoke and the online pytest
-smokes. The in-process HA suite and its container recipe are in `docs/developing.md`.
+The repository's test surfaces are the sibling `/test-haventory` skill's job: the commit gate
+(`CONTRIBUTING.md` → "The gate"), the stress regimen, the browser smoke and the online pytest
+smokes. The container recipe for the backend suite is in `docs/developing.md` → "Testing".
 
 What lives here is the harness's own unit cover for the parts that decide where a run looks,
 which instance it looks at and whether it is signed in: `card_views.mjs` (which views hold
