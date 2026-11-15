@@ -1,15 +1,38 @@
-"""Integration: JSON import/export end-to-end through the real websocket_api.
+"""JSON import and export over a real WebSocket connection.
 
-Drives ``haventory/export`` and ``haventory/import/execute`` over a real Home
-Assistant WebSocket connection (``hass_ws_client``). The round-trip test empties
-the instance after exporting, then imports the document back and asserts the data
-is reproduced — the real-HA counterpart to the offline round-trip unit test.
+Covers a backup restored into an emptied instance, the commands' refusals, the missing-file
+caveat of a metadata-only export, and what an import does to attachment files.
 """
 
 from __future__ import annotations
 
+import shutil
+from typing import Any
+
+import pytest
+from custom_components.haventory import media
+from custom_components.haventory.models import validate_attachment_meta
+from custom_components.haventory.repository import Repository
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
 from homeassistant.core import HomeAssistant
+
+PICTURE = {
+    "id": "3f0c6d2a-1b4e-4a9c-9f3d-2a7b8c1d0e5f",
+    "kind": "picture",
+    "filename": "photo.png",
+    "mime": "image/png",
+    "size": 8,
+    "uploaded_at": "2026-08-05T10:00:00Z",
+}
+
+
+def _store_with_a_picture() -> tuple[Repository, str]:
+    """A store whose one item names a picture; no file is written."""
+
+    repo = Repository()
+    item = repo.create_item({"name": "Drill"})
+    repo.add_attachment(item.id, validate_attachment_meta(PICTURE))
+    return repo, str(item.id)
 
 
 async def test_export_then_import_into_emptied_instance(
@@ -168,3 +191,87 @@ async def test_import_preview_name_collision_survives_the_wire(
     )
     clean = await client.receive_json()
     assert clean["result"]["warnings"] == []
+
+
+@pytest.mark.parametrize(
+    ("command", "payload", "fragment"),
+    [
+        ("haventory/export", {"filter": "not-an-object"}, ""),
+        ("haventory/export", {"filter": {"search": "hammer"}}, "search"),
+        ("haventory/import/preview", {"policy": "bogus"}, ""),
+        ("haventory/import/execute", {"policy": "bogus"}, ""),
+    ],
+)
+async def test_a_bad_filter_or_policy_is_refused_and_nothing_is_written(
+    setup_entry, ws_connect, command: str, payload: dict[str, Any], fragment: str
+) -> None:
+    await setup_entry()
+    ws = await ws_connect()
+    document = {
+        "haventory_export_version": 1,
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "items": [{"id": "44444444-4444-4444-8444-444444444444", "name": "Screwdriver"}],
+        "locations": [],
+    }
+    if command.startswith("haventory/import"):
+        payload = {**payload, "document": document}
+
+    res = await ws.send(command, **payload)
+
+    assert res["success"] is False, res
+    assert res["error"]["code"] == "validation_error"
+    assert fragment in res["error"]["message"]
+    assert (await ws.send("haventory/stats"))["result"]["items_total"] == 0
+
+
+async def test_import_preview_reports_references_with_no_file_on_this_install(
+    setup_entry, ws_connect
+) -> None:
+    """A JSON export carries metadata and not bytes, so this is a caveat, not an error."""
+
+    repo, _ = _store_with_a_picture()
+    await setup_entry(stored=repo)
+    ws = await ws_connect()
+    document = (await ws.send("haventory/export"))["result"]
+
+    res = await ws.send("haventory/import/preview", document=document, policy="merge")
+
+    assert res["success"] is True, res
+    assert res["result"]["attachments"] == {"referenced": 1, "missing": 1}
+
+
+@pytest.mark.parametrize(
+    ("policy", "file_kept", "attachment_ids"),
+    [("replace", False, []), ("merge", True, [PICTURE["id"]])],
+)
+async def test_import_and_an_attachment_file_the_document_does_not_carry(  # noqa: PLR0913, PLR0917 - one fixture per step
+    hass: HomeAssistant,
+    setup_entry,
+    ws_connect,
+    policy: str,
+    file_kept: bool,
+    attachment_ids: list[str],
+) -> None:
+    """`replace` overwrites an item's attachment list, so the bytes of an entry it drops go too;
+    `merge` unions the lists, so nothing is orphaned."""
+
+    repo, item_id = _store_with_a_picture()
+    await setup_entry(stored=repo)
+    ws = await ws_connect()
+    path = media.attachment_path(media.media_root(hass), item_id, PICTURE["id"], "image/png")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x89PNG\r\n\x1a\n")
+    try:
+        document = (await ws.send("haventory/export"))["result"]
+        document["items"][0]["attachments"] = []
+        document["items"][0]["name"] = "Drill (restored)"
+
+        res = await ws.send("haventory/import/execute", document=document, policy=policy)
+
+        assert res["success"] is True, res
+        item = (await ws.send("haventory/item/get", item_id=item_id))["result"]
+        assert item["name"] == "Drill (restored)"
+        assert [a["id"] for a in item["attachments"]] == attachment_ids
+        assert path.exists() is file_kept
+    finally:
+        shutil.rmtree(media.media_root(hass), ignore_errors=True)
