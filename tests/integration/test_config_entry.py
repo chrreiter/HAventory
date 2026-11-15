@@ -25,10 +25,17 @@ from __future__ import annotations
 
 import pytest
 from custom_components.haventory.const import (
+    ATTACHMENT_MANUAL_MIME_TYPES,
+    ATTACHMENT_PICTURE_MIME_TYPES,
     CONF_CARD_TITLE,
     CONF_QUICK_FILTERS,
     CONF_SIDEBAR_PANEL_ENABLED,
+    DEFAULT_CARD_TITLE,
     DOMAIN,
+    INTEGRATION_VERSION,
+    MAX_ATTACHMENT_BYTES,
+    MAX_MANUALS_PER_ITEM,
+    MAX_PICTURES_PER_ITEM,
 )
 from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
 from custom_components.haventory.repository import Repository
@@ -382,3 +389,75 @@ async def test_a_store_that_cannot_be_read_right_now_is_retried_instead(
 
     assert entry.state is ConfigEntryState.SETUP_RETRY
     assert find_runtime(hass) is None
+
+
+@pytest.mark.parametrize(
+    ("options", "title", "pills"),
+    [
+        pytest.param({}, DEFAULT_CARD_TITLE, None, id="never_configured"),
+        # No pills is a choice: it arrives as [], not as the null of "never chose".
+        pytest.param(
+            {CONF_CARD_TITLE: "Pantry", CONF_QUICK_FILTERS: []}, "Pantry", [], id="chosen"
+        ),
+    ],
+)
+async def test_config_reports_the_entry_options(
+    setup_entry, ws_connect, options, title, pills
+) -> None:
+    """The card gets its title and pill choice from the entry's options."""
+
+    await setup_entry(options)
+    ws = await ws_connect()
+
+    res = await ws.send("haventory/config")
+
+    assert res["result"]["card_title"] == title
+    assert res["result"]["quick_filters"] == pills
+
+
+async def test_the_reads_the_card_makes_before_it_renders(setup_entry, ws_connect) -> None:
+    """ping, version, config, stats and health answer with what the card relies on."""
+
+    repo = Repository()
+    repo.create_item({"name": "Hammer", "status": "missing"})
+    repo.create_item({"name": "Saw"})
+    await setup_entry(stored=repo)
+    ws = await ws_connect()
+
+    ping = (await ws.send("haventory/ping", echo={"hello": "world"}))["result"]
+    assert ping["echo"] == {"hello": "world"}
+    assert ping["ts"]
+
+    version = (await ws.send("haventory/version"))["result"]
+    assert version["integration_version"] == INTEGRATION_VERSION
+    assert int(version["schema_version"]) == CURRENT_SCHEMA_VERSION
+
+    config = (await ws.send("haventory/config"))["result"]
+    assert config["statuses"] == [
+        {"slug": "ok", "label": "OK", "order": 0, "color": "green", "icon": "check"},
+        {"slug": "missing", "label": "Missing", "order": 1, "color": "amber", "icon": "alert"},
+        {
+            "slug": "needs_repair",
+            "label": "Needs repair",
+            "order": 2,
+            "color": "amber",
+            "icon": "wrench",
+        },
+    ]
+    media = config["media"]
+    assert media["picture_mime_types"] == list(ATTACHMENT_PICTURE_MIME_TYPES)
+    assert media["manual_mime_types"] == list(ATTACHMENT_MANUAL_MIME_TYPES)
+    assert media["max_pictures_per_item"] == MAX_PICTURES_PER_ITEM
+    assert media["max_manuals_per_item"] == MAX_MANUALS_PER_ITEM
+    assert media["max_attachment_bytes"] == MAX_ATTACHMENT_BYTES
+    # SVG carries script and the attachment view serves from the HA origin.
+    assert "image/svg+xml" not in media["picture_mime_types"]
+
+    stats = (await ws.send("haventory/stats"))["result"]
+    assert stats["status_counts"] == {"ok": 1, "missing": 1, "needs_repair": 0}
+    assert stats["missing_count"] == 1
+
+    health = (await ws.send("haventory/health"))["result"]
+    assert set(health) == {"healthy", "issues", "counts"}
+    assert health["healthy"] is True
+    assert health["issues"] == []
