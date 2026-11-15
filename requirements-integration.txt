@@ -16,7 +16,7 @@
 #         uv venv .venv-integration --python 3.14
 #         uv pip install --python .venv-integration -r requirements-integration.txt
 #         .venv-integration/bin/python -m pytest -o asyncio_mode=auto tests/integration
-#     or simply: scripts/test_integration.sh
+#     or simply: scripts/test.sh
 #
 # Version policy: pin the Home Assistant core to the DECLARED MINIMUM supported
 # version (hacs.json `homeassistant`), so this suite defends the floor rather than

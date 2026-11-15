@@ -8,7 +8,7 @@ HAventory has four test surfaces here. Two are **offline** (no HA): the backend 
 and hit the real HA in Docker (container `home-assistant`, `http://localhost:8123`): the
 adversarial **stress regimen** `.claude/skills/test-haventory/stress.py` (the primary
 break-it driver) and the **live-update browser smoke** `cards/haventory-card/e2e/live-updates.smoke.mjs`.
-The in-process HA suite (`scripts/test_integration.sh`, a real HA core) is documented in
+The in-process HA suite (`scripts/test.sh`, a real HA core) is documented in
 `docs/developing.md` and not re-verified here.
 
 All paths are relative to the repo root and every command below is **Linux/bash**, which is

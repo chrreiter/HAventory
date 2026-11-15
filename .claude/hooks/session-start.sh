@@ -16,7 +16,7 @@ cd "$PROJECT_DIR"
 log() { printf '[session-start] %s\n' "$1" >&2; }
 
 # Every Python path below is the POSIX venv layout (`bin/`), and so is every
-# helper that consumes these environments — scripts/test_integration.sh runs
+# helper that consumes these environments — scripts/test.sh runs
 # "$INT_VENV/bin/python" directly. Under Git Bash / MSYS / Cygwin on Windows, uv
 # and venv write `Scripts/` instead, so `bin/python` never appears no matter how
 # well the environment was built. Teaching this one script both layouts would
@@ -90,10 +90,10 @@ fi
 # This is heavy and needs a Python 3.14 interpreter plus network for the HA core,
 # so it is strictly best-effort: it must NEVER fail session bootstrap (e.g. in
 # restricted-egress sandboxes that can't fetch Python 3.14). The offline suite is
-# unaffected either way. Run the suite with: scripts/test_integration.sh
+# unaffected either way. Run the suite with: scripts/test.sh
 INT_VENV=".venv-integration"
 if [ "$POSIX_VENV_HOST" -eq 0 ]; then
-  log "Windows shell detected; skipping the integration env (scripts/test_integration.sh is POSIX-only)"
+  log "Windows shell detected; skipping the integration env (scripts/test.sh is POSIX-only)"
 elif ! command -v uv >/dev/null 2>&1; then
   log "uv not found; skipping integration env bootstrap"
 elif [ -x "$INT_VENV/bin/python" ]; then
@@ -104,7 +104,7 @@ else
      && uv venv --python 3.14 "$INT_VENV" >/dev/null 2>&1 \
      && uv pip install --python "$INT_VENV/bin/python" \
           -r requirements-integration.txt >/dev/null 2>&1; then
-    log "integration env ready; run scripts/test_integration.sh"
+    log "integration env ready; run scripts/test.sh"
   else
     # Only reachable when this run just tried to build the env, so this removes a
     # half-provisioned directory rather than a working one somebody else made.

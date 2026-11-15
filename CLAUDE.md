@@ -114,7 +114,7 @@ gate", audit level included. [`docs/developing.md`](docs/developing.md) carries 
 bootstrap, the helper scripts and the live-update browser smoke.
 
 In-process HA tests are a **second, separate mode**: the integration inside a real HA core
-via `pytest-homeassistant-custom-component`, run with `scripts/test_integration.sh`. What it
+via `pytest-homeassistant-custom-component`, run with `scripts/test.sh`. What it
 installs, what it covers, the container recipe a Windows host needs and the traps that are
 not discoverable from the code are in `docs/developing.md` → "In-process HA integration
 tests". The one that bites hardest: **do not set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` for that

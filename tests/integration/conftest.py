@@ -12,7 +12,7 @@ pytest-asyncio's auto mode, so pass ``-o asyncio_mode=auto``:
 
     pytest -o asyncio_mode=auto tests
 
-or use the wrapper: ``scripts/test_integration.sh``.
+or use the wrapper: ``scripts/test.sh``.
 
 The parent ``tests/conftest.py`` detects the real ``homeassistant`` package these
 tests import and installs none of the offline stubs, so the two modes never

@@ -92,7 +92,7 @@ translations, the retired-files sweep and the frontend registration.
 
 ```bash
 # One-shot: provisions the interpreter and a dedicated .venv-integration, then runs them
-scripts/test_integration.sh
+scripts/test.sh
 
 # ...or by hand:
 uv venv --python 3.14 .venv-integration
@@ -121,7 +121,7 @@ The run also collects every top-level file in `tests/` whose name does not end i
   MSYS_NO_PATHCONV=1 docker run -d --name hav-int -v "$(pwd):/work" \
     -v hav-int-venv:/work/.venv-integration -w /work \
     ghcr.io/astral-sh/uv:bookworm sleep 7200
-  MSYS_NO_PATHCONV=1 docker exec hav-int bash -lc 'cd /work && bash scripts/test_integration.sh'
+  MSYS_NO_PATHCONV=1 docker exec hav-int bash -lc 'cd /work && bash scripts/test.sh'
   ```
 
 ### Live-update browser smoke (opt-in)
@@ -302,7 +302,7 @@ Everything under `scripts/` is Linux/bash, and the Python helpers assume a UTF-8
 |---|---|
 | `setup.sh` | the bootstrap under [Setup](#setup-linuxbash); `--ci` skips the pre-commit hooks |
 | `ci_local.sh` | the whole gate in one run, with coverage |
-| `test_integration.sh` | provisions `.venv-integration` and runs the in-process suite |
+| `test.sh` | provisions `.venv-integration` and runs the in-process suite |
 | `reload_addon.sh` | deploys the working tree into a running Home Assistant dev container |
 | `ws_init_haventory.py` | creates the config entry through Home Assistant's config-flow REST API, then checks `haventory/version` over WebSocket |
 | `ci_provision_ha.py` | onboards a fresh Home Assistant over REST; what `card-smoke` uses |
