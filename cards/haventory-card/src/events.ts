@@ -18,6 +18,7 @@
 import type { HAventoryCardConfig } from './haventory-card-editor';
 import type { FilterChipKey } from './components/hv-filter-chips';
 import type { BulkRunDetail } from './components/hv-bulk-bar';
+import type { SidebarSection } from './components/hv-full-sidebar';
 import type { OrganizeTab } from './components/hv-organize-dialog';
 import type { EmptyOffer } from './ui/empty-state';
 import type { ColumnKey } from './store/columns';
@@ -140,11 +141,29 @@ export interface HvEventMap {
     apply: StoreFilters;
     'clear-filters': None;
   };
+  'hv-full-app-bar': {
+    /** The close button. */
+    'request-close': None;
+    /** Add item. */
+    'add-item': None;
+    /** The ⋮ entry that enters selection mode. */
+    'select-items': None;
+    /** The selection bar's ✕. */
+    'exit-selection': None;
+    /** The Organize button and every other ⋮ entry. */
+    'menu-action': MenuActionDetail;
+  };
   'hv-full-view': {
     close: None;
     'menu-action': MenuActionDetail;
     /** Its own delete hook, and the table's Delete key. */
     'request-delete': { itemId: string; name?: string };
+  };
+  'hv-full-sidebar': {
+    /** A heading's "+" for a vocabulary that is created in the organize dialog. */
+    organize: { tab: OrganizeTab };
+    /** A heading toggle, or "+ new location" opening the section its field sits in. */
+    'toggle-section': { section: SidebarSection; open: boolean };
   };
   'hv-import-sheet': {
     preview: ImportDetail;

@@ -227,20 +227,31 @@ haventory-card                     Lovelace element; store owner
     ├── hv-banner                  the one alert treatment; the degraded and error
     │                              stacks are built in ui/banners.ts and rendered
     │                              by the card and the full view alike
-    └── hv-full-view               fullscreen workspace
-        ├── hv-location-tree       sidebar's Locations section, manage-capable
+    └── hv-full-view               fullscreen workspace: the shell and its focus trap, the
+        │                          context bar, the filter panel and the table; keeps
+        │                          selection mode and which sidebar sections are open
+        ├── hv-full-app-bar        the app bar, or the selection bar while selecting:
+        │   │                      search, quick-filter pills, add, Organize, load-all
+        │   └── hv-overflow-menu
+        ├── hv-full-sidebar        Locations, Status, Categories and Tags with the
+        │   │                      backend's counts, and the inline new location
+        │   └── hv-location-tree   the Locations section, manage-capable
         ├── hv-filter-panel        same panel, staged behind a commit row on a phone
         ├── hv-item-editor         inline above the table (the same one edit form)
         ├── hv-data-table          sortable table + selection column; rows carry the
         │                          same ⋮ actions the card's rows do
         ├── hv-detail-sheet        the read view at phone width, the same one the
         │                          card opens
-        ├── hv-checkout-popover    due-date step for a row and for a selection
-        └── hv-bulk-bar            bulk actions, progress, per-operation results
+        ├── hv-checkout-popover    due-date step for a row
+        └── hv-full-bulk           a run over the selection: its progress, the failures
+            │                      it keeps and retries, built only while selecting
+            ├── hv-bulk-bar        bulk actions, progress, per-operation results
+            ├── hv-confirm         the delete question
+            └── hv-checkout-popover  one due date for the whole selection
 ```
 
-The sidebar's Categories and Tags sections are rendered by `hv-full-view` itself rather
-than by a component of their own: they are flat lists of `distinct_values` entries.
+The sidebar's Status, Categories and Tags sections are rendered by `hv-full-sidebar` itself
+rather than by a component of their own: they are flat lists of `distinct_values` entries.
 
 Each of those lists (status, categories and tags) is **one tab stop**, not one per row,
 because the list is as long as the household's vocabulary and a stop per row would put that
@@ -267,9 +278,9 @@ length; locations are counted by `countLocations` in `store/location-tree.ts`, w
 every depth and takes the same optional filter needle `hv-location-tree` matches rows with.
 Creating differs by facet because the backend does: a location is a real object and is
 created inline, while a category, tag or status is made in the organize dialog, so those
-buttons ask the card to open `hv-organize-dialog` on the matching tab (`menu-action` with
-`{ id: 'organize', tab }`). The app bar carries an Organize button raising the same event
-with no tab.
+buttons ask the card to open `hv-organize-dialog` on the matching tab: the sidebar sends
+`organize`, and the full view passes it on as `menu-action` with `{ id: 'organize', tab }`.
+The app bar carries an Organize button that reaches the same event with no tab.
 
 ### Two different "is this a phone?" signals
 
@@ -390,8 +401,8 @@ A control that expands something carries `aria-expanded` **and** `aria-controls`
 element it names stays in the tree whether or not it is open, because an `aria-controls`
 that resolves to nothing announces the control as controlling nothing. Only the contents
 come and go, so collapsing still discards the state inside. Every disclosure in the card is
-wired this way: `hv-filter-panel`'s location chip, `hv-full-view`'s sidebar headings and
-Filters button, `hv-card-shell`'s expand and filter buttons, `hv-item-editor`'s location and
+wired this way: `hv-filter-panel`'s location chip, `hv-full-sidebar`'s headings,
+`hv-full-view`'s Filters button, `hv-card-shell`'s expand and filter buttons, `hv-item-editor`'s location and
 category fields, `hv-organize-locations`' two location pickers, `hv-organize-values`'
 merge-target list, and `hv-location-tree`'s rows and area bands. Ids are shadow-scoped, so
 the desktop panel and the phone sheet can both be mounted without colliding.
@@ -502,7 +513,8 @@ only collapse.
 ### Container vs presentation
 
 `hv-card-shell` and `hv-full-view` are **containers**: they hold the `Store` and call it
-directly, as do the organize dialog's three tab elements, which the dialog hands the store.
+directly, as do the organize dialog's three tab elements and the full view's
+`hv-full-app-bar`, `hv-full-sidebar` and `hv-full-bulk`, which their parent hands the store.
 Everything else is presentational and communicates by events.
 
 Interactions nest several levels deep (row, editor, location tree, selection), and threading
@@ -519,8 +531,7 @@ the type checker, and `set` is the only way to change it, so no write can skip t
 
 ### Splitting a large component into child elements
 
-`hv-item-editor` and `hv-organize-dialog` are split this way, and the same recipe fits
-`hv-full-view` when it is taken apart.
+`hv-item-editor`, `hv-organize-dialog` and `hv-full-view` are split this way.
 
 - **The parent keeps the model; a child keeps its own surface.** The editor holds the form
   model, validation, save and cancel, and the grid. A field that has state of its own (an
@@ -542,7 +553,12 @@ the type checker, and `set` is the only way to change it, so no write can skip t
   The organize tabs are keyed on the tab and a count of openings, so each opening builds
   them afresh. A child whose draft has to outlive the switch is cached with Lit's `cache`
   instead, as the statuses tab is, and for it to outlive a close too the parent caches its
-  open body as well, so closing detaches that DOM rather than discarding it.
+  open body as well, so closing detaches that DOM rather than discarding it. The full view
+  renders nothing while closed, so its children are built afresh with each opening, and
+  `hv-full-bulk` exists only while selecting: that clears a half-typed location and a
+  finished run. State that has to outlive the child stays on the parent and the child asks
+  for a change instead of making it, as the sidebar asks with `toggle-section` for the
+  open sections, which survive a close.
 - **One place decides what Escape takes back.** A child that can be open exposes `open` and
   `close()`, and the editor's keydown handler walks them in order before it cancels the
   form. A child also stops the keys it handles itself, as the category list does with
@@ -554,11 +570,19 @@ the type checker, and `set` is the only way to change it, so no write can skip t
   child that takes over a scrolling region of the parent's flex column takes that region's
   flex sizing on its own host, or the region stops scrolling inside the panel. Classes the
   parent puts on a child's host element (`class="cell"`) are styled by the parent's sheet,
-  which is how a child takes its place in the parent's grid without knowing the grid. A key an overlay inside a child
-  sends now passes the parent's listeners on its way up; stop there what the parent must
-  not hear. A `ref` fires again when cached DOM is re-attached, so a child that reveals a
+  which is how a child takes its place in the parent's grid without knowing the grid, and
+  they beat the child's own `:host` rules, which is how the full view's phone query hides
+  the sidebar. A child that sizes itself by a width reads the box it sits in when its own
+  can be wider: the app bar observes the shell, whose grid track grows past what is visible
+  once the layout pans sideways. A key an overlay inside a child sends now passes the
+  parent's listeners on its way up; stop there what the parent must not hear. A `ref` fires again when cached DOM is re-attached, so a child that reveals a
   disclosure as it is built asks the parent whether this update is the opening one
   (`opening`), when `Modal` owns focus.
+- **Events cross the parent too.** Every `hv-*` event is composed, so a child event named
+  like one the parent sends its own host (`menu-action`) would also reach the host's
+  listener on the parent. The parent stops each child event it answers and sends its own.
+  A child draws after the parent's `updated`, so a parent that moves focus to a control
+  inside a child on opening waits for that child's `updateComplete` first.
 - **Tests follow the code.** A child's behaviour is tested by mounting the child. The
   parent's tests keep the wiring: what goes in, what a `change` does to the save, the
   Escape order, focus. They reach a moved field through the child's shadow root.
@@ -603,7 +627,8 @@ the type checker, and `set` is the only way to change it, so no write can skip t
 | `browse-row.ts` | The metrics of a browse row, shared by `hv-location-tree` and the full view's facet lists so a name starts at the same inset in both. |
 | `discard.ts` | `discardPrompt()`, the one question asked before typed edits are thrown away. |
 | `editor-error.ts` | What an open editor says about a save that did not land. |
-| `organize-tab.ts` | What the organize dialog's three tab elements share: the toolbar, row, inline disclosure and its commit row, guard, rewrite progress and touch sheet, their styles, and `SliceWatch`, which re-renders a tab only for the store slices it reads. |
+| `organize-tab.ts` | What the organize dialog's three tab elements share: the toolbar, row, inline disclosure and its commit row, guard, rewrite progress and touch sheet, and their styles. |
+| `slice-watch.ts` | `SliceWatch`, which re-renders a container element only for the store slices it reads, for as long as it is connected. |
 | `reminder.ts` | Reading a reminder off an item: whether it has one, and whether it has come round. |
 | `field-label.ts` | A custom field's key written for reading (`purchase_price` → `Purchase price`); editing surfaces keep the key as typed. |
 | `clipboard.ts` | Copying one string, falling back to `execCommand` where `navigator.clipboard` is missing (plain `http://`). |
@@ -651,8 +676,8 @@ autocompletes read, what `haventory/config` answered, and the connection state t
 render from. Each part holds its keys in a `Slice` (`slice.ts`), which is replaced on write
 and notifies only when a value moved. `store.state` reads every slice as one flat,
 read-only object and notifies on any of them; `store.watch(['locations', 'facets'], cb)`
-notifies only for the slices named, which is how each organize tab (`SliceWatch` in
-`ui/organize-tab.ts`) stays quiet while the list changes.
+notifies only for the slices named, which is how each container below the root (`SliceWatch` in
+`ui/slice-watch.ts`) stays quiet while a slice it does not read changes.
 
 **Notable methods**
 
@@ -858,7 +883,7 @@ Component tests follow one pattern: mount with `mountComponent` from `src/test.u
 (which creates the element, sets its properties and awaits the render), query the shadow root
 by `data-testid` with `q` / `all`, dispatch real events, and `settle` before asserting.
 `componentCss(tag)` reads a component's stylesheets, because jsdom lays nothing out. The
-components that take a `store` (`hv-card-shell`, `hv-full-view`, the organize dialog and its tabs) mount
+components that take a `store` (`hv-card-shell`, `hv-full-view` and its three children, the organize dialog and its tabs) mount
 through `mountHost`, which builds the store over a mock hass first. Every interactive element
 carries a testid. Use these helpers rather than a per-file copy.
 

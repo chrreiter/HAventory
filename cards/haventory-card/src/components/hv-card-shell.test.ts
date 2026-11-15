@@ -295,7 +295,8 @@ describe('hv-card-shell: overflow menu', () => {
     const full = sr.querySelector('[data-testid="card-full-view"]') as HTMLElement & { open: boolean };
     full.open = true;
     await settle(el);
-    expect(await idsOf(full.shadowRoot?.querySelector('[data-testid="full-overflow"]'))).toContain('columns');
+    const bar = full.shadowRoot?.querySelector('hv-full-app-bar');
+    expect(await idsOf(bar?.shadowRoot?.querySelector('[data-testid="full-overflow"]'))).toContain('columns');
   });
 
   // Every id the menu can name is answered inside the shell — by the store,
@@ -1865,7 +1866,9 @@ describe('hv-card-shell: full view', () => {
     (sr.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement).click();
     await settle(el);
 
-    const inner = fullView(sr).shadowRoot?.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement;
+    const inner = fullView(sr)
+      .shadowRoot?.querySelector('hv-full-app-bar')
+      ?.shadowRoot?.querySelector('[data-testid="expand-toggle"]') as HTMLButtonElement;
     inner.click();
     await settle(el);
     expect(fullView(sr).open).toBe(false);
@@ -1956,12 +1959,20 @@ describe('hv-card-shell: full view', () => {
     await settle(el);
     const view = fullView(sr);
 
-    (view.shadowRoot?.querySelector('[data-testid="full-organize"]') as HTMLButtonElement).click();
+    (
+      view.shadowRoot
+        ?.querySelector('hv-full-app-bar')
+        ?.shadowRoot?.querySelector('[data-testid="full-organize"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     expect(organize().open).toBe(true);
     expect(organize().tab).toBe('locations');
 
-    (view.shadowRoot?.querySelector('[data-testid="sidebar-new-status"]') as HTMLButtonElement).click();
+    (
+      view.shadowRoot
+        ?.querySelector('[data-testid="full-sidebar"]')
+        ?.shadowRoot?.querySelector('[data-testid="sidebar-new-status"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     expect(organize().tab).toBe('statuses');
   });

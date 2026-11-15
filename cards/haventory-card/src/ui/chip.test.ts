@@ -24,6 +24,7 @@ const CHIPPED = [
   'hv-detail-sheet',
   'hv-filter-chips',
   'hv-filter-panel',
+  'hv-full-app-bar',
   'hv-full-view',
   'hv-item-editor',
   'hv-list-row',

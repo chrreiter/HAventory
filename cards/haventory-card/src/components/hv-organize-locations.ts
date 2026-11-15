@@ -18,7 +18,6 @@ import { renderAreaChip } from '../ui/location-path';
 import { countLocations } from '../store/location-tree';
 import { CopyFlash, idRow } from '../ui/clipboard';
 import {
-  SliceWatch,
   errorText,
   organizeTab,
   renderActionSheet,
@@ -29,6 +28,7 @@ import {
   reveal,
   rewriteState,
 } from '../ui/organize-tab';
+import { SliceWatch } from '../ui/slice-watch';
 import type { RewriteState } from '../ui/organize-tab';
 import { makeBulkOp } from '../store/store';
 import type { Store } from '../store/store';
