@@ -182,7 +182,7 @@ async def test_bumping_moves_the_series_and_the_calendar_with_it(
 async def test_an_interval_with_no_anchor_is_refused_by_the_real_dispatch(
     hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
-    """The offline stub cannot see HA's own schema validation ahead of the handler."""
+    """HA's own schema validation runs ahead of the handler."""
 
     await setup_entry()
     client = await hass_ws_client(hass)
@@ -212,8 +212,7 @@ async def test_an_evening_bump_west_of_greenwich_keeps_the_calendar_day(
     18:00 in Los Angeles is 02:00 the next day in UTC. Counting the bump from the
     UTC day therefore skipped the occurrence the household's own calendar was
     showing them for tomorrow — silently, and only for the part of the day the
-    two disagree over, which is why neither the offline suite nor the UTC dev
-    container could see it.
+    two disagree over, which a UTC dev container never shows.
     """
 
     await hass.config.async_set_time_zone("America/Los_Angeles")

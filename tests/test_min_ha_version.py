@@ -7,7 +7,7 @@ version-shaped tokens also matches example versions (the bug-report placeholder)
 and unrelated pins.
 
 ``requirements-integration.txt`` is the one that makes the claim testable: the
-in-process HA suite runs against exactly that pin, so pinning it to the floor is
+test suite runs against exactly that pin, so pinning it to the floor is
 what turns "minimum supported" from an assertion into something CI defends.
 
 That is also why there is one floor and not two. A lower "runs on" number beside

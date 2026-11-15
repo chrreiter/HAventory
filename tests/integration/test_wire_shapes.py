@@ -42,10 +42,7 @@ FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 WIRE_SHAPES = FIXTURES / "wire_shapes.json"
 GOLDEN = FIXTURES / "stored_payload.json"
 REGENERATE_ENV = "HAVENTORY_WRITE_WIRE_SHAPES"
-REGENERATE_COMMAND = (
-    f"{REGENERATE_ENV}=1 .venv-integration/bin/python -m pytest -q -o asyncio_mode=auto "
-    "tests/integration/test_wire_shapes.py"
-)
+REGENERATE_COMMAND = f"{REGENERATE_ENV}=1 scripts/test.sh tests/integration/test_wire_shapes.py"
 
 TOPICS = ("items", "locations", "stats", "statuses")
 #: The event shape for each topic; a teardown notice is one shape on all four.

@@ -1,9 +1,8 @@
 """Integration: the count sensors on the HAventory device.
 
-Everything here needs machinery the offline stub does not have — an entity
-platform, a device registry, `hass.config_entries`, and a service registry that
-dispatches. The offline suite can only check the catalog the entities are built
-from (`tests/test_sensor_catalog.py`).
+Covers the entities on an entity platform and device registry, loaded through
+`hass.config_entries` and moved by service calls. The catalog they are built
+from is tested on its own (`tests/test_sensor_catalog.py`).
 """
 
 from __future__ import annotations

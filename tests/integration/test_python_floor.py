@@ -2,10 +2,9 @@
 
 ``pyproject.toml`` declares the interpreter this project needs, and the Home
 Assistant release ``requirements-integration.txt`` pins declares its own. The
-second number exists only where Home Assistant is installed, which is here —
-offline there is nothing to compare against, so ``tests/test_toolchain_pins.py``
-holds every copy of the floor to the declaration and this holds the declaration
-to Home Assistant.
+second number is read from the installed Home Assistant.
+``tests/test_toolchain_pins.py`` holds every copy of the floor to the
+declaration and this holds the declaration to Home Assistant.
 
 A floor below HA's own is not a lax declaration but a misleading one: uv is free
 to hand such an environment an interpreter that then cannot resolve Home

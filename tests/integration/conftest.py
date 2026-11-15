@@ -1,22 +1,6 @@
-"""pytest configuration for the HAventory in-process integration suite.
+"""pytest configuration for the HAventory integration tests.
 
-These tests exercise the integration inside a REAL Home Assistant core provided
-by ``pytest-homeassistant-custom-component`` (phacc). Unlike the offline suite
-(``tests/*_offline.py``), which fakes Home Assistant, this mode loads the actual
-HA APIs so we catch drift the stubs can't see.
-
-Run it with plugin autoload ENABLED (do NOT set ``PYTEST_DISABLE_PLUGIN_AUTOLOAD``)
-so phacc auto-registers via its entry point and brings its
-pytest-asyncio / pytest-aiohttp / pytest-socket stack. phacc requires
-pytest-asyncio's auto mode, so pass ``-o asyncio_mode=auto``:
-
-    pytest -o asyncio_mode=auto tests
-
-or use the wrapper: ``scripts/test.sh``.
-
-The parent ``tests/conftest.py`` detects the real ``homeassistant`` package these
-tests import and installs none of the offline stubs, so the two modes never
-collide. It also holds the index check that runs after every test.
+These tests drive the integration through a real ``hass``.
 
 The fixtures below are how a test drives the integration the way Home Assistant
 and a card do. Each is a factory, so a test arranges storage, patches or bus
