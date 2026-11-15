@@ -1,20 +1,21 @@
-"""Integration: what a real client actually receives when a command fails.
+"""Integration: what a client receives when a command fails.
 
-The contract's error frame carries a `data` object that Home Assistant's own
-`websocket_api.error_message` has no parameter for, so `ws.py` builds the
-envelope by hand. Offline, both sides of that distinction are our own code —
-the stub sends what the guard returns — and nothing proves the extra key
-survives a real connection's serialization out to a real client.
-
-The refusals Home Assistant makes on its own behalf are here for the same
-reason. They happen inside `ActiveConnection`, before any handler runs: an id
-that does not increase and a command this build does not have are both refused
-by state the offline helpers keep no equivalent of, so what a client sees in
-either case is asserted here or nowhere.
+An error frame carries a `data` object Home Assistant's own `error_message` has no room for,
+and it must reach a real client intact. Refusals Home Assistant makes itself, a reused id or
+a command this build lacks, are answered by the connection before any handler runs. A failure
+the integration did not expect says nothing of its cause, and a write that failed announces
+nothing to subscribers.
 """
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
+from typing import Any
+
+import pytest
+from custom_components.haventory import ops
+from custom_components.haventory.ws import UNEXPECTED_ERROR_MESSAGE
 from homeassistant.core import HomeAssistant
 
 
@@ -93,11 +94,7 @@ async def test_home_assistants_own_refusal_carries_no_data_key(
 async def test_a_reused_frame_id_is_refused_before_the_command_runs(
     hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
-    """Real connections track `last_id`; the offline helpers dispatch each frame alone.
-
-    So an offline test can reuse an id — or send ids out of order — in a way no
-    real client gets away with, and a card that did it would find out here.
-    """
+    """A connection tracks `last_id`, so a card that reuses an id is told so."""
 
     await setup_entry()
     client = await hass_ws_client(hass)
@@ -119,11 +116,7 @@ async def test_a_reused_frame_id_is_refused_before_the_command_runs(
 async def test_a_command_this_build_does_not_have_is_answered_not_ignored(
     hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
-    """What a newer card meets on an older backend: an answer it can branch on.
-
-    Offline the helpers raise `AssertionError("No handler responded")`, which is
-    a fine test failure and no description at all of what a client receives.
-    """
+    """What a newer card meets on an older backend: an answer it can branch on."""
 
     await setup_entry()
     client = await hass_ws_client(hass)
@@ -133,3 +126,120 @@ async def test_a_command_this_build_does_not_have_is_answered_not_ignored(
 
     assert resp["success"] is False, resp
     assert resp["error"]["code"] == "unknown_command", resp
+
+
+async def test_an_unexpected_failure_answers_generically(
+    monkeypatch, setup_entry, ws_connect
+) -> None:
+    """The exception text and traceback stay in the log, for a whole command and for one bulk op."""
+
+    def boom(detail: str) -> Callable[..., Any]:
+        def _raise(*_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError(detail)
+
+        return _raise
+
+    await setup_entry()
+    ws = await ws_connect()
+
+    monkeypatch.setattr(ops, "serialize_item", boom("SECRET-INTERNAL-DETAIL"))
+    res = await ws.send("haventory/item/create", name="Widget")
+    assert res["error"]["code"] == "unknown_error", res
+    assert res["error"]["message"] == UNEXPECTED_ERROR_MESSAGE
+    assert res["error"]["data"]["op"] == "item_create"
+    assert "SECRET-INTERNAL-DETAIL" not in json.dumps(res)
+    assert "Traceback" not in json.dumps(res)
+    monkeypatch.undo()
+
+    item = (await ws.send("haventory/item/create", name="Gadget", quantity=1))["result"]
+    monkeypatch.setitem(ops.OPS, "item_update", boom("SECRET-OP-DETAIL"))
+    operations = [
+        {"op_id": "boom", "kind": "item_update", "payload": {"item_id": item["id"], "name": "X"}},
+        {
+            "op_id": "good",
+            "kind": "item_adjust_quantity",
+            "payload": {"item_id": item["id"], "delta": 1},
+        },
+    ]
+    res = await ws.send("haventory/items/bulk", operations=operations)
+
+    assert res["success"] is True, res
+    results = res["result"]["results"]
+    assert results["boom"]["error"]["code"] == "unknown_error"
+    assert results["boom"]["error"]["message"] == UNEXPECTED_ERROR_MESSAGE
+    assert "SECRET-OP-DETAIL" not in json.dumps(res)
+    assert results["good"]["success"] is True
+    got = await ws.send("haventory/item/get", item_id=item["id"])
+    assert got["result"]["quantity"] == item["quantity"] + 1
+
+
+def _op(kind: str, **payload: Any) -> dict[str, Any]:
+    return {"op_id": kind, "kind": kind, "payload": payload}
+
+
+# (id, command, payload for the seeded item id and the Garage location id)
+MUTATIONS: list[tuple[str, str, Callable[[str, str], dict[str, Any]]]] = [
+    ("item_create", "item/create", lambda _i, _l: {"name": "Fresh"}),
+    ("item_update", "item/update", lambda i, _l: {"item_id": i, "quantity": 5}),
+    ("item_delete", "item/delete", lambda i, _l: {"item_id": i}),
+    ("adjust_quantity", "item/adjust_quantity", lambda i, _l: {"item_id": i, "delta": 1}),
+    ("set_quantity", "item/set_quantity", lambda i, _l: {"item_id": i, "quantity": 7}),
+    ("check_out", "item/check_out", lambda i, _l: {"item_id": i}),
+    ("check_in", "item/check_in", lambda i, _l: {"item_id": i}),
+    ("add_tags", "item/add_tags", lambda i, _l: {"item_id": i, "tags": ["new"]}),
+    ("remove_tags", "item/remove_tags", lambda i, _l: {"item_id": i, "tags": ["seed"]}),
+    ("custom_fields", "item/update_custom_fields", lambda i, _l: {"item_id": i, "set": {"k": "v"}}),
+    (
+        "threshold",
+        "item/set_low_stock_threshold",
+        lambda i, _l: {"item_id": i, "low_stock_threshold": 2},
+    ),
+    ("item_move", "item/move", lambda i, loc: {"item_id": i, "location_id": loc}),
+    (
+        "bulk",
+        "items/bulk",
+        lambda i, _l: {
+            "operations": [
+                _op("item_adjust_quantity", item_id=i, delta=1),
+                _op("item_set_quantity", item_id=i, quantity=9),
+            ]
+        },
+    ),
+    ("location_create", "location/create", lambda _i, _l: {"name": "Shed"}),
+    ("rename", "location/update", lambda _i, loc: {"location_id": loc, "name": "Renamed"}),
+    ("reparent", "location/update", lambda _i, loc: {"location_id": loc, "new_parent_id": None}),
+    ("location_delete", "location/delete", lambda _i, loc: {"location_id": loc}),
+    (
+        "move_subtree",
+        "location/move_subtree",
+        lambda _i, loc: {"location_id": loc, "new_parent_id": None},
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("command", "build"), [m[1:] for m in MUTATIONS], ids=[m[0] for m in MUTATIONS]
+)
+async def test_a_failed_write_is_not_announced(
+    setup_entry, ws_connect, fail_next_save, command, build
+) -> None:
+    """A client is never told about a change that did not reach disk."""
+
+    await setup_entry()
+    ws = await ws_connect()
+    parent = (await ws.send("haventory/location/create", name="House"))["result"]
+    child = (await ws.send("haventory/location/create", name="Garage", parent_id=parent["id"]))[
+        "result"
+    ]
+    item = (await ws.send("haventory/item/create", name="Seeded", quantity=3, tags=["seed"]))[
+        "result"
+    ]
+    for topic in ("items", "locations", "stats"):
+        await ws.subscribe(topic)
+    ws.event_frames.clear()
+
+    fail_next_save()
+    res = await ws.send(f"haventory/{command}", **build(item["id"], child["id"]))
+
+    assert res["error"]["code"] == "storage_error", res
+    assert ws.event_frames == []

@@ -2,7 +2,8 @@
 
 Static: each WebSocket command and service handler is parsed, and the names it
 reaches (following module-level helpers in its own module) must not include a
-persist call, an event announcement, an op function or a repository write.
+persist call, an event announcement, an op function or a repository write. Every
+command is also declared through `ws._command`, the one place `ws_guard` is applied.
 """
 
 from __future__ import annotations
@@ -107,6 +108,33 @@ def test_mutating_commands_are_exactly_the_ones_that_commit() -> None:
     committing = {k for k, v in _ws().items() if v & COMMITS}
     assert committing == WS_MUTATORS
     assert "commit_batch" in _ws()["ws_items_bulk"]
+
+
+def test_every_command_is_declared_through_the_guard() -> None:
+    """A handler decorated with `websocket_command` directly answers, but skips the guard.
+
+    Without it an unloaded entry is served and an unexpected error reaches the
+    client with its text instead of `unknown_error`.
+    """
+
+    assert "ws_guard(op, context)(func)" in inspect.getsource(ws._command)
+    tree = ast.parse(inspect.getsource(ws))
+    decorators = {
+        node.name: node.decorator_list
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef)
+    }
+    unguarded = [
+        name
+        for name in _ws()
+        if not (
+            len(decorators[name]) == 1
+            and isinstance(call := decorators[name][0], ast.Call)
+            and isinstance(call.func, ast.Name)
+            and call.func.id == "_command"
+        )
+    ]
+    assert unguarded == []
 
 
 def test_every_service_commits() -> None:
