@@ -620,6 +620,8 @@ async def test_location_tree_counts_items(setup_entry, ws_connect) -> None:
     ]
     listed = await ws.send("haventory/location/list")
     assert {loc["id"] for loc in listed["result"]} == {garage, shelf}
+    got = await ws.send("haventory/location/get", location_id=shelf)
+    assert (got["result"]["name"], got["result"]["parent_id"]) == ("Shelf", garage)
 
     create = "haventory/item/create"
     await ws.send(create, name="Car", location_id=garage, category="Auto")
