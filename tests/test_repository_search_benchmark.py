@@ -5,7 +5,7 @@ fails for reasons that have nothing to do with the code, so the gate never runs
 it and a person measuring the search path asks for it by name.
 
     ASSERT_BUDGETS=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q -s \\
-        tests/test_repository_search_benchmark_offline.py
+        tests/test_repository_search_benchmark.py
 
 The number this defends is the cost of answering ``q`` by scanning every item —
 five fields per item through ``normalize_text_for_sort`` — which is what

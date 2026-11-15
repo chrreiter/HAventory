@@ -10,10 +10,11 @@ HAventory has two, deliberately separate, backend test modes:
 
 * **Integration (opt-in).** The integration runs inside a *real* in-process
   Home Assistant core provided by ``pytest-homeassistant-custom-component``
-  (phacc), with plugin autoload ENABLED. Lives under ``tests/integration/`` and
-  is invoked explicitly (see ``tests/integration/conftest.py``)::
+  (phacc), with plugin autoload ENABLED. It collects ``tests/integration/`` and
+  every top-level file whose name does not end in ``_offline.py`` (see
+  ``tests/integration/conftest.py``)::
 
-      pytest -o asyncio_mode=auto tests/integration
+      pytest -o asyncio_mode=auto tests
 
 This module must serve the offline suite without ever leaking its HA stubs into
 the integration suite. It picks the mode from two signals: whether a real
@@ -25,7 +26,9 @@ the offline suite and gets the stubs. As a result:
   whenever the real package is absent, which is always true in the HA-free
   offline environment); and
 * the phacc suite never sees the stubs (real HA is present and autoload is on),
-  and is never collected by the offline run (``collect_ignore`` below).
+  and is never collected by the offline run (``collect_ignore`` below); and
+* a file named ``*_offline.py`` needs the stubs, so the real-core run skips it.
+  Every other top-level file runs in both modes.
 
 The WebSocket stub validates: it applies each command's schema to a frame
 before dispatch, as an ``ActiveConnection`` does, so an offline test cannot hand
@@ -1143,8 +1146,11 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
 if _INTEGRATION_MODE:
     # Integration mode: a real Home Assistant core (via phacc) drives the tests
     # and plugin autoload is enabled. Install no stubs and let
-    # tests/integration/conftest.py handle the fixtures.
-    pass
+    # tests/integration/conftest.py handle the fixtures. The files that need the
+    # stubs are left out: every `*_offline.py`, and the frontend registration
+    # file, which keeps its name because the card's source cites it.
+    collect_ignore = ["test_frontend_registration.py"]
+    collect_ignore_glob = ["test_*_offline.py"]
 else:
     # Offline mode: stub Home Assistant.
 

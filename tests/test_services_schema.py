@@ -1,4 +1,4 @@
-"""Offline tests for service ingress schemas (voluptuous).
+"""Tests for service ingress schemas (voluptuous).
 
 These tests verify required fields, defaults, and basic typing at the
 Home Assistant services boundary, avoiding duplication of domain rules

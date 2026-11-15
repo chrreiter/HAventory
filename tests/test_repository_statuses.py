@@ -1,4 +1,4 @@
-"""Offline tests for the repository's status layer.
+"""Tests for the repository's status layer.
 
 The status vocabulary is the one collection whose entries items *reference*, so
 deleting one is the only vocabulary edit that can orphan data. These tests pin

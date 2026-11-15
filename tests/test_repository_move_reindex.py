@@ -1,4 +1,4 @@
-"""Offline tests for the fast-path item reindexing on subtree moves.
+"""Tests for the fast-path item reindexing on subtree moves.
 
 The subtree move/rename path rewrites each item's denormalized
 ``location_path`` in place instead of running a full unindex/index cycle.

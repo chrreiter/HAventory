@@ -1,4 +1,4 @@
-"""Offline tests for what must survive an export_state/load_state round trip.
+"""Tests for what must survive an export_state/load_state round trip.
 
 - LocationPath.sort_key, which is derived rather than typed and so is rebuilt
   on load, whatever key the payload carries or lacks.

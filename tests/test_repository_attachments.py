@@ -1,4 +1,4 @@
-"""Offline tests for attachment titles and ordering on the repository.
+"""Tests for attachment titles and ordering on the repository.
 
 Order is per kind and the repository assigns it, so the first picture is the
 cover a card shows and a new upload has to land after the ones already there

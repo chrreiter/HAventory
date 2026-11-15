@@ -1,4 +1,4 @@
-"""Offline tests for the index checks the rest of the suite is measured against.
+"""Tests for the index checks the rest of the suite is measured against.
 
 An oracle nothing tests is an oracle that passes everything. These pin the
 healthy answer, one index drift, and each of the four count comparisons, so a
@@ -7,6 +7,8 @@ was supposed to guard.
 """
 
 from __future__ import annotations
+
+from unittest.mock import patch
 
 import pytest
 from custom_components.haventory.item_writes import ItemCreate, ItemUpdate
@@ -48,7 +50,7 @@ def test_an_item_missing_from_the_checked_out_index_is_reported() -> None:
     assert "checked_out_item_missing_from_index" in collect_index_issues(repo)
 
 
-def test_every_count_is_compared_against_the_collection_it_summarises(monkeypatch) -> None:
+def test_every_count_is_compared_against_the_collection_it_summarises() -> None:
     """All four count checks fire when the served numbers stop matching.
 
     The counts come off the same collections the checks measure, so a genuine
@@ -57,18 +59,19 @@ def test_every_count_is_compared_against_the_collection_it_summarises(monkeypatc
     """
 
     repo, _ = _seeded()
-    monkeypatch.setattr(
-        Repository,
-        "get_counts",
-        lambda _self: {
-            "items_total": 99,
-            "locations_total": 99,
-            "checked_out_count": 99,
-            "low_stock_count": 99,
-        },
-    )
+    served = {
+        "items_total": 99,
+        "locations_total": 99,
+        "checked_out_count": 99,
+        "low_stock_count": 99,
+    }
 
-    assert set(collect_index_issues(repo)) == {
+    # Scoped to the assertion: the suite's own index check runs at teardown and
+    # must see the real counts, whichever fixture the test runner tears down first.
+    with patch.object(Repository, "get_counts", lambda _self: served):
+        issues = set(collect_index_issues(repo))
+
+    assert issues == {
         "items_total_count_mismatch",
         "locations_total_count_mismatch",
         "checked_out_count_mismatch",

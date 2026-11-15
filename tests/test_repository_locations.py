@@ -1,4 +1,4 @@
-"""Offline tests for the in-memory Repository (locations focus).
+"""Tests for the in-memory Repository (locations focus).
 
 Verify location CRUD, move/rename invariants, subtree path propagation,
 and denormalization of item.location_path upon moves/renames.
