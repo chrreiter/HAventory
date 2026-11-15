@@ -7,7 +7,7 @@ registry and fan-out are `subscriptions.py`. Payload and result shapes (`<Item>`
 `<ItemFilter>`, `<Counts>` and the rest) are in [`data_shapes.md`](data_shapes.md).
 
 A change to a command moves `ws.py`, this document and `data_shapes.md` in the same pull
-request. `tests/test_docs_contract_offline.py` holds two lists in this document to the code:
+request. `tests/test_docs_contract.py` holds two lists in this document to the code:
 the `items/bulk` kinds and the `quick_filters` vocabulary.
 
 ### Envelope

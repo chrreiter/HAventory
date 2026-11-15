@@ -1,4 +1,4 @@
-"""Offline tests for the in-memory Repository (items focus).
+"""Tests for the in-memory Repository (items focus).
 
 Scenarios cover CRUD, optimistic concurrency, filtering/sorting/pagination,
 and derived counts (checked_out and low_stock).

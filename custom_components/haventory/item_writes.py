@@ -95,7 +95,7 @@ class _ItemDraft:
     """The fields of ``Item`` a client writes, editable while the rules run.
 
     Every other field (``id``, the timestamps, ``version``, ``attachments``) is
-    decided outside the rule table, and ``tests/test_frozen_records_offline.py``
+    decided outside the rule table, and ``tests/test_frozen_records.py``
     holds this list equal to ``Item``'s.
     """
 

@@ -1,4 +1,4 @@
-"""Offline tests for the exception taxonomy.
+"""Tests for the exception taxonomy.
 
 The only thing here a client can notice is which WebSocket error code an
 exception rides out on, so that is the whole file: both schema refusals stay

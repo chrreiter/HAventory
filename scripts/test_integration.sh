@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run the in-process Home Assistant integration test suite (tests/integration/).
+# Run the tests against a real in-process Home Assistant core: tests/integration/
+# and every top-level test file that does not need the offline stubs.
 #
 # Loads a real Home Assistant core via pytest-homeassistant-custom-component
 # (phacc), so it needs:
@@ -18,5 +19,5 @@ ensure_integration_venv
 unset PYTEST_DISABLE_PLUGIN_AUTOLOAD
 
 info 'Running in-process HA integration tests (phacc)...'
-"$INT_VENV_PYTHON" -m pytest -q -o asyncio_mode=auto tests/integration "$@"
+"$INT_VENV_PYTHON" -m pytest -q -o asyncio_mode=auto tests "$@"
 ok 'Integration tests OK'

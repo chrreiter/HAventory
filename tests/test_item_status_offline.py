@@ -5,7 +5,7 @@ model's creation defaults, validation and filtering, tolerant loading of a
 payload written before the field existed, the repository round-trip,
 import/export, the service schemas, and the live status set a household can
 extend. The repository and WebSocket layers keep their own
-homes in ``test_repository_statuses_offline.py`` and
+homes in ``test_repository_statuses.py`` and
 ``test_ws_statuses_offline.py``.
 """
 

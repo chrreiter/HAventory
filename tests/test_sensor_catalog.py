@@ -1,11 +1,9 @@
-"""Offline tests for the sensor catalog.
+"""Tests for the sensor catalog.
 
-`sensor.py` itself is not imported here: nothing offline stubs
-`homeassistant.components.sensor`, so the entity class belongs to the phacc
-suite (`tests/integration/test_sensor.py`). What is checkable offline is the
-catalog it is built from — that every descriptor names a real count, that the
-`unique_id` suffixes cannot collide, and that the names the frontend shows exist
-in both translation files.
+The catalog `sensor.py` builds its entities from: every descriptor names a real
+count, the `unique_id` suffixes cannot collide, and the names the frontend shows
+exist in both translation files. The entities themselves are tested in
+`tests/integration/test_sensor.py`.
 """
 
 from __future__ import annotations
@@ -60,22 +58,6 @@ def test_only_the_calendar_derived_counts_track_midnight() -> None:
         "inspection_overdue_count",
         "inspection_due_count",
     }
-
-
-def test_the_rollover_is_the_instances_midnight_and_not_utcs() -> None:
-    """The counts read the instance's local day, so the rewrite has to follow it.
-
-    Read off the source because nothing offline stubs
-    `homeassistant.components.sensor`, so the module cannot be imported here.
-    That the subscription actually fires at local midnight is asserted in
-    `tests/integration/test_sensor.py`; what this catches is the one-word slip
-    back to the UTC helper, which no offline test could otherwise see.
-    """
-
-    source = (PACKAGE / "sensor.py").read_text(encoding="utf-8")
-
-    assert "async_track_utc_time_change" not in source
-    assert "async_track_time_change" in source
 
 
 def test_the_forwarded_platforms_are_the_two_this_integration_owns() -> None:

@@ -3,7 +3,7 @@
 The entity itself is only real here — offline there is no entity platform, no
 device registry and no `hass.config_entries`, so the reserved entity_id, the
 `unique_id` and the state transitions cannot be observed there. The projection
-the entity wraps is covered offline (`tests/test_calendar_offline.py`).
+the entity wraps is tested on its own (`tests/test_calendar_projection.py`).
 """
 
 from __future__ import annotations

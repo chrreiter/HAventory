@@ -1,4 +1,4 @@
-"""Offline tests for `filter_items` and `sort_items`."""
+"""Tests for `filter_items` and `sort_items`."""
 
 from __future__ import annotations
 

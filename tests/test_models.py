@@ -1,4 +1,4 @@
-"""Offline tests for HAventory models and helpers.
+"""Tests for HAventory models and helpers.
 
 Scenarios cover creation defaults, invalid payloads, tag normalization, field
 clearing via updates, denormalized location path generation, attachment

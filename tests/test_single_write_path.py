@@ -1,4 +1,4 @@
-"""Offline guard: every mutating surface writes through `ops.commit` or `ops.commit_batch`.
+"""Guard: every mutating surface writes through `ops.commit` or `ops.commit_batch`.
 
 Static: each WebSocket command and service handler is parsed, and the names it
 reaches (following module-level helpers in its own module) must not include a

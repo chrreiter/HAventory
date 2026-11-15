@@ -1,9 +1,8 @@
-"""Offline tests for the calendar projection.
+"""Tests for the calendar projection.
 
-`calendar.py` itself is not imported here: it is a wrapper over these functions
-and everything it adds — the entity platform, the device registry, the midnight
-rewrite — belongs to the phacc suite (`tests/integration/test_calendar.py`).
-What is checkable offline is the projection, which touches no Home Assistant
+`calendar.py` is a wrapper over these functions. What it adds, the entity
+platform, the device registry and the midnight rewrite, is tested in
+`tests/integration/test_calendar.py`; the projection touches no Home Assistant
 type at all.
 """
 

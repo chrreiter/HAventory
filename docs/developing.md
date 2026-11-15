@@ -97,8 +97,13 @@ scripts/test_integration.sh
 # ...or by hand:
 uv venv --python 3.14 .venv-integration
 uv pip install --python .venv-integration/bin/python -r requirements-integration.txt
-.venv-integration/bin/python -m pytest -o asyncio_mode=auto tests/integration
+.venv-integration/bin/python -m pytest -o asyncio_mode=auto tests
 ```
+
+The run also collects every top-level file in `tests/` whose name does not end in
+`_offline.py`: those need no Home Assistant, so they pass against the real package too. The
+`_offline.py` files, and `tests/test_frontend_registration.py`, need the stubs and run
+offline only.
 
 - **Do not set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` here.** phacc must load, and with the flag
   the run silently collects nothing. `tests/conftest.py` sees the real `homeassistant`
@@ -208,7 +213,7 @@ created.
    `translations/<tag>.json`.
 2. Update [`backend_api_contract.md`](backend_api_contract.md) and
    [`data_shapes.md`](data_shapes.md) in the same pull request.
-   `tests/test_docs_contract_offline.py` checks the lists in the contract that name code.
+   `tests/test_docs_contract.py` checks the lists in the contract that name code.
 3. Test it offline through `ws_send` from `tests/ws_helpers.py`, and in
    `tests/integration/` if it touches a Home Assistant API.
 4. If the card calls it, add it to `WSClient` (`cards/haventory-card/src/store/ws.ts`) and

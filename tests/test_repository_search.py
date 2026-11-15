@@ -1,4 +1,4 @@
-"""Offline tests for repository text search.
+"""Tests for repository text search.
 
 ``q`` is a substring test: every word of the normalized query must appear
 somewhere in the normalized name, description, category, tags or location

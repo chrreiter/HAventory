@@ -3,7 +3,7 @@
 Everything here needs machinery the offline stub does not have — an entity
 platform, a device registry, `hass.config_entries`, and a service registry that
 dispatches. The offline suite can only check the catalog the entities are built
-from (`tests/test_sensor_offline.py`).
+from (`tests/test_sensor_catalog.py`).
 """
 
 from __future__ import annotations
