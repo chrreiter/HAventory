@@ -481,10 +481,8 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def run_on_unload(self):
             """Run what setup registered, as Home Assistant does while unloading.
 
-            Real HA calls these itself once `async_unload_entry` reports success;
-            offline the test harness is the only thing that can
-            (`runtime_helpers.unload_entry`). Each runs once — a second unload
-            has nothing left to cancel.
+            Real HA calls these itself once `async_unload_entry` reports success.
+            Each runs once — a second unload has nothing left to cancel.
             """
 
             pending, self._on_unload = self._on_unload, []

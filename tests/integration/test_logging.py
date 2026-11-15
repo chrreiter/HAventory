@@ -14,6 +14,7 @@ import pytest
 from custom_components.haventory import ops as ops_module
 from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.ops import OPS
+from custom_components.haventory.repository import Repository
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
@@ -158,19 +159,43 @@ async def test_a_service_mutation_logs_a_greppable_persist_line(
     assert "[custom_components.haventory.storage]" in complete[-1]
 
 
+def _populated() -> Repository:
+    repo = Repository()
+    garage = repo.create_location(name="Garage")
+    repo.create_item({"name": "Drill", "location_id": str(garage.id)})
+    return repo
+
+
+@pytest.mark.parametrize(
+    ("stored", "counts"),
+    [
+        pytest.param(None, "items_count=0 locations_count=0", id="fresh_install"),
+        pytest.param(_populated, "items_count=1 locations_count=1", id="populated"),
+    ],
+)
 async def test_the_setup_line_carries_the_numbers_a_boot_is_diagnosed_from(
-    hass: HomeAssistant, caplog, setup_entry
+    hass: HomeAssistant, caplog, setup_entry, stored, counts
 ) -> None:
-    """The line an operator reads first after a start-up that looks wrong."""
+    """The line an operator reads first after a start-up that looks wrong.
+
+    DEBUG, and nothing at WARNING beside it: every fresh install boots empty, and
+    Home Assistant shows WARNING with no logger configured, so a new household's
+    first line about HAventory must not be a warning about nothing.
+    """
 
     caplog.set_level(logging.DEBUG, logger="custom_components.haventory")
-    await setup_entry()
+    await setup_entry(stored=stored() if stored else None)
 
-    health = [r.getMessage() for r in caplog.records if "Storage health" in r.getMessage()]
+    health = [r for r in caplog.records if "Storage health" in r.getMessage()]
 
-    assert health, [r.getMessage() for r in caplog.records][-10:]
-    assert "op=setup_storage_health" in health[-1]
-    assert "schema_version=" in health[-1]
-    assert "items_count=" in health[-1]
+    assert [r.levelno for r in health] == [logging.DEBUG], [r.getMessage() for r in caplog.records]
+    message = health[0].getMessage()
+    assert "op=setup_storage_health" in message
+    assert counts in message
     # Once each: the numbers are context, not part of the message text.
-    assert health[-1].count("schema_version=") == 1
+    assert message.count("schema_version=") == 1
+    assert not [
+        r.getMessage()
+        for r in caplog.records
+        if r.name.startswith("custom_components.haventory") and r.levelno >= logging.WARNING
+    ]

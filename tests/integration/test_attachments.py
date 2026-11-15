@@ -798,17 +798,28 @@ BACKUP_ROWS = {
 BACKUP_HELD_DIRS = ("not-a-uuid", "keyed", "named-inside", "no-body")
 
 
+def _backup_file(data: object, *, version: int = 1) -> dict:
+    """The corrupt-store backup as `hass_storage` holds it."""
+
+    return {"version": version, "key": CORRUPT_BACKUP_STORAGE_KEY, "data": data}
+
+
 @pytest.mark.parametrize(
     ("backup", "kept"),
     [
         pytest.param(
-            {"schema_version": CURRENT_SCHEMA_VERSION, "items": BACKUP_ROWS, "locations": {}},
+            _backup_file(
+                {"schema_version": CURRENT_SCHEMA_VERSION, "items": BACKUP_ROWS, "locations": {}}
+            ),
             True,
             id="rows_of_every_shape",
         ),
         pytest.param(None, False, id="no_backup"),
-        pytest.param({"items": ["not", "a", "mapping"]}, False, id="items_is_a_list"),
-        pytest.param(["not a dict"], False, id="not_a_dict"),
+        pytest.param(_backup_file({"items": ["not", "a", "mapping"]}), False, id="items_is_a_list"),
+        pytest.param(_backup_file(["not a dict"]), False, id="not_a_dict"),
+        # A file the store cannot read at all (here, one a newer Home Assistant
+        # wrote) says nothing about which items it holds, so the sweep is skipped.
+        pytest.param(_backup_file({"items": {}}, version=99), True, id="unreadable"),
     ],
 )
 async def test_setup_keeps_the_files_of_every_item_the_backup_holds_a_row_for(
@@ -827,11 +838,7 @@ async def test_setup_keeps_the_files_of_every_item_the_backup_holds_a_row_for(
         },
     }
     if backup is not None:
-        hass_storage[CORRUPT_BACKUP_STORAGE_KEY] = {
-            "version": 1,
-            "key": CORRUPT_BACKUP_STORAGE_KEY,
-            "data": backup,
-        }
+        hass_storage[CORRUPT_BACKUP_STORAGE_KEY] = backup
     files = [media.media_root(hass) / name / "some-attachment.png" for name in BACKUP_HELD_DIRS]
     for path in files:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -839,7 +846,11 @@ async def test_setup_keeps_the_files_of_every_item_the_backup_holds_a_row_for(
 
     await setup_entry()
 
-    assert [path.exists() for path in files] == [kept] * len(files)
+    try:
+        assert [path.exists() for path in files] == [kept] * len(files)
+    finally:
+        # The test config directory is shared, so a kept file would reach the next test.
+        shutil.rmtree(media.media_root(hass), ignore_errors=True)
 
 
 async def test_setup_keeps_every_file_when_the_store_holds_no_items(
