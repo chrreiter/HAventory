@@ -45,7 +45,7 @@ security. A declared floor is a recommendation about what to run, so it must not
 release with a known unpatched **high or critical** advisory. Lower severities do not move
 it, because "any advisory at all" would turn the floor into a treadmill. Re-derive the number
 rather than assuming the current one is still right. Raising it means editing `hacs.json`
-and `requirements-integration.txt`, which pins the in-process suite to the same release.
+and `requirements-integration.txt`, which pins the test environment to the same release.
 `tests/test_min_ha_version.py` checks every copy, and `dependency-review` flags an advisory
 against the newly pinned release in the same pull request.
 
@@ -55,10 +55,10 @@ Run it before every commit. Both halves must be green.
 
 ```bash
 # Backend
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
+scripts/test.sh                # every backend test, on the real Home Assistant at the declared floor
 uv run ruff check .
 uv run ruff format --check .   # CI fails on formatting alone; `ruff check` does not cover it
-scripts/typecheck.sh           # mypy against the real Home Assistant at the declared floor
+scripts/typecheck.sh           # mypy against that same Home Assistant
 
 # Frontend (in cards/haventory-card)
 npm audit --audit-level=moderate
@@ -74,16 +74,16 @@ repository's Dependabot rule dismisses dev-scope alerts, so the alert dashboard 
 truth for the card's lockfile, CI is. The level is `moderate` for the same reason. CI and
 `scripts/ci_local.sh` run the same level, so a lower one locally is green against a red CI.
 
-The type check resolves `homeassistant` to the real package, not to stubs.
-`scripts/typecheck.sh` builds the in-process suite's `.venv-integration` (the Home Assistant
-release `requirements-integration.txt` pins) and runs `uv run mypy`, which reads its imports
-from there. A bare `uv run mypy` works once that environment exists and fails loudly when it
-does not. Whatever it finds is fixed, not ignored, and a `type: ignore` carries its reason on
-the same line.
+The tests and the type check share one environment, `.venv-integration`: the Home Assistant
+release `requirements-integration.txt` pins to the floor, with the test harness that release
+ships. `scripts/test.sh` and `scripts/typecheck.sh` build it on first use and pass their
+arguments on to pytest and mypy (`scripts/test.sh tests/test_media.py -x`). The locked `.venv`
+from `uv sync` holds only ruff, mypy and pre-commit. Build the card first, or the frontend
+tests skip. Whatever the type check finds is fixed, not ignored, and a `type: ignore`
+carries its reason on the same line.
 
-`scripts/ci_local.sh` runs everything at once. CI runs the same checks plus the in-process
-Home Assistant suite, `actionlint`, `hassfest`, HACS validation, CodeQL, dependency review
-and the PR-title check.
+`scripts/ci_local.sh` runs everything at once, with coverage. CI runs the same checks plus
+`actionlint`, `hassfest`, HACS validation, CodeQL, dependency review and the PR-title check.
 
 ## Conventions
 
@@ -140,8 +140,10 @@ next change has to read and keep green.
 - Deleting a test that no longer earns its place is welcome; the PR says which, and why.
 - A test file's docstring is a sentence or two. A constraint goes on the test it belongs to.
 
-Tests are offline by default ([`docs/developing.md`](docs/developing.md#testing)). Commands
-go through `ws_send` from `tests/ws_helpers.py`, and card components mount through
+A backend test that needs Home Assistant lives in `tests/integration/` and drives the
+integration as Home Assistant does, through the fixtures in its `conftest.py`
+([`docs/developing.md`](docs/developing.md#testing)); one that needs none stays in `tests/`.
+Card components mount through
 `mountComponent` and read through `q`, `all`, `settle` and `componentCss` from
 `cards/haventory-card/src/test.utils.ts`, never a private copy.
 
