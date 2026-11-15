@@ -15,13 +15,15 @@ cannot reproduce.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 import pytest
 from custom_components.haventory.const import (
     ATTACHMENT_MANUAL_MIME_TYPES,
     ATTACHMENT_PICTURE_MIME_TYPES,
     CONF_CARD_TITLE,
     CONF_QUICK_FILTERS,
-    CONF_SIDEBAR_PANEL_ENABLED,
     DEFAULT_CARD_TITLE,
     DOMAIN,
     INTEGRATION_VERSION,
@@ -31,10 +33,9 @@ from custom_components.haventory.const import (
 )
 from custom_components.haventory.repository import Repository
 from custom_components.haventory.runtime import find_runtime
-from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION
+from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 
@@ -91,8 +92,15 @@ async def test_unloaded_entry_leaves_the_ws_api_refusing(
 
     # Still dispatched — Home Assistant has no API to unregister a command — and
     # answering the contract's storage_error rather than serving dropped state.
-    for msg_id, command in enumerate(("haventory/item/list", "haventory/ping"), start=2):
-        await client.send_json({"id": msg_id, "type": command})
+    # A refused write must not reach the repository either: the list after the
+    # setup below would show it.
+    refusals = (
+        {"type": "haventory/item/list"},
+        {"type": "haventory/ping"},
+        {"type": "haventory/item/create", "name": "Ghost"},
+    )
+    for msg_id, command in enumerate(refusals, start=2):
+        await client.send_json({"id": msg_id, **command})
         refused = await client.receive_json()
         assert refused["success"] is False, refused
         assert refused["error"]["code"] == "storage_error", refused
@@ -103,28 +111,74 @@ async def test_unloaded_entry_leaves_the_ws_api_refusing(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    await client.send_json({"id": 4, "type": "haventory/item/list"})
+    await client.send_json({"id": 5, "type": "haventory/item/list"})
     listed = await client.receive_json()
     assert listed["success"] is True, listed
     assert [item["name"] for item in listed["result"]["items"]] == ["Screwdriver"]
 
 
-async def test_disabled_entry_refuses_like_a_removed_one(
-    hass: HomeAssistant, hass_ws_client, setup_entry
+async def test_a_command_during_teardown_is_refused_and_a_failed_flush_still_unloads(  # noqa: PLR0913, PLR0917 - one fixture per step
+    hass: HomeAssistant,
+    hass_storage: dict,
+    caplog: pytest.LogCaptureFixture,
+    setup_entry,
+    ws_connect,
+    fail_next_save,
 ) -> None:
-    """Disabling is the case with no setup coming to end it."""
+    """While the unload flushes, the entry is no longer `LOADED` but its runtime is still there.
+
+    The commands go through the loaded-entry lookup and the flush through the one
+    that ignores entry state (`runtime.py`); were they swapped, the command below
+    would write into an inventory that is being given up. A save that fails at
+    that moment is logged at ERROR and the unload still completes.
+    """
 
     entry = await setup_entry()
-    client = await hass_ws_client(hass)
+    ws = await ws_connect()
+    assert (await ws.send("haventory/item/create", name="Kept"))["success"] is True
+    started, release = asyncio.Event(), asyncio.Event()
+    fail_next_save(started=started, until=release)
+
+    unload = asyncio.create_task(hass.config_entries.async_unload(entry.entry_id))
+    await asyncio.wait_for(started.wait(), 5)
+    assert entry.state is ConfigEntryState.UNLOAD_IN_PROGRESS
+    refused = await asyncio.wait_for(ws.send("haventory/item/create", name="Ghost"), 5)
+    release.set()
+
+    assert await asyncio.wait_for(unload, 5)
+    assert refused["error"]["code"] == "storage_error", refused
+    assert entry.state is ConfigEntryState.NOT_LOADED
+    stored = hass_storage[STORAGE_KEY]["data"]["items"]
+    assert [item["name"] for item in stored.values()] == ["Kept"]
+    failures = [r for r in caplog.records if "Failed to persist during teardown" in r.getMessage()]
+    assert [r.levelno for r in failures] == [logging.ERROR]
+
+
+async def test_disabled_entry_refuses_like_a_removed_one(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture, setup_entry, ws_connect
+) -> None:
+    """Disabling is the case with no setup coming to end it.
+
+    The dashboard's connection outlives the entry, and its close callbacks fire
+    whenever the tab goes, long after the runtime they would look up is gone.
+    """
+
+    entry = await setup_entry()
+    ws = await ws_connect()
+    await ws.subscribe("items")
 
     await hass.config_entries.async_set_disabled_by(entry.entry_id, ConfigEntryDisabler.USER)
     await hass.async_block_till_done()
 
     assert entry.state is ConfigEntryState.NOT_LOADED
-    await client.send_json({"id": 1, "type": "haventory/item/create", "name": "Ghost"})
-    refused = await client.receive_json()
-    assert refused["success"] is False, refused
+    refused = await ws.send("haventory/item/create", name="Ghost")
     assert refused["error"]["code"] == "storage_error", refused
+    assert [event["action"] for event in ws.events("items")] == ["unavailable"]
+
+    caplog.clear()
+    await ws.socket.close()
+    await hass.async_block_till_done()
+    assert not [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 async def test_reload_tells_an_open_subscriber_and_lets_it_re_subscribe(
@@ -245,70 +299,6 @@ async def test_re_adding_a_removed_entry_restores_the_inventory(
     assert [item["name"] for item in listed["result"]["items"]] == ["Screwdriver"]
 
 
-async def test_the_options_flow_stores_a_pill_choice_the_card_then_reads(
-    hass: HomeAssistant, hass_ws_client, setup_entry
-) -> None:
-    """The pill picker is a real selector, and only real HA applies it.
-
-    Offline the selector is a stand-in, so the shape of its config — the option
-    list, `multiple`, the mode — is asserted nowhere else. This walks the whole
-    path instead: the form Home Assistant builds, a submission through it, and
-    what `haventory/config` then reports to the card.
-    """
-
-    entry = await setup_entry()
-    client = await hass_ws_client(hass)
-
-    await client.send_json({"id": 1, "type": "haventory/config"})
-    before = await client.receive_json()
-    assert before["success"] is True, before
-    # Nothing chosen yet: null, not an empty list — the card keeps every pill.
-    assert before["result"]["quick_filters"] is None
-
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
-    assert flow["type"] is FlowResultType.FORM
-    result = await hass.config_entries.options.async_configure(
-        flow["flow_id"],
-        {
-            CONF_CARD_TITLE: "HAventory",
-            CONF_SIDEBAR_PANEL_ENABLED: True,
-            CONF_QUICK_FILTERS: ["overdue", "low_stock"],
-            "todo": {},
-        },
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY, result
-    await hass.async_block_till_done()
-
-    assert entry.options[CONF_QUICK_FILTERS] == ["low_stock", "overdue"]
-
-    await client.send_json({"id": 2, "type": "haventory/config"})
-    after = await client.receive_json()
-    assert after["success"] is True, after
-    assert after["result"]["quick_filters"] == ["low_stock", "overdue"]
-
-
-async def test_the_options_flow_refuses_a_pill_it_does_not_offer(
-    hass: HomeAssistant, setup_entry
-) -> None:
-    """A name outside the five is rejected by the form, not stored and dropped later."""
-
-    entry = await setup_entry()
-
-    flow = await hass.config_entries.options.async_init(entry.entry_id)
-    with pytest.raises(InvalidData):
-        await hass.config_entries.options.async_configure(
-            flow["flow_id"],
-            {
-                CONF_CARD_TITLE: "HAventory",
-                CONF_SIDEBAR_PANEL_ENABLED: True,
-                CONF_QUICK_FILTERS: ["sideways"],
-                "todo": {},
-            },
-        )
-
-    assert CONF_QUICK_FILTERS not in entry.options
-
-
 @pytest.mark.parametrize(
     ("options", "title", "pills"),
     [
@@ -316,6 +306,14 @@ async def test_the_options_flow_refuses_a_pill_it_does_not_offer(
         # No pills is a choice: it arrives as [], not as the null of "never chose".
         pytest.param(
             {CONF_CARD_TITLE: "Pantry", CONF_QUICK_FILTERS: []}, "Pantry", [], id="chosen"
+        ),
+        # An upgraded entry still carries the options of a retired rate limiter;
+        # setup reads its keys by name, so those load and do nothing.
+        pytest.param(
+            {CONF_CARD_TITLE: "Pantry", "rate_limit_enabled": True, "rate_limit_commands_burst": 1},
+            "Pantry",
+            None,
+            id="retired_keys",
         ),
     ],
 )

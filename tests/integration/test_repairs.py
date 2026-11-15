@@ -14,10 +14,12 @@ import pytest
 from custom_components.haventory import repairs as repairs_module
 from custom_components.haventory.const import (
     CONF_ALLOW_LOSSY_LOAD,
+    CONF_CARD_TITLE,
     CORRUPT_BACKUP_STORAGE_KEY,
     DOMAIN,
     ISSUE_CORRUPT_STORE,
     ISSUE_SCHEMA_DOWNGRADE,
+    REPAIR_ISSUE_IDS,
 )
 from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
 from custom_components.haventory.runtime import find_runtime
@@ -83,6 +85,7 @@ async def test_a_newer_store_leaves_a_non_fixable_issue(
     # The card quotes the refusal, so the number this build supports reaches the
     # user through it.
     assert f"({CURRENT_SCHEMA_VERSION})" in issue.translation_placeholders["error"]
+    assert issue.translation_placeholders["storage_key"] == STORAGE_KEY
     assert hass_storage[STORAGE_KEY]["data"] == before
 
 
@@ -131,10 +134,14 @@ async def test_a_corrupt_row_offers_a_fix_that_backs_up_reloads_and_clears(
     await hass.async_block_till_done()
 
     assert entry.state is ConfigEntryState.SETUP_ERROR
+    # The entry's error state names the file, how much it could not read, and which row.
+    assert all(part in entry.reason for part in ("1 item(s)", STORAGE_KEY, "not-a-uuid"))
     issue = ir.async_get(hass).async_get_issue(DOMAIN, ISSUE_CORRUPT_STORE)
     assert issue is not None
     assert issue.is_fixable is True
+    assert issue.severity is ir.IssueSeverity.WARNING
     assert issue.translation_placeholders["items"] == "1"
+    assert issue.translation_placeholders["backup_key"] == CORRUPT_BACKUP_STORAGE_KEY
 
     flow_manager = repairs_flow_manager(hass)
     assert flow_manager is not None
@@ -194,7 +201,18 @@ async def test_a_failed_copy_aborts_the_fix_and_loads_nothing_lossily(
 async def test_a_clean_store_leaves_no_issue_behind(
     hass: HomeAssistant, hass_storage: dict
 ) -> None:
-    """The control: nothing to refuse means nothing in Repairs."""
+    """A card the previous boot left describes a store that now reads, so setup clears it."""
+
+    registry = ir.async_get(hass)
+    for issue_id in REPAIR_ISSUE_IDS:
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            issue_id,
+            is_fixable=False,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=issue_id,
+        )
 
     hass_storage[STORAGE_KEY] = _stored(
         {
@@ -208,9 +226,9 @@ async def test_a_clean_store_leaves_no_issue_behind(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
-    registry = ir.async_get(hass)
-    assert registry.async_get_issue(DOMAIN, ISSUE_SCHEMA_DOWNGRADE) is None
-    assert registry.async_get_issue(DOMAIN, ISSUE_CORRUPT_STORE) is None
+    assert [registry.async_get_issue(DOMAIN, issue_id) for issue_id in REPAIR_ISSUE_IDS] == [
+        None
+    ] * len(REPAIR_ISSUE_IDS)
 
 
 async def test_the_repair_survives_a_restart_with_no_mutation_in_between(
@@ -271,7 +289,10 @@ async def test_a_clean_load_spends_an_opt_in_left_on_the_entry(
     )
 
     entry = MockConfigEntry(
-        domain=DOMAIN, data={}, title="HAventory", options={CONF_ALLOW_LOSSY_LOAD: True}
+        domain=DOMAIN,
+        data={},
+        title="HAventory",
+        options={CONF_ALLOW_LOSSY_LOAD: True, CONF_CARD_TITLE: "Pantry"},
     )
     entry.add_to_hass(hass)
 
@@ -280,6 +301,8 @@ async def test_a_clean_load_spends_an_opt_in_left_on_the_entry(
 
     assert entry.state is ConfigEntryState.LOADED
     assert CONF_ALLOW_LOSSY_LOAD not in entry.options
+    # Only the opt-in is taken back; the household's own options stay.
+    assert entry.options[CONF_CARD_TITLE] == "Pantry"
 
 
 async def test_a_row_with_no_name_reaches_the_repairs_card_and_its_fix(

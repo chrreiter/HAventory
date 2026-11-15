@@ -481,10 +481,8 @@ def _install_offline_ha_stubs() -> None:  # noqa: PLR0915 - flat, intentional st
         def run_on_unload(self):
             """Run what setup registered, as Home Assistant does while unloading.
 
-            Real HA calls these itself once `async_unload_entry` reports success;
-            offline the test harness is the only thing that can
-            (`runtime_helpers.unload_entry`). Each runs once — a second unload
-            has nothing left to cancel.
+            Real HA calls these itself once `async_unload_entry` reports success.
+            Each runs once — a second unload has nothing left to cancel.
             """
 
             pending, self._on_unload = self._on_unload, []
@@ -1147,9 +1145,7 @@ if _INTEGRATION_MODE:
     # Integration mode: a real Home Assistant core (via phacc) drives the tests
     # and plugin autoload is enabled. Install no stubs and let
     # tests/integration/conftest.py handle the fixtures. The files that need the
-    # stubs are left out: every `*_offline.py`, and the frontend registration
-    # file, which keeps its name because the card's source cites it.
-    collect_ignore = ["test_frontend_registration.py"]
+    # stubs are left out: every `*_offline.py`.
     collect_ignore_glob = ["test_*_offline.py"]
 else:
     # Offline mode: stub Home Assistant.

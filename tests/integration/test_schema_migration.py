@@ -14,12 +14,17 @@ import uuid
 from copy import deepcopy
 
 import pytest
-from custom_components.haventory.const import DOMAIN
+from custom_components.haventory.const import (
+    DOMAIN,
+    ISSUE_CORRUPT_SCHEMA_VERSION,
+    ISSUE_SCHEMA_DOWNGRADE,
+)
 from custom_components.haventory.migrations import PRE_COLLAPSE_SCHEMA_VERSIONS
 from custom_components.haventory.runtime import find_runtime
 from custom_components.haventory.storage import CURRENT_SCHEMA_VERSION, STORAGE_KEY
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 ITEM_ID = str(uuid.uuid4())
@@ -190,23 +195,55 @@ async def test_an_unreadable_schema_version_stops_the_entry_with_its_own_message
         assert len(entry.reason) < len(stamp)
     else:
         assert repr(stamp) in entry.reason
+    # Its own Repairs card, so restoring a store clears one card rather than the wrong one.
+    registry = ir.async_get(hass)
+    assert registry.async_get_issue(DOMAIN, ISSUE_CORRUPT_SCHEMA_VERSION) is not None
+    assert registry.async_get_issue(DOMAIN, ISSUE_SCHEMA_DOWNGRADE) is None
     assert find_runtime(hass) is None
     assert hass_storage[STORAGE_KEY]["data"] == data
 
 
+@pytest.mark.parametrize(
+    ("stored", "says"),
+    [
+        # A payload that is not a mapping at all is a plain storage failure, not
+        # a verdict about which schema wrote it.
+        pytest.param(
+            {"version": 1, "key": STORAGE_KEY, "data": ["not", "a", "mapping"]},
+            ("op=migrate", STORAGE_KEY),
+            id="payload_not_a_mapping",
+        ),
+        # Written by something other than this integration; a restore in the
+        # background is a fix a retry picks up.
+        pytest.param(
+            {
+                "version": 1,
+                "key": STORAGE_KEY,
+                "data": {"schema_version": CURRENT_SCHEMA_VERSION, "items": [], "locations": {}},
+            },
+            ("Storage validation failed during setup", "op=setup_storage"),
+            id="collection_not_a_mapping",
+        ),
+        # A file a newer Home Assistant wrote, as a restored backup can be:
+        # `Store` refuses to read it at all.
+        pytest.param(
+            {"version": 99, "key": STORAGE_KEY, "data": {}},
+            ("Failed to load storage during setup", "op=setup_storage"),
+            id="file_the_store_cannot_read",
+        ),
+    ],
+)
 async def test_a_store_that_cannot_be_read_right_now_is_retried_instead(
-    hass: HomeAssistant, hass_storage: dict, caplog: pytest.LogCaptureFixture
+    hass: HomeAssistant, hass_storage: dict, caplog: pytest.LogCaptureFixture, stored, says
 ) -> None:
     """The counter-case that gives the refusals above their meaning.
 
-    A payload that is not a mapping at all is a plain storage failure, not a
-    verdict about which schema wrote it, so it takes the retry path. Without
-    this case "raises ConfigEntryError" and "raises ConfigEntryNotReady" would
+    Without it "raises ConfigEntryError" and "raises ConfigEntryNotReady" would
     be indistinguishable from the outside.
     """
 
     caplog.set_level(logging.ERROR)
-    _seed_store(hass_storage, ["not", "a", "mapping"])
+    hass_storage[STORAGE_KEY] = stored
 
     entry = await _setup_expecting_failure(hass)
 
@@ -217,7 +254,7 @@ async def test_a_store_that_cannot_be_read_right_now_is_retried_instead(
     logged = [
         record.getMessage()
         for record in caplog.records
-        if record.levelno == logging.ERROR and "op=migrate" in record.getMessage()
+        if record.levelno == logging.ERROR and says[0] in record.getMessage()
     ]
-    assert len(logged) == 1
-    assert STORAGE_KEY in logged[0]
+    assert len(logged) == 1, logged
+    assert all(part in logged[0] for part in says), logged[0]

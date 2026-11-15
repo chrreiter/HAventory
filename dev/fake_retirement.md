@@ -41,8 +41,8 @@ scripts/test.sh    # today's scripts/test_integration.sh, renamed
 - **Names:** a file gets its final name when it moves: the subject, with no `_offline`
   suffix. Until the fake is gone, `_offline` means "needs the fake", and the real-core run
   collects everything else (`collect_ignore_glob` in `tests/conftest.py`).
-  `tests/test_frontend_registration.py` needs the fake but keeps its name, because the
-  card's source cites it; it is ignored by name until batch 06 moves it.
+  `tests/test_frontend_registration.py` kept its name, because the card's source cites
+  it; since batch 06 it needs no hass and runs in both modes.
 - **CI** still runs the in-process job on `tests/integration` alone, so the files that need
   no hass are checked on the real core only by `scripts/test_integration.sh`. Pointing the
   job at `tests` is a one-line `ci:` change that any batch can carry.
@@ -73,8 +73,9 @@ a module or listens on the bus first, then calls them.
 | bus listener on the fake | `async_capture_events(hass, "haventory_item_changed")` from phacc |
 | a service through the fake registry | `await call_service("item_create", name="Drill")` returns the response |
 | the fake area registry | `add_areas("Garage")` returns `{"Garage": area_id}` |
-| `MockResourceCollection`, `MockYamlResourceCollection` | the real `lovelace` component in storage or YAML mode (batch 06 decides how) |
-| `RETIRED_RATE_LIMIT_OPTIONS` | moves, as a literal, into the file that uses it (batch 06) |
+| `MockResourceCollection` | seed `hass_storage["lovelace_resources"]` before setup; read `hass.data["lovelace"].resources.async_items()` (the collection saves late, so not `hass_storage`) |
+| `MockYamlResourceCollection` | `async_setup_component(hass, "lovelace", {"lovelace": {"resource_mode": "yaml", "resources": [...]}})` before setup |
+| `RETIRED_RATE_LIMIT_OPTIONS` | a literal in `tests/integration/test_config_flow.py` |
 | the index check | unchanged: `tests/conftest.py` runs it in both modes |
 
 ## Moving a test
@@ -147,14 +148,41 @@ Collected tests per file, before each batch moves them. Each name is
   - Combined coverage gave up `events.py` 87: a mutation announced after its entry tore
     down, reachable only if a teardown lands between a write's save and its announcement.
     `events.py` 284-285 and 289-292 are now covered on the real core by an import.
-- **06, setup and lifecycle (233):** `test_init` 38, `test_frontend_registration` 41,
+- **06, setup and lifecycle (233): done.** `test_init` 38, `test_frontend_registration` 41,
   `test_entry_removal` 12, `test_entry_removal_refusal` 15, `test_entry_unload_refusal` 17,
   `test_runtime` 10, `test_stale_files` 35, `test_integration_lifecycle` 1, `test_logs` 29,
-  `test_config_flow` 27, `test_diagnostics` 8.
+  `test_config_flow` 27, `test_diagnostics` 8. 82 behaviours moved onto the real core, 42
+  stayed pure (`tests/test_logs.py`, the cross-language checks in
+  `tests/test_frontend_registration.py`, the shipped-list and translation-tree checks), 80
+  were already covered and 29 checked the fake or a private detail. `lovelace_helpers.py` is
+  deleted, and `runtime_helpers.py` lost every helper that drove setup, unload or removal.
+  No fixture was added. What the next batches can use:
+  - `test_config_entry.py::test_a_command_during_teardown_is_refused_and_a_failed_flush_still_unloads`
+    is what fails if `loaded_runtime` and `find_runtime` are swapped in the client
+    direction (the in-process suite caught nothing else); the persistence and
+    failed-save tests catch the teardown direction.
+  - A file the store cannot read at all is `hass_storage[key] = {"version": 99, ...}`:
+    `Store` raises `UnsupportedStorageVersionError`, a `HomeAssistantError`.
+  - The test config directory is shared between tests, so a test that leaves attachment
+    files under `media_root(hass)` hands them to the next one; remove them in the test.
+  - A second static path or a second view on the same URL does not raise on this core, and
+    HA never freezes its router, so the integration's guards around those registrations
+    are reachable only through a harness artefact. Neither is tested.
+  - The options form's to-do selector does not refuse an entity outside the `todo` domain
+    when a submission is validated; only the frontend's picker filters it.
+  - Combined coverage gave up `__init__.py` 252-261 and `frontend_registration.py` 117-125
+    and 413 (the route refusals above), `frontend_registration.py` 81, 90-94, 147-154,
+    175-182, 378 and 426 (a resource with no URL string, and Lovelace or the frontend's URL
+    manager missing, which the manifest dependencies rule out), `config_flow.py` 180 (the
+    in-flow single-instance abort: Home Assistant aborts first because of
+    `single_config_entry`), `stale_files.py` 88 (an empty retired list), and the
+    `runtime is None` guards at `events.py` 47, `storage.py` 287 and `todo_bridge.py` 76
+    and 85, reachable only by calling the function with no loaded entry. Session 08 can
+    type these away.
 - **07, features (299):** `test_import_export` 125, `test_media` 61, `test_todo_bridge` 20,
   `test_item_status` 29, `test_item_input_validation` 41, `test_serialized_shapes` 14,
   `test_local_day` 9. The sensor catalog needs no fake and already runs on the real core.
-- **08:** delete the fake, `runtime_helpers.py`, `ws_helpers.py`, `lovelace_helpers.py`,
+- **08:** delete the fake, `runtime_helpers.py`, `ws_helpers.py`,
   the mode switch and this file; drop the offline gate line and CI job; set
   `asyncio_mode = auto` in `pytest.ini`; rename the script.
 
@@ -250,9 +278,10 @@ moved status file costs the same, 23 tests in 1.8 s.
 
 After batch 04 the real-core run is 799 tests in about 25 s of pytest time (27 s wall),
 with the card built. After batch 05 it is 848 tests in about 32 s (34 s wall), on a
-machine where the 799 took 33 s.
+machine where the 799 took 33 s. After batch 06 it is 937 tests in about 31 s (33 s wall).
 
-881 tests ran on the fake before batch 04, 657 after it and 510 after batch 05. Moved one for one, they add about 70 s, so the whole run
+881 tests ran on the fake before batch 04, 657 after it, 510 after batch 05 and 299 after
+batch 06. Moved one for one, they add about 70 s, so the whole run
 lands near 90 s; rules 1 and 2 bring it lower. That is under two minutes, so the suite
 stays in one process.
 

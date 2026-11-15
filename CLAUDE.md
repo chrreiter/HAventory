@@ -136,7 +136,7 @@ mode**. phacc must load, and the flag makes it silently collect nothing.
   old path to `RETIRED_PATHS` in the same PR: [`CONTRIBUTING.md`](CONTRIBUTING.md) →
   "Conventions" says what an upgrade does otherwise.
 - **Logging**: take the module logger from `logs.context_logger(__name__)`, never
-  `logging.getLogger` (`tests/test_logs_offline.py` sweeps for it), and keep attaching
+  `logging.getLogger` (`tests/test_logs.py` sweeps for it), and keep attaching
   context through `extra=`. It is folded into the message text because HA's formatter drops
   everything else. `%`-args are safe beside it. No `domain` field (the logger name carries
   it), and no reserved `LogRecord` keys: `item_name`, not `name`.
