@@ -59,6 +59,7 @@ a module or listens on the bus first, then calls them.
 | `install_runtime(options=...)` | `await setup_entry(options)` |
 | `install_runtime(state=...)`, `unload_runtime`, `unload_entry` | `hass.config_entries.async_unload(entry.entry_id)` |
 | `install_runtime(store=...)` failing store | `fail_next_save()` before the command; again to fail two |
+| a recording store held open on an event | `fail_next_save(started=ev, until=ev2)`: set as the save starts, raises once `ev2` is set |
 | `setup_entry(hass, entry)` (offline) | the `setup_entry` fixture |
 | `remove_entry` | `hass.config_entries.async_remove(entry.entry_id)` |
 | `installed_entry` | the entry `setup_entry` returned |
@@ -116,11 +117,36 @@ Collected tests per file, before each batch moves them. Each name is
     `send_message` raises for no single connection: a closed one is a logged no-op and a
     full queue cancels it) and 259-261 (the counts broadcast with no loaded entry, reachable
     only by calling it bare). `timestamps.py` 36 is now covered.
-- **05, writes and storage (147):** `test_services` 25, `test_events` 34,
+- **05, writes and storage (147): done.** `test_services` 25, `test_events` 34,
   `test_service_broadcast` 7, `test_delete_surfaces` 3, `test_failed_save_undo` 15,
   `test_storage` 40, `test_storage_concurrency` 2, `test_migrations` 6,
-  `test_exception_translations` 15. `test_single_write_path` needs no fake and already runs
-  on the real core.
+  `test_exception_translations` 15. 63 moved onto the real core, 9 stayed pure
+  (`tests/test_migrations.py`, `tests/test_exception_translations.py`), 56 were already
+  covered and 19 checked the fake or a private detail. One helper grew: `fail_next_save`
+  takes `started` and `until` (table above). What the next batches can use:
+  - The failed-save table is `tests/integration/test_failed_save_undo.py`; a new write
+    family is a row there. To line a second actor up behind a held save without sleeping,
+    wrap the coroutine it enters (`ops.commit`, or the package's `async_persist_immediate`)
+    so the wrapper sets an event: each runs to the write lock without yielding.
+  - What setup does with each stored stamp, and the retry for a payload that is no mapping,
+    is `tests/integration/test_schema_migration.py`; `test_config_entry.py` no longer holds
+    store refusals. phacc's `hass_storage` replaces its entry on every write, so
+    `hass_storage[STORAGE_KEY] is seeded` means nothing wrote the store.
+  - Batch 06: `test_init`'s `test_the_files_of_dropped_items_survive_while_the_backup_exists`
+    overlaps `test_attachments.py::test_setup_keeps_the_files_of_every_item_the_backup_holds_a_row_for`
+    (which ids the backup holds); the restart and backup-removal sequence is still only
+    offline.
+  - Batch 07: a seed built with `AttachmentMeta` must use a kind the reader accepts
+    (`picture`, `manual`). `Repository.add_attachment` takes any string and the fake never
+    reloads, so an offline seed of `document` passed there and is refused as a corrupt
+    store on the real core. An import's low-stock crossings are in `test_events.py`.
+  - Batch 08: no test calls a `service_*` handler any more, but
+    `tests/test_single_write_path.py` sweeps their source through `services.SERVICES`, and
+    `tests/test_services_schema.py` imports the `SCHEMA_*` constants; both change with the
+    handlers.
+  - Combined coverage gave up `events.py` 87: a mutation announced after its entry tore
+    down, reachable only if a teardown lands between a write's save and its announcement.
+    `events.py` 284-285 and 289-292 are now covered on the real core by an import.
 - **06, setup and lifecycle (233):** `test_init` 38, `test_frontend_registration` 41,
   `test_entry_removal` 12, `test_entry_removal_refusal` 15, `test_entry_unload_refusal` 17,
   `test_runtime` 10, `test_stale_files` 35, `test_integration_lifecycle` 1, `test_logs` 29,
@@ -223,9 +249,10 @@ in-process tests at about 80 ms each, and 520 that need no hass in about 3 s tog
 moved status file costs the same, 23 tests in 1.8 s.
 
 After batch 04 the real-core run is 799 tests in about 25 s of pytest time (27 s wall),
-with the card built.
+with the card built. After batch 05 it is 848 tests in about 32 s (34 s wall), on a
+machine where the 799 took 33 s.
 
-881 tests ran on the fake before batch 04, 657 after it. Moved one for one, they add about 70 s, so the whole run
+881 tests ran on the fake before batch 04, 657 after it and 510 after batch 05. Moved one for one, they add about 70 s, so the whole run
 lands near 90 s; rules 1 and 2 bring it lower. That is under two minutes, so the suite
 stays in one process.
 
