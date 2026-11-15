@@ -62,8 +62,7 @@ async def test_the_unload_flush_reaches_the_store_it_is_giving_up(
     Home Assistant marks the entry `UNLOAD_IN_PROGRESS` before calling
     `async_unload_entry` and deletes `runtime_data` only after it returns, so the
     teardown flush runs against an entry that is no longer `LOADED`. Only a real
-    core sequences it that way; the offline suite can stage the state but not
-    order it around HA's own call.
+    core sequences it that way.
     """
 
     entry = MockConfigEntry(domain=DOMAIN, data={}, title="HAventory")

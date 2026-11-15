@@ -187,9 +187,8 @@ async def health(conn: WSConn) -> dict:
 async def assert_counts_agree(conn: WSConn, phase: str) -> dict:
     """Oracle: `haventory/health` and `haventory/stats` describe the same repository.
 
-    `healthy` and `issues` used to carry index cross-checks; those run in the
-    offline suite now and the two fields are constants, so the online gate is the
-    numbers. Two read commands over one repository disagreeing is a real find.
+    `healthy` and `issues` are constants: the index cross-checks run after every
+    test in the suite, so the online gate is the numbers. Two read commands over one repository disagreeing is a real find.
     """
     h = await health(conn)
     stats = (await conn.call("haventory/stats"))["result"]

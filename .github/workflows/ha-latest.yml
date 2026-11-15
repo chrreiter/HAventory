@@ -67,13 +67,11 @@ jobs:
             echo "### Integration suite against current Home Assistant"
             echo
             echo "- Home Assistant \`${version}\` (phacc \`${harness}\`)"
-            echo "- The declared floor is tested separately, by the integration job in \`ci.yml\`."
+            echo "- The declared floor is tested separately, by the backend job in \`ci.yml\`."
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Integration tests (in-process HA via phacc)
-        # phacc requires pytest-asyncio's auto mode.
+      - name: Integration tests (newest Home Assistant)
         run: >
           .venv-integration/bin/python -m pytest -q
-          -o asyncio_mode=auto
           tests/integration
           --junitxml=integration-latest-junit.xml
       - name: Upload integration artifacts

@@ -1,8 +1,7 @@
 """Integration: `calendar.haventory` on the HAventory device.
 
-The entity itself is only real here — offline there is no entity platform, no
-device registry and no `hass.config_entries`, so the reserved entity_id, the
-`unique_id` and the state transitions cannot be observed there. The projection
+Covers the reserved entity_id, the `unique_id` and the state transitions of the
+entity as Home Assistant registers it. The projection
 the entity wraps is tested on its own (`tests/test_calendar_projection.py`).
 """
 
@@ -101,8 +100,8 @@ async def test_the_summaries_are_written_in_the_servers_language(
     """Both surfaces the text reaches, in German: the event a calendar card
     lists and the `message` attribute a notification automation templates.
 
-    Only real here — the patterns come from `translations/de.json` through Home
-    Assistant's own loader, which the offline suite has no counterpart for.
+    The patterns come from `translations/de.json` through Home Assistant's own
+    loader.
     """
 
     hass.config.language = "de"

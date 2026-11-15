@@ -2,7 +2,7 @@
 """Probe the integration's container-level lifecycle paths against a real Home Assistant.
 
 Three behaviours only exist once HAventory is installed in a running instance,
-and each one is asserted against stubs in the offline suite:
+and the test suite's real core never restarts mid-run, so none is asserted there:
 
   resources  The card's Lovelace resource carries the manifest version as a
              cache-busting `?v=`. Whatever a restart finds — a hand-pinned

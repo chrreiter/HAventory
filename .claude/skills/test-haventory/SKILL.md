@@ -1,15 +1,15 @@
 ---
 name: test-haventory
-description: Run every HAventory test surface: offline unit gate (pytest/ruff/mypy), frontend gate (eslint/vitest/tsc/build), the adversarial online stress regimen (fuzz/bulk/races/restart), and the live-update browser smoke. Use when asked to test HAventory, run the gate, lint/typecheck, or smoke / stress / load / fuzz / break-it test the running app.
+description: Run every HAventory test surface: the commit gate (pytest/ruff/mypy on a real Home Assistant core, and the card's: eslint/vitest/tsc/build), the adversarial online stress regimen (fuzz/bulk/races/restart), and the live-update browser smoke. Use when asked to test HAventory, run the gate, lint/typecheck, or smoke / stress / load / fuzz / break-it test the running app.
 ---
 
-HAventory has four test surfaces here. Two are **offline** (no HA): the backend gate
-(pytest/ruff/mypy) and the frontend gate (eslint/vitest/tsc/build). Two are **online**
+HAventory has four test surfaces here. Two make up the **commit gate**: the backend
+(pytest on a real HA core, ruff, mypy) and the frontend (eslint/vitest/tsc/build). Two are **online**
 and hit the real HA in Docker (container `home-assistant`, `http://localhost:8123`): the
 adversarial **stress regimen** `.claude/skills/test-haventory/stress.py` (the primary
 break-it driver) and the **live-update browser smoke** `cards/haventory-card/e2e/live-updates.smoke.mjs`.
-The in-process HA suite (`scripts/test_integration.sh`, a real HA core) is documented in
-`docs/developing.md` and not re-verified here.
+The backend half runs every test on a real HA core; `docs/developing.md` → "Testing"
+has its layout and traps.
 
 All paths are relative to the repo root and every command below is **Linux/bash**, which is
 the only development host the repo supports; CI runs `ubuntu-latest`, and on Windows the
@@ -33,38 +33,12 @@ The canonical clean-Linux/CI spelling of the gate is in `CONTRIBUTING.md` → "T
 - For the browser smoke: Chromium for Playwright, `npx playwright install chromium`. It
   caches under `~/.cache/ms-playwright`; [Windows/Git Bash] `~/AppData/Local/ms-playwright`.
 
-## The commit gate (offline: run before every commit)
+## The commit gate (run before every commit)
 
-Both halves must be green. Why each command is in the gate is in `CONTRIBUTING.md`.
-Backend, from the repo root:
-
-```bash
-# The tools come from the locked `dev` group. Naming packages one `--with` at a
-# time here is how a test-only import went missing and how a version literal for
-# ruff drifted from the pin CI runs.
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run python -m pytest -q
-
-uv run ruff check custom_components tests
-# → All checks passed!
-
-# CI fails on formatting alone; `ruff check` does not cover it.
-uv run ruff format --check .
-
-# mypy against the real HA at the floor; builds .venv-integration first if needed.
-scripts/typecheck.sh
-# → Success: no issues found
-```
-
-Frontend, from `cards/haventory-card`:
-
-```bash
-npm ci            # first run, or if node_modules is partial (missing rolldown binding)
-npx prettier --check . # → All matched files use Prettier code style!
-npm run lint      # eslint  → clean
-npm run typecheck # tsc --noEmit → clean
-npm test          # vitest  → all passed
-npm run build     # vite → ../../custom_components/haventory/www/ (git-ignored)
-```
+The gate, both halves, is written out once in `CONTRIBUTING.md` → "The gate", with the
+reason for each command. `scripts/ci_local.sh` runs it all at once. Build the card first
+(`npm run build` in `cards/haventory-card`) so the frontend tests that read the built
+bundle do not skip. Report each half's result with its counts, and name any skipped test.
 
 Warm the hooks before committing (never `--no-verify`):
 
@@ -146,8 +120,8 @@ $RUN cleanup       # sweep any leftover stress_test_ data
 | `restart` | mid-load `docker restart` + on-disk store vs API cross-check |
 | `cleanup` | delete everything prefixed `stress_test_` |
 
-**A run is not clean until you scan the server logs**: offline stubs can stay green while
-real HA throws (that is how the `__slots__` bug #97 was found). The sibling skill's sweep
+**A run is not clean until you scan the server logs**: a green test suite can hide
+real HA throwing (that is how the `__slots__` bug #97 was found). The sibling skill's sweep
 sorts the log by the taxonomy's severity policy instead of by keyword, so the fuzz layers'
 hundreds of contract-defined WARNINGs do not bury the one line that matters:
 
@@ -182,8 +156,7 @@ node .claude/skills/run-haventory/screenshot.mjs --out /tmp/card.png
   and the `--with` list to run from an ephemeral env whenever the project venv is unusable.
   [Windows/Git Bash] the way that shows up here is `failed to remove file .venv/lib64`
   with a permission error, a file-sync client holding the symlink.
-- **Offline suite needs Python 3.14** (PEP 758 source) and `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`;
-  `--with aiohttp` is only so the stress driver imports.
+- **Python 3.14** is required (PEP 758 source); `--with aiohttp` is only so the stress driver imports.
 - **Frontend `node_modules` is often partial** (missing the platform's `@rolldown/binding-*`
   → vitest/vite crash on start). `npm ci` in `cards/haventory-card` fixes it.
 - **`stress.py restart` needs `HA_CONTAINER`**, and leaves the container restarted
@@ -197,8 +170,8 @@ node .claude/skills/run-haventory/screenshot.mjs --out /tmp/card.png
   `docs/developing.md` → "Testing" carries the reference curve to compare a run against.
 - **E2E: assert on the item NAME, not the quantity cell**: the card renders quantity only
   when that column is active, but the name always renders.
-- **Log scan is part of the pass gate**: subscription/connection bugs can pass offline unit
-  tests while real HA throws (`__slots__`, `subscribeMessage` frame shape). Grep the container
+- **Log scan is part of the pass gate**: subscription/connection bugs can pass the test
+  suite while real HA throws (`__slots__`, `subscribeMessage` frame shape). Grep the container
   logs after any online run.
 
 ## Troubleshooting

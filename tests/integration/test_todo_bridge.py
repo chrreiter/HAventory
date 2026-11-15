@@ -5,7 +5,7 @@ Assistant's own dispatch is in the loop: entity targeting, the feature gate on
 `add_item` / `remove_item`, summary matching, and the bus listeners.
 
 The list is a to-do entity of this suite's own rather than `local_todo`, whose
-`ical` requirement a phacc run does not install. It models the contract
+`ical` requirement the test environment does not install. It models the contract
 `TodoListEntity` states: items with uids the entity itself assigns.
 """
 

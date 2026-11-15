@@ -86,7 +86,7 @@ def _ws() -> dict[str, set[str]]:
 
 
 def _services() -> dict[str, set[str]]:
-    return {name: _reached(h, services) for name, h, _schema in services.SERVICES}
+    return {"services._handler": _reached(services._handler, services)}
 
 
 def test_repo_read_allowlist_names_real_attributes() -> None:

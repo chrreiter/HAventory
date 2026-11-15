@@ -36,8 +36,7 @@ Run every Python tool through uv (`uv run <tool>`) so it uses the locked environ
   real Home Assistant at the declared floor. It runs from `.venv`, and `python_executable` in
   `pyproject.toml` points its import resolution at `.venv-integration`, so Home Assistant,
   aiohttp and voluptuous are the versions that release pins. `scripts/typecheck.sh` builds
-  that environment and runs it. The offline `.venv` stays Home-Assistant-free, which is what
-  `tests/conftest.py` reads to pick the offline mode.
+  that environment and runs it.
 - **The card** is Lit, TypeScript, Vite and Vitest with jsdom, formatted by Prettier
   (`cards/haventory-card/.prettierrc.yaml`) and linted by ESLint's flat config
   (`cards/haventory-card/eslint.config.js`): typescript-eslint's type-checked rules, which
@@ -54,75 +53,48 @@ gate in one go, with coverage, and stops at the first failing step.
 ## Testing
 
 What to test, and how much, is [CONTRIBUTING.md](../CONTRIBUTING.md#tests-earn-their-place)
-→ "Tests earn their place". The backend has two test modes, kept apart on purpose.
+→ "Tests earn their place"; the command is the gate's. Every backend test runs in one pytest
+process on a genuine Home Assistant core: the release `requirements-integration.txt` pins to
+the declared floor, loaded through
+[`pytest-homeassistant-custom-component`](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component),
+which brings Home Assistant's own pytest stack.
 
-**Offline** is the default and runs in seconds with no Home Assistant install. HA is stubbed
-in `tests/conftest.py`, and the WebSocket stub applies each command's schema before
-dispatch, so a test sends the frames a real client could send. Async tests use
-`@pytest.mark.asyncio`.
+- `tests/integration/` drives the integration through a real `hass`, one file per subject.
+  The fixtures in its `conftest.py` are factories (`setup_entry`, `ws_connect`,
+  `call_service`, `fail_next_save`, `add_areas`): a test seeds storage, patches or listens
+  first, then asks for the step.
+- `tests/` holds what needs no `hass`: pure logic, the repository, and the checks on the
+  repository's own files. Basenames are unique across the two directories, because pytest
+  refuses two test modules with one basename in a run.
+- `tests/conftest.py` checks every repository a test built, once that test ends.
 
-```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
-```
+Traps:
 
-The stub **records** what `services.setup()` registers, so which services exist, with which
-schema and which response mode, is asserted offline. How Home Assistant *dispatches* to a
-handler is asserted only in the in-process mode.
-
-**In-process** runs the integration inside a real Home Assistant core, catching drift
-against real HA APIs that the stubs cannot see. It is opt-in, below.
-
-Timings are measured against a live Home Assistant with the `test-haventory` skill's
-`stress.py`. A budget asserted inside the offline suite would only measure the machine it
-ran on. Every write re-serializes the whole store, so a create's cost follows the store's
-size. The reference curve, one editor at a time: about 2.5 ms on an empty store, 9.5 ms at
-1 000 items, 17 ms at 2 000 and 43 ms at 5 000, with occasional 230–280 ms save spikes above
-about 3 000. A batch or an import writes once.
-
-### In-process HA integration tests (opt-in)
-
-These load a genuine Home Assistant core through
-[`pytest-homeassistant-custom-component`](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component)
-(phacc). phacc and HA come from `requirements-integration.txt`, which pins HA to the
-declared floor and stays out of `pyproject.toml`, `uv.lock` and the offline `.venv`. The
-tests live in `tests/integration/`, one file per subject: config-entry setup and unload,
-WebSocket CRUD and error envelopes, persistence and schema migration, services and their
-broadcasts, the sensors, calendar, repairs, diagnostics, to-do bridge, attachments,
-translations, the retired-files sweep and the frontend registration.
-
-```bash
-# One-shot: provisions the interpreter and a dedicated .venv-integration, then runs them
-scripts/test_integration.sh
-
-# ...or by hand:
-uv venv --python 3.14 .venv-integration
-uv pip install --python .venv-integration/bin/python -r requirements-integration.txt
-.venv-integration/bin/python -m pytest -o asyncio_mode=auto tests
-```
-
-The run also collects every top-level file in `tests/` whose name does not end in
-`_offline.py`: those need no Home Assistant, so they pass against the real package too. The
-`_offline.py` files need the stubs and run offline only.
-
-- **Do not set `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` here.** phacc must load, and with the flag
-  the run silently collects nothing. `tests/conftest.py` sees the real `homeassistant`
-  package and installs none of the offline stubs, and the offline run never collects
-  `tests/integration/`, so the two modes cannot collide.
 - **Build the card first** (`npm run build`), or `tests/integration/test_frontend.py` skips
   half its cases.
-- **It needs network access** to fetch the interpreter and Home Assistant. A sandbox without
-  it cannot run this mode; CI runs it in its own `integration` job.
+- **One run at a time.** Home Assistant's `file_upload` keeps uploads in
+  `<tmp>/home-assistant-file_upload` and the test config directory is shared, so two runs at
+  once break each other's attachment and failed-save tests. A run takes about a minute; past
+  two, `pytest-xdist` is already installed (`-n auto`), with a `TMPDIR` per worker.
+- **The first run needs network access**, to fetch the interpreter and Home Assistant.
 - **It cannot run on a Windows host**: the script builds a POSIX venv path and HA core
   imports `fcntl`. Run it in a container with the venv on a named volume. The image needs uv
-  and nothing else. The first run takes about three minutes, a re-run about thirty seconds,
-  and host edits are picked up through the mount:
+  and nothing else. The first run takes about three minutes, a re-run about a minute, and
+  host edits are picked up through the mount:
 
   ```bash
   MSYS_NO_PATHCONV=1 docker run -d --name hav-int -v "$(pwd):/work" \
     -v hav-int-venv:/work/.venv-integration -w /work \
     ghcr.io/astral-sh/uv:bookworm sleep 7200
-  MSYS_NO_PATHCONV=1 docker exec hav-int bash -lc 'cd /work && bash scripts/test_integration.sh'
+  MSYS_NO_PATHCONV=1 docker exec hav-int bash -lc 'cd /work && bash scripts/test.sh'
   ```
+
+Timings are measured against a live Home Assistant with the `test-haventory` skill's
+`stress.py`. A budget asserted inside the test suite would only measure the machine it ran
+on. Every write re-serializes the whole store, so a create's cost follows the store's size.
+The reference curve, one editor at a time: about 2.5 ms on an empty store, 9.5 ms at 1 000
+items, 17 ms at 2 000 and 43 ms at 5 000, with occasional 230–280 ms save spikes above about
+3 000. A batch or an import writes once.
 
 ### Live-update browser smoke (opt-in)
 
@@ -213,8 +185,7 @@ created.
 2. Update [`backend_api_contract.md`](backend_api_contract.md) and
    [`data_shapes.md`](data_shapes.md) in the same pull request.
    `tests/test_docs_contract.py` checks the lists in the contract that name code.
-3. Test it offline through `ws_send` from `tests/ws_helpers.py`, and in
-   `tests/integration/` if it touches a Home Assistant API.
+3. Test it in `tests/integration/` over `ws_connect`, the way the card sends it.
 4. If the card calls it, add it to `WSClient` (`cards/haventory-card/src/store/ws.ts`) and
    to `makeMockHass` in `src/test.utils.ts`, which throws on any command it does not handle.
 
@@ -238,15 +209,14 @@ Assistant contact surface, the phone breakpoints and the known gaps) is
 
 ## CI and repository automation
 
-- **CI** (`.github/workflows/ci.yml`) runs the backend gate with coverage, the in-process
-  suite and the type check, both against the declared Home Assistant floor (`integration`),
-  the card gate on every Node major `engines` names, `actionlint` (through its pre-commit
+- **CI** (`.github/workflows/ci.yml`) runs the backend gate, tests with coverage and the type
+  check against the declared Home Assistant floor, in one `backend` job, the card gate on every Node major `engines` names, `actionlint` (through its pre-commit
   hook), hassfest and HACS validation. CodeQL, dependency review and the
   Conventional-Commit PR-title check run as their own workflows.
 - **Action pinning.** Third-party actions, `docker://` images included, name an immutable
   revision (a commit SHA or an image digest), because a tag can be repointed by whoever owns
   it. GitHub's own `actions/*` are pinned by major tag.
-- **`ha-latest`** runs the in-process suite against the newest Home Assistant on the 8th of
+- **`ha-latest`** runs `tests/integration/` against the newest Home Assistant on the 8th of
   each month and on demand. **`card-smoke`**, on the same schedule, boots Home Assistant
   `stable` and `beta`, onboards them over REST (`scripts/ci_provision_ha.py`), installs the
   integration and the built card, and runs the live-update smoke against each. Both catch
@@ -279,7 +249,7 @@ Assistant contact surface, the phone breakpoints and the known gaps) is
 ## Reproducible dev environment (.devcontainer)
 
 Open the repository in VS Code or GitHub Codespaces and choose *Reopen in Container*. The
-post-create step runs `scripts/setup.sh` and the offline suite.
+post-create step runs `scripts/setup.sh` and `scripts/test.sh`.
 
 To run a real Home Assistant with HACS against the working tree, run
 `bash .devcontainer/develop.sh` (needs network). It installs the current stable Home
@@ -302,7 +272,8 @@ Everything under `scripts/` is Linux/bash, and the Python helpers assume a UTF-8
 |---|---|
 | `setup.sh` | the bootstrap under [Setup](#setup-linuxbash); `--ci` skips the pre-commit hooks |
 | `ci_local.sh` | the whole gate in one run, with coverage |
-| `test_integration.sh` | provisions `.venv-integration` and runs the in-process suite |
+| `test.sh` | provisions `.venv-integration` and runs every backend test |
+| `typecheck.sh` | provisions the same environment and runs mypy against it |
 | `reload_addon.sh` | deploys the working tree into a running Home Assistant dev container |
 | `ws_init_haventory.py` | creates the config entry through Home Assistant's config-flow REST API, then checks `haventory/version` over WebSocket |
 | `ci_provision_ha.py` | onboards a fresh Home Assistant over REST; what `card-smoke` uses |

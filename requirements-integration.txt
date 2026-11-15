@@ -1,22 +1,17 @@
-# HAventory — in-process Home Assistant integration test harness (phacc).
+# HAventory: the environment every backend test runs in.
 #
-# These are the dependencies for the SECOND test mode (tests/integration/): the
-# integration is exercised inside a REAL in-process Home Assistant core provided
-# by pytest-homeassistant-custom-component ("phacc"). phacc bundles the matching
-# Home Assistant core AND the exact pytest / pytest-asyncio / pytest-aiohttp /
-# pytest-socket test stack that HA core uses, so nothing else is required here.
+# pytest-homeassistant-custom-component ("phacc") bundles the matching Home
+# Assistant core and the exact pytest / pytest-asyncio / pytest-aiohttp /
+# pytest-socket / pytest-cov stack that HA core uses, so nothing else is required
+# here.
 #
-# Deliberately hand-maintained and kept SEPARATE from the offline path:
-#   * NOT in pyproject `[dependency-groups]` / uv.lock — phacc drags in a full HA
-#     core; keeping it out means the default `uv sync` and the fast offline suite
-#     stay lean, and uv.lock stays regenerable (it can only be re-locked under the
-#     Python 3.14 the HA runtime requires).
-#   * Install into a DEDICATED environment, never the offline `.venv` (which is
-#     intentionally HA-free — tests/conftest.py stubs Home Assistant there). e.g.:
-#         uv venv .venv-integration --python 3.14
-#         uv pip install --python .venv-integration -r requirements-integration.txt
-#         .venv-integration/bin/python -m pytest -o asyncio_mode=auto tests/integration
-#     or simply: scripts/test_integration.sh
+# Hand-maintained and NOT in pyproject `[dependency-groups]` / uv.lock: phacc pins
+# its pytest stack exactly, and uv.lock would have to resolve all of Home
+# Assistant's dependencies for every platform (and it can only be re-locked under
+# the Python 3.14 the HA runtime requires). Install it into its own environment:
+#     uv venv .venv-integration --python 3.14
+#     uv pip install --python .venv-integration -r requirements-integration.txt
+# or let scripts/test.sh build it.
 #
 # Version policy: pin the Home Assistant core to the DECLARED MINIMUM supported
 # version (hacs.json `homeassistant`), so this suite defends the floor rather than

@@ -12,15 +12,14 @@ ruff_run format --check .
 
 "$REPO_ROOT/scripts/typecheck.sh"
 
-info 'Backend: offline tests with coverage...'
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 pytest_run -q -p pytest_cov \
+"$REPO_ROOT/scripts/test.sh" \
   --cov=custom_components/haventory \
   --cov-report=term-missing:skip-covered \
   --cov-report=xml --cov-report=html \
   --junitxml=junit.xml
 
 if [ -f coverage.xml ]; then
-  rate="$(py - <<'PY'
+  rate="$("$INT_VENV_PYTHON" - <<'PY'
 import xml.etree.ElementTree as ET
 try:
     root = ET.parse("coverage.xml").getroot()

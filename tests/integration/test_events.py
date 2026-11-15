@@ -1,10 +1,8 @@
 """Integration: HAventory events on the real Home Assistant bus, and at midnight.
 
-The offline stub records what `events.py` asked the bus to fire; only a real bus
-shows that a listener — and so an automation trigger — actually receives it. The
-same goes for the day rollover: offline a test invokes the tracked action itself,
-and only a real clock and a real socket show that the instance's own midnight
-reaches a subscriber.
+A listener on the bus — and so an automation trigger — receives what `events.py`
+fires. The same goes for the day rollover: the instance's own midnight reaches a
+subscriber.
 """
 
 from __future__ import annotations

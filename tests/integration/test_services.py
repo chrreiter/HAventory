@@ -1,7 +1,6 @@
 """Integration: ``haventory.*`` services dispatched by the real service registry.
 
-The offline suite awaits the registered handler itself, which passes no matter how
-the handler was registered. Home Assistant does not: it classifies every handler
+How a handler is registered matters. Home Assistant classifies every handler
 with ``HassJob`` and sends anything that is not a coroutine function (or a
 ``@callback``) to the executor, where a handler that merely *returns* a coroutine
 is never awaited and the mutation silently never happens. Only a call through

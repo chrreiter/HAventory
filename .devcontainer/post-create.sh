@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Devcontainer bootstrap: the repository's own setup (uv sync, card deps,
-# pre-commit hooks), then the offline suite, so a container that comes up green
+# pre-commit hooks), then the backend tests, so a container that comes up green
 # is one the gate can be run in. A real HA with HACS is .devcontainer/develop.sh.
 set -euo pipefail
 
@@ -15,7 +15,7 @@ fi
 
 bash scripts/setup.sh
 
-echo "[post-create] Verifying the offline suite runs..."
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 uv run pytest -q
+echo "[post-create] Verifying the backend tests run..."
+bash scripts/test.sh
 
 echo "[post-create] Done. Run HA + HACS locally with: bash .devcontainer/develop.sh"

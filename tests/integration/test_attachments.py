@@ -893,7 +893,7 @@ async def test_bulk_delete_frees_files_only_after_a_write_that_lands(
 async def test_the_item_delete_service_deletes_the_item_files(
     hass: HomeAssistant, hass_client: ClientSessionGenerator, hass_ws_client, setup_entry
 ) -> None:
-    """Only this mode dispatches a service: the offline stub has no registry."""
+    """The service is dispatched through Home Assistant's service registry."""
 
     await setup_entry()
     client = await hass_client()
@@ -1005,10 +1005,9 @@ async def test_a_pdf_round_trips_as_a_manual_and_can_be_retitled(
 ) -> None:
     """The document half of the same path: kind, sniffed type, and the title.
 
-    The retitle is asserted here rather than offline because only a real core
-    writes the change back through ``Store`` and hands the card the item it
-    then renders from — and because the served name follows the title, which is
-    a response header no offline test has a transport for.
+    The retitle is written back through ``Store`` and hands the card the item it
+    then renders from, and the served name follows the title in a response
+    header.
     """
 
     await setup_entry()

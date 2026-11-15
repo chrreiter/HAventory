@@ -64,8 +64,7 @@ async def test_ws_rename_keeps_item_versions_valid(
 
     The rename rewrites the item's derived ``location_path``; a client holding
     the pre-rename ``version`` for an unrelated field must still be able to
-    update. Exercised against real HA because a stub could get the concurrency
-    check wrong without anything failing.
+    update.
     """
 
     await setup_entry()
@@ -125,11 +124,11 @@ async def test_ws_rename_keeps_item_versions_valid(
 async def test_ws_subscribe_accepts_area_id_and_refuses_unknown_keys(
     hass: HomeAssistant, hass_ws_client, setup_entry
 ) -> None:
-    """Real HA applies the subscribe schema; the offline stub stores it unapplied.
+    """Real HA applies the subscribe schema.
 
-    So the two halves of the schema change — ``area_id`` accepted, including as an
-    explicit null, and anything else still refused — are only genuinely asserted
-    against a real connection.
+    The two halves of the schema change — ``area_id`` accepted, including as an
+    explicit null, and anything else still refused — are asserted against a real
+    connection.
     """
 
     await setup_entry()

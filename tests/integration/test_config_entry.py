@@ -1,16 +1,13 @@
 """Integration: config entry lifecycle against a real Home Assistant core.
 
 Verifies the integration sets up and tears down cleanly through the real
-``hass.config_entries`` machinery — the path the offline stubs can't exercise.
-Teardown especially: the offline stub takes our handlers back out of its fake
-command registry on unload, which real Home Assistant has no API for, so only
-here can "the commands are still registered and refuse" be told apart from "the
-commands are gone".
+``hass.config_entries`` machinery. Teardown especially: real Home Assistant has
+no API to take a WebSocket command back out on unload, so "the commands are still
+registered and refuse" must hold rather than "the commands are gone".
 
-The reload tests are the reason this file talks to a real WebSocket rather than
-calling handlers: unload, setup and the subscription registry all move under one
-connection that outlives them, and that interleaving is exactly what the stubs
-cannot reproduce.
+The reload tests talk to a real WebSocket rather than calling handlers: unload,
+setup and the subscription registry all move under one connection that outlives
+them.
 """
 
 from __future__ import annotations

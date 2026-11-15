@@ -3,7 +3,7 @@
 Push only — no coordinator and no polling. Two things move a state: a mutation,
 through the dispatcher signal `events.py` sends, and the instance's local
 midnight, for the counts that are derived from the calendar and so change with
-no mutation at all. `const.SENSOR_DESCRIPTIONS` is the catalog; nothing here is
+no mutation at all. `SENSOR_DESCRIPTIONS`, below, is the catalog; nothing here is
 per-count.
 
 The signal carries the counts computed once for the write, and each entity
@@ -15,10 +15,11 @@ stale, because the two triggers above are the only things that move a count.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity, SensorStateClass
+from homeassistant.components.sensor import SensorEntity, SensorEntityDescription, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
@@ -29,11 +30,60 @@ from homeassistant.helpers.event import async_track_time_change
 from .const import (
     DOMAIN,
     INTEGRATION_VERSION,
-    SENSOR_DESCRIPTIONS,
     SIGNAL_INVENTORY_CHANGED,
-    HaventorySensorDescription,
 )
 from .runtime import find_runtime
+
+
+@dataclass(frozen=True, kw_only=True)
+class HaventorySensorEntityDescription(SensorEntityDescription):
+    """One inventory count exposed as a sensor.
+
+    ``key`` is a key of ``Repository.get_counts()``; ``date_derived`` counts also
+    move at local midnight.
+    """
+
+    date_derived: bool = False
+
+
+SENSOR_DESCRIPTIONS: tuple[HaventorySensorEntityDescription, ...] = (
+    HaventorySensorEntityDescription(
+        key="items_total", translation_key="items_total", icon="mdi:package-variant-closed"
+    ),
+    HaventorySensorEntityDescription(
+        key="low_stock_count", translation_key="low_stock", icon="mdi:package-down"
+    ),
+    HaventorySensorEntityDescription(
+        key="checked_out_count", translation_key="checked_out", icon="mdi:account-arrow-right"
+    ),
+    HaventorySensorEntityDescription(
+        key="overdue_count",
+        translation_key="overdue",
+        icon="mdi:calendar-alert",
+        date_derived=True,
+    ),
+    HaventorySensorEntityDescription(
+        key="checked_out_due_count",
+        translation_key="checked_out_due",
+        icon="mdi:calendar-clock",
+        date_derived=True,
+    ),
+    HaventorySensorEntityDescription(
+        key="inspection_overdue_count",
+        translation_key="inspection_overdue",
+        icon="mdi:clipboard-alert",
+        date_derived=True,
+    ),
+    HaventorySensorEntityDescription(
+        key="inspection_due_count",
+        translation_key="inspection_due",
+        icon="mdi:clipboard-text-clock",
+        date_derived=True,
+    ),
+    HaventorySensorEntityDescription(
+        key="locations_total", translation_key="locations", icon="mdi:map-marker-multiple"
+    ),
+)
 
 
 async def async_setup_entry(
@@ -64,10 +114,10 @@ class HaventoryCountSensor(SensorEntity):
     _attr_should_poll = False
     _attr_state_class = SensorStateClass.MEASUREMENT
 
-    def __init__(self, entry: ConfigEntry, description: HaventorySensorDescription) -> None:
-        self._description = description
-        self._attr_translation_key = description.translation_key
-        self._attr_icon = description.icon
+    entity_description: HaventorySensorEntityDescription
+
+    def __init__(self, entry: ConfigEntry, description: HaventorySensorEntityDescription) -> None:
+        self.entity_description = description
         # Entry-scoped, so re-adding the entry does not resurrect the old entity_ids.
         self._attr_unique_id = f"{entry.entry_id}_{description.key}"
         self._attr_device_info = device_info(entry)
@@ -79,7 +129,7 @@ class HaventoryCountSensor(SensorEntity):
         self.async_on_remove(
             async_dispatcher_connect(self.hass, SIGNAL_INVENTORY_CHANGED, self._handle_mutation)
         )
-        if self._description.date_derived:
+        if self.entity_description.date_derived:
             # The instance's local midnight, not UTC's: the counts compare
             # against the local day.
             self.async_on_remove(
@@ -102,7 +152,7 @@ class HaventoryCountSensor(SensorEntity):
         """Unavailable while no config entry is loaded to read counts from."""
 
         self._attr_available = counts is not None
-        value = None if counts is None else counts.get(self._description.key)
+        value = None if counts is None else counts.get(self.entity_description.key)
         self._attr_native_value = int(value) if value is not None else None
 
     def _current_counts(self) -> dict[str, Any] | None:

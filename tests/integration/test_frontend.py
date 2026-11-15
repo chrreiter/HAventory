@@ -275,9 +275,8 @@ async def test_the_sidebar_panel_lands_in_the_real_panel_registry(
 ) -> None:
     """`panel_custom` puts a real `Panel` in `hass.data`, built the way HA builds them.
 
-    The offline suite asserts this against a stub of `async_register_panel`;
-    only the real helper proves the `_panel_custom` block HA's frontend reads is
-    the one we asked for, module URL and element name included.
+    This proves the `_panel_custom` block HA's frontend reads is the one we asked
+    for, module URL and element name included.
 
     A subset rather than an equality: `panel_custom` fills the block with its own
     defaults too, and Home Assistant adds one from time to time (`2026.8`
@@ -376,7 +375,7 @@ async def test_a_disabled_entry_gives_the_sidebar_panel_back(
     """A disabled entry stays unloaded, so its sidebar entry opens nothing.
 
     Home Assistant sets `disabled_by` before it unloads; that ordering is what
-    the unload path reads, and it is real-core behaviour a stub cannot vouch for.
+    the unload path reads.
     """
     entry = await setup_entry()
 

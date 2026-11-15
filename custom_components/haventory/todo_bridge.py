@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from homeassistant.components.todo import TodoListEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
@@ -43,10 +44,8 @@ SERVICE_ADD_ITEM = "add_item"
 SERVICE_REMOVE_ITEM = "remove_item"
 SERVICE_UPDATE_ITEM = "update_item"
 
-# `TodoListEntityFeature.DELETE_TODO_ITEM` as the bit a state carries and as the
-# name an entity selector's filter takes. Spelled out because the offline suite
-# has no `homeassistant.components.todo`.
-TODO_FEATURE_DELETE_ITEM = 2
+# The string an entity selector's `supported_features` filter names
+# `TodoListEntityFeature.DELETE_TODO_ITEM` by.
 TODO_FEATURE_DELETE_ITEM_NAME = "todo.TodoListEntityFeature.DELETE_TODO_ITEM"
 
 # U+00D7, what the card prints against a quantity, so the two read the same.
@@ -245,7 +244,7 @@ def _list_can_delete(hass: HomeAssistant, entity_id: str) -> bool:
     if state is None:
         return True
     features = state.attributes.get("supported_features")
-    return features is None or bool(int(features) & TODO_FEATURE_DELETE_ITEM)
+    return features is None or bool(int(features) & TodoListEntityFeature.DELETE_TODO_ITEM)
 
 
 def _list_is_available(hass: HomeAssistant, entity_id: str) -> bool:

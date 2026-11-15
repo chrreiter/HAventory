@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Audit the dev container's Home Assistant log against HAventory's severity policy.
 
-An online run is not clean until the server's own log agrees. Offline tests stub
-Home Assistant, so a path that raises only against the real thing stays green in
+An online run is not clean until the server's own log agrees. The test suite
+runs on a real core but never reads a long-running instance's log, so a path
+that raises only there stays green in
 the suite and shows up here — and the taxonomy makes a second, quieter promise
 that no test asserts at all: a rejection the caller can fix and resend
 (``validation_error``, ``not_found``, ``conflict``) is logged

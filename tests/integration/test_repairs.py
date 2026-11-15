@@ -1,9 +1,8 @@
 """Integration: the repairs issues and the guarded lossy load, against real Home Assistant.
 
-None of this is observable offline. The offline harness has no issue registry to
-read back, no repairs flow manager to run a fix through, and no config-entry
-machinery to reload — so the whole point of the feature (a card appears, the
-button works, the entry comes up) is asserted here or nowhere.
+The whole point of the feature (a card appears, the button works, the entry comes
+up) is asserted through the issue registry, the repairs flow manager and a
+config-entry reload.
 """
 
 from __future__ import annotations
@@ -312,10 +311,9 @@ async def test_a_row_with_no_name_reaches_the_repairs_card_and_its_fix(
 
     Coerced with ``str(None)`` it loads as an item literally called ``"None"``,
     which no write path could have created and which the next edit would have
-    made permanent. Now it is refused — and the point of asserting that here
-    rather than offline is that nothing about the *consequences* is visible
-    offline: whether an issue is actually registered, whether the fix flow runs,
-    and whether the entry comes back up with the readable remainder.
+    made permanent. Now it is refused, and the consequences are asserted:
+    whether an issue is registered, whether the fix flow runs, and whether the
+    entry comes back up with the readable remainder.
     """
 
     assert await async_setup_component(hass, "repairs", {})

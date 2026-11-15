@@ -1,10 +1,8 @@
 """Integration: the diagnostics platform, downloaded the way a user downloads it.
 
-The offline suite can call `async_get_config_entry_diagnostics` directly, which
-proves the payload and nothing about whether Home Assistant ever finds it. This
-goes through the real HTTP endpoint the ⋮ menu links to, so it also settles what
-the offline checkout cannot: that a diagnostics platform needs no manifest entry
-and that the payload survives Home Assistant's own JSON encoder.
+This goes through the real HTTP endpoint the ⋮ menu links to, so it shows that
+Home Assistant finds the diagnostics platform without a manifest entry and that
+the payload survives Home Assistant's own JSON encoder.
 """
 
 from __future__ import annotations

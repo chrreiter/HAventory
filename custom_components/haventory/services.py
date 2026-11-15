@@ -5,7 +5,7 @@ runs, so a service and the WebSocket command doing the same thing share one
 write and one event. The schemas here are concretely typed, so Home Assistant
 refuses a wrong type in the Actions form before a handler runs, and every
 service answers the ``{"item": …}`` / ``{"location": …}`` a
-``response_variable`` reads. A refusal is logged and re-raised unchanged.
+``response_variable`` reads. A domain refusal is logged and re-raised unchanged.
 """
 
 from __future__ import annotations
@@ -161,7 +161,7 @@ _DATA_KEY = {"item_name": "name", "location_name": "name"}
 
 
 def _context(name: str, data: dict[str, Any]) -> dict[str, Any]:
-    """The refused call's fields, read off the raw call so a schema refusal has them."""
+    """The refused call's fields, with `name` read as `item_name` / `location_name`."""
 
     return {field: data.get(_DATA_KEY.get(field, field)) for field in _CONTEXT_FIELDS[name]}
 
@@ -180,86 +180,52 @@ def _op_payload(name: str, payload: dict[str, Any]) -> dict[str, Any]:
     return moved
 
 
-async def _run_service(hass: HomeAssistant, name: str, data: dict[str, Any]) -> dict[str, Any]:
-    """Validate, commit, answer: `ops.commit` persists and announces before the reply."""
-
-    try:
-        payload = _SCHEMAS[name](data)
-        written = await ops.commit(hass, name, _op_payload(name, payload))
-        # The whole entity: the next call in an automation needs its `version`.
-        return {written.noun: written.entity}
-    except (vol.Invalid, ValidationError, NotFoundError, ConflictError, StorageError) as exc:
-        # A schema refusal is a validation_error raised before the domain layer.
-        code = "validation_error" if isinstance(exc, vol.Invalid) else error_code(exc)
-        LOGGER.log(
-            log_severity(code, exc),
-            str(exc),
-            extra={"op": name, **_context(name, data)},
-            exc_info=log_exc_info(code, exc),
-        )
-        raise
-
-
-ServiceHandler = Callable[[HomeAssistant, dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]]
+# Insertion order is registration order. `reminder_bump` is its own service because
+# setting and clearing a reminder are `item_update`; bumping asks where the series
+# goes next, which must be the answer the card gets.
+SERVICES: dict[str, vol.Schema] = {
+    "item_create": SCHEMA_ITEM_CREATE,
+    "item_update": SCHEMA_ITEM_UPDATE,
+    "item_delete": SCHEMA_ITEM_DELETE,
+    "item_move": SCHEMA_ITEM_MOVE,
+    "item_adjust_quantity": SCHEMA_ITEM_ADJUST_QTY,
+    "item_set_quantity": SCHEMA_ITEM_SET_QTY,
+    "item_check_out": SCHEMA_ITEM_CHECK_OUT,
+    "item_check_in": SCHEMA_ITEM_CHECK_IN,
+    "reminder_bump": SCHEMA_REMINDER_BUMP,
+    "location_create": SCHEMA_LOCATION_CREATE,
+    "location_update": SCHEMA_LOCATION_UPDATE,
+    "location_delete": SCHEMA_LOCATION_DELETE,
+}
 
 
-def _service(name: str) -> ServiceHandler:
-    async def handler(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
-        return await _run_service(hass, name, data)
-
-    handler.__name__ = f"service_{name}"
-    return handler
-
-
-service_item_create = _service("item_create")
-service_item_update = _service("item_update")
-service_item_delete = _service("item_delete")
-service_item_move = _service("item_move")
-service_item_adjust_quantity = _service("item_adjust_quantity")
-service_item_set_quantity = _service("item_set_quantity")
-service_item_check_out = _service("item_check_out")
-service_item_check_in = _service("item_check_in")
-# Setting and clearing a reminder are `item_update`; bumping asks where the
-# series goes next, which must be the answer the card gets.
-service_reminder_bump = _service("reminder_bump")
-service_location_create = _service("location_create")
-service_location_update = _service("location_update")
-service_location_delete = _service("location_delete")
-
-# Home Assistant validates a call against the schema before the handler runs;
-# the handler validates again because it is also called directly.
-SERVICES: tuple[tuple[str, ServiceHandler, vol.Schema], ...] = (
-    ("item_create", service_item_create, SCHEMA_ITEM_CREATE),
-    ("item_update", service_item_update, SCHEMA_ITEM_UPDATE),
-    ("item_delete", service_item_delete, SCHEMA_ITEM_DELETE),
-    ("item_move", service_item_move, SCHEMA_ITEM_MOVE),
-    ("item_adjust_quantity", service_item_adjust_quantity, SCHEMA_ITEM_ADJUST_QTY),
-    ("item_set_quantity", service_item_set_quantity, SCHEMA_ITEM_SET_QTY),
-    ("item_check_out", service_item_check_out, SCHEMA_ITEM_CHECK_OUT),
-    ("item_check_in", service_item_check_in, SCHEMA_ITEM_CHECK_IN),
-    ("reminder_bump", service_reminder_bump, SCHEMA_REMINDER_BUMP),
-    ("location_create", service_location_create, SCHEMA_LOCATION_CREATE),
-    ("location_update", service_location_update, SCHEMA_LOCATION_UPDATE),
-    ("location_delete", service_location_delete, SCHEMA_LOCATION_DELETE),
-)
-
-_SCHEMAS: dict[str, vol.Schema] = {name: schema for name, _handler, schema in SERVICES}
-
-
-def _bind(
-    hass: HomeAssistant, handler: ServiceHandler
+def _handler(
+    hass: HomeAssistant, name: str
 ) -> Callable[[ServiceCall], Coroutine[Any, Any, dict[str, Any]]]:
-    """Adapt a ``(hass, data)`` handler to the ``ServiceCall`` signature HA invokes.
+    """The ``ServiceCall`` handler for service ``name``.
 
     The returned callable **must be a coroutine function**. ``HassJob`` sends
     anything that is neither a coroutine function nor a ``@callback`` to the
-    executor, so a plain ``lambda call: handler(hass, ...)`` would only build
-    the coroutine on a worker thread: HA returns it unawaited as the response,
-    and the mutation silently never happens.
+    executor, so a plain ``lambda call: ops.commit(...)`` would only build the
+    coroutine on a worker thread: HA returns it unawaited as the response, and
+    the mutation silently never happens.
     """
 
     async def _handle(call: ServiceCall) -> dict[str, Any]:
-        return await handler(hass, dict(call.data))
+        data = dict(call.data)
+        try:
+            written = await ops.commit(hass, name, _op_payload(name, data))
+            # The whole entity: the next call in an automation needs its `version`.
+            return {written.noun: written.entity}
+        except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+            code = error_code(exc)
+            LOGGER.log(
+                log_severity(code, exc),
+                str(exc),
+                extra={"op": name, **_context(name, data)},
+                exc_info=log_exc_info(code, exc),
+            )
+            raise
 
     return _handle
 
@@ -269,11 +235,11 @@ def setup(hass: HomeAssistant) -> None:
 
     # OPTIONAL, not ONLY: each is a mutation first, so a caller that omits
     # `response_variable` must keep working.
-    for name, handler, schema in SERVICES:
+    for name, schema in SERVICES.items():
         hass.services.async_register(
             DOMAIN,
             name,
-            _bind(hass, handler),
+            _handler(hass, name),
             schema,
             supports_response=SupportsResponse.OPTIONAL,
         )
