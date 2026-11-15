@@ -261,3 +261,23 @@ async def test_the_pinned_wire_shapes_are_what_the_backend_sends(
     )
     # The drift report reads key sets; this also holds the lists' sorted order.
     assert pinned == live
+
+
+async def test_a_wire_item_is_the_stored_item_plus_the_derived_area(
+    setup_entry, ws_connect
+) -> None:
+    """`effective_area_id` is the one field the wire adds; it is null for an item with no tree."""
+
+    golden = json.loads(GOLDEN.read_text())
+    await setup_entry(stored=Repository.from_state(golden))
+    ws = await ws_connect()
+    by_name = {row["name"]: row for row in golden["items"].values()}
+    drill = by_name["Cordless drill"]
+    orphan = next(row for row in golden["items"].values() if row["location_id"] is None)
+
+    for stored, area in ((drill, "garage_area"), (orphan, None)):
+        sent = (await ws.send("haventory/item/get", item_id=stored["id"]))["result"]
+        assert set(sent) - set(stored) == {"effective_area_id"}
+        assert {key: sent[key] for key in stored} == stored
+        assert sent["effective_area_id"] == area
+    assert orphan["location_path"]["id_path"] == []
