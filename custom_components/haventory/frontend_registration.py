@@ -22,6 +22,10 @@ from homeassistant.components.frontend import (
 )
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.lovelace import LOVELACE_DATA
+from homeassistant.components.lovelace.resources import (
+    ResourceStorageCollection,
+    ResourceYAMLCollection,
+)
 from homeassistant.components.panel_custom import async_register_panel
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -82,21 +86,16 @@ def _points_at_card(resource_url: Any) -> bool:
     return urlsplit(resource_url).path == _CARD_URL_PATH
 
 
-async def _async_lovelace_resources(hass: HomeAssistant, *, op: str) -> Any:
-    """Return the loaded Lovelace resource collection, or None if out of reach."""
-    lovelace_data = hass.data.get(LOVELACE_DATA)
-    resources = getattr(lovelace_data, "resources", None) if lovelace_data else None
-    if resources is None:
-        LOGGER.debug(
-            "Lovelace not initialized or resources unavailable",
-            extra={"op": op},
-        )
-        return None
+async def _async_lovelace_resources(
+    hass: HomeAssistant,
+) -> ResourceYAMLCollection | ResourceStorageCollection:
+    """Return the Lovelace resource collection, loaded when it is a storage one."""
+    resources = hass.data[LOVELACE_DATA].resources
 
     # `async_items` is sync and reports nothing until the collection is loaded.
     # `async_load` leaves `loaded` False, and the next write would then load and
     # re-add every item, so the flag is set here too.
-    if not getattr(resources, "loaded", True):
+    if isinstance(resources, ResourceStorageCollection) and not resources.loaded:
         await resources.async_load()
         resources.loaded = True
 
@@ -285,24 +284,16 @@ async def async_apply_sidebar_panel(hass: HomeAssistant, entry: ConfigEntry) -> 
     )
 
 
-async def _rewrite_card_resource(resources: Any, stale: dict[str, Any], url: str) -> None:
+async def _rewrite_card_resource(
+    resources: ResourceStorageCollection, stale: dict[str, Any], url: str
+) -> None:
     """Point an existing card entry at the current URL, rather than adding a second."""
-    stale_id = stale.get("id")
-    # No update API means YAML mode, where resources are user-managed; no id means
-    # the entry cannot be addressed. Either way, leave it as it stands.
-    if stale_id is None or not hasattr(resources, "async_update_item"):
-        LOGGER.debug(
-            "Cannot rewrite the registered card resource; leaving it as-is",
-            extra={"op": "frontend_register", "url": stale.get("url")},
-        )
-        return
-
     # The three resource writes below catch everything: the collection loads its
     # store on first use, so it can raise whatever reading that file raises
     # (HomeAssistantError, a migration's error) besides ItemNotFound, ValueError
     # and vol.Invalid. A refused resource is a warning, not a failed setup.
     try:
-        await resources.async_update_item(stale_id, {"res_type": "module", "url": url})
+        await resources.async_update_item(stale["id"], {"res_type": "module", "url": url})
         LOGGER.info(
             "Updated HAventory card Lovelace resource to the current version",
             extra={
@@ -319,15 +310,8 @@ async def _rewrite_card_resource(resources: Any, stale: dict[str, Any], url: str
         )
 
 
-async def _create_card_resource(resources: Any, url: str) -> None:
-    """Add the card to the Lovelace resource list, where that list is writable."""
-    if not hasattr(resources, "async_create_item"):
-        LOGGER.debug(
-            "Lovelace in YAML mode; the card loads through the frontend module URL instead",
-            extra={"op": "frontend_register", "url": url},
-        )
-        return
-
+async def _create_card_resource(resources: ResourceStorageCollection, url: str) -> None:
+    """Add the card to the Lovelace resource list."""
     try:
         await resources.async_create_item({"res_type": "module", "url": url})
         LOGGER.info(
@@ -342,13 +326,11 @@ async def _create_card_resource(resources: Any, url: str) -> None:
         )
 
 
-async def _delete_card_resource(resources: Any, item: dict[str, Any], *, op: str) -> None:
+async def _delete_card_resource(
+    resources: ResourceStorageCollection, item: dict[str, Any], *, op: str
+) -> None:
     """Remove one Lovelace resource entry for the card."""
-    item_id = item.get("id")
-    # YAML mode: the collection is read-only and its entries carry no id.
-    if item_id is None or not hasattr(resources, "async_delete_item"):
-        return
-
+    item_id = item["id"]
     try:
         await resources.async_delete_item(item_id)
         LOGGER.info(
@@ -373,11 +355,15 @@ async def _delete_card_resource(resources: Any, item: dict[str, Any], *, op: str
 
 async def _async_register_lovelace_resource(hass: HomeAssistant, url: str) -> None:
     """Leave exactly one Lovelace resource for the card, pointing at `url`."""
-    resources = await _async_lovelace_resources(hass, op="frontend_register")
-    if resources is None:
+    resources = await _async_lovelace_resources(hass)
+    if isinstance(resources, ResourceYAMLCollection):
+        LOGGER.debug(
+            "Lovelace in YAML mode; the card loads through the frontend module URL instead",
+            extra={"op": "frontend_register", "url": url},
+        )
         return
 
-    ours = [item for item in (resources.async_items() or []) if _points_at_card(item.get("url"))]
+    ours = [item for item in resources.async_items() if _points_at_card(item.get("url"))]
     if not ours:
         await _create_card_resource(resources, url)
         return
@@ -421,13 +407,11 @@ async def async_unregister_frontend_module(hass: HomeAssistant) -> None:
     """Take back both frontend registrations for the card."""
     release_extra_js_url(hass, _card_url())
 
-    resources = await _async_lovelace_resources(hass, op="frontend_unregister")
-    if resources is None:
-        return
+    resources = await _async_lovelace_resources(hass)
 
     # YAML mode: resources come from configuration.yaml and the collection is
     # read-only, so an entry there is the user's to remove.
-    if not hasattr(resources, "async_delete_item"):
+    if isinstance(resources, ResourceYAMLCollection):
         LOGGER.info(
             "Lovelace in YAML mode; remove any HAventory card resource from configuration.yaml",
             extra={"op": "frontend_unregister", "url": _CARD_URL_PATH},
@@ -435,6 +419,6 @@ async def async_unregister_frontend_module(hass: HomeAssistant) -> None:
         return
 
     # Snapshot the collection: deleting mutates what async_items() reflects.
-    for item in list(resources.async_items() or []):
+    for item in list(resources.async_items()):
         if _points_at_card(item.get("url")):
             await _delete_card_resource(resources, item, op="frontend_unregister")
