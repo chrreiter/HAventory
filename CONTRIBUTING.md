@@ -74,12 +74,10 @@ repository's Dependabot rule dismisses dev-scope alerts, so the alert dashboard 
 truth for the card's lockfile, CI is. The level is `moderate` for the same reason. CI and
 `scripts/ci_local.sh` run the same level, so a lower one locally is green against a red CI.
 
-The tests and the type check share one environment, `.venv-integration`: the Home Assistant
-release `requirements-integration.txt` pins to the floor, with the test harness that release
-ships. `scripts/test.sh` and `scripts/typecheck.sh` build it on first use and pass their
-arguments on to pytest and mypy (`scripts/test.sh tests/test_media.py -x`). The locked `.venv`
-from `uv sync` holds only ruff, mypy and pre-commit. Build the card first, or the frontend
-tests skip. Whatever the type check finds is fixed, not ignored, and a `type: ignore`
+The tests and the type check share `.venv-integration`, the Home Assistant release
+`requirements-integration.txt` pins to the floor; both scripts build it on first use and pass
+their arguments on (`scripts/test.sh tests/test_media.py -x`). The locked `.venv` holds ruff,
+mypy and pre-commit. What the type check finds is fixed, not ignored, and a `type: ignore`
 carries its reason on the same line.
 
 `scripts/ci_local.sh` runs everything at once, with coverage. CI runs the same checks plus
