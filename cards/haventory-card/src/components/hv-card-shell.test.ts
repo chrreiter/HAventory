@@ -1961,7 +1961,11 @@ describe('hv-card-shell: full view', () => {
     expect(organize().open).toBe(true);
     expect(organize().tab).toBe('locations');
 
-    (view.shadowRoot?.querySelector('[data-testid="sidebar-new-status"]') as HTMLButtonElement).click();
+    (
+      view.shadowRoot
+        ?.querySelector('[data-testid="full-sidebar"]')
+        ?.shadowRoot?.querySelector('[data-testid="sidebar-new-status"]') as HTMLButtonElement
+    ).click();
     await settle(el);
     expect(organize().tab).toBe('statuses');
   });
