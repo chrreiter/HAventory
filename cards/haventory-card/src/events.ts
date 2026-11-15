@@ -141,6 +141,18 @@ export interface HvEventMap {
     apply: StoreFilters;
     'clear-filters': None;
   };
+  'hv-full-app-bar': {
+    /** The close button. */
+    'request-close': None;
+    /** Add item. */
+    'add-item': None;
+    /** The ⋮ entry that enters selection mode. */
+    'select-items': None;
+    /** The selection bar's ✕. */
+    'exit-selection': None;
+    /** The Organize button and every other ⋮ entry. */
+    'menu-action': MenuActionDetail;
+  };
   'hv-full-view': {
     close: None;
     'menu-action': MenuActionDetail;

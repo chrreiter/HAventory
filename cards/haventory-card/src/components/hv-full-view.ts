@@ -29,14 +29,9 @@ import {
   renderFilterChips,
   renderFilterHead,
   renderFilterPanel,
-  renderSearch,
   renderStagedFooter,
-  searchBox,
-  searchDebounce,
-  searchDraftFor,
   sheetHead,
 } from '../ui/filter-chrome';
-import { renderStatBadges } from '../ui/stat-badges';
 import { ViewportNarrow } from '../ui/responsive';
 import { ItemWorkspace } from '../item-workspace';
 import { emitter } from '../events';
@@ -53,32 +48,15 @@ import './hv-bulk-bar';
 import './hv-checkout-popover';
 import './hv-confirm';
 import './hv-data-table';
+import './hv-full-app-bar';
 import './hv-full-sidebar';
-import './hv-overflow-menu';
 import type { HVItemEditor } from './hv-item-editor';
+import type { HVFullAppBar } from './hv-full-app-bar';
 import type { SidebarSection } from './hv-full-sidebar';
 import type { HVFilterPanel } from './hv-filter-panel';
 
 /** What the context bar's Filters button discloses, on the same terms. */
 const FILTER_PANEL_ID = 'full-view-filter-panel';
-
-/**
- * App-bar width at or below which *Add item* drops its label and the bar
- * tightens its gaps. German with all four counts showing needs 1024px, which is
- * what a 1280px window leaves beside Home Assistant's sidebar.
- */
-const BAR_TIGHT = 1100;
-
-/** At or below this the search box gives up 60px of its floor so the pill strip keeps a pill. */
-const BAR_TIGHTER = 900;
-
-/** The steps a bar of this width takes, as classes. 0 is unmeasured and gets the widest form. */
-function barSteps(width: number): string {
-  if (width <= 0) return '';
-  if (width <= BAR_TIGHTER) return 'tight tighter';
-  if (width <= BAR_TIGHT) return 'tight';
-  return '';
-}
 
 /**
  * The expanded workspace: a coloured app bar, a sidebar of locations and
@@ -91,7 +69,6 @@ export class HVFullView extends LitElement {
     base,
     chip,
     bannerStack,
-    searchBox,
     sheetHead,
     css`
       :host {
@@ -136,181 +113,11 @@ export class HVFullView extends LitElement {
         height: 100%;
         box-shadow: none;
       }
-      .appbar {
-        display: flex;
-        align-items: center;
-        /* A grid item's automatic minimum is its min-content, which for this
-           nowrap row includes the unscrolled pills; zero lets the strip shrink. */
-        min-width: 0;
-        gap: 12px;
-        padding: 10px 16px;
-        background: var(--hv-primary);
-        color: #fff;
-      }
-      .appbar.selecting {
-        background: var(--hv-primary-darker);
-      }
-      .appbar .count {
-        font: 500 18px var(--hv-font);
-      }
-      .appbar .subcount {
-        font-size: 12.5px;
-        opacity: 0.85;
-      }
-      .appbar .ghost {
-        flex: none;
-        border: 1px solid rgba(255, 255, 255, 0.45);
-        background: rgba(255, 255, 255, 0.2);
-        color: #fff;
-        border-radius: var(--hv-radius-chip);
-        padding: 5px 13px;
-        font: 500 12.5px var(--hv-font);
-      }
-      .appbar .ghost.plain {
-        background: none;
-        font-weight: 400;
-      }
       .honesty {
         padding: 10px 20px;
         border-bottom: 1px solid var(--hv-row-divider);
         font-size: 12px;
         color: var(--hv-text-tertiary);
-      }
-      .appbar h2 {
-        margin: 0;
-        font-size: 18px;
-        font-weight: 500;
-        white-space: nowrap;
-      }
-      .appbar .tap {
-        width: var(--hv-tap-min, 36px);
-        height: var(--hv-tap-min, 36px);
-        border: none;
-        border-radius: 50%;
-        background: none;
-        color: #fff;
-        display: inline-grid;
-        place-items: center;
-        padding: 0;
-        flex: none;
-      }
-      .appbar .tap:hover {
-        background: rgba(255, 255, 255, 0.16);
-      }
-      /* ui/filter-chrome gives the box its shape; this is the bar's fill and ink. */
-      .appbar .search {
-        /* So the phone's full-width basis includes the padding. */
-        box-sizing: border-box;
-        max-width: 420px;
-        background: rgba(255, 255, 255, 0.22);
-        padding: 7px 14px;
-      }
-      .appbar .search input {
-        color: #fff;
-      }
-      .appbar .search input::placeholder {
-        color: rgba(255, 255, 255, 0.8);
-      }
-      /*
-       * The card's chips with solid fills: its tints are pale or translucent
-       * washes that turn muddy over a primary-coloured bar. The applied ring is
-       * white because the bar itself is primary.
-       */
-      .appbar .hv-chip {
-        background: rgba(255, 255, 255, 0.22);
-        color: #fff;
-      }
-      .appbar .hv-chip:hover {
-        background: rgba(255, 255, 255, 0.32);
-      }
-      .appbar .hv-chip.on {
-        outline-color: #fff;
-      }
-      .appbar .hv-chip.warning {
-        background: var(--hv-amber);
-        color: var(--hv-on-amber);
-      }
-      .appbar .hv-chip.error {
-        background: var(--hv-error);
-        color: #fff;
-      }
-      /*
-       * The strip is what shrinks when the bar runs out of room, scrolling its
-       * own overflow. The 3px padding keeps the applied ring (2px outline at a
-       * 1px offset) inside the scroll box; the negative margin gives it back.
-       */
-      .appbar .pills {
-        display: flex;
-        align-items: center;
-        flex-wrap: nowrap;
-        gap: 8px;
-        flex: 0 1 auto;
-        min-width: 0;
-        overflow-x: auto;
-        padding: 3px;
-        margin: -3px;
-        scrollbar-width: none;
-      }
-      .appbar .pills::-webkit-scrollbar {
-        display: none;
-      }
-      /*
-       * Above the phone breakpoint (the complement of NARROW_QUERY). The row
-       * never wraps, and the search box keeps a floor; the pill strip and the
-       * two width steps give instead.
-       */
-      @media (min-width: 701px) {
-        .appbar .search {
-          min-width: 260px;
-        }
-        /* Selection mode's sentence and buttons can wrap without stranding a glyph. */
-        .appbar.selecting {
-          flex-wrap: wrap;
-        }
-        /* The heading is the dashboard's title, of any length. Any shrink weight
-           would take a slice of every overflowing pixel and elide it early, so
-           it does not shrink and elides only past a cap that scales with the bar. */
-        .appbar h2 {
-          flex: none;
-          max-width: 30%;
-          min-width: 0;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .appbar .pills {
-          flex-shrink: 100;
-        }
-        /* The one auto margin on the row; a second would strand the pill strip mid-bar. */
-        .appbar .add {
-          margin-left: auto;
-        }
-        /* Below this breakpoint the count's flex:1 puts Clear at the far side. */
-        .appbar.selecting .clear {
-          margin-left: auto;
-        }
-        /* First step. The template moves the add button's label to hv-sr-only. */
-        .appbar.tight {
-          gap: 8px;
-        }
-        .appbar.tight .add {
-          padding: 7px 10px;
-        }
-        /* Second step. */
-        .appbar.tighter .search {
-          min-width: 200px;
-        }
-      }
-      .appbar .add {
-        flex: none;
-        display: inline-flex;
-        align-items: center;
-        gap: 5px;
-        border: none;
-        border-radius: var(--hv-radius-chip);
-        background: #fff;
-        color: var(--hv-primary-darker);
-        padding: 7px 15px;
-        font: 500 13px var(--hv-font);
       }
       .spacer {
         margin-left: auto;
@@ -335,68 +142,8 @@ export class HVFullView extends LitElement {
           --hv-tap-min: 44px;
           --hv-input-font: 16px;
         }
-        .appbar {
-          flex-wrap: wrap;
-          gap: 8px;
-          padding: 8px 12px;
-        }
-        /* Matches the table row (hv-data-table .row). The one control that opts
-           out of the 16px iOS no-zoom size: a filter box, not a form field. */
-        .appbar .search input {
-          font-size: 13.5px;
-          min-height: 34px;
-        }
         .filters-button {
           min-height: var(--hv-tap-min, auto);
-        }
-        .appbar h2 {
-          flex: 1;
-          min-width: 0;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          font-size: 17px;
-        }
-        /* Second row: the search alone, so the pills stay together beneath it. */
-        .appbar .search {
-          order: 1;
-          flex: 1 0 100%;
-          max-width: none;
-          padding: 5px 12px;
-        }
-        /* Third row, on a line of its own, so it wraps rather than scrolls. */
-        .appbar .pills {
-          order: 2;
-          flex-wrap: wrap;
-          overflow: visible;
-        }
-        /* Secondary toggles keep a compact height rather than the 44px target. */
-        .appbar .pill {
-          min-height: 30px;
-          padding: 5px 11px;
-        }
-        .appbar .ghost,
-        .appbar .add {
-          min-height: var(--hv-tap-min, auto);
-        }
-        .appbar .add {
-          padding: 0 14px;
-        }
-
-        /* The count is the one item that shrinks, which keeps Clear on the first
-           row; the subtitle takes a line of its own. */
-        .appbar.selecting .count {
-          flex: 1;
-          min-width: 0;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
-        .appbar.selecting .subcount {
-          order: 1;
-          flex-basis: 100%;
-        }
-        .appbar.selecting .load-all {
-          order: 2;
         }
       }
       .main {
@@ -587,7 +334,6 @@ export class HVFullView extends LitElement {
 
   @state() private _zBase = 0;
   @state() private _filtersOpen = false;
-  @state() private _searchDraft = '';
   /** Every section starts open; collapsing one sticks for the session. */
   @state() private _sections: Record<SidebarSection, boolean> = {
     locations: true,
@@ -602,12 +348,6 @@ export class HVFullView extends LitElement {
   private readonly _viewport = new ViewportNarrow(this, () => {
     this._stagedFilters = null;
   });
-  /**
-   * The app bar's width steps (`barSteps`), from the measured shell. No media
-   * query sees the panel's width beside HA's sidebar, and a size container would
-   * become the containing block for the `position: fixed` menus and sheets.
-   */
-  @state() private _barSteps = '';
   /** The staged filter set's match count, for the phone footer's button. */
   @state() private _stagedCount: number | null = null;
   /** The phone panel's staged filter set, which its head row counts. */
@@ -618,7 +358,6 @@ export class HVFullView extends LitElement {
   @state() private _pendingDelete = false;
   /** The whole selection's check-out is waiting on one due date. */
   @state() private _pendingBulkCheckout = false;
-  @state() private _loadingAll = false;
   /** Set while a batch is running so Cancel can stop it between chunks. */
   private _bulkCancelled = false;
   /** The ops of the last run, so "Retry failed" can replay just the failures. */
@@ -628,34 +367,6 @@ export class HVFullView extends LitElement {
 
   private get st(): StoreState | null {
     return this.store?.state.value ?? null;
-  }
-
-  override disconnectedCallback(): void {
-    super.disconnectedCallback();
-    this._barObserver?.disconnect();
-    this._barTarget = null;
-  }
-
-  private _barObserver?: ResizeObserver;
-  private _barTarget: Element | null = null;
-
-  /** Watch the shell, which comes and goes with `open`, so called after every render. */
-  private _syncBarMeasure() {
-    const shell = this.shadowRoot?.querySelector('.shell') ?? null;
-    if (shell === this._barTarget) return;
-    this._barTarget = shell;
-    this._barObserver?.disconnect();
-    if (!shell) return this._setBarWidth(0);
-    this._barObserver ??= new ResizeObserver(([entry]) => {
-      if (entry) this._setBarWidth(entry.contentRect.width);
-    });
-    this._barObserver.observe(shell);
-  }
-
-  /** The one way in for a measured width; a test with no layout calls it too. */
-  private _setBarWidth(width: number) {
-    const next = barSteps(width);
-    if (next !== this._barSteps) this._barSteps = next;
   }
 
   /** Price a staged (not yet applied) filter set, so the footer can be honest. */
@@ -668,7 +379,6 @@ export class HVFullView extends LitElement {
 
   protected override willUpdate(changed: Map<string, unknown>) {
     this._workspace.syncPinnedItem();
-    this._searchDraft = searchDraftFor(this._searchDraft, this.st?.filters.q, this._emitSearch);
     if (changed.has('open')) {
       if (this.open) {
         this._zBase = nextZBase();
@@ -691,18 +401,27 @@ export class HVFullView extends LitElement {
       if (this.open) {
         // Embedded there is no trap, and focusing the search would raise a
         // phone's keyboard over the list on plain navigation.
-        if (!this.embedded) this._focusFirst();
+        // The first control is the bar's close button, in a shadow root that has
+        // not drawn when this runs, so focus waits for the bar's render.
+        if (!this.embedded) {
+          void this._bar?.updateComplete.then(() => {
+            if (this.open) this._focusFirst();
+          });
+        }
       } else if (this._prevFocus?.isConnected) {
         this._prevFocus.focus();
       }
     }
-    this._syncBarMeasure();
   }
 
   private _close = () => {
     this.open = false;
     this._emit('close');
   };
+
+  private get _bar(): HVFullAppBar | null {
+    return this.shadowRoot?.querySelector('hv-full-app-bar') ?? null;
+  }
 
   private get _editor(): HVItemEditor | null {
     return this.shadowRoot?.querySelector('hv-item-editor') ?? null;
@@ -742,8 +461,6 @@ export class HVFullView extends LitElement {
     const list = this._focusables();
     list[list.length - 1]?.focus();
   }
-
-  private _emitSearch = searchDebounce(() => this.store);
 
   /** Show an item: the read sheet on a phone, the inline form where the table already reads it. */
   private _openItem(id: string) {
@@ -991,164 +708,39 @@ export class HVFullView extends LitElement {
         @keydown=${modal ? onEscape(() => this._leaveEditor('close')) : nothing}
       >
         ${modal ? html`<span class="sentinel" tabindex="0" @focus=${() => this._focusLast()}></span>` : null}
-        ${this._selecting ? this._renderSelectionBar() : this._renderAppBar()}
+        <hv-full-app-bar
+          .store=${this.store}
+          .heading=${this.heading}
+          .quickFilters=${this.quickFilters}
+          .menuEntries=${this.menuEntries}
+          .embedded=${this.embedded}
+          .narrow=${this.narrow}
+          .mobile=${this._viewport.narrow}
+          .selecting=${this._selecting}
+          @request-close=${(e: HvEvent<'hv-full-app-bar', 'request-close'>) => {
+            e.stopPropagation();
+            this._leaveEditor('close');
+          }}
+          @add-item=${(e: HvEvent<'hv-full-app-bar', 'add-item'>) => {
+            e.stopPropagation();
+            this._leaveEditor('new');
+          }}
+          @select-items=${(e: HvEvent<'hv-full-app-bar', 'select-items'>) => {
+            e.stopPropagation();
+            this._selecting = true;
+          }}
+          @exit-selection=${(e: HvEvent<'hv-full-app-bar', 'exit-selection'>) => {
+            e.stopPropagation();
+            this._exitSelection();
+          }}
+          @menu-action=${(e: HvEvent<'hv-full-app-bar', 'menu-action'>) => {
+            e.stopPropagation();
+            this._menuAction(e.detail);
+          }}
+        ></hv-full-app-bar>
         ${this._renderBody()}
         ${modal ? html`<span class="sentinel" tabindex="0" @focus=${() => this._focusFirst()}></span>` : null}
       </div>
-    `;
-  }
-
-  private _renderSelectionBar() {
-    const st = this.st;
-    const selected = st?.selection.size ?? 0;
-    const total = st?.total ?? null;
-    const loaded = st?.items.length ?? 0;
-    const canLoadMore = total !== null && loaded < total;
-
-    return html`
-      <div class="appbar selecting" data-testid="selection-bar">
-        <button
-          class="tap"
-          data-testid="exit-selection"
-          aria-label=${t('hv.fullView.exitSelection')}
-          @click=${() => this._exitSelection()}
-        >
-          ${icon('close', 20)}
-        </button>
-        <span class="count" data-testid="selection-count"
-          >${t('hv.fullView.selectedCount', { count: selected })}</span
-        >
-        ${
-          total !== null
-            ? html`<span class="subcount" data-testid="selection-subcount"
-              >${t('hv.fullView.ofMatching', { total })}</span
-            >`
-            : null
-        }
-        ${
-          canLoadMore
-            ? html`<button
-              class="ghost load-all"
-              data-testid="selection-load-all"
-              ?disabled=${this._loadingAll}
-              @click=${async () => {
-                this._loadingAll = true;
-                try {
-                  await this.store?.loadAllThenSelectAll();
-                } finally {
-                  this._loadingAll = false;
-                }
-              }}
-            >
-              ${this._loadingAll ? t('hv.fullView.loading') : t('hv.fullView.loadAll', { total })}
-            </button>`
-            : null
-        }
-        <button
-          class="ghost plain clear"
-          data-testid="selection-clear"
-          ?disabled=${selected === 0}
-          @click=${() => this.store?.clearSelection()}
-        >
-          ${t('hv.fullView.clearSelection')}
-        </button>
-      </div>
-    `;
-  }
-
-  /**
-   * The way back to Home Assistant's collapsed sidebar, which a panel must offer
-   * itself. `home-assistant-main` toggles the drawer on a composed `hass-toggle-menu`.
-   */
-  private _renderMenuButton() {
-    if (!this.narrow) return null;
-    return html`<button
-      class="tap"
-      data-testid="panel-menu"
-      aria-label=${t('hv.fullView.openMenu')}
-      title=${t('hv.fullView.menu')}
-      @click=${() => this.dispatchEvent(new Event('hass-toggle-menu', { bubbles: true, composed: true }))}
-    >
-      ${icon('menu', 20)}
-    </button>`;
-  }
-
-  /**
-   * The app bar prices only derived exceptions (low, overdue, inspection due,
-   * checked out), which share its fixed hues. A household colours its own
-   * statuses, so those live in the sidebar and the chips instead.
-   */
-  private _renderAppBar() {
-    const st = this.st;
-    const counts = st?.statsCounts;
-    // The narrow branch dresses these same controls its own way, on its own
-    // breakpoint, so the measured steps stand aside for it.
-    const steps = this._viewport.narrow ? '' : this._barSteps;
-    const addLabelClass = steps.includes('tight') ? 'add-label hv-sr-only' : 'add-label';
-    const badges = renderStatBadges(st, this.quickFilters, {
-      prefix: 'full-badge',
-      // A blue bar has no blue to spare, so the checked-out pill takes no hue.
-      chipClass: (tone) => (tone === 'state' ? 'pill' : `pill ${tone}`),
-      setFilters: (patch) => this.store?.setFilters(patch),
-    });
-    return html`
-        <div class="appbar ${steps}">
-          ${
-            this.embedded
-              ? this._renderMenuButton()
-              : html`<button
-                class="tap"
-                data-testid="expand-toggle"
-                aria-label=${t('hv.fullView.close')}
-                @click=${() => this._leaveEditor('close')}
-              >
-                ${icon('close', 20)}
-              </button>`
-          }
-          <h2>${this.heading}</h2>
-          ${renderSearch({
-            testid: 'full-search',
-            draft: this._searchDraft,
-            total: counts?.items_total ?? null,
-            onInput: (q) => {
-              this._searchDraft = q;
-              this._emitSearch(q);
-            },
-          })}
-          <!-- No strip when nothing is flagged: an empty one still takes a gap. -->
-          ${badges?.any ? html`<div class="pills" data-testid="full-pills">${badges.pills}</div>` : null}
-          <!-- A phone's first row only fits the short label, and a tight bar
-               draws the icon alone; the accessible name is always the full one. -->
-          <button
-            class="add"
-            data-testid="full-add-item"
-            aria-label=${t('hv.card.addItem')}
-            title=${t('hv.card.addItem')}
-            @click=${() => this._leaveEditor('new')}
-          >
-            ${icon('plus', 16)}<span class=${addLabelClass}
-              >${t(this._viewport.narrow ? 'hv.card.addShort' : 'hv.card.addItem')}</span
-            >
-          </button>
-          <button
-            class="tap"
-            data-testid="full-organize"
-            aria-label=${t('hv.organize.title')}
-            title=${t('hv.organize.title')}
-            @click=${() => this._menuAction({ id: 'organize' })}
-          >
-            ${icon('mapMarker', 20)}
-          </button>
-          <hv-overflow-menu
-            onPrimary
-            data-testid="full-overflow"
-            .entries=${this.menuEntries}
-            @select=${(e: HvEvent<'hv-overflow-menu', 'select'>) => {
-              if (e.detail.id === 'select-items') this._selecting = true;
-              else this._menuAction({ id: e.detail.id });
-            }}
-          ></hv-overflow-menu>
-        </div>
     `;
   }
 
