@@ -11,8 +11,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from custom_components.haventory.const import PLATFORMS, SENSOR_DESCRIPTIONS
+from custom_components.haventory.const import PLATFORMS
 from custom_components.haventory.repository import Repository
+from custom_components.haventory.sensor import SENSOR_DESCRIPTIONS
 
 PACKAGE = Path(__file__).resolve().parents[1] / "custom_components" / "haventory"
 EXPECTED_SENSOR_COUNT = 8

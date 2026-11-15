@@ -11,8 +11,9 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from custom_components.haventory.const import DOMAIN, SENSOR_DESCRIPTIONS
+from custom_components.haventory.const import DOMAIN
 from custom_components.haventory.runtime import find_runtime
+from custom_components.haventory.sensor import SENSOR_DESCRIPTIONS
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er

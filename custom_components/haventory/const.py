@@ -1,7 +1,5 @@
 """Constants for the HAventory integration."""
 
-from dataclasses import dataclass
-
 from homeassistant.const import Platform
 
 DOMAIN: str = "haventory"
@@ -154,37 +152,6 @@ PLATFORMS: tuple[Platform, ...] = (Platform.SENSOR, Platform.CALENDAR)
 # Constant rather than entry-scoped (single entry); it pins `calendar.haventory`.
 CALENDAR_UNIQUE_ID: str = "haventory_calendar"
 
-
-@dataclass(frozen=True, slots=True)
-class HaventorySensorDescription:
-    """One inventory count exposed as a sensor.
-
-    ``key`` is a key of ``Repository.get_counts()``; ``date_derived`` counts also
-    move at local midnight.
-    """
-
-    key: str
-    translation_key: str
-    icon: str
-    date_derived: bool = False
-
-
-SENSOR_DESCRIPTIONS: tuple[HaventorySensorDescription, ...] = (
-    HaventorySensorDescription("items_total", "items_total", "mdi:package-variant-closed"),
-    HaventorySensorDescription("low_stock_count", "low_stock", "mdi:package-down"),
-    HaventorySensorDescription("checked_out_count", "checked_out", "mdi:account-arrow-right"),
-    HaventorySensorDescription("overdue_count", "overdue", "mdi:calendar-alert", date_derived=True),
-    HaventorySensorDescription(
-        "checked_out_due_count", "checked_out_due", "mdi:calendar-clock", date_derived=True
-    ),
-    HaventorySensorDescription(
-        "inspection_overdue_count", "inspection_overdue", "mdi:clipboard-alert", date_derived=True
-    ),
-    HaventorySensorDescription(
-        "inspection_due_count", "inspection_due", "mdi:clipboard-text-clock", date_derived=True
-    ),
-    HaventorySensorDescription("locations_total", "locations", "mdi:map-marker-multiple"),
-)
 
 # -----------------------------
 # Home Assistant bus events
