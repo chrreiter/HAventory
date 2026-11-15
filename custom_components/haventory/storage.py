@@ -46,7 +46,8 @@ _MAX_REPORTED_VERSION_CHARS: Final[int] = 60
 # Every top-level collection the stored payload carries. A load keeps whatever
 # the file holds, while a save writes exactly what `Repository.export_state()`
 # produced, so a collection listed here that the repository does not emit is
-# erased by the first save. `tests/test_storage_offline.py` pins the two together.
+# erased by the first save. `test_store_write_and_reload_roundtrip` in
+# `tests/integration/test_persistence.py` pins the two together.
 STORE_COLLECTIONS: Final[tuple[str, ...]] = ("items", "locations", "statuses")
 
 # The collections `Repository.from_state` walks as maps of rows.

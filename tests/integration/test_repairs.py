@@ -161,8 +161,9 @@ async def test_a_corrupt_row_offers_a_fix_that_backs_up_reloads_and_clears(
     assert CONF_ALLOW_LOSSY_LOAD not in entry.options
 
 
+@pytest.mark.parametrize("how", ["the_copy_raises", "the_store_file_is_gone"])
 async def test_a_failed_copy_aborts_the_fix_and_loads_nothing_lossily(
-    hass: HomeAssistant, hass_storage: dict, monkeypatch: pytest.MonkeyPatch
+    hass: HomeAssistant, hass_storage: dict, monkeypatch: pytest.MonkeyPatch, how: str
 ) -> None:
     assert await async_setup_component(hass, "repairs", {})
     hass_storage[STORAGE_KEY] = _stored(_corrupt_store_data())
@@ -170,10 +171,15 @@ async def test_a_failed_copy_aborts_the_fix_and_loads_nothing_lossily(
     assert await hass.config_entries.async_setup(entry.entry_id) is False
     await hass.async_block_till_done()
 
-    async def _boom(_hass: HomeAssistant) -> bool:
-        raise RuntimeError("unreadable")
+    if how == "the_copy_raises":
 
-    monkeypatch.setattr(repairs_module, "async_backup_store", _boom)
+        async def _boom(_hass: HomeAssistant) -> bool:
+            raise RuntimeError("unreadable")
+
+        monkeypatch.setattr(repairs_module, "async_backup_store", _boom)
+    else:
+        # Nothing to copy: no guard can be offered, so the fix must not go on.
+        hass_storage.pop(STORAGE_KEY)
     flow_manager = repairs_flow_manager(hass)
     assert flow_manager is not None
     result = await flow_manager.async_init(DOMAIN, data={"issue_id": ISSUE_CORRUPT_STORE})
