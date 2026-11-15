@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from custom_components.haventory.validation import DESCRIPTION_MAX_LENGTH
 from homeassistant.core import HomeAssistant
 
 
@@ -190,6 +191,9 @@ async def test_widened_frames_answer_validation_error(setup_entry, ws_connect) -
         ("item/create", {"name": "Hammer", "quantity": "many"}),
         ("item/create", {"name": "Hammer", "tags": [7]}),
         ("status/reorder", {"slugs": "ok"}),
+        ("item/create", {"name": "Hammer", "category": ["oops"]}),
+        ("item/create", {"name": "Hammer", "description": "d" * (DESCRIPTION_MAX_LENGTH + 1)}),
+        ("item/create", {"name": "Hammer", "custom_fields": "oops"}),
     ]
     for command, payload in frames:
         resp = await ws.send(f"haventory/{command}", **payload)
@@ -259,6 +263,32 @@ EDIT_REFUSALS = [
         "item/remove_tags", {"tags": ["x", None]}, (V, TAGS_MESSAGE), id="remove_null_tag"
     ),
     pytest.param("item/update", {"tags": "kitchen"}, (V, TAGS_MESSAGE), id="string_tags"),
+    # A bare string would iterate into one-letter members, so each collection field refuses it.
+    pytest.param(
+        "item/update", {"custom_fields_set": "oops"}, (V, "custom_fields_set must be"), id="set_str"
+    ),
+    pytest.param(
+        "item/update",
+        {"custom_fields_unset": "oops"},
+        (V, "custom_fields_unset must be"),
+        id="unset_str",
+    ),
+    pytest.param("item/add_tags", {"tags": "oops"}, (V, "tags must be"), id="add_tags_str"),
+    pytest.param("item/remove_tags", {"tags": "oops"}, (V, "tags must be"), id="remove_tags_str"),
+    pytest.param(
+        "item/update_custom_fields", {"set": "oops"}, (V, "set must be"), id="fields_set_str"
+    ),
+    pytest.param(
+        "item/update_custom_fields", {"unset": "oops"}, (V, "unset must be"), id="fields_unset_str"
+    ),
+    pytest.param(
+        "item/attachment/reorder",
+        {"attachment_ids": "oops", "kind": "picture"},
+        (V, "attachment_ids must be"),
+        id="reorder_str",
+    ),
+    pytest.param("item/set_quantity", {"quantity": True}, (V, "quantity"), id="quantity_bool"),
+    pytest.param("item/adjust_quantity", {"delta": True}, (V, "delta"), id="delta_bool"),
     pytest.param(
         "item/update",
         {"inspection_date": "2026-13-01"},
@@ -564,6 +594,39 @@ async def test_bulk_batch_answers_each_row_on_its_own(setup_entry, ws_connect) -
     assert after["tags"] == ["tools"]
     assert after["name"] == "Hammer"
     assert (await ws.send("haventory/item/get", item_id=other["id"]))["success"] is True
+
+
+@pytest.mark.parametrize(
+    ("command", "payload", "kind"),
+    [
+        pytest.param(
+            "item/set_quantity",
+            {"item_id": "00000000-0000-4000-8000-000000000000", "quantity": -1},
+            "item_set_quantity",
+            id="quantity_checked_before_the_lookup",
+        ),
+        pytest.param(
+            "item/update", {"item_id": 7, "name": "X"}, "item_update", id="item_id_of_wrong_type"
+        ),
+    ],
+)
+async def test_a_refusal_answers_alike_from_the_command_and_from_bulk(
+    setup_entry, ws_connect, command: str, payload: dict[str, Any], kind: str
+) -> None:
+    """A caller that batches its edits gets the answer it gets sending them singly."""
+
+    await setup_entry()
+    ws = await ws_connect()
+
+    single = await ws.send(f"haventory/{command}", **payload)
+    batch = await ws.send("haventory/items/bulk", operations=[_op("a", kind, **payload)])
+
+    assert single["success"] is False
+    assert single["error"]["code"] == "validation_error"
+    row = batch["result"]["results"]["a"]
+    assert row["success"] is False
+    assert row["error"]["code"] == single["error"]["code"]
+    assert row["error"]["message"] == single["error"]["message"]
 
 
 async def test_distinct_values_answers_over_the_wire(setup_entry, ws_connect) -> None:

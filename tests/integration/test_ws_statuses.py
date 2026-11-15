@@ -29,6 +29,12 @@ REFUSALS = [
     pytest.param(
         "status/reorder", {"slugs": ["ok", "missing"]}, "validation_error", id="partial_reorder"
     ),
+    pytest.param(
+        "status/reorder",
+        {"slugs": ["ok", "ok", "missing"]},
+        "validation_error",
+        id="reorder_names_one_twice",
+    ),
     pytest.param("status/delete", {"slug": "ok"}, "validation_error", id="delete_default"),
     pytest.param(
         "item/create", {"name": "Drill", "status": "lost"}, "validation_error", id="item_unknown"
