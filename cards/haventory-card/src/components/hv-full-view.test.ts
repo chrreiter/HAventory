@@ -420,7 +420,7 @@ describe('hv-full-view: context bar and table', () => {
   // The same sentence the card's footer prints: one fact, one phrasing, and it
   // names what it is counting.
   it('counts loaded rows against the filtered total, in the words the card uses', async () => {
-    const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}` }));
+    const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}`, checked_out: true }));
     const { el, store, sr } = await mount({ items });
     expect(q(sr, '[data-testid="full-footer"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
       'Showing 50 of 60 items · scroll to load more',
@@ -1188,7 +1188,6 @@ describe('hv-full-view: phone-width children', () => {
 });
 
 describe('hv-full-view: selection and bulk actions', () => {
-  const bulkBar = (sr: ShadowRoot) => sr.querySelector('[data-testid="full-bulk-bar"]') as HTMLElement;
   const table = (sr: ShadowRoot) => sr.querySelector('[data-testid="full-table"]') as HTMLElement;
 
   async function enterSelection(el: HVFullView, sr: ShadowRoot) {
@@ -1214,7 +1213,7 @@ describe('hv-full-view: selection and bulk actions', () => {
   });
 
   it('counts the selection honestly against the filtered total', async () => {
-    const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}` }));
+    const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}`, checked_out: true }));
     const { el, store, sr } = await mount({ items });
     el.menuEntries = withSelectEntry.entries;
     await settle(el);
@@ -1230,241 +1229,13 @@ describe('hv-full-view: selection and bulk actions', () => {
       'Select-all covers loaded rows only',
     );
     expect(store.state.value.selection.size).toBe(50);
-  });
 
-  it('runs a bulk move and reports it', async () => {
-    const locations = [loc('workshop', 'Workshop')];
-    const items = [makeItem({ id: '1' }), makeItem({ id: '2' })];
-    const { el, store, sr } = await mount({ items, locations });
-    el.menuEntries = withSelectEntry.entries;
-    await settle(el);
-    await enterSelection(el, sr);
-
-    (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    const bar = bulkBar(sr);
-    (
-      bar.shadowRoot?.querySelector('[data-testid="bulk-action"][data-action="move"]') as HTMLButtonElement
-    ).click();
-    await settle(el);
-    const tree = bar.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
-    (
-      tree.shadowRoot?.querySelector('[data-testid="tree-row"][data-id="workshop"]') as HTMLButtonElement
-    ).click();
+    // The bar in the child reaches the same store: one action runs end to end.
+    const bar = q(sr, 'hv-full-bulk')!.shadowRoot as ShadowRoot;
+    (q(bar, 'hv-bulk-bar')!.shadowRoot?.querySelector('[data-action="check-in"]') as HTMLButtonElement).click();
     await settle(el);
     await settle(el);
-
-    expect(store.state.value.items.every((i) => i.location_id === 'workshop')).toBe(true);
-    expect(bar.shadowRoot?.querySelector('[data-testid="bulk-result-summary"]')?.textContent).toContain(
-      '2 of 2 succeeded',
-    );
-  });
-
-  it('keeps the failures listed and the selection narrowed to them', async () => {
-    const items = [makeItem({ id: '1' }), makeItem({ id: '2', name: 'Stubborn' })];
-    const { el, store, sr } = await mount({ items });
-    el.menuEntries = withSelectEntry.entries;
-    await settle(el);
-    await enterSelection(el, sr);
-
-    (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    // One of the two rows refuses.
-    const realBulk = store['ws'].bulk.bind(store['ws']);
-    store['ws'].bulk = async (ops) => {
-      const res = await realBulk(ops);
-      const doomed = ops.find((o) => o.payload.item_id === '2');
-      if (doomed) {
-        res.results[doomed.op_id] = {
-          success: false,
-          error: { code: 'conflict', message: 'version conflict', context: {} },
-        };
-      }
-      return res;
-    };
-
-    const bar = bulkBar(sr);
-    (bar.shadowRoot?.querySelector('[data-action="check-in"]') as HTMLButtonElement).click();
-    await settle(el);
-    await settle(el);
-
-    expect(bar.shadowRoot?.querySelector('[data-testid="bulk-result-summary"]')?.textContent).toContain(
-      '1 of 2 succeeded',
-    );
-    expect(bar.shadowRoot?.querySelector('[data-testid="bulk-failure"]')?.textContent).toContain('Stubborn');
-    expect([...store.state.value.selection]).toEqual(['2']);
-  });
-
-  // A batch is asked for a due date exactly as a single row is: firing on the
-  // press with no date means a bulk check-out can never go overdue.
-  describe('bulk check-out asks for a due date, once', () => {
-    async function selectTwoAndCheckOut() {
-      const items = [makeItem({ id: '1' }), makeItem({ id: '2' })];
-      const mounted = await mount({ items });
-      const { el, sr } = mounted;
-      el.menuEntries = withSelectEntry.entries;
-      await settle(el);
-      await enterSelection(el, sr);
-
-      (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
-      await settle(el);
-      (bulkBar(sr).shadowRoot?.querySelector('[data-action="check-out"]') as HTMLButtonElement).click();
-      await settle(el);
-
-      const popover = q(sr, '[data-testid="full-bulk-checkout"]') as HTMLElement & {
-        open: boolean;
-        inline: boolean;
-        touch: boolean;
-      };
-      return { ...mounted, popover };
-    }
-
-    // Opened by a bar at the foot of the table, so it has no body to be a step
-    // inside of and stays a centred dialog. That says nothing about how big its
-    // controls should be: on the narrow branch a finger has to hit them.
-    it('takes finger-sized controls on the narrow branch and stays a centred dialog', async () => {
-      for (const narrow of [false, true]) {
-        const restore = stubViewport(narrow);
-        try {
-          const { el, popover } = await selectTwoAndCheckOut();
-          const where = `narrow=${narrow}`;
-          expect(popover.open, where).toBe(true);
-          expect(popover.inline, where).toBe(false);
-          expect(popover.touch, where).toBe(narrow);
-          expect(popover.shadowRoot?.querySelector('.scrim')?.classList.contains('dim'), where).toBe(true);
-          el.remove();
-        } finally {
-          restore();
-        }
-      }
-    });
-
-    it('opens one popover for the whole selection and applies the date to every row', async () => {
-      const { el, store, popover } = await selectTwoAndCheckOut();
-      expect(popover.open).toBe(true);
-      // One question, named for what it covers.
-      expect(popover.shadowRoot?.querySelector('[data-testid="checkout-title"]')?.textContent).toContain(
-        'Check out 2 items',
-      );
-      // Nothing has run yet.
-      expect(store.state.value.items.some((i) => i.checked_out)).toBe(false);
-
-      const date = popover.shadowRoot?.querySelector('[data-testid="checkout-date"] input') as HTMLInputElement;
-      date.value = '2031-04-05';
-      date.dispatchEvent(new Event('input', { bubbles: true }));
-      await settle(el);
-      (popover.shadowRoot?.querySelector('[data-testid="checkout-confirm"]') as HTMLButtonElement).click();
-      await settle(el);
-      await settle(el);
-
-      expect(store.state.value.items.map((i) => [i.checked_out, i.due_date])).toEqual([
-        [true, '2031-04-05'],
-        [true, '2031-04-05'],
-      ]);
-    });
-
-    it('honours the explicit no-date choice', async () => {
-      const { el, store, popover } = await selectTwoAndCheckOut();
-      (popover.shadowRoot?.querySelector('[data-testid="checkout-no-date"]') as HTMLButtonElement).click();
-      await settle(el);
-      await settle(el);
-
-      expect(store.state.value.items.every((i) => i.checked_out && i.due_date === null)).toBe(true);
-    });
-
-    it('checks nothing out when the question is cancelled', async () => {
-      const { el, store, popover } = await selectTwoAndCheckOut();
-      (popover.shadowRoot?.querySelector('[data-testid="checkout-cancel"]') as HTMLButtonElement).click();
-      await settle(el);
-      await settle(el);
-
-      expect(store.state.value.items.some((i) => i.checked_out)).toBe(false);
-    });
-
-    // Nothing to ask about, so nothing is asked.
-    it('leaves bulk check-in immediate', async () => {
-      const items = [makeItem({ id: '1', checked_out: true }), makeItem({ id: '2', checked_out: true })];
-      const { el, store, sr } = await mount({ items });
-      el.menuEntries = withSelectEntry.entries;
-      await settle(el);
-      await enterSelection(el, sr);
-
-      (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
-      await settle(el);
-      (bulkBar(sr).shadowRoot?.querySelector('[data-action="check-in"]') as HTMLButtonElement).click();
-      await settle(el);
-      await settle(el);
-
-      expect(store.state.value.items.every((i) => !i.checked_out)).toBe(true);
-    });
-  });
-
-  it('confirms a bulk delete and warns about checked-out items', async () => {
-    const items = [makeItem({ id: '1' }), makeItem({ id: '2', checked_out: true })];
-    const { el, store, sr } = await mount({ items });
-    el.menuEntries = withSelectEntry.entries;
-    await settle(el);
-    await enterSelection(el, sr);
-
-    (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    (bulkBar(sr).shadowRoot?.querySelector('[data-action="delete"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    const confirm = q(sr, '[data-testid="bulk-confirm"]') as HTMLElement & { open: boolean };
-    expect(confirm.open).toBe(true);
-    expect(confirm.shadowRoot?.textContent).toContain('Delete 2 items?');
-    const warning = confirm.shadowRoot?.querySelector('[data-testid="confirm-warning"]') as HTMLElement;
-    expect(warning.shadowRoot?.textContent).toContain('1 of them is checked out');
-
-    (confirm.shadowRoot?.querySelector('[data-testid="confirm-accept"]') as HTMLButtonElement).click();
-    await settle(el);
-    await settle(el);
-    expect(store.state.value.items).toHaveLength(0);
-  });
-
-  // This view's own confirm belongs to the same family as the dialogs the host
-  // owns: one width flips every overlay, so a phone never shows a centred box
-  // over sheets.
-  it('raises its delete confirm as a sheet on a phone viewport', async () => {
-    const restore = stubViewport(true);
-    try {
-      const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
-      el.menuEntries = withSelectEntry.entries;
-      await settle(el);
-      await enterSelection(el, sr);
-
-      (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
-      await settle(el);
-      (bulkBar(sr).shadowRoot?.querySelector('[data-action="delete"]') as HTMLButtonElement).click();
-      await settle(el);
-
-      expect(q(sr, '[data-testid="bulk-confirm"]')?.hasAttribute('mobile')).toBe(true);
-    } finally {
-      restore();
-    }
-  });
-
-  it('leaves everything alone when the delete is cancelled', async () => {
-    const items = [makeItem({ id: '1' })];
-    const { el, store, sr } = await mount({ items });
-    el.menuEntries = withSelectEntry.entries;
-    await settle(el);
-    await enterSelection(el, sr);
-
-    (table(sr).shadowRoot?.querySelector('[data-testid="table-select-all"]') as HTMLButtonElement).click();
-    await settle(el);
-    (bulkBar(sr).shadowRoot?.querySelector('[data-action="delete"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    const confirm = q(sr, '[data-testid="bulk-confirm"]') as HTMLElement & { open: boolean };
-    (confirm.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    expect(store.state.value.items).toHaveLength(1);
+    expect(store.state.value.items.every((i) => !i.checked_out)).toBe(true);
   });
 
   it('exits selection mode and clears the selection', async () => {
