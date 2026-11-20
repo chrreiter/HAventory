@@ -46,6 +46,10 @@ export default defineConfig({
   plugins: [emptyChunksDir()],
   test: {
     environment: 'jsdom',
+    // Each file still gets its own context and its own custom-element registry,
+    // so a failure stays with the file that caused it; what this saves is
+    // building a fresh jsdom worker per file, which was half the run.
+    pool: 'vmThreads',
     globals: true,
     include: ['src/**/*.test.ts'],
     setupFiles: ['src/test.setup.ts'],
