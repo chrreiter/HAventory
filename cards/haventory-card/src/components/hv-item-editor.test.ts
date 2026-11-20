@@ -678,6 +678,15 @@ describe('hv-item-editor: typed custom fields', () => {
     expect(editorCss()).toMatch(/\.cf-row \.cf-type \{[^}]*grid-area: type/);
   });
 
+  // jsdom measures no text, so the column that keeps "Number" from clipping at
+  // the phone font is pinned as written; the key and the remove button keep
+  // the 1fr and the tap-size tracks around it.
+  it('gives the narrow type column room for its longest label', () => {
+    expect(editorCss()).toMatch(
+      /@container \(max-width: 520px\) \{ \.cf-row \{[^}]*grid-template-columns: minmax\(0, 1fr\) 112px var\(--hv-tap-min, 34px\)/,
+    );
+  });
+
   // Every host that can scroll the form puts the actions below the fold — the
   // card's list, the phone sheet, and the expanded view, which caps the form at
   // 70dvh — so the editor keeps them in reach itself rather than each host

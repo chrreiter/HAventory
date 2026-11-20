@@ -208,10 +208,12 @@ export class HVItemEditor extends LitElement {
       .cf-row .field-error {
         grid-column: 1 / -1;
       }
-      /* Too tight: the value drops under its key and remove spans both rows. */
+      /* Too tight: the value drops under its key and remove spans both rows.
+         The type column leaves room for "Number" at the phone font beside the
+         select's chevron. */
       @container (max-width: 520px) {
         .cf-row {
-          grid-template-columns: minmax(0, 1fr) 104px var(--hv-tap-min, 34px);
+          grid-template-columns: minmax(0, 1fr) 112px var(--hv-tap-min, 34px);
           grid-template-areas:
             'key type remove'
             'value value remove';
