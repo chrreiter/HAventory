@@ -180,6 +180,7 @@ describe('status tone contrast', () => {
   const PAIRS: [string, string][] = [
     ['--hv-tone-blue-bg', '--hv-primary-tint'],
     ['--hv-tone-blue-strong-bg', '--hv-primary-darker'],
+    ['--hv-tone-blue-strong-bg', '--hv-primary-strong'],
     ['--hv-tone-blue-strong-bg', '--hv-primary'],
   ];
 
@@ -240,6 +241,37 @@ describe('chip variant contrast', () => {
         ).toBeGreaterThanOrEqual(4.5);
       });
     }
+  }
+});
+
+/**
+ * The app bar's selection fill and the Add pill's ink.
+ *
+ * Both sit on white in the same component: the bar fills with the token and
+ * carries white text, the pill is a white fill that carries the token as ink.
+ * `--hv-primary-darker` is a light blue in the dark theme, written as ink for a
+ * dark surface, and measured about 2:1 in both of these places.
+ */
+describe('primary-strong contrast', () => {
+  const decls = declarations();
+  const WHITE: Rgb = [255, 255, 255];
+
+  for (const theme of ['light', 'dark'] as const) {
+    it(`carries white ink in the ${theme} theme`, () => {
+      const fill = over(resolve('--hv-primary-strong', theme, decls), WHITE);
+      const ratio = contrast(fill, WHITE);
+      expect(ratio, `white on --hv-primary-strong (${theme}) is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    });
+
+    it(`reads as ink on a white fill in the ${theme} theme`, () => {
+      const ink = over(resolve('--hv-primary-strong', theme, decls), WHITE);
+      const ratio = contrast(WHITE, ink);
+      expect(ratio, `--hv-primary-strong on white (${theme}) is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+        4.5,
+      );
+    });
   }
 });
 

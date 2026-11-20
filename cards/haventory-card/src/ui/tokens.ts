@@ -29,6 +29,8 @@ export const tokens = css`
     --hv-primary: var(--primary-color, #03a9f4);
     --hv-primary-dark: light-dark(#0288d1, #4fc3f7);
     --hv-primary-darker: light-dark(#0277bd, #4fc3f7);
+    /* The same in both themes, because it carries white ink: the app bar is primary-coloured in both. */
+    --hv-primary-strong: #0277bd;
     --hv-primary-tint: light-dark(#e3f4fd, rgba(3, 169, 244, 0.16));
     /* Ink on --hv-primary-tint: --hv-primary-darker reaches only 4.26:1 there. */
     --hv-on-primary-tint: light-dark(#01579b, #4fc3f7);

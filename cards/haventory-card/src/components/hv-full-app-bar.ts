@@ -65,7 +65,7 @@ export class HVFullAppBar extends LitElement {
         color: #fff;
       }
       .appbar.selecting {
-        background: var(--hv-primary-darker);
+        background: var(--hv-primary-strong);
       }
       .appbar .count {
         font: 500 18px var(--hv-font);
@@ -219,7 +219,7 @@ export class HVFullAppBar extends LitElement {
         border: none;
         border-radius: var(--hv-radius-chip);
         background: #fff;
-        color: var(--hv-primary-darker);
+        color: var(--hv-primary-strong);
         padding: 7px 15px;
         font: 500 13px var(--hv-font);
       }
