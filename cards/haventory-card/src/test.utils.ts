@@ -286,17 +286,22 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           return summary as unknown as T;
         }
         case 'haventory/distinct_values': {
-          // Mirror the backend: distinct categories (case-insensitive) and tags,
-          // each with a usage count, sorted case-insensitively by value. With a
-          // filter each entry also carries `matching_count`, and no entry is
-          // dropped — the list is autocomplete's vocabulary, not a result set.
-          const facetFilter = (msg as any).filter as unknown;
-          const facetMatched = facetFilter ? applyMockFilter(items, facetFilter) : null;
-          const matchedIds = facetMatched && new Set(facetMatched.map((i) => i.id));
-          const priced = <T extends { count: number }>(entry: T, ids: Set<string>) =>
-            matchedIds
-              ? { ...entry, matching_count: [...ids].filter((id) => matchedIds.has(id)).length }
-              : entry;
+          // Mirror the backend: distinct categories (case-insensitive), tags and
+          // the statuses items carry, each with a usage count, sorted
+          // case-insensitively by value. With a filter each entry also carries
+          // `matching_count`, and no entry is dropped — the list is
+          // autocomplete's vocabulary, not a result set. Statuses are priced
+          // with the filter's own `status` left out.
+          const facetFilter = (msg as any).filter as Record<string, unknown> | undefined;
+          const pricedAgainst = (filter: Record<string, unknown> | undefined) => {
+            const matchedIds = filter && new Set(applyMockFilter(items, filter).map((i) => i.id));
+            return <T extends { count: number }>(entry: T, ids: Set<string>) =>
+              matchedIds
+                ? { ...entry, matching_count: [...ids].filter((id) => matchedIds.has(id)).length }
+                : entry;
+          };
+          const priced = pricedAgainst(facetFilter);
+          const pricedStatus = pricedAgainst(facetFilter && { ...facetFilter, status: undefined });
           const catGroups = new Map<string, { display: string; ids: Set<string> }>();
           for (const it of items) {
             const raw = (it.category ?? '').trim();
@@ -320,6 +325,16 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           const tags = Array.from(tagGroups.entries())
             .map(([value, ids]) => priced({ value, count: ids.size }, ids))
             .sort((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()));
+          const statusGroups = new Map<string, Set<string>>();
+          for (const it of items) {
+            const slug = it.status ?? 'ok';
+            const set = statusGroups.get(slug) ?? new Set<string>();
+            set.add(it.id);
+            statusGroups.set(slug, set);
+          }
+          const statuses = Array.from(statusGroups.entries())
+            .map(([value, ids]) => pricedStatus({ value, count: ids.size }, ids))
+            .sort((a, b) => a.value.toLowerCase().localeCompare(b.value.toLowerCase()));
           const customKeys = new Set<string>();
           for (const it of items) {
             for (const k of Object.keys(it.custom_fields ?? {})) {
@@ -329,7 +344,7 @@ export function makeMockHass(initial?: MockConfig): MockHass {
           const custom_field_keys = Array.from(customKeys).sort((a, b) =>
             a.toLowerCase().localeCompare(b.toLowerCase()),
           );
-          return { categories, tags, custom_field_keys } as unknown as T;
+          return { categories, tags, statuses, custom_field_keys } as unknown as T;
         }
         case 'haventory/location/tree': {
           // Mirror the backend: nested nodes carrying direct and subtree counts,

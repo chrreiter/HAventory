@@ -650,6 +650,64 @@ def test_distinct_values_counts_an_excluded_item_towards_count_only() -> None:
     assert unfiltered["categories"] == [{"value": "Tools", "count": 2}]
 
 
+def test_distinct_values_tallies_the_statuses_items_carry() -> None:
+    """One entry per slug an item carries, priced only when a filter came in."""
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Hammer", status="missing"))
+    repo.create_item(ItemCreate(name="Saw", checked_out=True))
+    repo.create_item(ItemCreate(name="Novel"))
+
+    # `needs_repair` is defined but on no item, so it has no entry.
+    assert repo.get_distinct_field_values()["statuses"] == [
+        {"value": "missing", "count": 1},
+        {"value": "ok", "count": 2},
+    ]
+    assert repo.get_distinct_field_values(ItemFilter(checked_out=True))["statuses"] == [
+        {"value": "missing", "count": 1, "matching_count": 0},
+        {"value": "ok", "count": 2, "matching_count": 1},
+    ]
+
+
+def test_distinct_values_prices_statuses_without_the_status_filter() -> None:
+    """A picked status narrows the category and tag tallies, never its own."""
+
+    repo = Repository()
+    repo.create_item(ItemCreate(name="Hammer", category="Tools", tags=["red"], status="missing"))
+    repo.create_item(ItemCreate(name="Saw", category="Tools", tags=["red"]))
+    repo.create_item(
+        ItemCreate(name="Drill", category="Tools", tags=["red"], status="needs_repair")
+    )
+    repo.create_item(ItemCreate(name="Novel", category="Books", tags=["paper"], status="missing"))
+    repo.create_item(ItemCreate(name="Atlas", category="Books", tags=["paper"]))
+
+    def matching(result: dict[str, object], facet: str) -> dict[str, int]:
+        entries = result[facet]
+        assert isinstance(entries, list)
+        return {e["value"]: e["matching_count"] for e in entries}
+
+    both = repo.get_distinct_field_values(ItemFilter(tags_any=["red"], status="missing"))
+    # The three red items, whatever their status.
+    assert matching(both, "statuses") == {"missing": 1, "needs_repair": 1, "ok": 1}
+    # Only the red item that is missing.
+    assert matching(both, "categories") == {"Books": 0, "Tools": 1}
+    assert matching(both, "tags") == {"paper": 0, "red": 1}
+
+    # A status alone leaves the status tally an empty filter: still priced, and
+    # every entry matches in full.
+    alone = repo.get_distinct_field_values(ItemFilter(status="missing"))
+    assert alone["statuses"] == [
+        {"value": "missing", "count": 2, "matching_count": 2},
+        {"value": "needs_repair", "count": 1, "matching_count": 1},
+        {"value": "ok", "count": 2, "matching_count": 2},
+    ]
+    assert matching(alone, "categories") == {"Books": 1, "Tools": 1}
+
+    # Leaving the key out of one tally does not stop the filter refusing it.
+    with pytest.raises(ValidationError):
+        repo.get_distinct_field_values(ItemFilter(status="nonesuch"))
+
+
 def test_list_items_unions_the_category_index_buckets() -> None:
     """The index path and the post-filter must agree on a multi-select."""
 

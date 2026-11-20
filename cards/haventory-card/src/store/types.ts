@@ -244,10 +244,16 @@ export interface DistinctValue {
   matching_count?: number;
 }
 
-/** Result of haventory/distinct_values: distinct categories and tags with counts. */
+/** Result of haventory/distinct_values: distinct categories, tags and statuses with counts. */
 export interface DistinctValues {
   categories: DistinctValue[];
   tags: DistinctValue[];
+  /**
+   * One entry per status slug some item carries, its matching count taken with
+   * the filter's own status left out. Absent from a backend older than the list,
+   * which the card can be talking to across an upgrade's restart.
+   */
+  statuses?: DistinctValue[];
   /** Distinct custom-field keys across all items (sorted, case-insensitive). */
   custom_field_keys: string[];
 }

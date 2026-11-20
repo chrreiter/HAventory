@@ -157,14 +157,21 @@ budget out and leaves the client to tell the user.
 - `haventory/distinct_values`
   - Request: `{id, type, filter?: <ItemFilter>}`. Any other field is `invalid_format`; an
     unknown key *inside* `filter` is `validation_error` naming it, as for `item/list`.
-  - Result: `{categories: DistinctValue[], tags: DistinctValue[], custom_field_keys: string[]}`
-  - With a `filter`, every `categories` and `tags` entry also carries `matching_count`.
-    **The lists never shrink**: an entry the filter keeps nothing of is present at
-    `matching_count: 0`, because the same payload feeds autocomplete and the organize dialog.
+  - Result: `{categories: DistinctValue[], tags: DistinctValue[], statuses: DistinctValue[], custom_field_keys: string[]}`
+  - `statuses` has one entry per status slug at least one item carries, its `value` the
+    slug; a defined status no item carries has none.
+  - With a `filter`, every `categories`, `tags` and `statuses` entry also carries
+    `matching_count`. **The lists never shrink**: an entry the filter keeps nothing of is
+    present at `matching_count: 0`, because the same payload feeds autocomplete and the
+    organize dialog.
   - Which dimensions to leave out of `filter` is the caller's decision. The card drops
     `category` and `tags_any`/`tags_all` before sending: a facet priced against its own
     selection reads 0 on every other row exactly when the user wants to see where else the
     matches are.
+  - The `statuses` matching counts leave the filter's own `status` out, for the same reason;
+    the `categories` and `tags` counts keep it, so a selected status still narrows them. The
+    backend drops it because one request prices all three lists. A filter whose only key is
+    `status` still prices every entry, and each status then matches its whole `count`.
   - Read-only.
 
 - `haventory/health`

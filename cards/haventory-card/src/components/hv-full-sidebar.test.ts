@@ -3,7 +3,8 @@ import { defined, makeItem, mountHost, q, settle } from '../test.utils';
 import { deepFocusables } from '../ui/dialog-focus';
 import type { HvEvent } from '../events';
 import type { HVFullSidebar, SidebarSection } from './hv-full-sidebar';
-import type { Item, Location, StatusDefinition } from '../store/types';
+import type { DistinctValues, Item, Location, StatusDefinition } from '../store/types';
+import type { Store } from '../store/store';
 
 function loc(id: string, name: string, parentId: string | null = null): Location {
   const display = parentId ? `${parentId} / ${name}` : name;
@@ -598,6 +599,95 @@ describe('hv-full-sidebar: status', () => {
     const { sr } = await mount({ items: flagged });
     expect(q(sr, '[data-testid="sidebar-status-tally"]')).toBe(null);
     expect(q(sr, '[data-testid="sidebar-toggle-status"]')?.textContent).toContain('Status');
+  });
+
+  /** The backend's matching count for a slug, once a priced answer has landed. */
+  const matchingOf = (store: Store, slug: string) =>
+    store.state.value.distinctValuesCache?.statuses?.find((e) => e.value === slug)?.matching_count;
+
+  // The category and location rows beside these read matches over total under
+  // a filter, so a status row keeping its whole-inventory number disagreed
+  // with the list it sits next to.
+  it('reads matches over total once a filter is narrowing the list', async () => {
+    const statuses: StatusDefinition[] = [
+      { slug: 'ok', label: 'OK', order: 0, color: 'green', icon: 'check' },
+      { slug: 'missing', label: 'Missing', order: 1, color: 'amber', icon: 'alert' },
+      { slug: 'lent_out', label: 'Lent out', order: 2, color: 'blue', icon: 'hand' },
+    ];
+    const items = [
+      makeItem({ id: '1', status: 'missing', checked_out: true }),
+      makeItem({ id: '2', status: 'missing' }),
+      makeItem({ id: '3', checked_out: true }),
+      makeItem({ id: '4' }),
+    ];
+    const { el, store, sr } = await mount({ items, statuses });
+    expect(tallies(sr)).toEqual(['2', '2', '0']);
+
+    store.setFilters({ checkedOutOnly: true });
+    await vi.waitUntil(() => matchingOf(store, 'ok') !== undefined);
+    await settle(el);
+    // Nothing carries "lent out", so the answer has no entry for it: 0 matches.
+    expect(tallies(sr)).toEqual(['1 / 2', '1 / 2', '0 / 0']);
+
+    store.setFilters({ checkedOutOnly: false });
+    await vi.waitUntil(
+      () => store.state.value.distinctValuesCache?.statuses?.[0]?.matching_count === undefined,
+    );
+    await settle(el);
+    expect(tallies(sr)).toEqual(['2', '2', '0']);
+  });
+
+  // Priced against its own selection, every other status would read 0 the
+  // moment one is picked. The category rows still narrow to the pick.
+  it('leaves the selected status out of the status matches but not the category ones', async () => {
+    const items = [
+      makeItem({ id: '1', status: 'missing', category: 'Tools' }),
+      makeItem({ id: '2', category: 'Tools' }),
+      makeItem({ id: '3', category: 'Books' }),
+      makeItem({ id: '4', status: 'needs_repair', category: 'Books' }),
+    ];
+    const { el, store, sr } = await mount({ items });
+    const categoryTally = (value: string) =>
+      sr
+        .querySelector(`[data-testid="sidebar-categories-row"][data-value="${value}"] .hv-tally`)
+        ?.textContent?.trim();
+
+    rows(sr)
+      .find((r) => r.dataset.value === 'missing')
+      ?.click();
+    await vi.waitUntil(() => matchingOf(store, 'ok') !== undefined);
+    await settle(el);
+    // The status is the only filter, so the status rows are priced against
+    // nothing and match in full; the request was still a priced one.
+    expect(tallies(sr)).toEqual(['2 / 2', '1 / 1', '1 / 1']);
+    expect(categoryTally('Tools')).toBe('1 / 2');
+    expect(categoryTally('Books')).toBe('0 / 2');
+
+    // The mock's search reads the category, so this keeps the two Tools items.
+    store.setFilters({ q: 'tools' });
+    await vi.waitUntil(() => matchingOf(store, 'needs_repair') === 0);
+    await settle(el);
+    expect(tallies(sr)).toEqual(['1 / 2', '1 / 1', '0 / 1']);
+    expect(categoryTally('Tools')).toBe('1 / 2');
+  });
+
+  // Across an upgrade's restart the card can be talking to a backend that
+  // sends no statuses; the rows then keep the numbers they always had.
+  it('keeps plain totals when the answer carries no statuses', async () => {
+    const { el, store, hass, sr } = await mount({ items: flagged });
+    const original = hass.callWS.bind(hass);
+    hass.callWS = (async (msg: Record<string, unknown>) => {
+      const result = await original(msg);
+      if (String(msg.type) !== 'haventory/distinct_values') return result;
+      const older = { ...(result as DistinctValues) };
+      delete older.statuses;
+      return older;
+    }) as typeof hass.callWS;
+
+    store.setFilters({ checkedOutOnly: true });
+    await vi.waitUntil(() => store.state.value.distinctValuesCache?.statuses === undefined);
+    await settle(el);
+    expect(tallies(sr)).toEqual(['1', '1', '2']);
   });
 });
 
