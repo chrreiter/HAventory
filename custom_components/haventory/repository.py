@@ -939,8 +939,6 @@ class Repository:
             ),
             "inspection_due_count": sum(item_inspection_is_due(it, today=today) for it in items),
             "reminder_due_count": sum(item_reminder_is_due(it, today=today) for it in items),
-            "missing_count": len(self._status_to_item_ids.get("missing", set())),
-            "needs_repair_count": len(self._status_to_item_ids.get("needs_repair", set())),
             "status_counts": {
                 slug: self.count_items_with_status(slug) for slug in self._statuses_by_slug
             },

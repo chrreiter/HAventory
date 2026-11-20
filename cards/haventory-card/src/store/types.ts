@@ -219,8 +219,6 @@ export interface StatsCounts {
   inspection_overdue_count: number;
   inspection_due_count: number;
   reminder_due_count: number;
-  missing_count?: number;
-  needs_repair_count?: number;
   /** Every defined status slug to its item count, `ok` included. */
   status_counts: Record<string, number>;
   locations_total: number;

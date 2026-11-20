@@ -145,8 +145,6 @@ const OUTPUTS: Record<string, Record<string, Presence>> = {
     inspection_overdue_count: 'required',
     inspection_due_count: 'required',
     reminder_due_count: 'required',
-    missing_count: 'optional',
-    needs_repair_count: 'optional',
     status_counts: 'required',
     locations_total: 'required',
     no_location_count: 'required',
@@ -254,14 +252,6 @@ const VALUES: Record<string, readonly string[]> = {
   SortOrder: everyOf<SortOrder>()(['asc', 'desc']),
 };
 
-/**
- * Always sent, typed optional on purpose: whether these two counts stay in the
- * contract at all is undecided, and `status_counts` carries the same numbers.
- */
-const KEPT_OPTIONAL: Readonly<Record<string, readonly string[]>> = {
-  StatsCounts: ['missing_count', 'needs_repair_count'],
-};
-
 function outputDrift(
   shape: string,
   declared: Record<string, Presence>,
@@ -276,7 +266,7 @@ function outputDrift(
     const typed = declared[key];
     if (typed === undefined)
       problems.push(`${shape}.${key}: the backend sends it, types.ts does not declare it`);
-    else if (wire === 'required' && typed === 'optional' && !KEPT_OPTIONAL[shape]?.includes(key))
+    else if (wire === 'required' && typed === 'optional')
       problems.push(`${shape}.${key}: always sent, types.ts marks it optional`);
     else if (wire === 'optional' && typed === 'required')
       problems.push(`${shape}.${key}: not always sent, types.ts marks it required`);

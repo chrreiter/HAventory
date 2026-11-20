@@ -117,7 +117,7 @@ def test_repository_roundtrip_preserves_status() -> None:
     by_name = {i.name: i for i in restored.list_items()["items"]}
     assert by_name["Hammer"].status == "missing"
     assert by_name["Wrench"].status == "ok"
-    assert restored.get_counts()["missing_count"] == 1
+    assert restored.get_counts()["status_counts"]["missing"] == 1
 
 
 def test_load_state_tolerates_missing_and_unknown_status() -> None:
@@ -133,8 +133,8 @@ def test_load_state_tolerates_missing_and_unknown_status() -> None:
     restored = Repository.from_state(state)
     assert all(i.status == "ok" for i in restored.list_items()["items"])
     counts = restored.get_counts()
-    assert counts["missing_count"] == 0
-    assert counts["needs_repair_count"] == 0
+    assert counts["status_counts"]["missing"] == 0
+    assert counts["status_counts"]["needs_repair"] == 0
 
 
 def test_a_household_defined_status_filters_the_list() -> None:

@@ -324,8 +324,6 @@ of a `stats/counts` event and the `totals` of an import summary:
   "inspection_overdue_count": 0,
   "inspection_due_count": 0,
   "reminder_due_count": 0,
-  "missing_count": 0,
-  "needs_repair_count": 0,
   "status_counts": { "ok": 0, "missing": 0, "needs_repair": 0 },
   "locations_total": 0,
   "no_location_count": 0
@@ -343,11 +341,10 @@ Each count is the population of the filter of the same name:
 | `inspection_overdue_count` | `inspection_date` before today, whole inventory | `inspection_overdue_only` |
 | `inspection_due_count` | `inspection_date` on or before today | `inspection_due_only` |
 | `reminder_due_count` | `reminder_date` on or before today | `reminder_due_only` |
-| `missing_count`, `needs_repair_count` | stored `status` is that slug | `status` |
+| `status_counts[slug]` | stored `status` is that slug | `status` |
 | `no_location_count` | no location | `orphaned_only` |
 
-`status_counts` holds the same figure for **every** defined slug, `ok` included, beside the
-two named keys. The five date-derived counts move with the calendar; the rest change only on
+`status_counts` holds one figure for **every** defined slug, `ok` included. The five date-derived counts move with the calendar; the rest change only on
 a mutation.
 
 ### Distinct values

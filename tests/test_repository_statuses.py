@@ -170,8 +170,8 @@ def test_counts_and_index_follow_status_changes() -> None:
     repo.create_item({"name": "Wrench"})
 
     counts = repo.get_counts()
-    assert counts["missing_count"] == 1
-    assert counts["needs_repair_count"] == 1
+    assert counts["status_counts"]["missing"] == 1
+    assert counts["status_counts"]["needs_repair"] == 1
 
     # The default status is deliberately not bucketed.
     idx = internal_indexes(repo)
@@ -180,7 +180,7 @@ def test_counts_and_index_follow_status_changes() -> None:
 
     repo.update_item(item.id, ItemUpdate(status="ok"))
     counts = repo.get_counts()
-    assert counts["missing_count"] == 0
+    assert counts["status_counts"]["missing"] == 0
     assert "missing" not in internal_indexes(repo)["status_to_item_ids"]
 
 
@@ -209,5 +209,5 @@ def test_deleting_an_item_clears_the_status_index() -> None:
     repo = Repository()
     item = repo.create_item({"name": "Hammer", "status": "missing"})
     repo.delete_item(item.id)
-    assert repo.get_counts()["missing_count"] == 0
+    assert repo.get_counts()["status_counts"]["missing"] == 0
     assert "missing" not in internal_indexes(repo)["status_to_item_ids"]
