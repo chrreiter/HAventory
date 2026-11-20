@@ -19,10 +19,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from . import ops
 from .const import DOMAIN
 from .exceptions import (
-    ConflictError,
-    NotFoundError,
-    StorageError,
-    ValidationError,
+    DOMAIN_ERRORS,
     error_code,
     log_exc_info,
     log_severity,
@@ -217,7 +214,7 @@ def _handler(
             written = await ops.commit(hass, name, _op_payload(name, data))
             # The whole entity: the next call in an automation needs its `version`.
             return {written.noun: written.entity}
-        except (ValidationError, NotFoundError, ConflictError, StorageError) as exc:
+        except DOMAIN_ERRORS as exc:
             code = error_code(exc)
             LOGGER.log(
                 log_severity(code, exc),

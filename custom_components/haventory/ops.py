@@ -13,13 +13,14 @@ announce, then reply. Announcing first would tell subscribers about a change
 the caller is about to be told failed; a file unlinked before the save would
 leave stored metadata naming nothing if the save then failed.
 
-A write whose save fails is undone. Every save writes the whole repository, so
-a failed change left in memory would reach disk with the next unrelated write
-that succeeds, and nobody would have been told about it. The undo restores a
-snapshot taken before the op, which is only sound while no other write can
-change the repository between that snapshot and the save settling: the
-runtime's `write_lock` is held across the op, the save and the undo. The ops
-are synchronous, so the only wait it adds is queueing behind another save.
+A write whose op raises or whose save fails is undone. Every save writes the
+whole repository, so a failed change left in memory would reach disk with the
+next unrelated write that succeeds, and nobody would have been told about it.
+The undo restores a snapshot taken before the op, which is only sound while no
+other write can change the repository between that snapshot and the save
+settling: the runtime's `write_lock` is held across the op, the save and the
+undo. The ops are synchronous, so the only wait it adds is queueing behind
+another save.
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ from .events import (
     notify_mutation,
     notify_status_mutation,
 )
-from .exceptions import ValidationError
+from .exceptions import DOMAIN_ERRORS, ValidationError
 from .item_writes import ItemCreate, ItemUpdate
 from .logs import context_logger
 from .models import (
@@ -471,7 +472,13 @@ async def commit(hass: HomeAssistant, name: str, payload: dict[str, Any]) -> Wri
     runtime = loaded_runtime(hass)
     async with runtime.write_lock:
         before = runtime.repository.snapshot()
-        written = OPS[name](hass, payload)
+        try:
+            written = OPS[name](hass, payload)
+        except Exception:
+            # A refusal changed nothing and restoring it costs nothing; anything
+            # else may have left the write half-applied.
+            runtime.repository.restore(before)
+            raise
         await _save(hass, runtime.repository, name, before)
     await _free_files(hass, [written])
     await _announce(hass, written)
@@ -486,11 +493,14 @@ async def commit_batch(
 ) -> list[Written | None]:
     """Run a `haventory/items/bulk` batch: every row, one save, then the events.
 
-    A row that raises, or names a kind outside `BULK_KINDS`, is handed to
+    A row that is refused, or names a kind outside `BULK_KINDS`, is handed to
     ``refused`` with its index as it fails and reads None in the result; it
     stops no other row. A batch with no successful row saves and announces
-    nothing. A failed save undoes every row. The events are each row's own with
-    the repaint and the counts held back, then one of each for the batch.
+    nothing. Any other exception, which may have left its row half-applied,
+    and a failed save both undo every row and raise: a snapshot per row would
+    undo only that one, but costs a copy of every index for each row. The
+    events are each row's own with the repaint and the counts held back, then
+    one of each for the batch.
     """
 
     runtime = loaded_runtime(hass)
@@ -502,10 +512,12 @@ async def commit_batch(
                 if name not in BULK_KINDS:
                     raise ValidationError("unknown operation kind")
                 results.append(OPS[name](hass, payload))
-            except Exception as exc:
-                # Whatever it was, it fails its own row and no other.
+            except DOMAIN_ERRORS as exc:
                 refused(index, exc)
                 results.append(None)
+            except Exception:
+                runtime.repository.restore(before)
+                raise
         successful = [w for w in results if w is not None]
         if successful:
             await _save(hass, runtime.repository, "items_bulk", before)

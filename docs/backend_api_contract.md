@@ -430,10 +430,11 @@ stale. Unless a command says otherwise it answers the updated `<Item>` and emits
   - Each `payload` is the payload of the single-item command of the same name, `item_id`
     and `expected_version` included.
   - Result: `{results: { [op_id: string]: {success: true, result: <Item>} | {success: false, error: {code, message, context, translation_domain?, translation_key?, translation_placeholders?}} }}`
-  - A failing operation fails only its own row; the rest still run, and the successful ones
+  - A refused operation fails only its own row; the rest still run, and the successful ones
     persist in one shared write. Each successful row emits its own `items` event, and the
     batch emits one `stats/counts` if any row succeeded. A failed *write* fails the whole
-    command with `storage_error`, undoes every row in memory and returns no `results`.
+    command with `storage_error`, undoes every row in memory and returns no `results`; an
+    unexpected exception in any row does the same with `unknown_error`.
   - The envelope is validated first. A malformed entry (not an object, an `op_id` that is
     missing or neither a string nor an integer, a non-string `kind`, a non-object
     `payload`) rejects the whole command with `validation_error` and runs nothing. So does a repeated `op_id`;

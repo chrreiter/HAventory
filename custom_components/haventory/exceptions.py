@@ -77,6 +77,11 @@ class NotLoadedError(StorageError, ServiceValidationError):
     """
 
 
+#: The errors a surface answers with their own code. A repository call raises one
+#: before it changes anything; anything else is a bug.
+DOMAIN_ERRORS = (ValidationError, NotFoundError, ConflictError, StorageError)
+
+
 def translation_fields(exc: BaseException) -> dict[str, object]:
     """A refusal's translation fields, under the names Home Assistant's own error envelope uses.
 

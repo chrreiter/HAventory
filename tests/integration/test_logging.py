@@ -42,7 +42,7 @@ LINES = [
     ("ws_unknown", WS_LOGGER, "item_create", logging.ERROR, True, ""),
     ("ws_not_loaded", WS_LOGGER, "item_create", logging.WARNING, False, ""),
     ("bulk_conflict", WS_LOGGER, BULK_ROW_OP, logging.WARNING, False, ""),
-    ("bulk_unknown", WS_LOGGER, BULK_ROW_OP, logging.ERROR, True, ""),
+    ("bulk_unknown", WS_LOGGER, "items_bulk", logging.ERROR, True, ""),
     ("service_conflict", SERVICES_LOGGER, "item_update", logging.WARNING, False, ""),
     ("service_storage", SERVICES_LOGGER, "item_create", logging.ERROR, True, ""),
     ("service_not_loaded", SERVICES_LOGGER, "item_create", logging.WARNING, False, ""),
