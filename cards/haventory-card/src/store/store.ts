@@ -147,8 +147,8 @@ export class Store {
         this.subscriptions.subscribeTopics();
         this.subscriptions.watchAreaRegistry();
         this.health.watchConnectionGaps(() => {
-          this.reference.scheduleAreasRefresh();
-          // The events fired while the socket was down went nowhere.
+          // The events fired while the socket was down went nowhere, the area
+          // registry's included.
           void this.reloadAll().catch(() => undefined);
         });
         this.reference.watchDayChange();
@@ -540,6 +540,7 @@ export class Store {
   async reloadAll(): Promise<void> {
     await Promise.all([
       this.refreshStats(),
+      this.refreshAreas(),
       this.refreshLocationsFlat(),
       this.refreshLocationTree(),
       this.refreshDistinctValues(),
