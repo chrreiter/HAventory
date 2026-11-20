@@ -5,7 +5,7 @@ import { icon } from './icons';
  * The chevron `.hv-select` draws over its select. It goes after the select in
  * the wrapper, because the disabled rule reaches it as the select's next sibling.
  */
-export const selectChevron = () => html`<span class="chevron">${icon('chevronDown', 14)}</span>`;
+export const selectChevron = () => html`<span class="chevron">${icon('chevronDown', 18)}</span>`;
 
 /**
  * The field chrome the item editor and its child elements share: the trigger
@@ -62,13 +62,16 @@ export const editorFields = css`
   .hv-select select.hv-input {
     display: block;
     appearance: none;
-    /* The chevron sits in this padding, so a long label ends before it. */
-    padding-right: 30px;
+    /* The chevron sits in this padding, so a long label ends before it: the
+       trigger's 11px padding, the 18px icon and its 8px gap to the label. */
+    padding-right: 37px;
     text-overflow: ellipsis;
   }
+  /* Its right edge is a .field-button's: the 1px border plus the 11px padding,
+     so the chevrons of neighbouring fields stand in one column. */
   .hv-select .chevron {
     position: absolute;
-    right: 9px;
+    right: 12px;
     top: 50%;
     transform: translateY(-50%);
     display: inline-flex;

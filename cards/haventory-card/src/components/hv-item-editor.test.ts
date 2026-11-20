@@ -612,6 +612,13 @@ describe('hv-item-editor: select chevron', () => {
     expect(chevronOf(q(el, '[data-testid="editor-cf-type"]') as Element)).toBeTruthy();
   });
 
+  // The picker triggers around it draw 18px, and a smaller one reads as a different control.
+  it('draws the chevron at the size of the picker triggers', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A' }));
+
+    expect(chevronOf(q(el, '[data-testid="editor-status"]') as Element)?.getAttribute('width')).toBe('18');
+  });
+
   it('draws one for every custom field row', async () => {
     const el = await mount(
       makeItem({ id: '1', name: 'A', custom_fields: { serial: '44210', price: 189, calibrated: true } }),
@@ -626,8 +633,11 @@ describe('hv-item-editor: select chevron', () => {
     const css = editorCss();
 
     expect(css).toMatch(/\.hv-select select\.hv-input \{[^}]*appearance: none/);
-    expect(css).toMatch(/\.hv-select select\.hv-input \{[^}]*padding-right: 30px/);
+    expect(css).toMatch(/\.hv-select select\.hv-input \{[^}]*padding-right: 37px/);
     expect(css).toMatch(/\.hv-select \.chevron \{[^}]*pointer-events: none/);
+    // A picker trigger's chevron ends 12px in from the field's edge (its border
+    // and padding), so the select's lines up with the one in the next field.
+    expect(css).toMatch(/\.hv-select \.chevron \{[^}]*right: 12px/);
     // Fills the wrapper's width, as the bare select filled the cell.
     expect(css).toMatch(/\.hv-input \{[^}]*width: 100%/);
   });
