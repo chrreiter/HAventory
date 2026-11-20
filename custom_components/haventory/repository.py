@@ -968,31 +968,50 @@ class Repository:
             "subtree": len(self._items_in_subtree.get(key, set())),
         }
 
-    def _count_facets_matching(self, flt: ItemFilter) -> tuple[dict[str, int], dict[str, int]]:
-        """Tally categories (casefolded, as indexed) and tags over the matches."""
+    def _count_facets_matching(
+        self, flt: ItemFilter
+    ) -> tuple[dict[str, int], dict[str, int], dict[str, int]]:
+        """Tally categories (casefolded, as indexed), tags and statuses over the matches.
 
+        Statuses are tallied with ``flt``'s own ``status`` left out, so the picked
+        status does not zero every other row; categories and tags keep it, so a
+        picked status still narrows them. One request carries both meanings, so
+        the caller cannot drop the key for one tally alone.
+        """
+
+        matches = self._matching_items(flt)
         by_category: dict[str, int] = {}
         by_tag: dict[str, int] = {}
-        for item in self._matching_items(flt):
+        for item in matches:
             key = (item.category or "").strip().casefold()
             if key:
                 by_category[key] = by_category.get(key, 0) + 1
             for tag in item.tags:
                 by_tag[tag] = by_tag.get(tag, 0) + 1
-        return by_category, by_tag
+
+        # Runs after the full filter, which has already refused an unknown status.
+        if "status" in flt:
+            without_status = flt.copy()
+            del without_status["status"]
+            matches = self._matching_items(without_status)
+        by_status: dict[str, int] = {}
+        for item in matches:
+            by_status[item.status] = by_status.get(item.status, 0) + 1
+        return by_category, by_tag, by_status
 
     def get_distinct_field_values(self, flt: ItemFilter | None = None) -> dict[str, object]:
-        """Return distinct categories, tags, and custom-field keys.
+        """Return distinct categories, tags, statuses, and custom-field keys.
 
         Categories group case-insensitively, displayed in their most frequent
-        casing (ties alphabetical). With ``flt``, each category and tag entry
-        also carries ``matching_count``; ``count`` stays whole-inventory and no
-        entry is dropped, because the same payload feeds autocomplete.
+        casing (ties alphabetical). Statuses list only the slugs some item
+        carries. With ``flt``, each category, tag and status entry also carries
+        ``matching_count``; ``count`` stays whole-inventory and no entry is
+        dropped, because the same payload feeds autocomplete.
         ``custom_field_keys`` is never filtered.
         """
 
-        matching_categories, matching_tags = (
-            self._count_facets_matching(flt) if flt is not None else (None, None)
+        matching_categories, matching_tags, matching_statuses = (
+            self._count_facets_matching(flt) if flt is not None else (None, None, None)
         )
 
         categories: list[dict[str, object]] = []
@@ -1017,6 +1036,21 @@ class Repository:
             tags.append(tag_entry)
         tags.sort(key=lambda t: str(t["value"]).casefold())
 
+        # The default status has no bucket: whether any item carries it is the remainder.
+        carried = set(self._status_to_item_ids)
+        if self.count_items_with_status(DEFAULT_ITEM_STATUS):
+            carried.add(DEFAULT_ITEM_STATUS)
+        statuses: list[dict[str, object]] = []
+        for slug in carried:
+            status_entry: dict[str, object] = {
+                "value": slug,
+                "count": self.count_items_with_status(slug),
+            }
+            if matching_statuses is not None:
+                status_entry["matching_count"] = matching_statuses.get(slug, 0)
+            statuses.append(status_entry)
+        statuses.sort(key=lambda s: str(s["value"]).casefold())
+
         custom_keys: set[str] = set()
         for item in self._items_by_id.values():
             for cf_key in item.custom_fields:
@@ -1027,6 +1061,7 @@ class Repository:
         return {
             "categories": categories,
             "tags": tags,
+            "statuses": statuses,
             "custom_field_keys": custom_field_keys,
         }
 

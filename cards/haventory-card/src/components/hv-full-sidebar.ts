@@ -9,7 +9,7 @@ import { serverErrorText } from '../store/server-error';
 import { defaultFilters, soleLocationId } from '../store/store';
 import { countLocations } from '../store/location-tree';
 import { SliceWatch } from '../ui/slice-watch';
-import { statusCount, statusLabel, statusList } from '../ui/status';
+import { statusCount, statusLabel, statusList, statusMatchingCount } from '../ui/status';
 import { emitter } from '../events';
 import type { HvEvent } from '../events';
 import type { Store } from '../store/store';
@@ -288,13 +288,16 @@ export class HVFullSidebar extends LitElement {
 
   /**
    * The household's statuses as a single-select facet (the backend filter takes
-   * one); pressing the active row clears it. No tally, since the row count is
-   * the vocabulary's size rather than anything about the inventory.
+   * one); pressing the active row clears it. No heading tally, since the row
+   * count is the vocabulary's size rather than anything about the inventory.
+   * With a filter on, a row reads matches over total as the category rows do;
+   * the backend prices those matches without the status filter itself.
    */
   private _renderStatusSection() {
     const st = this._view.state;
     const filters = st?.filters ?? defaultFilters();
     const counts = st?.statsCounts;
+    const facetStatuses = st?.distinctValuesCache?.statuses;
     return html`
       <div class="sidebar-head">
         ${this._renderSectionToggle('status', t('hv.field.status'))}
@@ -314,6 +317,7 @@ export class HVFullSidebar extends LitElement {
             ? statusList(st?.statuses).map(({ slug: s }) => {
                 const on = filters.status === s;
                 const tally = statusCount(counts, s);
+                const matching = statusMatchingCount(facetStatuses, s);
                 return html`<button
                 class="value-row hv-browse-row ${on ? 'selected' : ''}"
                 data-testid="sidebar-status-row"
@@ -327,7 +331,11 @@ export class HVFullSidebar extends LitElement {
               >
                 <span class="hv-browse-row-lead ${on ? '' : 'placeholder'}">${icon('check', 15)}</span>
                 <span class="label hv-browse-row-label">${statusLabel(s, st?.statuses)}</span>
-                ${tally === null ? null : html`<span class="hv-tally">${tally}</span>`}
+                ${
+                  tally === null
+                    ? null
+                    : html`<span class="hv-tally">${matching === null ? tally : `${matching} / ${tally}`}</span>`
+                }
               </button>`;
               })
             : null

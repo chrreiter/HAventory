@@ -355,6 +355,7 @@ browser views and custom-field key suggestions:
 {
   "categories": [ { "value": "Books", "count": 1, "matching_count": 0 }, { "value": "Tools", "count": 2, "matching_count": 1 } ],
   "tags": [ { "value": "blue", "count": 2, "matching_count": 1 }, { "value": "red", "count": 2, "matching_count": 0 } ],
+  "statuses": [ { "value": "missing", "count": 1, "matching_count": 1 }, { "value": "ok", "count": 2, "matching_count": 0 } ],
   "custom_field_keys": [ "serial", "Voltage", "warranty_until" ]
 }
 ```
@@ -363,10 +364,14 @@ browser views and custom-field key suggestions:
   the number of items carrying the value, over the whole inventory.
 - `matching_count` is how many of those the request's filter keeps. It is on every entry
   when the request carried a `filter` and on none when it did not, so its absence means
-  "not priced", never "nothing matches". No entry is dropped for matching nothing.
+  "not priced", never "nothing matches". No entry is dropped for matching nothing. A
+  `statuses` entry is counted against the filter with its `status` key left out.
 - Categories are grouped case-insensitively; `value` is the most frequent original casing,
   ties broken alphabetically. Tags are stored casefolded, so `value` is the tag itself.
-- Both lists are sorted case-insensitively by `value`.
+- `statuses` has one entry per slug at least one item carries, `ok` included; `value` is the
+  slug, and a defined status on no item has no entry. Its `count` is the slug's
+  `status_counts` figure in "Stats". An older backend omits the key.
+- All three lists are sorted case-insensitively by `value`.
 - `custom_field_keys` is the distinct set of keys across all items' `custom_fields`: keys
   are case-sensitive and sorted case-insensitively. It is never filtered.
 

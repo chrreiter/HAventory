@@ -1,7 +1,7 @@
 import { html } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import type { TemplateResult } from 'lit';
-import type { StatsCounts, StatusColor, StatusDefinition } from '../store/types';
+import type { DistinctValue, StatsCounts, StatusColor, StatusDefinition } from '../store/types';
 import { t } from '../i18n';
 import type { TranslationKey } from '../i18n';
 import { ICONS, icon } from './icons';
@@ -105,6 +105,21 @@ export function statusLabel(slug: string, defs: readonly StatusDefinition[] | nu
  */
 export function statusCount(counts: StatsCounts | null | undefined, slug: string): number | null {
   return counts?.status_counts[slug] ?? null;
+}
+
+/**
+ * How many of the active filter's matches carry a slug, read off
+ * `distinct_values`' `statuses`. `null` when that answer was not priced
+ * against a filter, or came from a backend that sends no statuses. The list
+ * names only the slugs some item carries, so a slug a priced list leaves out
+ * matches nothing.
+ */
+export function statusMatchingCount(
+  statuses: readonly DistinctValue[] | undefined,
+  slug: string,
+): number | null {
+  if (!statuses?.some((entry) => entry.matching_count !== undefined)) return null;
+  return statuses.find((entry) => entry.value === slug)?.matching_count ?? 0;
 }
 
 /** A stored colour that is a literal rather than one of the tone tokens. */

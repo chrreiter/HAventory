@@ -636,7 +636,13 @@ async def test_distinct_values_answers_over_the_wire(setup_entry, ws_connect) ->
     items = [
         {"name": "Hammer", "category": "Tools", "tags": ["red"], "quantity": 0},
         {"name": "Wrench", "category": "Tools", "tags": ["blue"], "custom_fields": {"zeta": 1}},
-        {"name": "Novel", "category": "Books", "tags": ["blue", "paper"], "quantity": 0},
+        {
+            "name": "Novel",
+            "category": "Books",
+            "tags": ["blue", "paper"],
+            "quantity": 0,
+            "status": "missing",
+        },
         {"name": "Atlas", "category": "Books", "tags": ["paper"], "custom_fields": {"Alpha": 2}},
     ]
     for item in items:
@@ -648,27 +654,36 @@ async def test_distinct_values_answers_over_the_wire(setup_entry, ws_connect) ->
     nulled = (await ws.send("haventory/distinct_values", filter=None))["result"]
     low = (await ws.send("haventory/distinct_values", filter={"low_stock_only": True}))["result"]
     none = (await ws.send("haventory/distinct_values", filter={"q": "nothing here"}))["result"]
+    missing = (await ws.send("haventory/distinct_values", filter={"status": "missing"}))["result"]
 
     def counts(result: dict[str, Any], facet: str, key: str = "count") -> dict[str, int]:
         return {e["value"]: e[key] for e in result[facet]}
 
     assert [c["value"] for c in plain["categories"]] == ["Books", "Tools"]
     assert [t["value"] for t in plain["tags"]] == ["blue", "paper", "red"]
+    assert [s["value"] for s in plain["statuses"]] == ["missing", "ok"]
     assert counts(plain, "categories") == {"Books": 2, "Tools": 2}
     assert counts(plain, "tags") == {"blue": 2, "paper": 2, "red": 1}
+    assert counts(plain, "statuses") == {"missing": 1, "ok": 3}
     assert plain["custom_field_keys"] == ["Alpha", "zeta"]
     assert nulled == plain
-    assert all("matching_count" not in e for e in [*plain["categories"], *plain["tags"]])
+    facets = ("categories", "tags", "statuses")
+    assert all("matching_count" not in e for f in facets for e in plain[f])
 
-    # Hammer (Tools/red) and Novel (Books/blue+paper) are the low-stock two.
+    # Hammer (Tools/red) and Novel (Books/blue+paper, missing) are the low-stock two.
     assert counts(low, "categories") == counts(plain, "categories")
     assert counts(low, "categories", "matching_count") == {"Books": 1, "Tools": 1}
     assert counts(low, "tags", "matching_count") == {"blue": 1, "paper": 1, "red": 1}
+    assert counts(low, "statuses", "matching_count") == {"missing": 1, "ok": 1}
     assert low["custom_field_keys"] == plain["custom_field_keys"]
 
     assert [c["value"] for c in none["categories"]] == ["Books", "Tools"]
     assert len(none["tags"]) == len(plain["tags"])
-    assert all(e["matching_count"] == 0 for e in [*none["categories"], *none["tags"]])
+    assert all(e["matching_count"] == 0 for f in facets for e in none[f])
+
+    # The status tally leaves the filter's own status out; the others keep it.
+    assert counts(missing, "statuses", "matching_count") == counts(plain, "statuses")
+    assert counts(missing, "categories", "matching_count") == {"Books": 1, "Tools": 0}
 
 
 async def test_location_tree_counts_items(setup_entry, ws_connect) -> None:
