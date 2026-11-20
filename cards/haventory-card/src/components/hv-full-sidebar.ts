@@ -128,6 +128,10 @@ export class HVFullSidebar extends LitElement {
         font-size: 12.5px;
         color: var(--hv-text-tertiary);
       }
+      /* The tree's own empty note takes the same indent. */
+      hv-location-tree {
+        --hv-tree-empty-indent: 38px;
+      }
       .inline-error {
         margin: 0 16px 8px;
         padding: 8px 10px;

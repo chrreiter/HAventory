@@ -195,8 +195,9 @@ export class HVLocationTree extends LitElement {
       .action:hover {
         background: var(--hv-hover-overlay);
       }
+      /* A host whose empty lists sit deeper than 12px sets --hv-tree-empty-indent. */
       .empty {
-        padding: 10px 12px;
+        padding: 10px 12px 10px var(--hv-tree-empty-indent, 12px);
         font-size: 12.5px;
         color: var(--hv-text-tertiary);
       }
