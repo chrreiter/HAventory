@@ -146,8 +146,6 @@
         "items_total",
         "locations_total",
         "low_stock_count",
-        "missing_count",
-        "needs_repair_count",
         "no_location_count",
         "overdue_count",
         "reminder_due_count",

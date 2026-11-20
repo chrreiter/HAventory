@@ -236,6 +236,51 @@ async def test_failed_save_leaves_memory_and_the_next_save_as_before(  # noqa: P
     assert saved == state_before
 
 
+@pytest.mark.parametrize("batched", [False, True], ids=["single", "bulk_row"])
+async def test_an_op_that_raises_halfway_leaves_memory_and_disk_as_before(
+    seeded,
+    hass_storage: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    ws_connect,
+    batched: bool,
+) -> None:
+    """A bug after an op's first change reaches no save; a batch undoes every row."""
+
+    entry, seed, _ = seeded
+    repo = entry.runtime_data.repository
+    ws = await ws_connect()
+    state_before = repo.export_state()
+    indexes_before = copy.deepcopy(dict(internal_indexes(repo)))
+    saved_before = copy.deepcopy(hass_storage[STORAGE_KEY])
+    real_update = ops.OPS["item_update"]
+
+    def _half_applied(hass: HomeAssistant, payload: dict[str, Any]) -> ops.Written:
+        real_update(hass, payload)
+        raise RuntimeError("after the change")
+
+    monkeypatch.setitem(ops.OPS, "item_update", _half_applied)
+    change = {"item_id": seed.item_id, "name": "Changed", "tags": ["new"], "location_id": None}
+    if batched:
+        res = await ws.send(
+            "haventory/items/bulk",
+            operations=[
+                {
+                    "op_id": "good",
+                    "kind": "item_adjust_quantity",
+                    "payload": {"item_id": seed.other_item_id, "delta": 1},
+                },
+                {"op_id": "bad", "kind": "item_update", "payload": change},
+            ],
+        )
+    else:
+        res = await ws.send("haventory/item/update", **change)
+
+    assert res["error"]["code"] == "unknown_error"
+    assert repo.export_state() == state_before
+    assert copy.deepcopy(dict(internal_indexes(repo))) == indexes_before
+    assert hass_storage[STORAGE_KEY] == saved_before
+
+
 async def test_a_write_queued_behind_a_failing_save_survives_it(
     seeded,
     hass_storage: dict[str, Any],

@@ -276,8 +276,8 @@ async def test_stats_and_health_reflect_status(setup_entry, ws_connect) -> None:
     await ws.send("haventory/item/create", name="Drill", status="needs_repair")
 
     res = await ws.send("haventory/stats")
-    assert res["result"]["missing_count"] == 1
-    assert res["result"]["needs_repair_count"] == 1
+    assert res["result"]["status_counts"]["missing"] == 1
+    assert res["result"]["status_counts"]["needs_repair"] == 1
 
     res = await ws.send("haventory/health")
     assert res["result"]["healthy"] is True

@@ -368,7 +368,6 @@ async def test_the_reads_the_card_makes_before_it_renders(setup_entry, ws_connec
 
     stats = (await ws.send("haventory/stats"))["result"]
     assert stats["status_counts"] == {"ok": 1, "missing": 1, "needs_repair": 0}
-    assert stats["missing_count"] == 1
 
     health = (await ws.send("haventory/health"))["result"]
     assert set(health) == {"healthy", "issues", "counts"}

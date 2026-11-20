@@ -164,14 +164,13 @@ async def test_an_unexpected_failure_answers_generically(
     ]
     res = await ws.send("haventory/items/bulk", operations=operations)
 
-    assert res["success"] is True, res
-    results = res["result"]["results"]
-    assert results["boom"]["error"]["code"] == "unknown_error"
-    assert results["boom"]["error"]["message"] == UNEXPECTED_ERROR_MESSAGE
+    # It may have left its row half-applied, so the batch is undone whole.
+    assert res["error"]["code"] == "unknown_error", res
+    assert res["error"]["message"] == UNEXPECTED_ERROR_MESSAGE
     assert "SECRET-OP-DETAIL" not in json.dumps(res)
-    assert results["good"]["success"] is True
+    assert "Traceback" not in json.dumps(res)
     got = await ws.send("haventory/item/get", item_id=item["id"])
-    assert got["result"]["quantity"] == item["quantity"] + 1
+    assert got["result"]["quantity"] == item["quantity"]
 
 
 def _op(kind: str, **payload: Any) -> dict[str, Any]:

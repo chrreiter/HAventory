@@ -65,13 +65,9 @@ class HAventoryRuntime:
     repository: Repository
     card_title: str
     quick_filters: list[str] | None
-    # Serializes every write to the one store file. Per entry, because it guards
-    # that entry's store and nothing else.
-    persist_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    # Held by `ops` from a write's first change until its save has settled, and
-    # by a teardown flush, so no write can change the repository while another
-    # write's failed save is being undone. Taken before `persist_lock`, never
-    # while holding it.
+    # Held from a write's first change until its save has settled, and around
+    # every other save, so one save runs at a time and none lands while a
+    # failed write is being undone.
     write_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     subscriptions: dict[ActiveConnection, dict[int, Subscription]] = field(default_factory=dict)
     # Which items were low when the last mutation was announced. Seeded at setup

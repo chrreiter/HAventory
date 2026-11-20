@@ -210,8 +210,6 @@ export function makeMockHass(initial?: MockConfig): MockHass {
             checked_out_due_count: items.filter((i) => isMockCheckedOutDue(i)).length,
             inspection_overdue_count: items.filter((i) => isMockInspectionOverdue(i)).length,
             inspection_due_count: items.filter((i) => isMockInspectionDue(i)).length,
-            missing_count: items.filter((i) => i.status === 'missing').length,
-            needs_repair_count: items.filter((i) => i.status === 'needs_repair').length,
             status_counts: Object.fromEntries(
               statuses.map((d) => [d.slug, items.filter((i) => i.status === d.slug).length]),
             ),

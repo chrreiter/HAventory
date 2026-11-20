@@ -33,9 +33,9 @@ from .const import (
     MAX_PICTURES_PER_ITEM,
 )
 from .exceptions import (
+    DOMAIN_ERRORS,
     ConflictError,
     NotFoundError,
-    StorageError,
     ValidationError,
     error_code,
     log_exc_info,
@@ -69,7 +69,6 @@ if TYPE_CHECKING:
 LOGGER = context_logger(__name__)
 
 _Msg = dict[str, Any]
-_DOMAIN_ERRORS = (ValidationError, NotFoundError, ConflictError, StorageError)
 
 # Sent when a non-domain exception escapes a handler; the details stay in the log.
 UNEXPECTED_ERROR_MESSAGE = "unexpected error; see Home Assistant logs"
@@ -132,7 +131,7 @@ def ws_guard(
                 loaded_runtime(hass)
                 await func(hass, conn, msg)
                 return
-            except _DOMAIN_ERRORS as exc:
+            except DOMAIN_ERRORS as exc:
                 ctx = _context_from_msg(op, msg, context_fields)
                 error = _log_rejection(exc, ctx)
             except Exception:
@@ -220,11 +219,7 @@ def _bulk_op_error(
     context = _context_from_msg("items_bulk_op_failed", payload, _BULK_OP_CONTEXT_FIELDS)
     context["op_id"] = op_id
     context["kind"] = kind
-    if isinstance(exc, _DOMAIN_ERRORS):
-        error = _log_rejection(exc, context)
-    else:
-        LOGGER.exception("Unexpected error in a bulk operation", extra={**context})
-        error = {"code": "unknown_error", "message": UNEXPECTED_ERROR_MESSAGE}
+    error = _log_rejection(exc, context)
     return {"success": False, "error": {**error, "context": context}}
 
 

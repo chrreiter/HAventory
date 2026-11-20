@@ -227,8 +227,6 @@ describe('ui/status: pricing a slug', () => {
   it('reads the per-slug map, zeroes included', () => {
     const counts: StatsCounts = {
       ...base,
-      missing_count: 3,
-      needs_repair_count: 3,
       status_counts: { ok: 856, missing: 3, needs_repair: 3, lent_out: 100, in_transit: 0 },
     };
     expect(statusCount(counts, 'ok')).toBe(856);
