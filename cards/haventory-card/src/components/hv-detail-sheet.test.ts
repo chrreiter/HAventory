@@ -198,6 +198,48 @@ describe('hv-detail-sheet: read view', () => {
     expect((q(zero, '[data-testid="sheet-increment"]') as HTMLButtonElement).disabled).toBe(false);
   });
 
+  // The stepper stays disabled for a checked-out item because the server
+  // refuses the change; the list row swaps in "Check in", and the sheet has no
+  // such slot, so a line under the buttons says why they are grey.
+  it('says why the stepper is disabled for a checked-out item, and only then', async () => {
+    const out = await mount({ checked_out: true, quantity: 3 });
+    const hint = q(out, '[data-testid="sheet-qty-hint"]');
+
+    expect(hint?.textContent?.trim()).toBe('Checked out. Check it in to change the quantity.');
+    expect(hint?.id).toBeTruthy();
+    for (const testid of ['sheet-decrement', 'sheet-increment']) {
+      const button = q(out, `[data-testid="${testid}"]`) as HTMLButtonElement;
+      expect(button.disabled, testid).toBe(true);
+      expect(button.getAttribute('aria-describedby'), testid).toBe(hint?.id);
+    }
+
+    const stocked = await mount({ checked_out: false, quantity: 3 });
+    expect(q(stocked, '[data-testid="sheet-qty-hint"]')).toBe(null);
+    for (const testid of ['sheet-decrement', 'sheet-increment']) {
+      expect(q(stocked, `[data-testid="${testid}"]`)?.hasAttribute('aria-describedby'), testid).toBe(false);
+    }
+  });
+
+  it('drops the stepper note once the item is checked in', async () => {
+    const el = await mount({ checked_out: true, quantity: 3 });
+    expect(q(el, '[data-testid="sheet-qty-hint"]')).toBeTruthy();
+
+    el.item = makeItem({ checked_out: false, quantity: 3 });
+    await settle(el);
+
+    expect(q(el, '[data-testid="sheet-qty-hint"]')).toBe(null);
+    expect(q(el, '[data-testid="sheet-increment"]')?.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('writes the stepper note in German', async () => {
+    setLanguage('de');
+    const el = await mount({ checked_out: true, quantity: 3 });
+
+    expect(q(el, '[data-testid="sheet-qty-hint"]')?.textContent?.trim()).toBe(
+      'Ausgeliehen. Zum Ändern der Menge erst zurückgeben.',
+    );
+  });
+
   it('reads out custom fields as facts, typed', async () => {
     const el = await mount({
       custom_fields: { serial: '44210-887', purchase_price: 189, calibrated: true, checked: '2019-02-01' },

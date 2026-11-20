@@ -226,6 +226,7 @@ export const de: CompleteDictionary = {
   'hv.sheet.markDone': 'Erledigen',
   'hv.sheet.markDoneTitle': 'Diese Erinnerung als erledigt markieren und auf ihren nächsten Termin setzen',
   'hv.sheet.editDetails': 'Bearbeiten',
+  'hv.sheet.checkedOutQtyHint': 'Ausgeliehen. Zum Ändern der Menge erst zurückgeben.',
 
   'hv.editor.heading.new': 'Neuer Gegenstand',
   'hv.editor.heading.editing': '{name} bearbeiten',

@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { LitElement, css, html } from 'lit';
+import { LitElement, css, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { keyed } from 'lit/directives/keyed.js';
 import { tokens, base } from '../ui/tokens';
@@ -48,6 +48,9 @@ import { emitter } from '../events';
 import type { HvEvent } from '../events';
 import type { HVBottomSheet } from './hv-bottom-sheet';
 import type { HVItemEditor } from './hv-item-editor';
+
+/** The note under the stepper; both buttons name it as their description. */
+const QTY_HINT_ID = 'sheet-qty-hint';
 
 /**
  * The narrow item surface: one sheet with a read view that swaps in place to
@@ -153,7 +156,18 @@ export class HVDetailSheet extends LitElement {
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 14px;
+        flex-wrap: wrap;
+        gap: 10px 14px;
+      }
+      /* The note takes a line of its own under the stepper, so the buttons keep
+         their place beside the number. */
+      .hero .hint {
+        flex: 0 0 100%;
+        margin: 0;
+        text-align: center;
+        font-size: 13.5px;
+        line-height: 1.4;
+        color: var(--hv-text-secondary);
       }
       .hero button {
         width: 52px;
@@ -700,6 +714,7 @@ export class HVDetailSheet extends LitElement {
           class="minus"
           data-testid="sheet-decrement"
           aria-label=${t('hv.row.decreaseQuantity')}
+          aria-describedby=${item.checked_out ? QTY_HINT_ID : nothing}
           ?disabled=${item.checked_out || item.quantity <= 0}
           @click=${() => this._emit('decrement')}
         >
@@ -712,11 +727,19 @@ export class HVDetailSheet extends LitElement {
           class="plus"
           data-testid="sheet-increment"
           aria-label=${t('hv.row.increaseQuantity')}
+          aria-describedby=${item.checked_out ? QTY_HINT_ID : nothing}
           ?disabled=${item.checked_out}
           @click=${() => this._emit('increment')}
         >
           ${icon('plus', 22)}
         </button>
+        ${
+          item.checked_out
+            ? html`<p class="hint" id=${QTY_HINT_ID} data-testid="sheet-qty-hint">
+              ${t('hv.sheet.checkedOutQtyHint')}
+            </p>`
+            : null
+        }
       </div>
 
       ${this._renderGallery(item)} ${this._renderDocuments(item)}

@@ -263,6 +263,7 @@ export const en = {
   'hv.sheet.markDone': 'Mark done',
   'hv.sheet.markDoneTitle': 'Mark this reminder done and move it to its next occurrence',
   'hv.sheet.editDetails': 'Edit details',
+  'hv.sheet.checkedOutQtyHint': 'Checked out. Check it in to change the quantity.',
 
   // hv-item-editor.
   'hv.editor.heading.new': 'New item',
