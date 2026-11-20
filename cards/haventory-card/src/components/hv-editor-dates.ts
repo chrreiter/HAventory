@@ -4,7 +4,7 @@ import { customElement, property, query, state } from 'lit/decorators.js';
 import { emitter } from '../events';
 import type { HvEvent } from '../events';
 import { tokens, base } from '../ui/tokens';
-import { editorFields } from '../ui/editor-fields';
+import { editorFields, selectChevron } from '../ui/editor-fields';
 import { icon } from '../ui/icons';
 import { DEFAULT_CUSTOM_DAYS } from '../ui/relative-time';
 import { dayOffsets, renderDayOffsets } from '../ui/day-offsets';
@@ -235,21 +235,24 @@ export class HVEditorDates extends LitElement {
               this._emit('change', { reminderCount: raw === '' ? null : Number(raw) });
             }}
           />
-          <select
-            class="hv-input repeat-unit"
-            aria-label=${t('hv.editor.repeatUnit')}
-            data-testid="editor-reminder-unit"
-            ?disabled=${!model.reminderDate}
-            .value=${model.reminderUnit}
-            @change=${(e: Event) =>
-              this._emit('change', { reminderUnit: (e.target as HTMLSelectElement).value as ReminderUnit })}
-          >
-            ${REMINDER_UNITS.map(
-              (unit) => html`<option value=${unit} ?selected=${unit === model.reminderUnit}>
-                ${t(`hv.editor.unit.${unit}`)}
-              </option>`,
-            )}
-          </select>
+          <span class="hv-select">
+            <select
+              class="hv-input repeat-unit"
+              aria-label=${t('hv.editor.repeatUnit')}
+              data-testid="editor-reminder-unit"
+              ?disabled=${!model.reminderDate}
+              .value=${model.reminderUnit}
+              @change=${(e: Event) =>
+                this._emit('change', { reminderUnit: (e.target as HTMLSelectElement).value as ReminderUnit })}
+            >
+              ${REMINDER_UNITS.map(
+                (unit) => html`<option value=${unit} ?selected=${unit === model.reminderUnit}>
+                  ${t(`hv.editor.unit.${unit}`)}
+                </option>`,
+              )}
+            </select>
+            ${selectChevron()}
+          </span>
         </div>
         ${
           model.reminderDate

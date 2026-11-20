@@ -443,6 +443,30 @@ describe('hv-editor-dates: reminders', () => {
     expect(unit(el).disabled).toBe(false);
     expect(q(el, '[data-testid="editor-reminder-hint"]')).toBe(null);
   });
+
+  // Dead or live, the unit draws the same chevron as the editor's other selects,
+  // and the grid column the select used to take is now the wrapper's.
+  it('draws its own chevron on the unit, enabled or not', async () => {
+    const { el } = await mount(makeItem({ id: '1' }));
+    const chevron = () =>
+      unit(el).parentElement?.querySelector(':scope > .chevron > svg[data-icon="chevronDown"]');
+
+    expect(unit(el).disabled).toBe(true);
+    expect(unit(el).parentElement?.classList.contains('hv-select')).toBe(true);
+    expect(unit(el).parentElement?.parentElement?.classList.contains('repeat')).toBe(true);
+    expect(chevron()).toBeTruthy();
+
+    await type(el, 'editor-reminder-date', '2026-09-01');
+    expect(unit(el).disabled).toBe(false);
+    expect(chevron()).toBeTruthy();
+  });
+
+  it('dims the chevron of a disabled unit', () => {
+    const css = componentCss('hv-editor-dates');
+
+    expect(css).toMatch(/\.hv-select select\.hv-input \{[^}]*appearance: none/);
+    expect(css).toMatch(/\.hv-select select:disabled \+ \.chevron \{[^}]*color: var\(--hv-text-tertiary\)/);
+  });
 });
 
 describe('hv-editor-dates: geometry and type', () => {
