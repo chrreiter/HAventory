@@ -600,6 +600,29 @@ describe('hv-item-editor: category picker', () => {
   });
 });
 
+describe('hv-item-editor: select chevron', () => {
+  /** The wrapper a select sits in, if it is the one that draws the chevron. */
+  const chevronOf = (select: Element) =>
+    select.closest('.hv-select')?.querySelector(':scope > .chevron > svg[data-icon="chevronDown"]');
+
+  it('draws its own chevron on the status and the custom field type', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A', custom_fields: { serial: '44210' } }));
+
+    expect(chevronOf(q(el, '[data-testid="editor-status"]') as Element)).toBeTruthy();
+    expect(chevronOf(q(el, '[data-testid="editor-cf-type"]') as Element)).toBeTruthy();
+  });
+
+  it('draws one for every custom field row', async () => {
+    const el = await mount(
+      makeItem({ id: '1', name: 'A', custom_fields: { serial: '44210', price: 189, calibrated: true } }),
+    );
+    const selects = all(el, '[data-testid="editor-cf-type"]');
+
+    expect(selects).toHaveLength(3);
+    expect(selects.map((s) => Boolean(chevronOf(s)))).toEqual([true, true, true]);
+  });
+});
+
 describe('hv-item-editor: typed custom fields', () => {
   it('lists the fields of an item with the right editor per type', async () => {
     const el = await mount(
@@ -618,12 +641,20 @@ describe('hv-item-editor: typed custom fields', () => {
     const el = await mount(makeItem({ id: '1', name: 'A', custom_fields: { serial: '44210' } }));
     const row = q(el, '[data-testid="editor-cf-row"]') as HTMLElement;
 
-    expect([...row.children].map((c) => c.getAttribute('data-testid'))).toEqual([
-      'editor-cf-key',
-      'editor-cf-type',
-      'editor-cf-value',
-      'editor-cf-remove',
-    ]);
+    // The type select sits in its chevron wrapper, which has no test id of its own.
+    expect(
+      [...row.children].map((c) => (c.querySelector('[data-testid]') ?? c).getAttribute('data-testid')),
+    ).toEqual(['editor-cf-key', 'editor-cf-type', 'editor-cf-value', 'editor-cf-remove']);
+  });
+
+  // The narrow row places its controls by area, so the placement has to sit on
+  // the wrapper the grid sees, not on the select inside it.
+  it('keeps the type column in the grid on the chevron wrapper', async () => {
+    const el = await mount(makeItem({ id: '1', name: 'A', custom_fields: { serial: '44210' } }));
+    const select = q(el, '[data-testid="editor-cf-type"]') as HTMLSelectElement;
+
+    expect(select.parentElement?.classList.contains('cf-type')).toBe(true);
+    expect(select.classList.contains('cf-type')).toBe(false);
   });
 
   // Every host that can scroll the form puts the actions below the fold — the

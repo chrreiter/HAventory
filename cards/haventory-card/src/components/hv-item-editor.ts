@@ -4,7 +4,7 @@ import { customElement, property, query, state } from 'lit/decorators.js';
 import { emitter } from '../events';
 import type { HvEvent } from '../events';
 import { tokens, base } from '../ui/tokens';
-import { editorFields } from '../ui/editor-fields';
+import { editorFields, selectChevron } from '../ui/editor-fields';
 import { chip } from '../ui/chip';
 import { icon } from '../ui/icons';
 import { formatDate, isOverdue, relativeTime } from '../ui/relative-time';
@@ -208,10 +208,12 @@ export class HVItemEditor extends LitElement {
       .cf-row .field-error {
         grid-column: 1 / -1;
       }
-      /* Too tight: the value drops under its key and remove spans both rows. */
+      /* Too tight: the value drops under its key and remove spans both rows.
+         The type column leaves room for "Number" at the phone font beside the
+         select's chevron. */
       @container (max-width: 520px) {
         .cf-row {
-          grid-template-columns: minmax(0, 1fr) 104px var(--hv-tap-min, 34px);
+          grid-template-columns: minmax(0, 1fr) 112px var(--hv-tap-min, 34px);
           grid-template-areas:
             'key type remove'
             'value value remove';
@@ -565,21 +567,24 @@ export class HVItemEditor extends LitElement {
   private _renderStatusField() {
     return html`<div class="cell">
       <label class="hv-label" for="editor-status">${t('hv.field.status')}</label>
-      <select
-        id="editor-status"
-        class="hv-input"
-        data-testid="editor-status"
-        @change=${(e: Event) => this._patch({ status: (e.target as HTMLSelectElement).value })}
-      >
-        <!-- An <option> cannot hold an SVG, so the picker carries labels
-             alone; the colour and glyph appear wherever the status is shown. -->
-        ${statusList(this.statuses).map(
-          ({ slug: s }) =>
-            html`<option value=${s} ?selected=${this._model.status === s}>
-              ${statusLabel(s, this.statuses)}
-            </option>`,
-        )}
-      </select>
+      <span class="hv-select">
+        <select
+          id="editor-status"
+          class="hv-input"
+          data-testid="editor-status"
+          @change=${(e: Event) => this._patch({ status: (e.target as HTMLSelectElement).value })}
+        >
+          <!-- An <option> cannot hold an SVG, so the picker carries labels
+               alone; the colour and glyph appear wherever the status is shown. -->
+          ${statusList(this.statuses).map(
+            ({ slug: s }) =>
+              html`<option value=${s} ?selected=${this._model.status === s}>
+                ${statusLabel(s, this.statuses)}
+              </option>`,
+          )}
+        </select>
+        ${selectChevron()}
+      </span>
     </div>`;
   }
 
@@ -612,17 +617,20 @@ export class HVItemEditor extends LitElement {
               .value=${row.key}
               @input=${(e: Event) => this._patchRow(row.id, { key: (e.target as HTMLInputElement).value })}
             />
-            <select
-              class="hv-input cf-type"
-              data-testid="editor-cf-type"
-              aria-label=${t('hv.editor.fieldType')}
-              @change=${(e: Event) =>
-                this._patchRow(row.id, { type: (e.target as HTMLSelectElement).value as CustomFieldType })}
-            >
-              ${customFieldTypes().map(
-                (t) => html`<option value=${t.value} ?selected=${row.type === t.value}>${t.label}</option>`,
-              )}
-            </select>
+            <span class="hv-select cf-type">
+              <select
+                class="hv-input"
+                data-testid="editor-cf-type"
+                aria-label=${t('hv.editor.fieldType')}
+                @change=${(e: Event) =>
+                  this._patchRow(row.id, { type: (e.target as HTMLSelectElement).value as CustomFieldType })}
+              >
+                ${customFieldTypes().map(
+                  (t) => html`<option value=${t.value} ?selected=${row.type === t.value}>${t.label}</option>`,
+                )}
+              </select>
+              ${selectChevron()}
+            </span>
             ${
               row.type === 'boolean'
                 ? html`<button
