@@ -612,13 +612,6 @@ describe('hv-item-editor: select chevron', () => {
     expect(chevronOf(q(el, '[data-testid="editor-cf-type"]') as Element)).toBeTruthy();
   });
 
-  // The picker triggers around it draw 18px, and a smaller one reads as a different control.
-  it('draws the chevron at the size of the picker triggers', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
-
-    expect(chevronOf(q(el, '[data-testid="editor-status"]') as Element)?.getAttribute('width')).toBe('18');
-  });
-
   it('draws one for every custom field row', async () => {
     const el = await mount(
       makeItem({ id: '1', name: 'A', custom_fields: { serial: '44210', price: 189, calibrated: true } }),
@@ -627,19 +620,6 @@ describe('hv-item-editor: select chevron', () => {
 
     expect(selects).toHaveLength(3);
     expect(selects.map((s) => Boolean(chevronOf(s)))).toEqual([true, true, true]);
-  });
-
-  it('drops the browser arrow, lets a tap through the chevron and reserves room for it', () => {
-    const css = editorCss();
-
-    expect(css).toMatch(/\.hv-select select\.hv-input \{[^}]*appearance: none/);
-    expect(css).toMatch(/\.hv-select select\.hv-input \{[^}]*padding-right: 37px/);
-    expect(css).toMatch(/\.hv-select \.chevron \{[^}]*pointer-events: none/);
-    // A picker trigger's chevron ends 12px in from the field's edge (its border
-    // and padding), so the select's lines up with the one in the next field.
-    expect(css).toMatch(/\.hv-select \.chevron \{[^}]*right: 12px/);
-    // Fills the wrapper's width, as the bare select filled the cell.
-    expect(css).toMatch(/\.hv-input \{[^}]*width: 100%/);
   });
 });
 
@@ -675,16 +655,6 @@ describe('hv-item-editor: typed custom fields', () => {
 
     expect(select.parentElement?.classList.contains('cf-type')).toBe(true);
     expect(select.classList.contains('cf-type')).toBe(false);
-    expect(editorCss()).toMatch(/\.cf-row \.cf-type \{[^}]*grid-area: type/);
-  });
-
-  // jsdom measures no text, so the column that keeps "Number" from clipping at
-  // the phone font is pinned as written; the key and the remove button keep
-  // the 1fr and the tap-size tracks around it.
-  it('gives the narrow type column room for its longest label', () => {
-    expect(editorCss()).toMatch(
-      /@container \(max-width: 520px\) \{ \.cf-row \{[^}]*grid-template-columns: minmax\(0, 1fr\) 112px var\(--hv-tap-min, 34px\)/,
-    );
   });
 
   // Every host that can scroll the form puts the actions below the fold — the

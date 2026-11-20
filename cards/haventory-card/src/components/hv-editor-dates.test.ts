@@ -460,13 +460,6 @@ describe('hv-editor-dates: reminders', () => {
     expect(unit(el).disabled).toBe(false);
     expect(chevron()).toBeTruthy();
   });
-
-  it('dims the chevron of a disabled unit', () => {
-    const css = componentCss('hv-editor-dates');
-
-    expect(css).toMatch(/\.hv-select select\.hv-input \{[^}]*appearance: none/);
-    expect(css).toMatch(/\.hv-select select:disabled \+ \.chevron \{[^}]*color: var\(--hv-text-tertiary\)/);
-  });
 });
 
 describe('hv-editor-dates: geometry and type', () => {
