@@ -42,6 +42,8 @@ export const searchBox = css`
     background: none;
     outline: none;
     font: 400 var(--hv-input-font, 13.5px) var(--hv-font);
+    /* A long placeholder on a narrow pill ends in an ellipsis, not mid-word. */
+    text-overflow: ellipsis;
   }
 `;
 
@@ -120,7 +122,10 @@ export interface SearchOptions {
   testid: string;
   /** What the field shows; the host holds it so typing survives a redraw. */
   draft: string;
-  /** The whole inventory's count for the placeholder, null while unknown. */
+  /**
+   * The whole inventory's count for the placeholder; null while unknown. At 0
+   * the plain placeholder shows, since "all 0 items" says nothing.
+   */
   total: number | null;
   onInput: (q: string) => void;
 }
@@ -133,7 +138,7 @@ export function renderSearch(opts: SearchOptions): TemplateResult {
       type="search"
       data-testid=${opts.testid}
       placeholder=${
-        opts.total === null ? t('hv.card.searchPlaceholder') : tn('hv.card.searchAllPlaceholder', opts.total)
+        opts.total ? tn('hv.card.searchAllPlaceholder', opts.total) : t('hv.card.searchPlaceholder')
       }
       .value=${opts.draft}
       @input=${(e: Event) => opts.onInput((e.target as HTMLInputElement).value)}

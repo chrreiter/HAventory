@@ -152,6 +152,12 @@ describe('renderSearch', () => {
     expect((box(1).querySelector('input') as HTMLInputElement).placeholder).toBe('Search all 1 item…');
   });
 
+  // "Search all 0 items…" invites a search of nothing; an empty inventory gets
+  // the plain wording, the same as a count that is not known yet.
+  it('keeps the plain placeholder for an inventory with nothing in it', () => {
+    expect((box(0).querySelector('input') as HTMLInputElement).placeholder).toBe('Search items…');
+  });
+
   it('shows the draft it is handed and reports every keystroke back', () => {
     const typed: string[] = [];
     const host = box(3, (q) => typed.push(q));
