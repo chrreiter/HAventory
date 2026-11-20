@@ -443,10 +443,15 @@ describe('Store: a card built while the backend cannot answer', () => {
 
   it('reads the inventory once the backend starts answering', async () => {
     // Nothing the user does is involved: the refused subscribe retries on its
-    // own backoff, and landing it re-reads everything the failed load missed.
+    // own backoff, and landing it re-reads everything the failed load missed,
+    // the area names included: the registry watch is HA core's own and is never
+    // refused, so it never catches up on its own.
     vi.useFakeTimers();
     try {
-      const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
+      const hass = makeMockHass({
+        items: [makeItem({ id: '1' })],
+        areas: [{ id: 'kitchen', name: 'Kitchen' }],
+      });
       // Exactly the loads `init` starts in parallel, so the refusal window
       // closes with it and the recovery that follows is answered normally. The
       // empty-list assertion below is what catches this count going stale.
@@ -457,10 +462,12 @@ describe('Store: a card built while the backend cannot answer', () => {
       const store = new Store(hass, backoff);
       await store.init().catch(() => undefined);
       expect(store.state.value.items).toEqual([]);
+      expect(store.state.value.areasCache).toBeNull();
 
       await vi.advanceTimersByTimeAsync(60_000);
 
       expect(store.state.value.items.map((i) => i.id)).toEqual(['1']);
+      expect(store.state.value.areasCache?.areas[0]?.name).toBe('Kitchen');
       expect(store.state.value.degraded.liveUpdates).toBe('live');
     } finally {
       vi.useRealTimers();
