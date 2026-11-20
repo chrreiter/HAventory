@@ -275,11 +275,10 @@ class DomainStore:
 
 
 async def async_persist_repo(hass: HomeAssistant) -> None:
-    """Persist the current repository state, one writer at a time.
+    """Persist the current repository state; the caller holds the runtime's `write_lock`.
 
     Deliberately `find_runtime`, not the loaded-entry lookup: teardown flushes
-    through here while the entry is `UNLOAD_IN_PROGRESS`. The lock is the
-    runtime's, so it serializes exactly the writes to that entry's store file.
+    through here while the entry is `UNLOAD_IN_PROGRESS`.
     """
 
     runtime = find_runtime(hass)
@@ -288,33 +287,32 @@ async def async_persist_repo(hass: HomeAssistant) -> None:
             "HAventory runtime not initialized; run integration setup", key="not_loaded"
         )
 
-    async with runtime.persist_lock:
-        start_time = time.monotonic()
-        _LOGGER.debug(
-            "Persisting repository state",
-            extra={"op": "persist_start"},
-        )
-        payload = runtime.repository.export_state()
-        try:
-            await runtime.store.async_save(payload)
-        # Store logs WriteError itself; whatever it lets through answers storage_error.
-        except Exception as exc:
-            _LOGGER.error(
-                "Failed to persist repository",
-                extra={
-                    "op": "persist_failed",
-                    "elapsed_ms": int((time.monotonic() - start_time) * 1000),
-                },
-                exc_info=True,
-            )
-            raise StorageError("failed to persist repository") from exc
-        _LOGGER.debug(
-            "Repository persisted successfully",
+    start_time = time.monotonic()
+    _LOGGER.debug(
+        "Persisting repository state",
+        extra={"op": "persist_start"},
+    )
+    payload = runtime.repository.export_state()
+    try:
+        await runtime.store.async_save(payload)
+    # Store logs WriteError itself; whatever it lets through answers storage_error.
+    except Exception as exc:
+        _LOGGER.error(
+            "Failed to persist repository",
             extra={
-                "op": "persist_complete",
+                "op": "persist_failed",
                 "elapsed_ms": int((time.monotonic() - start_time) * 1000),
             },
+            exc_info=True,
         )
+        raise StorageError("failed to persist repository") from exc
+    _LOGGER.debug(
+        "Repository persisted successfully",
+        extra={
+            "op": "persist_complete",
+            "elapsed_ms": int((time.monotonic() - start_time) * 1000),
+        },
+    )
 
 
 async def async_persist_immediate(hass: HomeAssistant) -> None:

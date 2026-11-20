@@ -19,8 +19,7 @@ that succeeds, and nobody would have been told about it. The undo restores a
 snapshot taken before the op, which is only sound while no other write can
 change the repository between that snapshot and the save settling: the
 runtime's `write_lock` is held across the op, the save and the undo. The ops
-are synchronous, so the only wait it adds is queueing behind another write's
-save, which the store's own lock already imposed.
+are synchronous, so the only wait it adds is queueing behind another save.
 """
 
 from __future__ import annotations
