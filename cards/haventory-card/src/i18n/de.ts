@@ -644,7 +644,7 @@ export const de: CompleteDictionary = {
     '{clashes} – die Datei würde einen Eintrag unter einem Namen hinzufügen, den hier schon etwas trägt, aber mit einer anderen ID. Der Import ordnet allein über die ID zu, also entsteht ein Duplikat statt einer Aktualisierung.',
   'hv.import.warnings.other':
     '{clashes} – die Datei würde Einträge unter einem Namen hinzufügen, den hier schon etwas trägt, aber mit einer anderen ID. Der Import ordnet allein über die ID zu, also entstehen Duplikate statt Aktualisierungen.',
-  'hv.import.warningsMore': '… und {count} weitere.',
+  'hv.import.listMore': '… und {count} weitere.',
   'hv.import.attachmentsMissing.one':
     '{missing} von {referenced} Anhängen nennt eine Datei, die es auf dieser Installation nicht gibt – dieses Foto oder diese Anleitung fehlt nach dem Import.',
   'hv.import.attachmentsMissing.other':
@@ -655,9 +655,10 @@ export const de: CompleteDictionary = {
   'hv.import.importing': 'Wird importiert …',
   'hv.import.button': '{parts} importieren',
   'hv.import.buttonBare': 'Importieren',
-  'hv.import.nothingToDo': 'Nichts in dieser Datei würde das Inventar ändern',
+  'hv.import.noEntryWrites':
+    'Kein Gegenstand und kein Ort würde sich ändern. Der Import übernimmt trotzdem die Status aus der Datei.',
   'hv.import.completeTitle': 'Import abgeschlossen',
-  'hv.import.nothingChanged': 'Es war nichts zu ändern – das Inventar entsprach der Datei bereits.',
+  'hv.import.nothingChanged': 'Kein Gegenstand und kein Ort wurde geändert.',
   'hv.import.added': '{what} hinzugefügt',
   'hv.import.updated': '{what} aktualisiert',
   'hv.import.and': ' und ',

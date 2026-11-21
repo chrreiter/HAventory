@@ -711,7 +711,8 @@ export const en = {
     '{clashes} — the file would add an entry under a name something here already uses, under a different id. Import matches on the id alone, so this becomes a duplicate rather than an update.',
   'hv.import.warnings.other':
     '{clashes} — the file would add entries under a name something here already uses, under a different id. Import matches on the id alone, so these become duplicates rather than an update.',
-  'hv.import.warningsMore': '…and {count} more.',
+  // Under the conflict list and the name-clash list alike.
+  'hv.import.listMore': '…and {count} more.',
   'hv.import.attachmentsMissing.one':
     '{missing} of {referenced} attachments names a file this install does not have — that photo or manual will show as missing after the import.',
   'hv.import.attachmentsMissing.other':
@@ -722,9 +723,11 @@ export const en = {
   'hv.import.importing': 'Importing…',
   'hv.import.button': 'Import {parts}',
   'hv.import.buttonBare': 'Import',
-  'hv.import.nothingToDo': 'Nothing in this file would change the inventory',
+  // An import applies the file's statuses whatever else it writes, so neither
+  // line may say that nothing changes.
+  'hv.import.noEntryWrites': "No item or location would change. Importing still applies the file's statuses.",
   'hv.import.completeTitle': 'Import complete',
-  'hv.import.nothingChanged': 'Nothing needed changing — the inventory already matched the file.',
+  'hv.import.nothingChanged': 'No item or location changed.',
   'hv.import.added': 'added {what}',
   'hv.import.updated': 'updated {what}',
   'hv.import.and': ' and ',

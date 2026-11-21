@@ -56,6 +56,21 @@ async function type(el: HVImportSheet, text: string) {
   await el.updateComplete;
 }
 
+/** Step 2 the way a user reaches it: the document sent with Preview, then the server's answer. */
+async function previewed(doc: unknown, patch: Partial<ImportPreview>) {
+  const el = await mount();
+  await type(el, JSON.stringify(doc));
+  (q(el, '[data-testid="import-preview"]') as HTMLButtonElement).click();
+  el.preview = preview(patch);
+  await el.updateComplete;
+  return el;
+}
+
+const conflictEntries = (el: HVImportSheet) =>
+  all(el, '[data-testid="import-conflicts"] [data-testid="import-conflict-list"] li').map((li) =>
+    li.textContent?.trim(),
+  );
+
 describe('hv-import-sheet: step 1', () => {
   it('says up front that nothing is written yet', async () => {
     const el = await mount();
@@ -200,6 +215,51 @@ describe('hv-import-sheet: preview', () => {
     expect(q(el, '[data-testid="import-conflicts"]')).toBe(null);
   });
 
+  // The preview answers with ids; a count alone leaves the household to diff
+  // the whole inventory against the file to find the one entry Skip kept.
+  it('names each entry in conflict from the document it previewed, items before locations', async () => {
+    const el = await previewed(
+      {
+        haventory_export_version: 1,
+        items: [
+          { id: 'i-hammer', name: 'Hammer' },
+          { id: 'i-ladder', name: 'Leiter' },
+        ],
+        locations: [{ id: 'l-garage', name: 'Garage' }],
+      },
+      {
+        policy: 'skip',
+        items: { add: [], update: [], conflict: ['i-ladder'], unchanged: ['i-hammer'] },
+        locations: { add: [], update: [], conflict: ['l-garage'], unchanged: [] },
+      },
+    );
+
+    expect(conflictEntries(el)).toEqual(['Leiter', 'Garage']);
+    expect(q(el, '[data-testid="import-conflicts"]')?.textContent).not.toContain('Hammer');
+  });
+
+  it('lists the first few conflicts and counts the rest', async () => {
+    const items = Array.from({ length: 8 }, (_, i) => ({ id: `i${i}`, name: `Item ${i}` }));
+    const el = await previewed(
+      { haventory_export_version: 1, items, locations: [] },
+      { policy: 'skip', items: { add: [], update: [], conflict: items.map((i) => i.id), unchanged: [] } },
+    );
+
+    expect(conflictEntries(el)).toEqual(['Item 0', 'Item 1', 'Item 2', 'Item 3', 'Item 4']);
+    expect(q(el, '[data-testid="import-conflicts"]')?.textContent?.replace(/\s+/g, ' ')).toContain(
+      'and 3 more',
+    );
+  });
+
+  it('shows the id of a conflicting entry the document gives no name', async () => {
+    const el = await previewed(
+      { haventory_export_version: 1, items: [{ id: 'i-unnamed' }], locations: [] },
+      { policy: 'skip', items: { add: [], update: [], conflict: ['i-unnamed', 'i-absent'], unchanged: [] } },
+    );
+
+    expect(conflictEntries(el)).toEqual(['i-unnamed', 'i-absent']);
+  });
+
   it('flags an incoming name a different id already answers to', async () => {
     const el = await mount({
       preview: preview({
@@ -336,14 +396,26 @@ describe('hv-import-sheet: preview', () => {
     expect(q(itemsOnly, '[data-testid="import-execute"]')?.textContent).not.toContain('location');
   });
 
-  it('says so when the document would change nothing', async () => {
+  // `import/execute` lays the document's statuses over the stored ones under
+  // every policy, so a file that writes no item or location can still change
+  // a label or a colour: the button stays, and the line says what it does.
+  it('says what an import still writes when no item or location would change', async () => {
     const el = await mount({
       preview: preview({
-        counts: { items: { total: 5, add: 0, update: 0, conflict: 0, unchanged: 5 } },
+        policy: 'skip',
+        items: { add: [], update: [], conflict: ['x'], unchanged: [] },
+        counts: {
+          items: { total: 5, add: 0, update: 0, conflict: 1, unchanged: 4 },
+          locations: { total: 2, add: 0, update: 0, conflict: 0, unchanged: 2 },
+        },
       }),
     });
-    expect(q(el, '[data-testid="import-nothing-to-do"]')).toBeTruthy();
-    expect(q(el, '[data-testid="import-execute"]')?.textContent?.trim()).toBe('Import');
+    const hint = q(el, '[data-testid="import-nothing-to-do"]')?.textContent?.replace(/\s+/g, ' ').trim();
+    expect(hint).toBe("No item or location would change. Importing still applies the file's statuses.");
+
+    const execute = q(el, '[data-testid="import-execute"]') as HTMLButtonElement;
+    expect(execute.disabled).toBe(false);
+    expect(execute.textContent?.trim()).toBe('Import');
   });
 
   it('does not claim nothing would change when only locations would', async () => {
@@ -411,7 +483,7 @@ describe('hv-import-sheet: invalid document', () => {
     const el = await mount({ preview: keyed });
 
     const rows = all(el, '[data-testid="import-error-row"]');
-    expect(rows[0]?.textContent).toContain('Die Menge darf nicht negativ sein.');
+    expect(rows[0]?.textContent).toContain('Die Menge darf nicht negativ sein.'); // codespell:ignore
     expect(rows[1]?.textContent).toContain('status icon must be one of');
   });
 
@@ -475,14 +547,17 @@ describe('hv-import-sheet: summary', () => {
     );
   });
 
-  it('says in words when nothing needed changing', async () => {
+  // Under Skip an entry in conflict differs from the file and is kept, so the
+  // inventory did not match the file; the statuses may also have moved.
+  it('says in words when no item or location changed, and claims no more', async () => {
     const s = summary();
-    s.items = { total: 2, add: 0, update: 0, conflict: 0, unchanged: 2 };
+    s.policy = 'skip';
+    s.items = { total: 2, add: 0, update: 0, conflict: 1, unchanged: 1 };
     s.locations = { total: 1, add: 0, update: 0, conflict: 0, unchanged: 1 };
     const el = await mount({ summary: s });
 
-    expect(q(el, '[data-testid="import-summary"]')?.textContent?.replace(/\s+/g, ' ')).toContain(
-      'Nothing needed changing',
+    expect(q(el, '[data-testid="import-summary"]')?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+      'No item or location changed.',
     );
   });
 });

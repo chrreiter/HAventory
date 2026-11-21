@@ -10,8 +10,29 @@ import { counted } from '../ui/plural';
 import { copyText } from '../ui/clipboard';
 import type { ImportBucketCounts, ImportPolicy, ImportPreview, ImportSummary } from '../store/types';
 
-/** Name clashes listed one by one before the block switches to a count. */
-const WARNING_LIST_LIMIT = 5;
+/** Entries an alert lists one by one before it counts the rest. */
+const ALERT_LIST_LIMIT = 5;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * What the document calls each of `ids`, in the order given. The preview
+ * answers with ids only; an entry the document gives no name keeps its id.
+ */
+function namesInDocument(document: unknown, section: 'items' | 'locations', ids: readonly string[]): string[] {
+  const wanted = new Set(ids);
+  const names = new Map<string, string>();
+  const entries = isRecord(document) ? document[section] : undefined;
+  if (wanted.size && Array.isArray(entries)) {
+    for (const entry of entries) {
+      if (!isRecord(entry) || typeof entry.id !== 'string' || !wanted.has(entry.id)) continue;
+      if (typeof entry.name === 'string' && entry.name.trim()) names.set(entry.id, entry.name);
+    }
+  }
+  return ids.map((id) => names.get(id) ?? id);
+}
 
 /** The non-zero counts of both kinds, since either can be the whole document. */
 function countedKinds(items: number, locations: number): string[] {
@@ -326,6 +347,11 @@ export class HVImportSheet extends LitElement {
   @state() private _policy: ImportPolicy = 'merge';
   @state() private _parseError: string | null = null;
   @state() private _copied = false;
+  /**
+   * The document the last Preview sent. The text can still be edited while
+   * the answer is on its way, so the names come from what the server read.
+   */
+  private _previewed: unknown = null;
 
   private _modal = new Modal(this, { open: () => this.open });
 
@@ -337,6 +363,7 @@ export class HVImportSheet extends LitElement {
       this._policy = 'merge';
       this._parseError = null;
       this._copied = false;
+      this._previewed = null;
     }
   }
 
@@ -369,9 +396,19 @@ export class HVImportSheet extends LitElement {
     return this.errorMessage ? this._alert('import-error', this.errorMessage, 'alertCircle', 'alert') : null;
   }
 
+  /** The first few `entries` as a list, and a line counting the rest. */
+  private _cappedList(testid: string, entries: readonly string[]) {
+    const rest = entries.length - ALERT_LIST_LIMIT;
+    return html`<ul class="warn-list" data-testid=${testid}>
+        ${entries.slice(0, ALERT_LIST_LIMIT).map((entry) => html`<li>${entry}</li>`)}
+      </ul>
+      ${rest > 0 ? html`<span class="hint">${t('hv.import.listMore', { count: rest })}</span>` : null}`;
+  }
+
   private _emit(name: 'preview' | 'execute') {
     const document = this._parsed();
     if (document === null) return;
+    if (name === 'preview') this._previewed = document;
     this._send(name, { document, policy: this._policy });
   }
 
@@ -544,8 +581,17 @@ export class HVImportSheet extends LitElement {
     const items = preview.counts.items;
     const locations = preview.counts.locations;
     const conflicts = preview.items.conflict.length + preview.locations.conflict.length;
+    const conflictNames = conflicts
+      ? [
+          ...namesInDocument(this._previewed, 'items', preview.items.conflict),
+          ...namesInDocument(this._previewed, 'locations', preview.locations.conflict),
+        ]
+      : [];
     const itemWrites = (items?.add ?? 0) + (items?.update ?? 0);
     const locationWrites = (locations?.add ?? 0) + (locations?.update ?? 0);
+    // With no item or location to write, `import/execute` still lays the
+    // document's statuses over the stored ones, under every policy: the button
+    // stays, and the line under it says that much and no more.
     const willWrite = itemWrites + locationWrites;
     const warnings = preview.warnings ?? [];
     // An export carries attachment metadata, not bytes: say which photos this
@@ -575,7 +621,8 @@ export class HVImportSheet extends LitElement {
                   : preview.policy === 'skip'
                     ? t('hv.import.conflictsSkip')
                     : t('hv.import.conflictsReplace')
-              }`,
+              }
+              ${this._cappedList('import-conflict-list', conflictNames)}`,
               )
             : null
         }
@@ -584,16 +631,10 @@ export class HVImportSheet extends LitElement {
             ? this._alert(
                 'import-warnings',
                 html`${tn('hv.import.warnings', warnings.length, { clashes: counted(warnings.length, 'nameClash') })}
-                <ul class="warn-list">
-                  ${warnings.slice(0, WARNING_LIST_LIMIT).map((w) => html`<li>${w.message}</li>`)}
-                </ul>
-                ${
-                  warnings.length > WARNING_LIST_LIMIT
-                    ? html`<span class="hint"
-                      >${t('hv.import.warningsMore', { count: warnings.length - WARNING_LIST_LIMIT })}</span
-                    >`
-                    : null
-                }`,
+                ${this._cappedList(
+                  'import-warning-list',
+                  warnings.map((w) => w.message),
+                )}`,
               )
             : null
         }
@@ -637,7 +678,7 @@ export class HVImportSheet extends LitElement {
         willWrite === 0
           ? html`<div class="foot" style="padding-top:0">
             <span class="hint" data-testid="import-nothing-to-do">
-              ${t('hv.import.nothingToDo')}
+              ${t('hv.import.noEntryWrites')}
             </span>
           </div>`
           : null
