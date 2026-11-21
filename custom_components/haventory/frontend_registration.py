@@ -109,7 +109,11 @@ async def _async_register_static_path(hass: HomeAssistant) -> bool:
         return True
 
     try:
-        # No Cache-Control, so a rebuild that kept the version is revalidated.
+        # No Cache-Control: the entry goes out with ETag and Last-Modified only, so a
+        # browser applies heuristic freshness and may keep an entry it already holds.
+        # A release changes `?v=` and the chunk names carry a content hash, which is
+        # what keeps a household current; a rebuild that kept the version needs a
+        # hard reload or a fresh browser context.
         await hass.http.async_register_static_paths(
             [StaticPathConfig(_STATIC_URL_PATH, str(_WWW_DIR), cache_headers=False)]
         )
