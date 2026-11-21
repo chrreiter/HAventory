@@ -196,6 +196,8 @@ than as `hv.action.retry` printed on a button. Type it `CompleteDictionary`, as 
 once it is complete; TypeScript then refuses an English string added without its
 counterpart. `catalog.test.ts` checks every registered dictionary for orphaned keys and
 mismatched placeholders, and checks the ones its `COMPLETE` list names for completeness.
+It also wants the language in its `ELLIPSIS_SPACED` table: whether an ellipsis is set off
+by a space, as Home Assistant's own catalog for the language writes it.
 
 A counted string is written per plural category: `tn()` asks `Intl.PluralRules` for the
 language's category and reads `<key>.<category>`. Write the categories your language uses,

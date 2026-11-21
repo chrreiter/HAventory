@@ -133,3 +133,30 @@ describe.each(COMPLETE)('the %s dictionary', (tag) => {
     expect(missing).toEqual([]);
   });
 });
+
+/**
+ * Whether a language sets an ellipsis off from the word before it, as Home
+ * Assistant's own catalog for that language does: "Wird geladen …" beside
+ * "Loading…".
+ */
+const ELLIPSIS_SPACED: Readonly<Record<string, boolean>> = { en: false, de: true };
+
+describe.each(Object.entries(DICTIONARIES))('the %s ellipsis', (tag, dictionary) => {
+  it('ends no placeholder', () => {
+    // A placeholder that is cut on a narrow screen ends in the browser's
+    // ellipsis; a typed one would give the same field two different endings.
+    const offending = Object.entries(dictionary)
+      .filter(([key, value]) => /placeholder/i.test(key) && value.includes('…'))
+      .map(([key]) => key);
+    expect(offending).toEqual([]);
+  });
+
+  it('is spaced the way Home Assistant spaces it in this language', () => {
+    expect([tag, tag in ELLIPSIS_SPACED]).toEqual([tag, true]);
+    const wrong = ELLIPSIS_SPACED[tag] ? /[^\s„]…/ : /\s…/;
+    const offending = Object.entries(dictionary)
+      .filter(([, value]) => wrong.test(value) || value.includes('...'))
+      .map(([key]) => key);
+    expect(offending).toEqual([]);
+  });
+});

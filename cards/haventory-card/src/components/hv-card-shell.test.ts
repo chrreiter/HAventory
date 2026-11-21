@@ -419,12 +419,12 @@ describe('hv-card-shell: search and filters', () => {
     const items = Array.from({ length: 3 }, (_, i) => makeItem({ id: `${i}` }));
     const { el, store, sr } = await mountShell({ items });
     const input = sr.querySelector('[data-testid="search-input"]') as HTMLInputElement;
-    expect(input.placeholder).toBe('Search all 3 items…');
+    expect(input.placeholder).toBe('Search all 3 items');
 
     // A filter narrowing the result does not renumber the offer.
     store.setFilters({ q: 'nothing matches this' });
     await settle(el);
-    expect(input.placeholder).toBe('Search all 3 items…');
+    expect(input.placeholder).toBe('Search all 3 items');
   });
 
   it('marks the filter button when any filter is on, and toggles the panel', async () => {

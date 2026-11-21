@@ -1,6 +1,7 @@
 import './hv-diagnostics-panel';
 import type { HVDiagnosticsPanel } from './hv-diagnostics-panel';
 import type { DegradedState } from '../store/types';
+import { setLanguage } from '../i18n';
 import { makeCounts, mountComponent, q, settle } from '../test.utils';
 // The clipboard itself is `ui/clipboard`'s own test; what this panel owes is
 // asking the helper and believing its answer, which needs both answers.
@@ -54,6 +55,19 @@ describe('hv-diagnostics-panel: healthy', () => {
       '50 of 250 items · 13 locations',
     );
     expect(q(el, '[data-testid="diagnostics-version"]')?.textContent?.trim()).toBe('0.0.1');
+  });
+
+  // German puts the total after "von" in the dative, which the standalone
+  // tally "250 Gegenstände" is not.
+  it('puts the item total in the dative in German, known or not', async () => {
+    setLanguage('de');
+    const loaded = (el: HVDiagnosticsPanel) =>
+      q(el, '[data-testid="diagnostics-loaded"]')?.textContent?.replace(/\s+/g, ' ').trim();
+    expect(loaded(await mount())).toBe('50 von 250 Gegenständen · 13 Orte');
+    expect(
+      loaded(await mount({ counts: makeCounts({ items_total: 1, locations_total: 1 }), loadedItems: 1 })),
+    ).toBe('1 von 1 Gegenstand · 1 Ort');
+    expect(loaded(await mount({ counts: null }))).toBe('50 von ? Gegenständen · ? Orte');
   });
 });
 

@@ -1,4 +1,4 @@
-import { t } from '../i18n';
+import { t, tn } from '../i18n';
 import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { emitter } from '../events';
@@ -243,15 +243,17 @@ export class HVDiagnosticsPanel extends LitElement {
             <div class="fact">
               <span>${t('hv.diagnostics.dataLoaded')}</span>
               <span class="value" data-testid="diagnostics-loaded">
-                ${t('hv.diagnostics.loadedValue', {
-                  loaded: this.loadedItems,
-                  items: this.counts
-                    ? counted(this.counts.items_total, 'item')
-                    : t('hv.diagnostics.unknownItems'),
-                  locations: this.counts
-                    ? counted(this.counts.locations_total, 'location')
-                    : t('hv.diagnostics.unknownLocations'),
-                })}
+                ${
+                  this.counts
+                    ? tn('hv.diagnostics.loadedOf', this.counts.items_total, {
+                        loaded: this.loadedItems,
+                        locations: counted(this.counts.locations_total, 'location'),
+                      })
+                    : t('hv.diagnostics.loadedOfUnknown', {
+                        loaded: this.loadedItems,
+                        locations: t('hv.diagnostics.unknownLocations'),
+                      })
+                }
               </span>
             </div>
             <div class="fact">

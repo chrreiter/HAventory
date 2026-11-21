@@ -147,15 +147,15 @@ describe('renderSearch', () => {
     draw(renderSearch({ testid: 'search-input', draft: 'glue', total, onInput }));
 
   it('offers the whole inventory in the placeholder, and says so once counted', () => {
-    expect((box(null).querySelector('input') as HTMLInputElement).placeholder).toBe('Search items…');
-    expect((box(3).querySelector('input') as HTMLInputElement).placeholder).toBe('Search all 3 items…');
-    expect((box(1).querySelector('input') as HTMLInputElement).placeholder).toBe('Search all 1 item…');
+    expect((box(null).querySelector('input') as HTMLInputElement).placeholder).toBe('Search items');
+    expect((box(3).querySelector('input') as HTMLInputElement).placeholder).toBe('Search all 3 items');
+    expect((box(1).querySelector('input') as HTMLInputElement).placeholder).toBe('Search 1 item');
   });
 
-  // "Search all 0 items…" invites a search of nothing; an empty inventory gets
+  // "Search all 0 items" invites a search of nothing; an empty inventory gets
   // the plain wording, the same as a count that is not known yet.
   it('keeps the plain placeholder for an inventory with nothing in it', () => {
-    expect((box(0).querySelector('input') as HTMLInputElement).placeholder).toBe('Search items…');
+    expect((box(0).querySelector('input') as HTMLInputElement).placeholder).toBe('Search items');
   });
 
   it('shows the draft it is handed and reports every keystroke back', () => {

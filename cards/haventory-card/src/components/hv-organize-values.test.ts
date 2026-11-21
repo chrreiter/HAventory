@@ -525,7 +525,7 @@ describe('hv-organize-values: the language in force', () => {
     await settle(el);
 
     const input = q(sr, '[data-testid="new-value-name"]') as HTMLInputElement;
-    expect(input.placeholder).toBe('Kategorie hinzufügen …');
+    expect(input.placeholder).toBe('Kategorie hinzufügen');
 
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
     await settle(el);

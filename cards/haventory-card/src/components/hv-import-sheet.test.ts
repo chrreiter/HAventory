@@ -84,7 +84,7 @@ describe('hv-import-sheet: step 1', () => {
     expect(policies.map((p) => p.dataset.policy)).toEqual(['merge', 'replace', 'skip']);
     expect(policies[0]?.getAttribute('aria-checked')).toBe('true');
     // Each explains what it does, rather than relying on the word alone.
-    expect(policies[1]?.textContent).toContain("Overwrite items matched by id with the file's version");
+    expect(policies[1]?.textContent).toContain('Overwrite items with the same id from the file');
   });
 
   it('says what an item is matched on, because it is the id and not the name', async () => {
