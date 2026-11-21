@@ -1,15 +1,20 @@
 import { html } from 'lit';
 import { keyed } from 'lit/directives/keyed.js';
+import { createRef, ref } from 'lit/directives/ref.js';
 import type { ReactiveController, ReactiveControllerHost, TemplateResult } from 'lit';
 import { t } from './i18n';
 import { editorErrorText } from './ui/editor-error';
 import { HostState } from './ui/host-state';
+import { icon } from './ui/icons';
 import type { ConfirmDiscard } from './ui/discard';
 import type { MediaBindings } from './ui/media';
 import type { Store } from './store/store';
 import type { Item, Location, StoreState } from './store/types';
+import type { HVBanner } from './components/hv-banner';
+import type { HVDetailSheet } from './components/hv-detail-sheet';
 import type { HVItemEditor } from './components/hv-item-editor';
 import type { HvEvent, RowEventDetail } from './events';
+import './components/hv-banner';
 import './components/hv-checkout-popover';
 import './components/hv-detail-sheet';
 import './components/hv-item-editor';
@@ -49,6 +54,13 @@ interface WorkspaceState {
    */
   editorError: string | null;
   /**
+   * Why a form or the read sheet here just closed: a delete this store did not
+   * send took its item. `unsaved` when the form held typing that went with it,
+   * `clean` for an untouched form or the read view. Cleared once dismissed, or
+   * once a form or sheet opens or closes again.
+   */
+  deletedElsewhere: 'unsaved' | 'clean' | null;
+  /**
    * The last copy of the row being edited. A refetch can drop it from the list,
    * and handing the editor `null` would wipe the typed edits.
    */
@@ -79,6 +91,11 @@ export class ItemWorkspace implements ReactiveController {
   private subscribedTo?: Store;
   private mediaFor?: Store;
   private mediaBindings: MediaBindings | null = null;
+  /** The read sheet, whose open form's typing a host cannot see into. */
+  private readonly sheet = createRef<HVDetailSheet>();
+  private readonly notice = createRef<HVBanner>();
+  /** Set when a notice is raised, so the update that draws it brings it into view. */
+  private noticeRaised = false;
 
   constructor(
     host: ReactiveControllerHost & EventTarget,
@@ -92,6 +109,7 @@ export class ItemWorkspace implements ReactiveController {
       editing: null,
       editorBusy: false,
       editorError: null,
+      deletedElsewhere: null,
       pinnedItem: null,
       detailItemId: null,
       checkout: null,
@@ -139,6 +157,17 @@ export class ItemWorkspace implements ReactiveController {
     this.subscribe();
   }
 
+  /**
+   * A notice raised in this update is on the page now. The page may have
+   * scrolled the host's banners out of view while the form or sheet was up.
+   */
+  hostUpdated(): void {
+    if (!this.noticeRaised) return;
+    this.noticeRaised = false;
+    // Optional: a test DOM without layout has no scrollIntoView.
+    this.notice.value?.scrollIntoView?.({ block: 'nearest' });
+  }
+
   /** The `store` object is stable, so a property binding never re-renders the host. */
   private subscribe(): void {
     const store = this.getStore();
@@ -182,11 +211,13 @@ export class ItemWorkspace implements ReactiveController {
 
   /**
    * Hold on to the row being edited, and close what is open on an item the
-   * store says was removed rather than filtered off the page.
+   * store says was removed rather than filtered off the page. Runs before the
+   * render that drops the form, so the form can still say whether it held typing.
    */
   syncPinnedItem(): void {
     const { detailItemId } = this.ui.value;
     if (detailItemId !== null && this.getStore()?.wasRemoved(detailItemId)) {
+      this.noteClosedByDelete(detailItemId, this.sheet.value?.dirty ?? false);
       this.ui.set({ detailItemId: null });
     }
     const editing = this.editing;
@@ -195,11 +226,25 @@ export class ItemWorkspace implements ReactiveController {
       return;
     }
     if (this.getStore()?.wasRemoved(editing)) {
+      this.noteClosedByDelete(editing, this.hooks.editor()?.dirty ?? false);
       this.ui.set({ pinnedItem: null, editing: null, editorError: null });
       return;
     }
     const listed = this.itemById(editing);
     if (listed) this.ui.set({ pinnedItem: listed });
+  }
+
+  /**
+   * A form or the read sheet is closing because `itemId` is gone. A delete sent
+   * from here was asked for, so it says nothing; one made elsewhere is the only
+   * explanation the user gets for the surface vanishing.
+   */
+  private noteClosedByDelete(itemId: string, unsaved: boolean): void {
+    if (!this.getStore()?.wasRemovedElsewhere(itemId)) return;
+    // The sheet and the inline form can both close in one pass; typing in either counts.
+    const typed = unsaved || this.ui.value.deletedElsewhere === 'unsaved';
+    this.ui.set({ deletedElsewhere: typed ? 'unsaved' : 'clean' });
+    this.noticeRaised = true;
   }
 
   /** Open a form, closing the one that is open; only one row edits at a time. */
@@ -218,17 +263,17 @@ export class ItemWorkspace implements ReactiveController {
     go();
   }
 
-  /** Show `next` in the form, dropping what the last save said. */
+  /** Show `next` in the form, dropping what the last save said and the last delete notice. */
   setEditing(next: string | 'new' | null): void {
-    this.ui.set({ editing: next, editorError: null });
+    this.ui.set({ editing: next, editorError: null, deletedElsewhere: null });
   }
 
   openDetail(itemId: string): void {
-    this.ui.set({ detailItemId: itemId });
+    this.ui.set({ detailItemId: itemId, deletedElsewhere: null });
   }
 
   closeDetail(): void {
-    this.ui.set({ detailItemId: null, editorError: null });
+    this.ui.set({ detailItemId: null, editorError: null, deletedElsewhere: null });
   }
 
   /**
@@ -389,11 +434,41 @@ export class ItemWorkspace implements ReactiveController {
     );
   }
 
+  /**
+   * What the host says, beside its banner stacks, when a form or the read sheet
+   * closed because a delete made elsewhere took its item. Drawn by the host, not
+   * inside the sheet, which is gone by then; the host's `bannerStack` lays it out.
+   */
+  renderDeletedNotice(): TemplateResult | null {
+    const notice = this.ui.value.deletedElsewhere;
+    if (notice === null) return null;
+    const unsaved = notice === 'unsaved';
+    return html`<div class="banners" data-testid="deleted-notice">
+      <hv-banner
+        ${ref(this.notice)}
+        kind=${unsaved ? 'warning' : 'info'}
+        .glyph=${'del'}
+        .message=${unsaved ? t('hv.banner.deletedElsewhere.unsaved') : t('hv.banner.deletedElsewhere.message')}
+      >
+        <button
+          slot="actions"
+          class="hv-icon-button"
+          data-testid="deleted-notice-dismiss"
+          aria-label=${t('hv.action.dismiss')}
+          @click=${() => this.ui.set({ deletedElsewhere: null })}
+        >
+          ${icon('close', 16)}
+        </button>
+      </hv-banner>
+    </div>`;
+  }
+
   /** The phone read sheet, which reads the viewport itself. */
   renderDetailSheet(opts: Pick<SurfaceOptions, 'testid'>): TemplateResult {
     const st = this.st;
     const { detailItemId } = this.ui.value;
     return html`<hv-detail-sheet
+      ${ref(this.sheet)}
       .statuses=${st?.statuses ?? null}
       data-testid=${opts.testid}
       .areas=${st?.areasCache?.areas ?? []}

@@ -70,6 +70,11 @@ export const en = {
   'hv.banner.conflict.heading': 'Someone else changed this item.',
   'hv.banner.conflict.viewLatest': 'View latest',
   'hv.banner.conflict.reapply': 'Re-apply my change',
+  // item-workspace — why an open form or read sheet just closed. The second
+  // sentence only when the form held typing, or it would not be true.
+  'hv.banner.deletedElsewhere.message': 'This item was deleted on another device.',
+  'hv.banner.deletedElsewhere.unsaved':
+    'This item was deleted on another device. Your unsaved changes were not saved.',
 
   // ui/discard — the one question asked before typed edits are thrown away.
   'hv.discard.heading': 'Discard your changes?',

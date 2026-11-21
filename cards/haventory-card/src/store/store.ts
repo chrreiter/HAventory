@@ -495,11 +495,14 @@ export class Store {
    * failure is normal: successes persist and nothing is rolled back.
    */
   async bulkExecute(ops: BulkOperation[], opts: BulkOptions = {}): Promise<BulkOutcome> {
-    const { succeeded, failed, cancelled, succeededOpIds } = await runBulk(ops, opts, {
-      run: this.health.run,
-      send: (chunk) => this.ws.bulk(chunk),
-      apply: (item) => this.list.applyOptimistic(item),
-    });
+    const deleteIds = ops.flatMap((op) => (op.kind === 'item_delete' ? (opTargetId(op) ?? []) : []));
+    const { succeeded, failed, cancelled, succeededOpIds } = await this.list.sendingBatch(deleteIds, () =>
+      runBulk(ops, opts, {
+        run: this.health.run,
+        send: (chunk) => this.ws.bulk(chunk),
+        apply: (item) => this.list.applyOptimistic(item),
+      }),
+    );
 
     // Deletes are not echoed as items — drop them from the list here.
     for (const op of ops) {
@@ -566,5 +569,13 @@ export class Store {
   /** True when this id was removed rather than merely filtered off the page. */
   wasRemoved(itemId: string): boolean {
     return this.list.wasRemoved(itemId);
+  }
+
+  /**
+   * True when this id was removed by a delete this store did not send: another
+   * device, tab or card, an automation, a service call.
+   */
+  wasRemovedElsewhere(itemId: string): boolean {
+    return this.list.wasRemovedElsewhere(itemId);
   }
 }

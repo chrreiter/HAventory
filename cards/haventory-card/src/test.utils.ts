@@ -43,6 +43,8 @@ export interface MockConfig {
 
 export interface MockHass extends HassLike {
   __emit(topic: AnyEventPayload['topic'], action: string, payload: Record<string, unknown>): void;
+  /** Another client's delete: the item leaves the backend, then its last body is announced. */
+  __deleteElsewhere(itemId: string): void;
   __setConflict(on: boolean): void;
   __setItems(items: Item[]): void;
   __setLocations(locations: Location[]): void;
@@ -710,6 +712,12 @@ export function makeMockHass(initial?: MockConfig): MockHass {
         ...payload,
       } as AnyEventPayload;
       callbacks.forEach((cb) => cb(event));
+    },
+    __deleteElsewhere(itemId: string) {
+      const gone = items.find((i) => i.id === itemId);
+      if (!gone) throw new Error(`no item ${itemId} to delete`);
+      items = items.filter((i) => i.id !== itemId);
+      hass.__emit('items', 'deleted', { item: gone });
     },
     __emitHaEvent(eventType: string, data: Record<string, unknown> = {}) {
       const event = { event_type: eventType, data } as unknown as AnyEventPayload;

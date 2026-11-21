@@ -37,8 +37,13 @@ export class ItemList {
     selection: new Set<string>(),
   });
   private inflight: Map<string, Promise<unknown>> = new Map();
-  /** Ids removed since this store connected — see `noteRemoved`. */
-  private readonly removedIds = new Set<string>();
+  /**
+   * Ids removed since this store connected, each mapped to whether this store
+   * sent the delete — see `noteRemoved`.
+   */
+  private readonly removedIds = new Map<string, boolean>();
+  /** Deletes this store has sent in a batch that has not answered yet. */
+  private readonly batchDeletes = new Set<string>();
   /** The deferred work: every one of these is cancelled by `dispose`. */
   private readonly totalRefresh = new Coalesced();
   private readonly latestTotal = new Latest();
@@ -86,7 +91,7 @@ export class ItemList {
       }
       case 'deleted': {
         if (idx >= 0) items.splice(idx, 1);
-        this.noteRemoved(item.id);
+        this.noteRemoved(item.id, this.batchDeletes.has(item.id));
         break;
       }
     }
@@ -387,22 +392,39 @@ export class ItemList {
     this.slice.set({ items });
   }
 
+  /** Drop a row this store deleted: its own delete, or a batch row that succeeded. */
   removeById(itemId: string) {
     const items = this.slice.value.items.filter((x) => x.id !== itemId);
-    this.noteRemoved(itemId);
+    this.noteRemoved(itemId, true);
     this.slice.set({ items });
   }
 
   /**
-   * Remember an id the backend no longer has, bounded. An open editor must tell
-   * a row filtered off the page from an item that is gone; a refetch that stops
-   * listing an id is not a removal.
+   * Run a batch with its deletes counted as this store's. The backend announces
+   * each row before it answers the batch, so their events land while it runs.
    */
-  private noteRemoved(itemId: string) {
-    this.removedIds.add(itemId);
-    // A Set iterates in insertion order, so the first entry is the oldest.
+  async sendingBatch<T>(deleteIds: readonly string[], send: () => Promise<T>): Promise<T> {
+    for (const id of deleteIds) this.batchDeletes.add(id);
+    try {
+      return await send();
+    } finally {
+      for (const id of deleteIds) this.batchDeletes.delete(id);
+    }
+  }
+
+  /**
+   * Remember an id the backend no longer has, bounded, and whether this store
+   * sent the delete. An open editor must tell a row filtered off the page from
+   * an item that is gone, and a delete from here from one made elsewhere; a
+   * refetch that stops listing an id is not a removal. The event for a delete
+   * sent from here can come after the removal it answers, so it never turns
+   * that removal into someone else's.
+   */
+  private noteRemoved(itemId: string, here: boolean) {
+    this.removedIds.set(itemId, here || this.removedIds.get(itemId) === true);
+    // A Map iterates in insertion order, so the first entry is the oldest.
     if (this.removedIds.size > REMOVED_ID_MEMORY) {
-      this.removedIds.delete(this.removedIds.values().next().value as string);
+      this.removedIds.delete(this.removedIds.keys().next().value as string);
     }
   }
 
@@ -413,6 +435,11 @@ export class ItemList {
   /** True when this id was removed rather than merely filtered off the page. */
   wasRemoved(itemId: string): boolean {
     return this.removedIds.has(itemId);
+  }
+
+  /** True when this id was removed by a delete this store did not send. */
+  wasRemovedElsewhere(itemId: string): boolean {
+    return this.removedIds.get(itemId) === false;
   }
 }
 
