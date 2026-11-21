@@ -3,21 +3,28 @@
  *
  * Register and vocabulary follow Home Assistant's own German, which is what
  * surrounds the card on every screen it renders on: informal address ("du"),
- * `Bereich` for an area, `Kategorie`, `Label`, a space before an ellipsis, an
- * en dash where the English writes an em dash, and German quotation marks
- * („…“) where the English writes straight ones.
+ * `Bereich` for an area, `Kategorie`, `Label`, a space before an ellipsis and
+ * no ellipsis on a placeholder, an en dash where the English writes an em
+ * dash, and German quotation marks („…“) where the English writes straight
+ * ones.
  *
- * Three words the card had to choose for itself, because Home Assistant has no
+ * Words the card had to choose for itself, because Home Assistant has no
  * equivalent:
  *
  * - an item is a **Gegenstand** — a physical thing a household owns, not an
  *   `Eintrag` (which is what Home Assistant calls a to-do line, and HAventory
  *   writes those onto a shopping list beside its own items) and not an
- *   `Artikel` (which is stock in a shop);
+ *   `Artikel` (which is stock in a shop). Where a text means items and
+ *   locations together, it names both;
  * - a location is an **Ort**, short enough to carry a nesting level in front of
- *   it in the tree and not tied to geography the way `Standort` is;
+ *   it in the tree and not tied to geography the way `Standort` is, and never
+ *   an `Aufbewahrungsort`;
  * - checking out is **Ausleihen**, checking in **Zurückgeben** — what a
- *   household actually does when someone takes a drill away.
+ *   household actually does when someone takes a drill away;
+ * - the due date is the **Rückgabedatum**, shortened to `Rückgabe` where a
+ *   slot is too narrow for it, and `fällig` is the state beside a date;
+ * - the low-stock threshold is the **Mindestbestand** wherever the field is
+ *   named, and `niedriger Bestand` is the state of being at or below it.
  *
  * Typed complete rather than as a `Dictionary`, so an English string added
  * without a German one fails to compile instead of quietly falling back. A
@@ -132,7 +139,7 @@ export const de: CompleteDictionary = {
   'hv.form.error.descriptionTooLong': 'Die Beschreibung darf höchstens {max} Zeichen lang sein.',
   'hv.form.error.categoryTooLong': 'Die Kategorie darf höchstens {max} Zeichen lang sein.',
   'hv.form.error.quantityNegative': 'Die Menge darf nicht negativ sein.',
-  'hv.form.error.lowStockRange': 'Die Bestandsschwelle muss 0 oder größer sein – oder leer bleiben.',
+  'hv.form.error.lowStockRange': 'Der Mindestbestand muss 0 oder größer sein – oder leer bleiben.',
   'hv.form.error.tooManyTags': 'Ein Gegenstand kann höchstens {max} Labels tragen.',
   'hv.form.error.tagTooLong': 'Jedes Label darf höchstens {max} Zeichen lang sein.',
   'hv.form.error.reminderRange': 'Wiederholung von 1 bis {max}, oder leer lassen für einen einmaligen Termin.',
@@ -199,9 +206,9 @@ export const de: CompleteDictionary = {
   'hv.card.addItem': 'Gegenstand hinzufügen',
   'hv.card.addShort': 'Neu',
   'hv.card.searchItems': 'Gegenstände durchsuchen',
-  'hv.card.searchPlaceholder': 'Gegenstände durchsuchen …',
-  'hv.card.searchAllPlaceholder.one': '{count} Gegenstand durchsuchen …',
-  'hv.card.searchAllPlaceholder.other': 'Alle {count} Gegenstände durchsuchen …',
+  'hv.card.searchPlaceholder': 'Gegenstände durchsuchen',
+  'hv.card.searchAllPlaceholder.one': '{count} Gegenstand durchsuchen',
+  'hv.card.searchAllPlaceholder.other': 'Alle {count} Gegenstände durchsuchen',
   'hv.card.filters': 'Filter',
   'hv.card.filtersActive': '{count} aktiv',
   'hv.card.showItems': 'Gegenstände anzeigen',
@@ -330,7 +337,7 @@ export const de: CompleteDictionary = {
 
   'hv.confirm.heading': 'Bist du sicher?',
   'hv.bottomSheet.label': 'Details',
-  'hv.chipInput.placeholder': 'Label hinzufügen …',
+  'hv.chipInput.placeholder': 'Label hinzufügen',
   'hv.lightbox.close': 'Foto schließen',
   'hv.lightbox.previous': 'Vorheriges Foto',
   'hv.lightbox.next': 'Nächstes Foto',
@@ -377,7 +384,7 @@ export const de: CompleteDictionary = {
   'hv.field.location': 'Ort',
   'hv.field.tags': 'Labels',
   'hv.field.description': 'Beschreibung',
-  'hv.field.lowStock': 'Niedriger Bestand ab',
+  'hv.field.lowStock': 'Mindestbestand',
   'hv.field.documents': 'Dokumente',
   'hv.field.due_date': 'Rückgabedatum',
   'hv.field.inspection_date': 'Nächste Prüfung',
@@ -385,7 +392,7 @@ export const de: CompleteDictionary = {
   'hv.field.updated_at': 'Geändert',
   'hv.field.created_at': 'Erstellt',
   'hv.field.quantityShort': 'Menge',
-  'hv.field.dueShort': 'Fällig',
+  'hv.field.dueShort': 'Rückgabe',
   'hv.field.locations': 'Orte',
   'hv.field.categories': 'Kategorien',
   'hv.field.statuses': 'Status',
@@ -424,7 +431,7 @@ export const de: CompleteDictionary = {
   'hv.serverError.name_too_long': 'Der Name darf höchstens {max} Zeichen lang sein.',
   'hv.serverError.text_too_long': '{field} darf höchstens {max} Zeichen lang sein.',
   'hv.serverError.quantity_negative': 'Die Menge darf nicht negativ sein.',
-  'hv.serverError.low_stock_threshold_negative': 'Die Bestandsschwelle darf nicht negativ sein.',
+  'hv.serverError.low_stock_threshold_negative': 'Der Mindestbestand darf nicht negativ sein.',
   'hv.serverError.tag_too_long': 'Ein Label darf höchstens {max} Zeichen lang sein.',
   'hv.serverError.tags_too_many': 'Ein Gegenstand kann höchstens {max} Labels tragen.',
   'hv.serverError.custom_fields_too_many': 'Ein Gegenstand kann höchstens {max} eigene Felder tragen.',
@@ -496,7 +503,7 @@ export const de: CompleteDictionary = {
   'hv.filter.categoryHint': 'Eine der gewählten Kategorien',
   'hv.filter.tagMatchMode': 'Label-Verknüpfung',
   'hv.filter.addTag': 'Label hinzufügen',
-  'hv.filter.addTagPlaceholder': '+ Label …',
+  'hv.filter.addTagPlaceholder': '+ Label',
   'hv.filter.tagsHint': 'Labels sind immer kleingeschrieben',
   'hv.filter.showOnly': 'Nur anzeigen',
   'hv.filter.changed': 'Geändert',
@@ -594,8 +601,9 @@ export const de: CompleteDictionary = {
   'hv.diagnostics.subscriptionsLive': 'Gegenstände · Orte · Statistik – live',
   'hv.diagnostics.subscriptionsDown': 'nicht verbunden',
   'hv.diagnostics.dataLoaded': 'Geladene Daten',
-  'hv.diagnostics.loadedValue': '{loaded} von {items} · {locations}',
-  'hv.diagnostics.unknownItems': '? Gegenstände',
+  'hv.diagnostics.loadedOf.one': '{loaded} von {count} Gegenstand · {locations}',
+  'hv.diagnostics.loadedOf.other': '{loaded} von {count} Gegenständen · {locations}',
+  'hv.diagnostics.loadedOfUnknown': '{loaded} von ? Gegenständen · {locations}',
   'hv.diagnostics.unknownLocations': '? Orte',
   'hv.diagnostics.integrationVersion': 'Version der Integration',
   'hv.diagnostics.healthyNote': 'Eine gesunde Integration meldet hier nichts.',
@@ -612,13 +620,13 @@ export const de: CompleteDictionary = {
   'hv.import.ifExists': 'Wenn ein Gegenstand schon vorhanden ist',
   'hv.import.policy.merge': 'Zusammenführen',
   'hv.import.policy.mergeDescription':
-    'Über die ID zugeordnete Gegenstände Feld für Feld aktualisieren und Labels vereinen; den Rest hinzufügen',
+    'Gegenstände mit gleicher ID Feld für Feld aktualisieren, Labels vereinen; den Rest hinzufügen',
   'hv.import.policy.replace': 'Ersetzen',
   'hv.import.policy.replaceDescription':
-    'Über die ID zugeordnete Gegenstände durch die Fassung aus der Datei überschreiben; den Rest hinzufügen',
+    'Gegenstände mit gleicher ID aus der Datei überschreiben; den Rest hinzufügen',
   'hv.import.policy.skip': 'Überspringen',
   'hv.import.policy.skipDescription':
-    'Nur Gegenstände hinzufügen, deren ID im Inventar noch nicht vorkommt; zugeordnete unverändert lassen',
+    'Nur Gegenstände mit neuer ID hinzufügen; vorhandene bleiben, wie sie sind',
   'hv.import.appliesEverywhere': 'Der Import gilt für alle verbundenen Clients',
   'hv.import.checking': 'Wird geprüft …',
   'hv.import.preview': 'Vorschau',
@@ -634,16 +642,17 @@ export const de: CompleteDictionary = {
   'hv.import.bucket.update': 'Aktualisieren',
   'hv.import.bucket.conflict': 'Konflikt',
   'hv.import.bucket.unchanged': 'Unverändert',
-  'hv.import.conflicts.one': '{conflicts} – die Datei und dieses Inventar haben diesen Eintrag beide geändert.',
+  'hv.import.conflicts.one':
+    '{conflicts} – die Datei und dieses Inventar haben denselben Gegenstand oder Ort geändert.',
   'hv.import.conflicts.other':
-    '{conflicts} – die Datei und dieses Inventar haben diese Einträge beide geändert.',
+    '{conflicts} – die Datei und dieses Inventar haben dieselben Gegenstände oder Orte geändert.',
   'hv.import.conflictsMerge': 'Zusammenführen behält die Werte aus der Datei.',
   'hv.import.conflictsSkip': 'Überspringen lässt sie, wie sie sind.',
   'hv.import.conflictsReplace': 'Ersetzen überschreibt sie.',
   'hv.import.warnings.one':
-    '{clashes} – die Datei würde einen Eintrag unter einem Namen hinzufügen, den hier schon etwas trägt, aber mit einer anderen ID. Der Import ordnet allein über die ID zu, also entsteht ein Duplikat statt einer Aktualisierung.',
+    '{clashes} – die Datei würde einen Gegenstand oder Ort unter einem Namen hinzufügen, der hier schon vergeben ist, aber mit einer anderen ID. Der Import ordnet allein über die ID zu, also entsteht ein Duplikat statt einer Aktualisierung.',
   'hv.import.warnings.other':
-    '{clashes} – die Datei würde Einträge unter einem Namen hinzufügen, den hier schon etwas trägt, aber mit einer anderen ID. Der Import ordnet allein über die ID zu, also entstehen Duplikate statt Aktualisierungen.',
+    '{clashes} – die Datei würde Gegenstände oder Orte unter Namen hinzufügen, die hier schon vergeben sind, aber mit anderen IDs. Der Import ordnet allein über die ID zu, also entstehen Duplikate statt Aktualisierungen.',
   'hv.import.listMore': '… und {count} weitere.',
   'hv.import.attachmentsMissing.one':
     '{missing} von {referenced} Anhängen nennt eine Datei, die es auf dieser Installation nicht gibt – dieses Foto oder diese Anleitung fehlt nach dem Import.',
@@ -671,12 +680,12 @@ export const de: CompleteDictionary = {
   'hv.organize.plural.tags': 'Labels',
   'hv.organize.plural.categories': 'Kategorien',
   'hv.organize.filterLocations': 'Orte filtern',
-  'hv.organize.filterLocationsPlaceholder': 'Orte filtern …',
+  'hv.organize.filterLocationsPlaceholder': 'Orte filtern',
   'hv.organize.filterValues': '{values} filtern',
-  'hv.organize.filterValuesPlaceholder': '{values} filtern …',
+  'hv.organize.filterValuesPlaceholder': '{values} filtern',
   'hv.organize.newStatus': 'Neuer Status',
   'hv.organize.newValue': '{noun} hinzufügen',
-  'hv.organize.newValuePlaceholder': '{noun} hinzufügen …',
+  'hv.organize.newValuePlaceholder': '{noun} hinzufügen',
   'hv.organize.valueNeedsName': '{noun} braucht einen Namen.',
   'hv.organize.valueExists': '„{name}“ gibt es schon.',
   'hv.organize.draftNote':
@@ -688,8 +697,8 @@ export const de: CompleteDictionary = {
   'hv.organize.renameEllipsis': 'Umbenennen …',
   'hv.organize.editEllipsis': 'Bearbeiten …',
   'hv.organize.mergeIntoEllipsis': 'Zusammenführen mit …',
-  'hv.organize.mergeIntoPlaceholder': 'zusammenführen mit …',
-  'hv.organize.newNamePlaceholder': 'neuer Name …',
+  'hv.organize.mergeIntoPlaceholder': 'zusammenführen mit',
+  'hv.organize.newNamePlaceholder': 'neuer Name',
   'hv.organize.mergeInto': 'Zusammenführen mit',
   'hv.organize.newName': 'Neuer Name',
   'hv.organize.pickNameToContinue': 'Wähle einen Namen, um fortzufahren.',
@@ -740,7 +749,7 @@ export const de: CompleteDictionary = {
   'hv.organize.statusEdit': '{label} bearbeiten',
   'hv.organize.statusDelete': '{label} löschen',
   'hv.organize.statusName': 'Name des Status',
-  'hv.organize.statusNamePlaceholder': 'Name des Status …',
+  'hv.organize.statusNamePlaceholder': 'Name des Status',
   'hv.organize.statusDuplicate': 'Einen Status namens „{label}“ gibt es schon.',
   'hv.organize.colour': 'Farbe',
   'hv.organize.customColour': 'Eigene Farbe',

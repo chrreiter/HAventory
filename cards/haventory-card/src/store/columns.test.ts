@@ -157,7 +157,7 @@ describe('columns model', () => {
       'Kategorie',
       'Ort',
       'Labels',
-      'Fällig',
+      'Rückgabe',
       'Nächste Prüfung',
       'Erinnerung',
       'Geändert',

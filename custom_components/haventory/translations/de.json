@@ -20,7 +20,7 @@
       }
     },
     "create_entry": {
-      "default": "HAventory wurde erfolgreich eingerichtet. Lade diese Browserseite einmal neu: Karte und Symbol in der Seitenleiste werden geladen, wenn eine Seite geöffnet wird – eine Seite, die schon offen war, hat also beides noch nicht. Der neue HAventory-Eintrag in der Seitenleiste erledigt dasselbe: Seite und Karte stecken in einem Bündel, und ein offenes Dashboard zeigt die Karte in dem Moment, in dem dieses Bündel lädt."
+      "default": "HAventory wurde erfolgreich eingerichtet. Lade diese Browserseite einmal neu, damit die Karte und ihr Symbol in der Seitenleiste erscheinen, oder öffne den neuen HAventory-Eintrag in der Seitenleiste, der beides lädt."
     }
   },
   "options": {
@@ -35,13 +35,13 @@
         },
         "data_description": {
           "card_title": "Überschrift auf der HAventory-Karte. Eine Dashboard-Karte mit eigener Option „title:“ behält ihre eigene. Lade das Dashboard neu, um eine Änderung zu sehen.",
-          "sidebar_panel_enabled": "Gibt HAventory eine eigene Seite, benannt nach dem Kartentitel oben. Das gilt für alle, die dieses Home Assistant nutzen; jeder Benutzer kann den Eintrag weiterhin über den Bearbeitungsmodus der Seitenleiste ausblenden. Der Eintrag erscheint und verschwindet, während du dieses Formular speicherst – ohne Neustart. Auf der Übersichtsseite kann HAventory über Bearbeiten und dann Verknüpfung hinzufügen auch als Kachel angeheftet werden.",
-          "quick_filters": "Die Ein-Tipp-Filter über der Gegenstandsliste, hier und auf der Seite in der Seitenleiste. Eine Pille erscheint weiterhin nur, wenn sie etwas zu zählen hat – ein Haushalt, der nie etwas ausleiht, sieht also so oder so keine Ausleih-Pille. „Gegenstände gesamt“ fällt noch auf eine zweite Art aus der Reihe: Nur die Karte zeichnet sie als Pille, und nur in voller Breite – die Seite in der Seitenleiste und die Vollansicht schreiben die Gesamtzahl stattdessen in ihre Kopfzeile, ob sie hier angehakt ist oder nicht. Eine Dashboard-Karte mit eigener Option „quick_filters:“ behält ihre eigene. Lade das Dashboard neu, um eine Änderung zu sehen."
+          "sidebar_panel_enabled": "Gibt HAventory für alle Benutzer eine eigene Seite in der Seitenleiste, benannt nach dem Kartentitel oben, die beim Speichern sofort erscheint oder verschwindet; jeder Benutzer kann sie weiterhin über den Bearbeitungsmodus der Seitenleiste ausblenden. Auf der Übersichtsseite kann HAventory über Bearbeiten und dann Verknüpfung hinzufügen auch als Kachel angeheftet werden.",
+          "quick_filters": "Die Ein-Tipp-Filter über der Gegenstandsliste, auf der Karte und der Seite in der Seitenleiste; jede Pille erscheint nur, solange sie etwas zu zählen hat, und „Gegenstände gesamt“ nur auf einer Karte in voller Breite, da die Seite in der Seitenleiste und die Vollansicht die Gesamtzahl in ihrer Kopfzeile zeigen. Eine Dashboard-Karte mit eigener Option „quick_filters:“ behält ihre eigene; lade das Dashboard neu, um eine Änderung zu sehen."
         },
         "sections": {
           "todo": {
             "name": "Einkaufsliste",
-            "description": "Spiegelt Gegenstände mit niedrigem Bestand auf eine To-do-Liste von Home Assistant. Ein Gegenstand, der seine Bestandsschwelle erreicht oder unterschreitet, erscheint als Zeile mit seinem Namen und der nachzukaufenden Menge, und die Zeile verschwindet wieder, sobald der Gegenstand aufgefüllt ist. Lass die Liste leer, um das ausgeschaltet zu lassen – so ist es voreingestellt. Leerst du sie später, endet die Spiegelung und was auf der Liste steht, bleibt unangetastet; wählst du eine andere Liste, wandern die Zeilen stattdessen mit.",
+            "description": "Spiegelt Gegenstände mit niedrigem Bestand auf eine To-do-Liste von Home Assistant. Ein Gegenstand, der seinen Mindestbestand erreicht oder unterschreitet, erscheint als Zeile mit seinem Namen und der nachzukaufenden Menge, und die Zeile verschwindet wieder, sobald der Gegenstand aufgefüllt ist. Lass die Liste leer, um das ausgeschaltet zu lassen – so ist es voreingestellt. Leerst du sie später, endet die Spiegelung und was auf der Liste steht, bleibt unangetastet; wählst du eine andere Liste, wandern die Zeilen stattdessen mit.",
             "data": {
               "todo_entity_id": "To-do-Liste"
             },
@@ -147,8 +147,8 @@
           "description": "Eine frei gewählte Kategorie für den Gegenstand."
         },
         "low_stock_threshold": {
-          "name": "Schwelle für niedrigen Bestand",
-          "description": "Unterhalb dieser Menge gilt der Bestand als niedrig; ganze Zahl ab 0. Ohne Angabe gibt es keine Schwelle."
+          "name": "Mindestbestand",
+          "description": "Erreicht oder unterschreitet die Menge diesen Wert, gilt der Bestand als niedrig; ganze Zahl ab 0. Ohne Angabe gibt es keinen Mindestbestand."
         },
         "custom_fields": {
           "name": "Eigene Felder",
@@ -217,8 +217,8 @@
           "description": "Eine frei gewählte Kategorie für den Gegenstand. Null löscht sie."
         },
         "low_stock_threshold": {
-          "name": "Schwelle für niedrigen Bestand",
-          "description": "Unterhalb dieser Menge gilt der Bestand als niedrig; ganze Zahl ab 0. Null entfernt die Schwelle."
+          "name": "Mindestbestand",
+          "description": "Erreicht oder unterschreitet die Menge diesen Wert, gilt der Bestand als niedrig; ganze Zahl ab 0. Null entfernt den Mindestbestand."
         },
         "custom_fields_set": {
           "name": "Eigene Felder setzen",
@@ -346,7 +346,7 @@
     },
     "location_create": {
       "name": "Ort anlegen",
-      "description": "Legt einen neuen Aufbewahrungsort an.",
+      "description": "Legt einen neuen Ort an.",
       "fields": {
         "name": {
           "name": "Name",
@@ -364,7 +364,7 @@
     },
     "location_update": {
       "name": "Ort aktualisieren",
-      "description": "Aktualisiert einen vorhandenen Aufbewahrungsort.",
+      "description": "Aktualisiert einen vorhandenen Ort.",
       "fields": {
         "location_id": {
           "name": "Orts-ID",
@@ -386,7 +386,7 @@
     },
     "location_delete": {
       "name": "Ort löschen",
-      "description": "Löscht einen Aufbewahrungsort.",
+      "description": "Löscht einen Ort.",
       "fields": {
         "location_id": {
           "name": "Orts-ID",
@@ -414,8 +414,8 @@
         },
         "step": {
           "confirm": {
-            "title": "HAventory ohne die unlesbaren Einträge laden",
-            "description": "HAventory konnte {items} Gegenstände und {locations} Orte nicht lesen und hat {cyclic_locations} Orte gefunden, deren Elternkette sich im Kreis dreht. Es hat angehalten, statt den Rest zu laden – es speichert bei jeder Änderung, und die erste Bearbeitung würde die Datei ohne sie neu schreiben.\n\nBestätigen kopiert `.storage/{storage_key}` nach `.storage/{backup_key}` und startet HAventory dann mit allem, was es lesen konnte. Die unlesbaren Einträge bleiben draußen, und die Kopie ist dein Weg, sie zurückzuholen.\n\nUm sie stattdessen zu behalten, schließe diesen Dialog und repariere die Einträge in der gespeicherten Datei, oder stelle sie aus einem Backup wieder her."
+            "title": "HAventory ohne die unlesbaren Gegenstände und Orte laden",
+            "description": "HAventory konnte {items} Gegenstände und {locations} Orte nicht lesen und hat {cyclic_locations} Orte gefunden, deren Elternkette sich im Kreis dreht. Es hat angehalten, statt den Rest zu laden – es speichert bei jeder Änderung, und die erste Bearbeitung würde die Datei ohne sie neu schreiben.\n\nBestätigen kopiert `.storage/{storage_key}` nach `.storage/{backup_key}` und startet HAventory dann mit allem, was es lesen konnte. Die unlesbaren Gegenstände und Orte bleiben draußen, und die Kopie ist dein Weg, sie zurückzuholen.\n\nUm sie stattdessen zu behalten, schließe diesen Dialog und repariere sie in der gespeicherten Datei, oder stelle die Datei aus einem Backup wieder her."
           }
         }
       }
@@ -474,7 +474,7 @@
       "message": "Die Menge darf nicht negativ sein."
     },
     "low_stock_threshold_negative": {
-      "message": "Die Bestandsschwelle darf nicht negativ sein."
+      "message": "Der Mindestbestand darf nicht negativ sein."
     },
     "tag_too_long": {
       "message": "Ein Label darf höchstens {max} Zeichen lang sein."

@@ -21,6 +21,13 @@
  * - Whole sentences, not fragments glued at the call site: word order is a
  *   language's own, and a sentence assembled from three keys can only ever be
  *   English word order with foreign words in it.
+ * - An ellipsis ends a menu entry or button that opens a further step or a
+ *   state still in progress, or stands for the rest of a list, and nothing
+ *   else: a placeholder, a heading and a field name carry none, as in Home
+ *   Assistant's own catalogs. Each language spaces it the way Home Assistant's
+ *   catalog for that language does (English attaches it, German sets it off),
+ *   and `catalog.test.ts` holds both. A word cut off on screen gets the
+ *   browser's ellipsis, never a typed one.
  */
 
 export const en = {
@@ -233,9 +240,9 @@ export const en = {
   'hv.card.addItem': 'Add item',
   'hv.card.addShort': 'Add',
   'hv.card.searchItems': 'Search items',
-  'hv.card.searchPlaceholder': 'Search items…',
-  'hv.card.searchAllPlaceholder.one': 'Search all {count} item…',
-  'hv.card.searchAllPlaceholder.other': 'Search all {count} items…',
+  'hv.card.searchPlaceholder': 'Search items',
+  'hv.card.searchAllPlaceholder.one': 'Search {count} item',
+  'hv.card.searchAllPlaceholder.other': 'Search all {count} items',
   'hv.card.filters': 'Filters',
   'hv.card.filtersActive': '{count} active',
   'hv.card.showItems': 'Show items',
@@ -371,7 +378,7 @@ export const en = {
   // one carries when its host names nothing.
   'hv.confirm.heading': 'Are you sure?',
   'hv.bottomSheet.label': 'Details',
-  'hv.chipInput.placeholder': 'Add tag…',
+  'hv.chipInput.placeholder': 'Add tag',
   'hv.lightbox.close': 'Close photo',
   'hv.lightbox.previous': 'Previous photo',
   'hv.lightbox.next': 'Next photo',
@@ -557,7 +564,7 @@ export const en = {
   'hv.filter.categoryHint': 'Any of the picked categories',
   'hv.filter.tagMatchMode': 'Tag match mode',
   'hv.filter.addTag': 'Add tag',
-  'hv.filter.addTagPlaceholder': '+ add tag…',
+  'hv.filter.addTagPlaceholder': '+ add tag',
   'hv.filter.tagsHint': 'Tags are always lowercase',
   'hv.filter.showOnly': 'Show only',
   'hv.filter.changed': 'Changed',
@@ -659,8 +666,11 @@ export const en = {
   'hv.diagnostics.subscriptionsLive': 'items · locations · stats — live',
   'hv.diagnostics.subscriptionsDown': 'not connected',
   'hv.diagnostics.dataLoaded': 'Data loaded',
-  'hv.diagnostics.loadedValue': '{loaded} of {items} · {locations}',
-  'hv.diagnostics.unknownItems': '? items',
+  // The whole value is one counted key: German puts the total after "von", in
+  // the dative, so the noun cannot come from `hv.count.item`.
+  'hv.diagnostics.loadedOf.one': '{loaded} of {count} item · {locations}',
+  'hv.diagnostics.loadedOf.other': '{loaded} of {count} items · {locations}',
+  'hv.diagnostics.loadedOfUnknown': '{loaded} of ? items · {locations}',
   'hv.diagnostics.unknownLocations': '? locations',
   'hv.diagnostics.integrationVersion': 'Integration version',
   'hv.diagnostics.healthyNote': 'A healthy integration reports nothing here.',
@@ -681,12 +691,11 @@ export const en = {
   'hv.import.ifExists': 'If an item already exists',
   'hv.import.policy.merge': 'Merge',
   'hv.import.policy.mergeDescription':
-    'Update items matched by id field by field, combining tags; add the rest',
+    'Update items with the same id field by field, combining tags; add the rest',
   'hv.import.policy.replace': 'Replace',
-  'hv.import.policy.replaceDescription': "Overwrite items matched by id with the file's version; add the rest",
+  'hv.import.policy.replaceDescription': 'Overwrite items with the same id from the file; add the rest',
   'hv.import.policy.skip': 'Skip',
-  'hv.import.policy.skipDescription':
-    "Only add items whose id isn't in the inventory yet; leave matched items as they are",
+  'hv.import.policy.skipDescription': 'Add only items with a new id; existing ones stay as they are',
   'hv.import.appliesEverywhere': 'Import applies for every connected client',
   'hv.import.checking': 'Checking…',
   'hv.import.preview': 'Preview',
@@ -741,12 +750,12 @@ export const en = {
   'hv.organize.plural.tags': 'tags',
   'hv.organize.plural.categories': 'categories',
   'hv.organize.filterLocations': 'Filter locations',
-  'hv.organize.filterLocationsPlaceholder': 'Filter locations…',
+  'hv.organize.filterLocationsPlaceholder': 'Filter locations',
   'hv.organize.filterValues': 'Filter {values}',
-  'hv.organize.filterValuesPlaceholder': 'Filter {values}…',
+  'hv.organize.filterValuesPlaceholder': 'Filter {values}',
   'hv.organize.newStatus': 'New status',
   'hv.organize.newValue': 'New {noun}',
-  'hv.organize.newValuePlaceholder': 'New {noun}…',
+  'hv.organize.newValuePlaceholder': 'New {noun}',
   'hv.organize.valueNeedsName': 'A {noun} needs a name.',
   'hv.organize.valueExists': '"{name}" already exists.',
   'hv.organize.draftNote':
@@ -758,8 +767,8 @@ export const en = {
   'hv.organize.renameEllipsis': 'Rename…',
   'hv.organize.editEllipsis': 'Edit…',
   'hv.organize.mergeIntoEllipsis': 'Merge into…',
-  'hv.organize.mergeIntoPlaceholder': 'merge into…',
-  'hv.organize.newNamePlaceholder': 'new name…',
+  'hv.organize.mergeIntoPlaceholder': 'merge into',
+  'hv.organize.newNamePlaceholder': 'new name',
   'hv.organize.mergeInto': 'Merge into',
   'hv.organize.newName': 'New name',
   'hv.organize.pickNameToContinue': 'Pick a name to continue.',
@@ -808,7 +817,7 @@ export const en = {
   'hv.organize.statusEdit': 'Edit {label}',
   'hv.organize.statusDelete': 'Delete {label}',
   'hv.organize.statusName': 'Status name',
-  'hv.organize.statusNamePlaceholder': 'Status name…',
+  'hv.organize.statusNamePlaceholder': 'Status name',
   'hv.organize.statusDuplicate': 'A status called “{label}” already exists.',
   'hv.organize.colour': 'Colour',
   'hv.organize.customColour': 'Custom colour',
