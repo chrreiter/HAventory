@@ -1340,6 +1340,41 @@ describe('hv-full-view: failures are visible here too', () => {
     expect(store.state.value.items.find((i) => i.id === '1')?.quantity).toBe(15);
   });
 
+  // "View latest" is how the member whose save lost the race sees what the
+  // other one wrote; the panel renders this view embedded, so both carry it.
+  it.each([
+    { variant: 'the overlay', embedded: false },
+    { variant: 'the panel', embedded: true },
+  ])('starts the open form over from the newer version in $variant', async ({ embedded }) => {
+    const { el, hass, sr } = await mount({
+      items: [makeItem({ id: '1', name: 'Old', version: 4 })],
+      embedded,
+    });
+    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const form = () => (q(sr, '[data-testid="full-editor"]') as HTMLElement).shadowRoot;
+    const name = form()?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+    name.value = 'Mine';
+    name.dispatchEvent(new Event('input'));
+    await settle(el);
+    hass.__setConflict(true);
+    (form()?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+    expect(form()?.querySelector('[data-testid="editor-error"]')).toBeTruthy();
+
+    hass.__setConflict(false);
+    hass.__setItems([makeItem({ id: '1', name: 'Theirs', version: 5 })]);
+    (banner(sr, 'banner-view-latest') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+
+    expect((form()?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe('Theirs');
+    expect(form()?.querySelector('[data-testid="editor-version"]')?.textContent).toContain('v5');
+    expect(form()?.querySelector('[data-testid="editor-error"]')).toBe(null);
+  });
+
   it('dismisses a plain error, which carries no conflict actions', async () => {
     const { el, store, sr } = await mount({ items: [] });
     store['pushError']({ code: 'storage_error', message: 'disk full' });

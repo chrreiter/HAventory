@@ -427,7 +427,11 @@ export class HVFullView extends LitElement {
 
   /** What the shared banner stacks act through; Refresh is the host's menu action. */
   private get _bannerHooks(): BannerHooks {
-    return { store: this.store, onRefresh: () => this._menuAction({ id: 'refresh' }) };
+    return {
+      store: this.store,
+      onRefresh: () => this._menuAction({ id: 'refresh' }),
+      onLatestShown: (itemId) => this._workspace.showLatest(itemId),
+    };
   }
 
   /** Leave the open form for another row, the create form, or by closing the surface. */

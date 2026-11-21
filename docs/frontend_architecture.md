@@ -828,7 +828,10 @@ Any other key in that record is ignored, so an older or newer payload never brea
   table of two hundred rows would otherwise put two hundred extra questions to the backend.
   Only a 404 counts as missing; an inconclusive probe leaves the picture alone.
 - **Writes are optimistic.** A rejected save keeps the expander open with the user's text in
-  it, and a conflict renders as a banner with *View latest* / *Re-apply*.
+  it, and a conflict renders as a banner with *View latest* / *Re-apply*. *View latest*
+  re-reads the item, and a form open on it starts over from that copy, without the typing
+  or the refused save's message (`ItemWorkspace.showLatest`, through the banner's
+  `onLatestShown` hook). A re-read that fails leaves the form as it was.
 - **An item save carries only what the edit changed**, measured against the copy of the
   item the form was filled from. The form stays open across live events, so by the time
   Save is pressed the version it writes against can already carry another member's edit.
