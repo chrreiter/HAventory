@@ -8,7 +8,7 @@ import {
   mountComponent,
   q,
 } from '../test.utils';
-import { ACTIONS_COLUMN_WIDTH } from '../store/columns';
+import { ACTIONS_COLUMN_WIDTH, SELECT_COLUMN_WIDTH } from '../store/columns';
 import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays, toIsoDate } from '../ui/relative-time';
 import { rowMenuEntries } from '../ui/row-chrome';
@@ -244,6 +244,85 @@ describe('hv-data-table: narrow screens', () => {
     el.selectable = false;
     await el.updateComplete;
     expect(el.hasAttribute('selectable')).toBe(false);
+  });
+});
+
+/** The component's stylesheet with every `@media` block cut out: the rules that hold at any width. */
+function cssAtEveryWidth(): string {
+  let text = componentCss('hv-data-table');
+  for (let at = text.indexOf('@media'); at >= 0; at = text.indexOf('@media')) {
+    let depth = 0;
+    let end = text.indexOf('{', at);
+    for (; end < text.length; end++) {
+      if (text[end] === '{') depth++;
+      else if (text[end] === '}' && --depth === 0) break;
+    }
+    text = text.slice(0, at) + text.slice(end + 1);
+  }
+  return text;
+}
+
+const PIN_RULE = /\.name-head, \.name-cell, \.select-cell \{([^}]*)\}/;
+
+// At 1280 with Home Assistant's sidebar docked, the panel's table is about
+// 600px wider than its box and the row's actions sit at its far end, so using
+// them pans every name out of view. jsdom lays nothing out, so what is
+// assertable is that the pinning rules apply outside the phone's media query.
+describe('hv-data-table: the pinned name column', () => {
+  it('pins the name header and cells at every width, with an opaque full-height fill', () => {
+    const pin = PIN_RULE.exec(cssAtEveryWidth())?.[1] ?? '';
+    expect(pin).toMatch(/position: sticky/);
+    expect(pin).toMatch(/left: 0/);
+    expect(pin).toMatch(/background: var\(--hv-surface\)/);
+    // Over the row's padding too, or the edge breaks between rows.
+    expect(pin).toMatch(/margin-block: calc\(-1 \* var\(--hv-table-pad-y\)\)/);
+    expect(pin).toMatch(/padding-block: var\(--hv-table-pad-y\)/);
+    expect(cssAtEveryWidth()).toMatch(
+      /\.head, \.row \{[^}]*padding: var\(--hv-table-pad-y\) var\(--hv-table-pad-x\)/,
+    );
+  });
+
+  it('pins the checkbox track while selecting, and the name right of it', () => {
+    const pinned = new RegExp(
+      `:host\\(\\[selectable\\]\\) \\.name-head, :host\\(\\[selectable\\]\\) \\.name-cell \\{[^}]*` +
+        `left: calc\\(var\\(--hv-table-pad-x\\) \\+ ${SELECT_COLUMN_WIDTH}\\)`,
+    );
+    expect(cssAtEveryWidth()).toMatch(pinned);
+  });
+
+  it('washes the pinned cells with the row on hover and while selected', () => {
+    expect(cssAtEveryWidth()).toMatch(
+      /\.row:hover \.name-cell, \.row:hover \.select-cell, \.row\.selected \.name-cell, \.row\.selected \.select-cell \{[^}]*background-image: linear-gradient\(var\(--hv-row-hover\), var\(--hv-row-hover\)\)/,
+    );
+  });
+
+  it('marks itself panned while scrolled sideways, which draws the edge', async () => {
+    const el = await mount([{ id: '1' }]);
+    const pan = (x: number) => {
+      Object.defineProperty(el, 'scrollLeft', { value: x, configurable: true });
+      el.dispatchEvent(new Event('scroll'));
+    };
+    expect(el.hasAttribute('panned')).toBe(false);
+    pan(120);
+    expect(el.hasAttribute('panned')).toBe(true);
+    pan(0);
+    expect(el.hasAttribute('panned')).toBe(false);
+
+    expect(cssAtEveryWidth()).toMatch(
+      /:host\(\[panned\]\) \.name-head, :host\(\[panned\]\) \.name-cell \{[^}]*box-shadow: 1px 0 0 var\(--hv-divider\)/,
+    );
+  });
+
+  // An outline on the row paints beneath its pinned cells and loses its left side.
+  it('draws the row focus ring as a layer above the pinned cells', () => {
+    const text = cssAtEveryWidth();
+    const ring = /\.row:focus-visible::after \{([^}]*)\}/.exec(text)?.[1] ?? '';
+    expect(ring).toMatch(/outline: 2px solid var\(--hv-primary\)/);
+    expect(ring).toMatch(/pointer-events: none/);
+    const pinZ = Number(/z-index: (\d+)/.exec(PIN_RULE.exec(text)?.[1] ?? '')?.[1]);
+    expect(Number(/z-index: (\d+)/.exec(ring)?.[1])).toBeGreaterThan(pinZ);
+    expect(text).toMatch(/\.row:focus-visible \{[^}]*outline: none/);
+    expect(text).toMatch(/\.row \{[^}]*position: relative/);
   });
 });
 
