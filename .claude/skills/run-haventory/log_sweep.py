@@ -116,6 +116,7 @@ CORE_SETUP_REFUSAL = re.compile(
     r"Error setting up entry .* for haventory: "
 )
 CONFIG_ENTRY_ERROR = "homeassistant.exceptions.ConfigEntryError: "
+TRACEBACK = "Traceback (most recent call last)"
 
 
 def read_log(args: argparse.Namespace) -> str:
@@ -143,6 +144,21 @@ def to_records(text: str) -> list[list[str]]:
     return records
 
 
+def raised(record: list[str]) -> str:
+    """The line naming the exception the record's last traceback ends on, or "".
+
+    It is the first unindented line after that traceback's last frame, not the
+    record's last line: a container restart right after a traceback writes the
+    supervisor's own lines, which carry no timestamp and so join the record.
+    """
+    starts = [i for i, line in enumerate(record) if line.startswith(TRACEBACK)]
+    if not starts:
+        return ""
+    frames = [i for i in range(starts[-1], len(record)) if record[i].startswith("  File ")]
+    after = (frames or starts)[-1] + 1
+    return next((line for line in record[after:] if line and not line[0].isspace()), "")
+
+
 def classify(record: list[str]) -> tuple[str, str]:
     """Return (bucket, reason) for one log record.
 
@@ -156,8 +172,8 @@ def classify(record: list[str]) -> tuple[str, str]:
     body = "\n".join(record)
     level_match = LEVEL.search(head)
     level = level_match.group(1) if level_match else "?"
-    tail = record[-1] if len(record) > 1 else ""
-    has_traceback = any(line.startswith("Traceback (most recent call last)") for line in record[1:])
+    has_traceback = any(line.startswith(TRACEBACK) for line in record[1:])
+    tail = raised(record) if has_traceback else (record[-1] if len(record) > 1 else "")
     recoverable = any(name in tail for name in RECOVERABLE_EXCEPTIONS) or any(
         code in body for code in RECOVERABLE_CODES
     )
@@ -236,10 +252,10 @@ def main() -> int:
         print(f"{bucket}: {len(found)}")
         for record in found[: args.show]:
             print(f"  {record[0][:200]}")
-            # The last line of a traceback names the exception; that is the part
+            # The line a traceback ends on names the exception; that is the part
             # worth showing next to the header.
-            if any(line.startswith("Traceback") for line in record[1:]):
-                print(f"      ...{record[-1][:160]}")
+            if exception := raised(record):
+                print(f"      ...{exception[:160]}")
         if len(found) > args.show:
             print(f"  ... and {len(found) - args.show} more")
         print()
