@@ -1687,7 +1687,7 @@ describe('hv-card-shell: mobile detail sheet', () => {
     name.dispatchEvent(new Event('input'));
     await settle(el);
 
-    (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-save"]') as HTMLButtonElement).click();
+    (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
     await settle(el);
     await settle(el);
   };
