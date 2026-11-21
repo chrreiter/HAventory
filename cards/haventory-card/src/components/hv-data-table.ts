@@ -60,6 +60,7 @@ export class HVDataTable extends LitElement {
         /* The row's metrics, which the sticky offsets below are built from. */
         --hv-table-gap: 8px;
         --hv-table-pad-x: 20px;
+        --hv-table-pad-y: 10px;
         /* The one scroll container, in both axes. The column template has a hard
            minimum wider than a phone, and a sticky cell resolves against the
            nearest scroll container, so one box for both is what makes the
@@ -82,10 +83,10 @@ export class HVDataTable extends LitElement {
         display: grid;
         gap: var(--hv-table-gap);
         align-items: center;
-        padding: 10px var(--hv-table-pad-x);
+        padding: var(--hv-table-pad-y) var(--hv-table-pad-x);
       }
       .head {
-        padding: 7px var(--hv-table-pad-x);
+        --hv-table-pad-y: 7px;
         border-bottom: 1px solid var(--hv-divider);
         font-size: 11.5px;
         font-weight: 500;
@@ -118,11 +119,27 @@ export class HVDataTable extends LitElement {
         color: var(--hv-primary-dark);
       }
       .row {
+        /* The containing block of the focus ring below. */
+        position: relative;
         border-bottom: 1px solid var(--hv-row-divider);
         font-size: 13.5px;
         color: var(--hv-text);
         /* A role=row div is the target, and gets no pointer from the button rule. */
         cursor: pointer;
+      }
+      /* An outline on the row paints beneath the pinned cells, which would hide
+         the ring's left side, so the ring is a layer above them. */
+      .row:focus-visible {
+        outline: none;
+      }
+      .row:focus-visible::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        outline: 2px solid var(--hv-primary);
+        outline-offset: -2px;
       }
       .row:hover {
         background: var(--hv-row-hover);
@@ -147,37 +164,49 @@ export class HVDataTable extends LitElement {
         white-space: nowrap;
       }
       /*
-       * On a phone the name column holds while the rest scrolls under it. The
-       * pinned cells carry the row's left padding and an opaque full-height
-       * fill, so nothing shifts and nothing shows through.
+       * The name column holds while the rest scrolls under it, at every width:
+       * the table is wider than its box on a laptop too, and the row's actions
+       * sit at its far end. The pinned cells carry the row's padding and an
+       * opaque full-height fill, so nothing shifts and nothing shows through,
+       * and the edge below runs unbroken from row to row.
        */
+      .name-head,
+      .name-cell,
+      .select-cell {
+        position: sticky;
+        left: 0;
+        z-index: 1;
+        align-self: stretch;
+        margin-block: calc(-1 * var(--hv-table-pad-y));
+        padding-block: var(--hv-table-pad-y);
+        margin-left: calc(-1 * var(--hv-table-pad-x));
+        padding-left: var(--hv-table-pad-x);
+        background: var(--hv-surface);
+      }
+      /* Behind the pinned checkbox track, carrying the gap between them. */
+      :host([selectable]) .name-head,
+      :host([selectable]) .name-cell {
+        left: calc(var(--hv-table-pad-x) + ${unsafeCSS(SELECT_COLUMN_WIDTH)});
+        margin-left: calc(-1 * var(--hv-table-gap));
+        padding-left: var(--hv-table-gap);
+      }
+      /* The row's wash as a layer over the pinned fill; the dark wash is
+         translucent, so a plain colour would lose the opacity. */
+      .row:hover .name-cell,
+      .row:hover .select-cell,
+      .row.selected .name-cell,
+      .row.selected .select-cell {
+        background-image: linear-gradient(var(--hv-row-hover), var(--hv-row-hover));
+      }
+      /* Scrolled sideways, an edge shows the cells passing under the name
+         rather than running into it. */
+      :host([panned]) .name-head,
+      :host([panned]) .name-cell {
+        box-shadow:
+          1px 0 0 var(--hv-divider),
+          4px 0 6px -3px light-dark(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.6));
+      }
       @media (max-width: 700px) {
-        .name-head,
-        .name-cell,
-        .select-cell {
-          position: sticky;
-          left: 0;
-          z-index: 1;
-          align-self: stretch;
-          margin-left: calc(-1 * var(--hv-table-pad-x));
-          padding-left: var(--hv-table-pad-x);
-          background: var(--hv-surface);
-        }
-        /* Behind the pinned checkbox track, carrying the gap between them. */
-        :host([selectable]) .name-head,
-        :host([selectable]) .name-cell {
-          left: calc(var(--hv-table-pad-x) + ${unsafeCSS(SELECT_COLUMN_WIDTH)});
-          margin-left: calc(-1 * var(--hv-table-gap));
-          padding-left: var(--hv-table-gap);
-        }
-        /* The row's wash as a layer over the pinned fill; the dark wash is
-           translucent, so a plain colour would lose the opacity. */
-        .row:hover .name-cell,
-        .row:hover .select-cell,
-        .row.selected .name-cell,
-        .row.selected .select-cell {
-          background-image: linear-gradient(var(--hv-row-hover), var(--hv-row-hover));
-        }
         /* A right-edge shade (scroll) that a cover at the content's end (local)
            hides once there is nothing further right. */
         :host {
@@ -368,8 +397,12 @@ export class HVDataTable extends LitElement {
 
   private _dayUnsub?: () => void;
 
-  /** Paging, off the host's own scroll, which does not bubble. */
+  /**
+   * Paging, off the host's own scroll, which does not bubble; and `panned`,
+   * which draws the pinned name column's edge while cells pass under it.
+   */
   private _onScroll = () => {
+    this.toggleAttribute('panned', this.scrollLeft > 0);
     this._emit('near-end', {
       ratio: (this.scrollTop + this.clientHeight) / Math.max(1, this.scrollHeight),
     });
