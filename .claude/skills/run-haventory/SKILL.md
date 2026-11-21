@@ -88,14 +88,19 @@ docker restart home-assistant
 ```
 
 A card-only change can skip the restart: copy just `haventory/www` into
-`/config/custom_components/haventory/` the same way and reload the page.
+`/config/custom_components/haventory/` the same way and hard-reload the page (see below).
 
-The integration serves the bundle itself at `/haventory_static/haventory-card.js`, with
-**no `Cache-Control` header**, so the browser revalidates and a rebuild is picked up on a
-normal reload; there is nothing to pin. To confirm the server has the new bytes:
+The integration serves the bundle itself at `/haventory_static/haventory-card.js`, with an
+`ETag` and `Last-Modified` and **no `Cache-Control` header**. A browser then applies
+heuristic freshness and can keep the entry it holds without asking the server, so a rebuild
+that kept the version (every dev deploy) is **not** reliably picked up on a normal reload.
+A release never meets this, because it changes the `?v=` the loaders register and the
+chunks are content-hashed. After a deploy, open a fresh
+browser context (the harness scripts do) or hard-reload (Ctrl+Shift+R). To confirm the server
+has the new bytes:
 
 ```bash
-curl -sI "$HA_BASE_URL/haventory_static/haventory-card.js" | grep -i cache-control   # no output
+curl -sI "$HA_BASE_URL/haventory_static/haventory-card.js" | grep -iE '^(etag|cache-control)'   # an ETag line, no Cache-Control line
 sha256sum custom_components/haventory/www/haventory-card.js
 curl -s "$HA_BASE_URL/haventory_static/haventory-card.js" | sha256sum   # must match
 ```
@@ -677,10 +682,11 @@ cd .claude/skills/run-haventory && node --test
   the wrong screen. That silent wrong-shape run is what discovery avoids by asking rather
   than assuming, and what `visual_pass.mjs`'s `d-layout` / `m-layout` checks catch when a
   `--path` override points a pass somewhere stale.
-- **A card change you can't see in the browser**: the bundle is served without
-  `Cache-Control`, so the browser revalidates and a plain reload is normally enough.
-  Check the deployed bytes with the `sha256sum` pair under Deploy before concluding the
-  fix didn't work; a hard reload (Ctrl+Shift+R) settles the rest.
+- **A card change you can't see in the browser**: the bundle is served with an `ETag` and no
+  `Cache-Control`, so a browser may keep serving the entry it already holds after a rebuild
+  that kept the version; a plain reload does not reliably refetch it. Check the deployed
+  bytes with the `sha256sum` pair under Deploy first, then use a hard reload (Ctrl+Shift+R)
+  or a fresh browser context before concluding the fix didn't work.
 - **`.storage/lovelace_resources` on disk lags the running instance by ~15 s.** HA's
   `Store` debounces its writes, so reading that file right after a restart shows the
   *previous* resource URL while the in-memory collection already serves the new one.

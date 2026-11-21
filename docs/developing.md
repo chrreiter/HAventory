@@ -201,8 +201,12 @@ names; `tests/test_frontend_registration.py` holds the two sides together.
 - On setup the integration registers the bundle as a Lovelace resource at
   `…/haventory-card.js?v=<version>`, and repoints an entry left at an older version rather
   than adding a second one.
-- A page open when the card is installed or rebuilt needs one ordinary reload: the resource
-  URL carries the version, and the bundle is served without a `Cache-Control` header.
+- A page open when the card is installed or updated needs one ordinary reload: the resource
+  URL carries the version, so a release is a new URL no cache can satisfy.
+- A rebuild that keeps the version is the exception, and it is yours alone, not a
+  household's. The bundle is served with an `ETag` and no `Cache-Control` header, so a
+  browser applies heuristic freshness and can keep the old entry through a normal reload.
+  Hard-reload (Ctrl+Shift+R) or open a fresh browser context after deploying one.
 
 How the card is built (the component map, the store, the shared `ui/` layer, the Home
 Assistant contact surface, the phone breakpoints and the known gaps) is

@@ -74,10 +74,12 @@ def test_the_frontend_wheel_matches_what_this_ha_release_asks_for() -> None:
 async def test_bundle_is_served_without_cache_control(
     hass: HomeAssistant, hass_client_no_auth: ClientSessionGenerator, setup_entry
 ) -> None:
-    """The static route serves the real bytes, and leaves revalidation on.
+    """The static route serves the real bytes with an ETag and no `Cache-Control`.
 
     A `Cache-Control` header here is the old `/local` failure mode: the browser
     keeps a stale card for as long as the header says, whatever the server has.
+    Without one a browser still applies heuristic freshness, which the versioned
+    URL and the hashed chunk names get around; see `_card_url`.
     """
     await setup_entry()
 
