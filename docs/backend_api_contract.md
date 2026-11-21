@@ -164,10 +164,10 @@ budget out and leaves the client to tell the user.
     `matching_count`. **The lists never shrink**: an entry the filter keeps nothing of is
     present at `matching_count: 0`, because the same payload feeds autocomplete and the
     organize dialog.
-  - Which dimensions to leave out of `filter` is the caller's decision. The card drops
-    `category` and `tags_any`/`tags_all` before sending: a facet priced against its own
-    selection reads 0 on every other row exactly when the user wants to see where else the
-    matches are.
+  - Which dimensions to leave out of `filter` is the caller's decision. The card leaves out
+    `categories` and `tags_any`/`tags_all` (it never sends the scalar `category`): a facet
+    priced against its own selection reads 0 on every other row exactly when the user wants
+    to see where else the matches are.
   - The `statuses` matching counts leave the filter's own `status` out, for the same reason;
     the `categories` and `tags` counts keep it, so a selected status still narrows them. The
     backend drops it because one request prices all three lists. A filter whose only key is
