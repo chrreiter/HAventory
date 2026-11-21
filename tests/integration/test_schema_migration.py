@@ -225,6 +225,60 @@ async def test_an_unreadable_schema_version_stops_the_entry_with_its_own_message
 
 
 @pytest.mark.parametrize(
+    ("stamp", "logged_as"),
+    [
+        pytest.param(FROM_A_NEWER_BUILD, str(FROM_A_NEWER_BUILD), id="newer_build"),
+        pytest.param(
+            max(PRE_COLLAPSE_SCHEMA_VERSIONS),
+            str(max(PRE_COLLAPSE_SCHEMA_VERSIONS)),
+            id="pre_collapse",
+        ),
+        pytest.param("4", "'4'", id="unreadable"),
+    ],
+)
+async def test_a_schema_refusal_is_one_line_naming_both_stamps(
+    hass: HomeAssistant,
+    hass_storage: dict,
+    caplog: pytest.LogCaptureFixture,
+    stamp: object,
+    logged_as: str,
+) -> None:
+    """The refusal is expected and carded in Repairs, so its line carries no traceback.
+
+    Core logs the `ConfigEntryError` with a traceback of its own ("Error setting
+    up entry"), on its own logger at boot and on the integration's on a reload.
+    That one stays, and stays one, because the refusal is not chained behind it.
+    """
+
+    caplog.set_level(logging.WARNING)
+    _seed_store(hass_storage, {"schema_version": stamp, "items": {}, "locations": {}})
+
+    await _setup_expecting_failure(hass)
+
+    loud = [
+        r
+        for r in caplog.records
+        if r.name.startswith("custom_components.haventory") or "haventory" in r.getMessage()
+    ]
+    ours = [
+        r
+        for r in loud
+        if r.name.startswith("custom_components.haventory")
+        and not r.getMessage().startswith("Error setting up entry")
+    ]
+    assert len(ours) == 1, [r.getMessage() for r in loud]
+    assert ours[0].levelno == logging.ERROR
+    assert ours[0].exc_info is None
+    message = ours[0].getMessage()
+    assert "op=setup_storage" in message
+    assert f"stored_schema_version={logged_as}" in message
+    assert f"supported_schema_version={CURRENT_SCHEMA_VERSION}" in message
+    assert f"storage_key={STORAGE_KEY}" in message
+    printed = "".join(logging.Formatter().formatException(r.exc_info) for r in loud if r.exc_info)
+    assert printed.count("Traceback (most recent call last)") <= 1, printed
+
+
+@pytest.mark.parametrize(
     ("stored", "says"),
     [
         # A payload that is not a mapping at all is a plain storage failure, not

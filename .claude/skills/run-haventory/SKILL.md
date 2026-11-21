@@ -608,12 +608,15 @@ uv run python .claude/skills/run-haventory/log_sweep.py --all --show 20
 Groups the container log into records (so a traceback stays with its header) and sorts them
 three ways: **BLOCKING**: an HAventory traceback, an `unknown_error`, or a
 client-recoverable code logged at ERROR; **EXPECTED**: the contract's WARNING rejections,
-which fuzz layers produce by the hundred; **KNOWN**: ERROR lines HA core writes on its own
-account for a rejection the integration already logged at WARNING: type-loose frames it
-rejects before `ws_guard` runs, a refused `haventory.*` service call (core's
-`call_service` logs every `HomeAssistantError` at ERROR, its own `ServiceValidationError`
-included) and the REST `/api/services` view's 500 for the same refusal, surfaced without
-failing the sweep, because no change in the integration can quiet them. Exits 1 on any
+which fuzz layers produce by the hundred, and the ERROR lines the policy prescribes (an
+operator-actionable storage error, and setup's one traceback-free line refusing a store);
+**KNOWN**: ERROR lines HA core writes on its own account for a rejection the integration
+already logged: type-loose frames it rejects before `ws_guard` runs, a refused
+`haventory.*` service call (core's `call_service` logs every `HomeAssistantError` at
+ERROR, its own `ServiceValidationError` included), the REST `/api/services` view's 500 for
+the same refusal, and core's "Error setting up entry", with a traceback, for the
+`ConfigEntryError` a refused setup raises, surfaced without failing the sweep, because no
+change in the integration can quiet them. Exits 1 on any
 blocking finding. Run it after every online layer: the test suite can pass while a running
 instance throws, which is how the `__slots__` bug was found.
 
@@ -631,9 +634,11 @@ uv run python .claude/skills/run-haventory/lifecycle_probe.py all --yes
 restarts, and asserts one entry survives **under the original resource id**; a second entry would load the card module twice and the second
 `customElements.define` would throw. `downgrade` writes a higher `schema_version`
 into the store and asserts the entry lands in `setup_error` (not `setup_retry`; retrying
-cannot teach this build a newer schema) with the payload untouched. `entry` removes the
-config entry, checks the resource went with it and the store did not, then re-adds through
-the config flow and checks exactly one resource comes back.
+cannot teach this build a newer schema) with the payload untouched. A log sweep afterwards
+finds one HAventory ERROR naming `stored_schema_version` and `supported_schema_version`
+with no traceback (EXPECTED), and core's "Error setting up entry" with one (KNOWN).
+`entry` removes the config entry, checks the resource went with it and the store did not,
+then re-adds through the config flow and checks exactly one resource comes back.
 
 `downgrade` and `entry` snapshot the store first and restore it on the way out, including
 on failure, but each subcommand restarts the container several times, so point it only at

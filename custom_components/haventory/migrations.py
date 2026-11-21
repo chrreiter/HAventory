@@ -31,7 +31,8 @@ def migrate(payload: dict[str, Any], *, from_version: int, to_version: int) -> d
     if from_version > to_version:
         raise SchemaDowngradeError(
             f"refusing to migrate schema version {from_version} down to {to_version}: "
-            "migrations are forward-only"
+            "migrations are forward-only",
+            stored_version=from_version,
         )
 
     data = deepcopy(payload)
