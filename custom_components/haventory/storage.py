@@ -83,14 +83,15 @@ def _empty_payload() -> dict[str, Any]:
     )
 
 
-def _corrupt_schema_version_message(value: object) -> str:
+def _corrupt_schema_version_error(value: object) -> CorruptSchemaVersionError:
     shown = repr(value)
     if len(shown) > _MAX_REPORTED_VERSION_CHARS:
         shown = shown[: _MAX_REPORTED_VERSION_CHARS - 1] + "…"
-    return (
+    return CorruptSchemaVersionError(
         f"stored data has a corrupt schema_version ({shown}); expected an integer. "
         "HAventory will not guess which schema this data uses. Repair the stored file "
-        "or restore a backup, then reload HAventory. The stored data was left unchanged."
+        "or restore a backup, then reload HAventory. The stored data was left unchanged.",
+        stored_version=shown,
     )
 
 
@@ -106,7 +107,7 @@ def read_schema_version(payload: Mapping[str, Any], *, missing: int) -> int:
         return missing
     value = payload["schema_version"]
     if isinstance(value, bool) or not isinstance(value, int):
-        raise CorruptSchemaVersionError(_corrupt_schema_version_message(value))
+        raise _corrupt_schema_version_error(value)
     return value
 
 
@@ -207,14 +208,6 @@ class DomainStore:
     async def async_save(self, data: dict[str, Any]) -> None:
         await self._store.async_save(_normalized(data, schema_version=self._schema_version))
 
-    def _log_context(self, from_version: int | None) -> dict[str, Any]:
-        return {
-            "op": "migrate",
-            "from_version": from_version,
-            "to_version": self._schema_version,
-            "storage_key": self.key,
-        }
-
     async def async_migrate_if_needed(self, raw: dict[str, Any]) -> dict[str, Any]:
         """Bring ``raw`` to the current schema, or refuse it without writing.
 
@@ -222,13 +215,15 @@ class DomainStore:
         already carrying it is handed on without touching the file. Raises
         ``SchemaDowngradeError`` for a version above the current one, naming
         the way out, and ``CorruptSchemaVersionError`` for an unreadable one.
+        Neither is logged here: each carries the stored stamp, and setup writes
+        the one line that names it beside this build's version.
         """
 
         if not isinstance(raw, dict):
             _LOGGER.error(
                 "Corrupted storage payload: expected dict, got %s",
                 type(raw).__name__,
-                extra=self._log_context(None),
+                extra={"op": "migrate", "storage_key": self.key},
             )
             raise StorageError("corrupted storage payload: not a dict")
 
@@ -239,27 +234,21 @@ class DomainStore:
             # only while the current one is 1. From schema 2 on, a store stamped
             # 2 through 9 is indistinguishable from a newer one.
             if to_version == 1 and from_version in migrations.PRE_COLLAPSE_SCHEMA_VERSIONS:
-                _LOGGER.error(
-                    "Refusing to load a store stamped before the schema collapse",
-                    extra=self._log_context(from_version),
-                )
                 raise SchemaDowngradeError(
                     f"stored data uses schema version {from_version}, which this build cannot "
                     f"read: it is neither the current schema ({to_version}) nor an older one "
                     "this build migrates forward, and no newer HAventory understands it either. "
                     "HAventory 0.8.x does: install 0.8.x, start Home Assistant once so it reads "
                     "and restamps the store, then upgrade again. The stored data was left "
-                    "unchanged."
+                    "unchanged.",
+                    stored_version=from_version,
                 )
-            _LOGGER.error(
-                "Refusing to load storage written by a newer schema version",
-                extra=self._log_context(from_version),
-            )
             raise SchemaDowngradeError(
                 f"stored data uses schema version {from_version}, which is newer than this "
                 f"build supports ({to_version}); HAventory will not downgrade it. "
                 "Upgrade HAventory to a version that understands this data, or restore a "
-                "backup taken with this version. The stored data was left unchanged."
+                "backup taken with this version. The stored data was left unchanged.",
+                stored_version=from_version,
             )
 
         if from_version == to_version:

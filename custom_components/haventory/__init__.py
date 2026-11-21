@@ -146,6 +146,12 @@ async def _async_load_repository(
     A newer or unreadable `schema_version`, or rows this build cannot read, each
     raise `ConfigEntryError` with a Repairs card; only the last is fixable. A
     store that cannot be read at all right now is transient and gets a retry.
+
+    A schema refusal is one ERROR line with no traceback: it is expected, the
+    stamps and the Repairs card say all an operator can act on, and Home
+    Assistant logs every `ConfigEntryError` with a traceback of its own. The
+    error is raised `from None`, or core's traceback would carry the refusal's
+    as well.
     """
 
     try:
@@ -154,21 +160,19 @@ async def _async_load_repository(
     except SchemaDowngradeError as exc:
         LOGGER.error(
             "Refusing to set up against storage whose schema version this build cannot read",
-            extra={"op": "setup_storage", "schema_version": store.schema_version},
-            exc_info=True,
+            extra=_schema_refusal_context(store, exc.stored_version),
         )
         create_refusal_issue(hass, ISSUE_SCHEMA_DOWNGRADE, exc, store_key=store.key)
         # ConfigEntryError, not ConfigEntryNotReady: retrying cannot teach this build
         # another schema, and the message reaches the user in the entry's error state.
-        raise ConfigEntryError(str(exc)) from exc
+        raise ConfigEntryError(str(exc)) from None
     except CorruptSchemaVersionError as exc:
         LOGGER.error(
             "Refusing to set up against storage whose schema_version is unreadable",
-            extra={"op": "setup_storage", "schema_version": store.schema_version},
-            exc_info=True,
+            extra=_schema_refusal_context(store, exc.stored_version),
         )
         create_refusal_issue(hass, ISSUE_CORRUPT_SCHEMA_VERSION, exc, store_key=store.key)
-        raise ConfigEntryError(str(exc)) from exc
+        raise ConfigEntryError(str(exc)) from None
     except StorageError as exc:
         LOGGER.error(
             "Storage validation failed during setup",
@@ -385,6 +389,17 @@ async def async_remove_entry(hass: HomeAssistant, _entry: ConfigEntry) -> None:
 
     await async_unregister_frontend_module(hass)
     await _async_teardown_entry(hass, op="remove", release_panel=True)
+
+
+def _schema_refusal_context(store: DomainStore, stored_version: object) -> dict[str, Any]:
+    """The context of a schema refusal's line: the stamp found and the one this build reads."""
+
+    return {
+        "op": "setup_storage",
+        "stored_schema_version": stored_version,
+        "supported_schema_version": store.schema_version,
+        "storage_key": store.key,
+    }
 
 
 def _log_storage_health(payload: dict[str, Any], *, schema_version: int) -> None:

@@ -152,11 +152,23 @@ class SchemaDowngradeError(StorageError):
     """Raised when persisted data carries a schema version this build cannot read.
 
     Not transient: callers stop and leave the stored payload untouched.
+    ``stored_version`` is the stamp the data carries, so the caller's log line
+    can name it beside the version this build supports.
     """
+
+    def __init__(self, message: str, *, stored_version: int | None = None) -> None:
+        super().__init__(message)
+        self.stored_version = stored_version
 
 
 class CorruptSchemaVersionError(StorageError):
     """Raised when persisted data carries a ``schema_version`` that is not an integer.
 
     Not transient either: callers stop and leave the payload for a human to repair.
+    ``stored_version`` is the stamp's ``repr`` as the message quotes it, so
+    ``"4"`` reads differently from ``4``.
     """
+
+    def __init__(self, message: str, *, stored_version: str | None = None) -> None:
+        super().__init__(message)
+        self.stored_version = stored_version
