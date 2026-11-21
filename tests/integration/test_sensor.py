@@ -99,6 +99,33 @@ async def test_every_sensor_lands_on_one_device(hass: HomeAssistant, setup_entry
         assert not state.attributes["friendly_name"].endswith("HAventory ")
 
 
+async def test_the_device_names_no_model(hass: HomeAssistant, setup_entry) -> None:
+    """The device page prints the model as stored, in no language but the one written."""
+
+    entry = await setup_entry()
+
+    (device,) = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
+    assert device.manufacturer == "HAventory"
+    assert device.model is None
+
+
+async def test_a_stored_model_is_cleared_on_the_next_setup(
+    hass: HomeAssistant, setup_entry
+) -> None:
+    """An omitted field is left as stored, so an upgraded install needs the explicit clear."""
+
+    entry = await setup_entry()
+    device_registry = dr.async_get(hass)
+    (device,) = dr.async_entries_for_config_entry(device_registry, entry.entry_id)
+    device_registry.async_update_device(device.id, model="Inventory")
+    assert device_registry.async_get(device.id).model == "Inventory"
+
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert device_registry.async_get(device.id).model is None
+
+
 async def test_items_total_moves_on_a_service_call_with_no_polling(
     hass: HomeAssistant, setup_entry
 ) -> None:

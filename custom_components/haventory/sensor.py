@@ -101,7 +101,12 @@ def device_info(entry: ConfigEntry) -> DeviceInfo:
         identifiers={(DOMAIN, entry.entry_id)},
         name="HAventory",
         manufacturer="HAventory",
-        model="Inventory",
+        # No model line: the device page prints it as stored and the registry has
+        # no translation for it, so any word would read English on a German
+        # install. `None` rather than an omitted key, because the registry leaves
+        # an omitted field as stored and a device registered with a model would
+        # keep showing it.
+        model=None,
         sw_version=INTEGRATION_VERSION,
         entry_type=DeviceEntryType.SERVICE,
     )
