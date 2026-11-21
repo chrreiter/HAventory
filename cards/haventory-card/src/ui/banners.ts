@@ -28,6 +28,12 @@ export interface BannerHooks {
   store: Store | undefined;
   /** Re-read everything. */
   onRefresh: () => void;
+  /**
+   * "View latest" brought the server's copy of this item in: a form open on it
+   * starts over from that copy. A failed re-read never calls it, so typing is
+   * dropped only for something newer to show.
+   */
+  onLatestShown: (itemId: string) => void;
 }
 
 /** Conditions that make the surface untrustworthy, with the re-read on offer. */
@@ -116,7 +122,10 @@ export function renderErrorBanners(st: StoreState | null, hooks: BannerHooks): T
                   class="hv-pill outline"
                   data-testid="banner-view-latest"
                   @click=${() => {
-                    void store?.refreshItem(e.itemId!);
+                    const itemId = e.itemId!;
+                    void store?.refreshItem(itemId).then((landed) => {
+                      if (landed) hooks.onLatestShown(itemId);
+                    });
                     store?.dismissError(e.id);
                   }}
                 >

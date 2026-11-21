@@ -59,6 +59,7 @@ const QTY_HINT_ID = 'sheet-qty-hint';
  * - **In**: `item` and `open`; the store slices the read view and the form
  *   read; `busy` and `errorMessage` for the save in flight. A save that settles
  *   without an error lands on the read view; a refused one leaves the form up.
+ *   `formGeneration` moving rebuilds an open form from `item`.
  * - **Out**: `save` (the editor's own detail), `increment` / `decrement`,
  *   `check-in`, `check-out-confirmed` and `set-due-date` with the date,
  *   `reminder-bump` and `request-delete`, each carrying `itemId`, and `cancel`
@@ -442,6 +443,8 @@ export class HVDetailSheet extends LitElement {
   @property({ attribute: false }) confirmDiscard: ConfirmDiscard | null = null;
   @property({ type: Boolean }) busy = false;
   @property({ type: String }) errorMessage: string | null = null;
+  /** Moved by the host to rebuild the open form from `item`, dropping its typing ("View latest"). */
+  @property({ type: Number }) formGeneration = 0;
 
   /** The status vocabulary from `haventory/config`; the built-ins stand in until it answers. */
   @property({ attribute: false }) statuses: StatusDefinition[] | null = null;
@@ -876,9 +879,9 @@ export class HVDetailSheet extends LitElement {
         </button>
         <span class="heading">${t('hv.action.editItem')}</span>
       </div>
-      <!-- Keyed by item id: a different item is a new form. -->
+      <!-- Keyed by item id and generation: a different item, or a moved generation, is a new form. -->
       ${keyed(
-        item.id,
+        `${item.id}:${this.formGeneration}`,
         html`<hv-item-editor
         .statuses=${this.statuses}
         .areas=${this.areas}

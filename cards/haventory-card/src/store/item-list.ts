@@ -366,11 +366,14 @@ export class ItemList {
     return this.ws.signPath(path, expires);
   }
 
-  async refreshItem(itemId: string) {
+  /** True once the server's copy is in the list; a refusal is queued instead. */
+  async refreshItem(itemId: string): Promise<boolean> {
     try {
       this.applyOptimistic(await this.run(() => this.ws.getItem(itemId)));
+      return true;
     } catch (err) {
       this.pushError(err);
+      return false;
     }
   }
 

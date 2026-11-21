@@ -57,6 +57,11 @@ interface WorkspaceState {
   detailItemId: string | null;
   /** Item whose check-out / due-date step is open, with where to anchor it. */
   checkout: Checkout | null;
+  /**
+   * Per item, how often `showLatest` started its form over. Part of the form's
+   * key, so a bump is a new form, built from the item as it now stands.
+   */
+  formResets: Readonly<Record<string, number>>;
 }
 
 /**
@@ -90,6 +95,7 @@ export class ItemWorkspace implements ReactiveController {
       pinnedItem: null,
       detailItemId: null,
       checkout: null,
+      formResets: {},
     });
     host.addController(this);
   }
@@ -111,6 +117,11 @@ export class ItemWorkspace implements ReactiveController {
   /** The last copy of the row being edited, kept while a refetch drops it. */
   get pinnedItem(): Item | null {
     return this.ui.value.pinnedItem;
+  }
+
+  /** The `showLatest` counts; a new object on every bump. */
+  get formResets(): Readonly<Record<string, number>> {
+    return this.ui.value.formResets;
   }
 
   hostConnected(): void {
@@ -220,6 +231,25 @@ export class ItemWorkspace implements ReactiveController {
     this.ui.set({ detailItemId: null, editorError: null });
   }
 
+  /**
+   * "View latest" brought the server's copy of `itemId` in. A form open on it,
+   * inline or in the read sheet, starts over from that copy, without its typing
+   * or the refused save's message. A form on another item keeps both.
+   */
+  showLatest(itemId: string): void {
+    const { editing, detailItemId, formResets } = this.ui.value;
+    if (editing !== itemId && detailItemId !== itemId) return;
+    this.ui.set({
+      formResets: { ...formResets, [itemId]: (formResets[itemId] ?? 0) + 1 },
+      editorError: null,
+    });
+  }
+
+  /** How often `showLatest` started `itemId`'s form over; the form is keyed on it. */
+  private formGeneration(itemId: string): number {
+    return this.ui.value.formResets[itemId] ?? 0;
+  }
+
   /** A confirmed delete: close whatever still points at the item. */
   forgetItem(itemId: string): void {
     const { editing, detailItemId } = this.ui.value;
@@ -326,13 +356,14 @@ export class ItemWorkspace implements ReactiveController {
 
   /**
    * The edit form. `noHeader` is for the phone add sheet, which draws its own title bar.
-   * Keyed by item id: a different item, or a create's hop to a real id, is a new form.
+   * Keyed by item id and `showLatest` count: a different item, a create's hop to
+   * a real id, or a "View latest" is a new form.
    */
   renderEditor(opts: SurfaceOptions & { noHeader?: boolean }): unknown {
     const st = this.st;
     const item = this.editorItem;
     return keyed(
-      item?.id ?? null,
+      item ? `${item.id}:${this.formGeneration(item.id)}` : null,
       html`<hv-item-editor
       .statuses=${st?.statuses ?? null}
       data-testid=${opts.testid}
@@ -379,6 +410,7 @@ export class ItemWorkspace implements ReactiveController {
       .confirmDiscard=${this.hooks.confirmDiscard()}
       .busy=${this.editorBusy}
       .errorMessage=${this.editorError}
+      .formGeneration=${detailItemId ? this.formGeneration(detailItemId) : 0}
       @cancel=${() => this.closeDetail()}
       @increment=${(e: HvEvent<'hv-detail-sheet', 'increment'>) => this.onRowEvent('increment', e.detail)}
       @decrement=${(e: HvEvent<'hv-detail-sheet', 'decrement'>) => this.onRowEvent('decrement', e.detail)}

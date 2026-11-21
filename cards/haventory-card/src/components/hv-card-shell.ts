@@ -346,6 +346,7 @@ export class HVCardShell extends LitElement {
       this._workspace.media,
       this._workspace.editorBusy,
       this._workspace.editorError,
+      this._workspace.formResets,
     ];
     if (next.some((value, i) => value !== this._editorInputs[i])) {
       this._editorInputs = next;
@@ -680,9 +681,13 @@ export class HVCardShell extends LitElement {
     `;
   }
 
-  /** What the shared banner stacks act through; Reconnect and Refresh are ours. */
+  /** What the shared banner stacks act through; Reconnect, Refresh and the open forms are ours. */
   private get _bannerHooks(): BannerHooks {
-    return { store: this.store, onRefresh: () => void this.surfaces.refresh() };
+    return {
+      store: this.store,
+      onRefresh: () => void this.surfaces.refresh(),
+      onLatestShown: (itemId) => this._workspace.showLatest(itemId),
+    };
   }
 
   private get _filterPanel(): HVFilterPanel | null {

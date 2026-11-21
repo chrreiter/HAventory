@@ -558,7 +558,8 @@ export class Store {
     this.errors.dismiss(id);
   }
 
-  async refreshItem(itemId: string) {
+  /** True once the server's copy is in the list; a refusal is queued instead. */
+  async refreshItem(itemId: string): Promise<boolean> {
     return this.list.refreshItem(itemId);
   }
 

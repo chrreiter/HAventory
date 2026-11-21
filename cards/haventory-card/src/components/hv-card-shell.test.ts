@@ -11,6 +11,7 @@ import {
   stubElementWidth,
   stubViewport,
 } from '../test.utils';
+import type { MockHass } from '../test.utils';
 import { discardPrompt } from '../ui/discard';
 import { SEARCH_DEBOUNCE_MS } from '../ui/filter-chrome';
 import { addDays, toIsoDate } from '../ui/relative-time';
@@ -863,6 +864,121 @@ describe('hv-card-shell: banners', () => {
       'storage_error',
     );
     expect(sr.querySelector('[data-testid="banner-view-latest"]')).toBe(null);
+  });
+});
+
+// Two members on one item, and this card's save lost the race. "View latest" is
+// how its member sees what the other one wrote, so the open form shows that,
+// not the refused typing under the newer version number.
+describe('hv-card-shell: View latest starts the open form over', () => {
+  const list = (sr: ShadowRoot) => sr.querySelector('hv-list') as HTMLElement;
+  const sheet = (sr: ShadowRoot) => sr.querySelector('[data-testid="card-detail-sheet"]') as HTMLElement;
+  /** Item 1's row, whatever order the list puts it in. */
+  const rowOne = (sr: ShadowRoot) =>
+    [...(list(sr).shadowRoot?.querySelectorAll('hv-list-row') ?? [])].find(
+      (r) => (r as HTMLElement & { item: Item }).item.id === '1',
+    ) as HTMLElement;
+  const field = <T extends HTMLElement = HTMLInputElement>(form: HTMLElement | null, testid: string) =>
+    (form?.shadowRoot?.querySelector(`[data-testid="${testid}"]`) as T | null) ?? null;
+
+  /** The card's two forms on an item: the row's expander, and the phone's sheet. */
+  const hosts = [
+    {
+      host: 'the wide inline editor',
+      mobile: false,
+      open: async (el: HVCardShell, sr: ShadowRoot) => {
+        (rowOne(sr).shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+        await settle(el);
+      },
+      form: (sr: ShadowRoot) => list(sr).shadowRoot?.querySelector('hv-item-editor') as HTMLElement | null,
+    },
+    {
+      host: 'the phone edit sheet',
+      mobile: true,
+      open: async (el: HVCardShell, sr: ShadowRoot) => {
+        (rowOne(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+        await settle(el);
+        (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+        await settle(el);
+      },
+      form: (sr: ShadowRoot) =>
+        sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-editor"]') as HTMLElement | null,
+    },
+  ];
+  const [inline] = hosts as [(typeof hosts)[number]];
+
+  const typeName = async (el: HVCardShell, form: HTMLElement | null, value: string) => {
+    const name = field(form, 'editor-name')!;
+    name.value = value;
+    name.dispatchEvent(new Event('input'));
+    await settle(el);
+  };
+
+  const save = async (el: HVCardShell, form: HTMLElement | null) => {
+    field<HTMLButtonElement>(form, 'editor-save')!.click();
+    await settle(el);
+    await settle(el);
+  };
+
+  const viewLatest = async (el: HVCardShell, sr: ShadowRoot) => {
+    (sr.querySelector('[data-testid="banner-view-latest"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+  };
+
+  it.each(hosts)('shows the newer version in $host, with no error', async ({ mobile, open, form }) => {
+    const { el, hass, sr } = await mountShell({
+      items: [makeItem({ id: '1', name: 'Old', version: 4 })],
+      mobile,
+    });
+    await open(el, sr);
+    await typeName(el, form(sr), 'Mine');
+    hass.__setConflict(true);
+    await save(el, form(sr));
+    expect(field(form(sr), 'editor-error')?.textContent).toContain('Someone else changed this item');
+
+    // What the other member saved, which reached the server but not this card.
+    hass.__setConflict(false);
+    hass.__setItems([makeItem({ id: '1', name: 'Theirs', version: 5 })]);
+    await viewLatest(el, sr);
+
+    expect(field(form(sr), 'editor-name')?.value).toBe('Theirs');
+    expect(field(form(sr), 'editor-error')).toBe(null);
+  });
+
+  // The typing goes only in exchange for something newer to show.
+  it.each([
+    {
+      when: 'the re-read fails',
+      provoke: async (el: HVCardShell, store: Store, hass: MockHass, sr: ShadowRoot) => {
+        hass.__setConflict(true);
+        await save(el, inline.form(sr));
+        store['ws'].getItem = async () => {
+          throw new Error('socket closed');
+        };
+      },
+    },
+    {
+      when: 'the banner is about another item',
+      provoke: async (el: HVCardShell, store: Store) => {
+        store['pushError'](
+          { code: 'conflict', message: 'version conflict' },
+          { itemId: '2', changes: { name: 'B' } },
+        );
+        await settle(el);
+      },
+    },
+  ])('keeps the typing when $when', async ({ provoke }) => {
+    const { el, store, hass, sr } = await mountShell({
+      items: [makeItem({ id: '1', name: 'Old' }), makeItem({ id: '2', name: 'Other' })],
+    });
+    await inline.open(el, sr);
+    await typeName(el, inline.form(sr), 'Mine');
+    await provoke(el, store, hass, sr);
+
+    await viewLatest(el, sr);
+
+    expect(field(inline.form(sr), 'editor-name')?.value).toBe('Mine');
   });
 });
 
