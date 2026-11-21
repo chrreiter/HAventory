@@ -506,6 +506,62 @@ describe('hv-list-row: mobile affordances', () => {
   });
 });
 
+// Both hosts set --hv-tap-min to 44px on a phone, which would make the stepper
+// the tallest thing in the row, so its buttons take their own size. jsdom does
+// not evaluate shadow-DOM CSS, so these read the stylesheet the element ships.
+describe('hv-list-row: the phone stepper’s size', () => {
+  async function rowCss() {
+    const el = await mount({}, { mobile: true });
+    const styles = (customElements.get('hv-list-row') as typeof HVListRow).styles;
+    const sheets = Array.isArray(styles) ? styles : [styles];
+    const own = sheets
+      .map((s) => String(s.cssText).replace(/\s+/g, ' '))
+      .find((c) => c.includes('.stepper button {'));
+    expect(el.hasAttribute('mobile')).toBe(true);
+    expect(own, 'the row’s own block').toBeTruthy();
+    return own as string;
+  }
+
+  /** The body of the first rule whose selector is exactly `selector`. */
+  function body(css: string, selector: string) {
+    const start = css.indexOf(`${selector} {`);
+    expect(start, selector).toBeGreaterThanOrEqual(0);
+    return css.slice(css.indexOf('{', start) + 1, css.indexOf('}', start));
+  }
+
+  it('gives the buttons their own 32px, not the host’s tap minimum', async () => {
+    const css = await rowCss();
+    const buttons = body(css, ':host([mobile]) .stepper button');
+
+    expect(buttons).toMatch(/width: var\(--hv-row-step\)/);
+    expect(buttons).toMatch(/height: var\(--hv-row-step\)/);
+    expect(buttons).not.toContain('--hv-tap-min');
+    expect(body(css, ':host([mobile])')).toContain('--hv-row-step: 32px');
+  });
+
+  it('sizes the number for the smaller pill', async () => {
+    const qty = body(await rowCss(), ':host([mobile]) .qty');
+
+    expect(qty).toContain('min-width: 24px');
+    expect(qty).toContain('font-size: 14px');
+  });
+
+  it('gives Check in the stepper’s height, so a checked-out row is no taller', async () => {
+    const outButton = body(await rowCss(), ':host([mobile]) .check-in');
+
+    // 32px buttons inside the pill's two 1px border edges.
+    expect(outButton).toContain('min-height: calc(var(--hv-row-step) + 2px)');
+    expect(outButton).not.toContain('--hv-tap-min');
+  });
+
+  it('leaves the desktop stepper at 28px', async () => {
+    const buttons = body(await rowCss(), '.stepper button');
+
+    expect(buttons).toContain('width: 28px');
+    expect(buttons).toContain('height: 28px');
+  });
+});
+
 // An ellipsis only ever replaces text, and the area pill in the middle of this
 // line is an atomic box: a checked-out row with an overdue date left it no room
 // and it was cut where the edge fell — "Living Ro" — while every other row on

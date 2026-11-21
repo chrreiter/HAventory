@@ -233,10 +233,18 @@ export class HVListRow extends LitElement {
         color: var(--hv-text-secondary);
         padding: 0;
       }
-      /* Real size, not an expanded hit area that would overlap the neighbour. */
+      /*
+       * The phone stepper takes its own size rather than the host's
+       * --hv-tap-min: a 44px target would make it the tallest thing in the row
+       * and set every row's height. Real size, not an expanded hit area that
+       * would overlap the neighbour.
+       */
+      :host([mobile]) {
+        --hv-row-step: 32px;
+      }
       :host([mobile]) .stepper button {
-        width: var(--hv-tap-min, 34px);
-        height: var(--hv-tap-min, 34px);
+        width: var(--hv-row-step);
+        height: var(--hv-row-step);
       }
       .stepper button:hover:not([disabled]) {
         background: var(--hv-hover-overlay);
@@ -245,6 +253,10 @@ export class HVListRow extends LitElement {
         min-width: 26px;
         text-align: center;
         font: 500 13px var(--hv-font);
+      }
+      :host([mobile]) .qty {
+        min-width: 24px;
+        font-size: 14px;
       }
       .qty.low {
         color: var(--hv-warn);
@@ -263,8 +275,9 @@ export class HVListRow extends LitElement {
       .check-in:hover {
         background: var(--hv-hover-overlay);
       }
+      /* The stepper's height: its buttons plus the 1px border at top and bottom. */
       :host([mobile]) .check-in {
-        min-height: var(--hv-tap-min, 40px);
+        min-height: calc(var(--hv-row-step) + 2px);
         padding: 0 18px;
         font-size: 13.5px;
       }
