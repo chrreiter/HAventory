@@ -23,7 +23,15 @@ import {
   statusLabel,
   statusList,
 } from '../ui/status';
-import { errorText, organizeTab, renderFailure, renderFooter, renderToolbar, reveal } from '../ui/organize-tab';
+import {
+  errorText,
+  organizeTab,
+  renderFailure,
+  renderFooter,
+  renderToolbar,
+  reveal,
+  selectChevron,
+} from '../ui/organize-tab';
 import { SliceWatch } from '../ui/slice-watch';
 import type { Store } from '../store/store';
 import type { StatusColorValue, StatusDefinition, StoreState } from '../store/types';
@@ -217,9 +225,8 @@ export class HVOrganizeStatuses extends LitElement {
       .guard-target > span {
         flex: none;
       }
-      .guard-target select.control {
+      .guard-target .hv-select {
         flex: 1 1 auto;
-        width: auto;
         min-width: 140px;
       }
       /* A step softer than .failure: the household may go ahead regardless. */
@@ -614,16 +621,19 @@ export class HVOrganizeStatuses extends LitElement {
           inUse
             ? html`<label class="guard-target">
               <span>${t('hv.organize.moveThoseItemsTo')}</span>
-              <select
-                class="control"
-                data-testid="status-reassign"
-                .value=${this._reassignTarget}
-                @change=${(e: Event) => {
-                  this._reassignTarget = (e.target as HTMLSelectElement).value;
-                }}
-              >
-                ${targets.map((d) => html`<option value=${d.slug}>${displayLabel(d)}</option>`)}
-              </select>
+              <span class="hv-select">
+                <select
+                  class="control"
+                  data-testid="status-reassign"
+                  .value=${this._reassignTarget}
+                  @change=${(e: Event) => {
+                    this._reassignTarget = (e.target as HTMLSelectElement).value;
+                  }}
+                >
+                  ${targets.map((d) => html`<option value=${d.slug}>${displayLabel(d)}</option>`)}
+                </select>
+                ${selectChevron()}
+              </span>
             </label>`
             : null
         }
