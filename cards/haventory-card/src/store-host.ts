@@ -16,15 +16,16 @@ function themeChanged(prev: HassLike | undefined, next: HassLike | undefined): b
  * ahead of it and the active theme published.
  *
  * This class is in the eager entry; the store, the catalogs and the elements a
- * host renders are in the lazy runtime. Until that has loaded, a host renders
- * nothing, so its first render is already in the user's language.
+ * host renders are in the lazy runtime. Until that has loaded, a host draws its
+ * placeholder, which holds no word from the catalogs, so the first text the
+ * card writes is already in the user's language.
  */
 export abstract class StoreHostElement extends LitElement {
   protected store?: Store;
   private _storeUnsub?: () => void;
   private _hass?: HassLike;
   private _schemeFrame?: number;
-  /** Set once `runtimeReady` has run, which is what a host's render relies on. */
+  /** Set once `runtimeReady` has run, which is what `renderReady` relies on. */
   private _ready = false;
 
   get hass(): HassLike | undefined {
@@ -33,7 +34,8 @@ export abstract class StoreHostElement extends LitElement {
 
   /**
    * Home Assistant assigns a fresh `hass` on every state change anywhere in the
-   * instance, so this does no style work unless the theme moved.
+   * instance, so this does no style work unless the theme moved, and redraws a
+   * placeholder only when Home Assistant's own catalog did.
    */
   set hass(h: HassLike | undefined) {
     const prev = this._hass;
@@ -43,6 +45,8 @@ export abstract class StoreHostElement extends LitElement {
       // Ahead of the store, so the first render is already in the user's language.
       if (rt.setLanguage(h?.language)) this.requestUpdate();
       if (h && !this.store) this._openStore(rt, h);
+    } else if (prev?.localize !== h?.localize) {
+      this.requestUpdate();
     }
     if (themeChanged(prev, h)) this._scheduleColorScheme();
   }
@@ -71,12 +75,30 @@ export abstract class StoreHostElement extends LitElement {
     this._schemeFrame = undefined;
   }
 
-  /** Nothing to draw with until the runtime has defined the elements a host renders. */
-  protected override shouldUpdate(changed: Map<PropertyKey, unknown>): boolean {
-    return this._ready && super.shouldUpdate(changed);
+  /**
+   * What the host draws once the runtime has defined its elements. The
+   * placeholder's template is a different one, so the update that flips
+   * `_ready` replaces the one tree with the other and paints no frame between.
+   */
+  protected abstract renderReady(): unknown;
+
+  /**
+   * What the host draws until then, from what the entry loads eagerly: no `hv-*`
+   * element and no catalog text, since both are in the runtime.
+   */
+  protected abstract renderPlaceholder(): unknown;
+
+  protected override render(): unknown {
+    return this._ready ? this.renderReady() : this.renderPlaceholder();
   }
 
-  /** A host's own setup that needs the runtime; runs once, before its first render. */
+  /** `:host([loading])` is how a host's styles size its placeholder. */
+  protected override willUpdate(changed: Map<PropertyKey, unknown>): void {
+    super.willUpdate(changed);
+    this.toggleAttribute('loading', !this._ready);
+  }
+
+  /** A host's own setup that needs the runtime; runs once, before `renderReady`. */
   protected runtimeReady?(rt: Runtime): void;
 
   private _onRuntime(rt: Runtime): void {

@@ -58,8 +58,9 @@ HA's custom-panel loader instantiates for the sidebar page. It renders
 Both take their store lifecycle from `StoreHostElement` (`src/store-host.ts`), which they
 extend: the `hass` setter that sets the language before anything renders and builds the
 store from the first object, the subscription that survives a disconnect and comes back with
-the element, the wait for the runtime, and the `color-scheme` publish. What each one adds is
-what it renders and what configuration it reads.
+the element, the wait for the runtime and the placeholder drawn during it, and the
+`color-scheme` publish. What each one adds is what it renders (`renderReady`,
+`renderPlaceholder`) and what configuration it reads.
 
 `src/haventory-card-editor.ts` defines `haventory-card-editor`, the third HA-facing
 element. It is part of the runtime, and `getConfigElement` creates it by tag. It renders one
@@ -114,12 +115,12 @@ The build writes four files into `custom_components/haventory/www/`:
 
 | File | Size | Holds |
 |---|---|---|
-| `haventory-card.js` | about 1.5 kB | The entry. Its name is fixed: it is the one URL the loaders get, with `?v=<version>`. |
-| `chunks/core-<hash>.js` | about 25 kB | Lit, `StoreHostElement`, the two host elements and everything else the entry imports statically. |
-| `chunks/runtime-<hash>.js` | about 550 kB | `src/runtime.ts` and its graph: the store, both language catalogs, every `hv-*` element, the card editor and `HostSurfaces`. |
+| `haventory-card.js` | about 3 kB | The entry, the card's host and its placeholder. Its name is fixed: it is the one URL the loaders get, with `?v=<version>`. |
+| `chunks/core-<hash>.js` | about 28 kB | Lit, `StoreHostElement`, the panel's host and its placeholder, and everything else the entry imports statically. |
+| `chunks/runtime-<hash>.js` | about 560 kB | `src/runtime.ts` and its graph: the store, both language catalogs, every `hv-*` element, the card editor and `HostSurfaces`. |
 | `chunks/manifest.json` | | The Vite manifest, which names the chunks of this build. |
 
-A page with no HAventory element loads the entry and the core, about 26.5 kB (about 10 kB
+A page with no HAventory element loads the entry and the core, about 31 kB (about 12 kB
 gzipped). The runtime downloads when the first card, panel or editor connects: they share
 one promise (`src/runtime-loader.ts`), and once it has settled `loadedRuntime()` returns the
 module synchronously.
@@ -128,9 +129,35 @@ module synchronously.
 `window.customCards` entry, the brand icon set (`window.customIcons`, which draws the
 sidebar icon on pages with no card), and the `haventory-card` and `haventory-panel`
 definitions. Both are defined the moment the entry runs, so HA never shows its "custom
-element doesn't exist" error card for them. A host renders nothing until the runtime is in
-(`shouldUpdate`), so its first render is already in the user's language. Nothing in the entry's static graph may import a value from
+element doesn't exist" error card for them. Nothing in the entry's static graph may import a value from
 `src/runtime.ts` or below it; a type import is free.
+
+**Until the runtime is in, a host draws a placeholder** (`renderPlaceholder`, chosen in
+`StoreHostElement.render`). On a slow link the runtime is seconds of download after the
+element connects, and a blank there reads as a broken card. The placeholder is built from
+the core alone: no `hv-*` element and no word from the catalogs, so the first text the card
+writes is still in the user's language. It paints with `ui/host-tokens`, the six tokens
+`ui/tokens` takes from it, so its frame and the tree that replaces it bind one surface. The
+update that flips the host to ready replaces the placeholder with the real tree; no frame
+between them is empty, and a host that connects once the runtime is in never draws one.
+
+- **The card** draws `hv-card-shell`'s frame and its header row, holding the dashboard's
+  `title:` and nothing else (no title, no text: the integration's title and the default
+  arrive with the store), over an empty `aria-busy` body. The row is 60px, or 68px at the
+  width where the shell turns mobile, which a container query on the host finds. While it
+  waits the host carries `loading`, and `:host([loading])` is `height: 100%` and that
+  container (only then: a size container would be the containing block for the real tree's
+  `position: fixed` surfaces). In a sections view 100% is the cell `getGridOptions` sized,
+  the nearest block ancestor with a definite height, since HA's `hui-card` wrapper between
+  them is inline. Anywhere else 100% is auto, and the body's flex basis makes the
+  placeholder `getCardSize()` × 50px tall, HA's masonry unit.
+- **The panel** draws its own placeholder rather than the card's, because it stands in for
+  a different shape: the app bar's first row in `--hv-primary`, with the registration's
+  title (the one the real bar shows), over an empty page. When `narrow`, the bar carries the
+  sidebar toggle, sending `hass-toggle-menu` as the real bar does. Its name comes from Home
+  Assistant's own catalog (`hass.localize('ui.sidebar.sidebar_toggle')`, the key HA's
+  `ha-menu-button` reads), and without a name there is no button. The host redraws the
+  placeholder for a new `hass.localize`, compared by identity, and for no other `hass`.
 
 **The core is its own chunk.** A chunk that imported the entry would reach it by its bare
 URL, without `?v=`. The browser treats that as a different module, so the entry would run
@@ -160,10 +187,11 @@ further file, which is why the runtime is one chunk.
 ## The Home Assistant contact surface
 
 `src/ha-contract.ts` is the one module that names what the card asks of Home Assistant, and
-the file to open when an upgrade breaks something: the `HassLike` shape (whose `themes` and
-`selectedTheme` the hosts compare by identity and never read into), thin wrappers for
-`callWS` and `connection.subscribeMessage`, the `window.customCards` picker registration,
-and the theme variables the card binds. `store/ws.ts` is the only caller of the two
+the file to open when an upgrade breaks something: the `HassLike` shape (whose `themes`,
+`selectedTheme` and `localize` the hosts compare by identity), thin wrappers for
+`callWS` and `connection.subscribeMessage`, `sidebarToggleLabel` (the one key the card reads
+from Home Assistant's own catalog, for the panel's placeholder), the `window.customCards`
+picker registration, and the theme variables the card binds. `store/ws.ts` is the only caller of the two
 WebSocket wrappers; `index.ts` is the only caller of the registration; `ui/theme.ts` reads
 `SURFACE_VARS` from here to classify the surface the card is painted on.
 

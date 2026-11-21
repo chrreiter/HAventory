@@ -1,32 +1,31 @@
 import { css } from 'lit';
+import { hostTokens } from './host-tokens';
 
 /**
  * Design tokens. Each binds the HA theme variable first, with a fallback; those
  * with no HA equivalent carry a `light-dark()` pair, resolved by the
  * `color-scheme` the host publishes (`ui/theme.ts`), not by the OS preference.
+ * The surface, text, divider, primary, card radius and font are `hostTokens`.
  *
  * Usage: `static styles = [tokens, css\`...\`]`; it only declares `:host` properties.
  */
 export const tokens = css`
+  ${hostTokens}
   :host {
     /* Surfaces */
-    --hv-surface: var(--card-background-color, var(--ha-card-background, light-dark(#fff, #1c1c1c)));
     --hv-surface-raised: light-dark(#f5f5f5, #232323);
     --hv-page: var(--primary-background-color, light-dark(#fafafa, #111));
     --hv-scrim: rgba(0, 0, 0, 0.5);
 
     /* Text */
-    --hv-text: var(--primary-text-color, light-dark(#212121, #e1e1e1));
     --hv-text-secondary: var(--secondary-text-color, light-dark(#727272, #9b9b9b));
     --hv-text-tertiary: light-dark(#9e9e9e, #7d7d7d);
     --hv-text-on-primary: var(--text-primary-color, #fff);
 
     /* Lines */
-    --hv-divider: var(--divider-color, light-dark(#e0e0e0, #383838));
     --hv-row-divider: light-dark(#ededed, #2e2e2e);
 
     /* Primary / accent */
-    --hv-primary: var(--primary-color, #03a9f4);
     --hv-primary-dark: light-dark(#0288d1, #4fc3f7);
     --hv-primary-darker: light-dark(#0277bd, #4fc3f7);
     /* The same in both themes, because it carries white ink: the app bar is primary-coloured in both. */
@@ -101,7 +100,6 @@ export const tokens = css`
     --hv-hover-overlay: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
 
     /* Shape */
-    --hv-radius-card: var(--ha-card-border-radius, 12px);
     --hv-radius-panel: 12px;
     --hv-radius-dialog: 14px;
     --hv-radius-input: 8px;
@@ -117,9 +115,6 @@ export const tokens = css`
     --hv-shadow-dialog: 0 12px 40px rgba(0, 0, 0, 0.28);
     --hv-shadow-overlay: 0 8px 32px rgba(0, 0, 0, 0.18);
     --hv-shadow-sheet: light-dark(0 -8px 32px rgba(0, 0, 0, 0.3), 0 -8px 32px rgba(0, 0, 0, 0.5));
-
-    /* Type */
-    --hv-font: var(--ha-card-font-family, var(--paper-font-body1_-_font-family, Roboto, sans-serif));
 
     /* Motion — collapses to 0 under prefers-reduced-motion (see below). */
     --hv-motion-fast: 120ms;
