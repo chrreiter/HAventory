@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import '../components/hv-full-app-bar';
 import { tokens } from './tokens';
 import { STATUS_COLORS, hexToneStyle, inkOn } from './status';
-import { defined } from '../test.utils';
+import { componentCss, defined } from '../test.utils';
 
 /**
  * Every status tone has to stay readable, in both themes.
@@ -271,6 +272,59 @@ describe('primary-strong contrast', () => {
       expect(ratio, `--hv-primary-strong on white (${theme}) is ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(
         4.5,
       );
+    });
+  }
+});
+
+/**
+ * The two texts the selection bar sets beside its count: the "of N matching"
+ * subcount and the "Load all N to select" button.
+ *
+ * White on the bar's fill leaves little room (4.8:1 against the 4.5 that 12.5px
+ * text needs), so anything laid between the text and the fill counts. Read from
+ * the component's own rules rather than restated here, because the failure was a
+ * fade on one and a white wash under the other, and a copy of the numbers would
+ * have passed while the stylesheet drifted.
+ */
+describe('selection bar text contrast', () => {
+  const decls = declarations();
+  const WHITE: Rgb = [255, 255, 255];
+  const stylesheet = componentCss('hv-full-app-bar').replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const rules = [...stylesheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((m) => ({
+    selectors: defined(m[1], 'selector list').trim(),
+    body: defined(m[2], 'rule body'),
+  }));
+  const declared = (body: string, property: string): string | undefined =>
+    body.match(new RegExp(`(?:^|[;\\s])${property}\\s*:\\s*([^;]+)`))?.[1]?.trim();
+  /** Every rule whose selector names `needle`, the state variants (:hover, :focus-visible) included. */
+  const rulesNaming = (needle: string) => rules.filter((r) => r.selectors.includes(needle));
+
+  for (const theme of ['light', 'dark'] as const) {
+    const bar = over(resolve('--hv-primary-strong', theme, decls), WHITE);
+
+    it(`keeps white readable on every fill the ghost buttons take in the ${theme} theme`, () => {
+      const fills = rulesNaming('.appbar .ghost').filter((r) => declared(r.body, 'background') !== undefined);
+      expect(fills.length, 'no .ghost rule declares a background').toBeGreaterThan(0);
+      for (const { selectors, body } of fills) {
+        const value = defined(declared(body, 'background'), 'background');
+        const wash: Rgba =
+          value === 'none' || value === 'transparent' ? [0, 0, 0, 0] : resolveValue(value, theme, decls);
+        const ratio = contrast(over(wash, bar), WHITE);
+        expect(
+          ratio,
+          `${selectors} lays ${value} on the selection bar (${theme}): white is ${ratio.toFixed(2)}:1`,
+        ).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    it(`keeps the subcount at full strength in the ${theme} theme`, () => {
+      const rule = rulesNaming('.appbar .subcount').find((r) => declared(r.body, 'font-size') !== undefined);
+      const opacity = Number(declared(defined(rule, 'the .subcount rule').body, 'opacity') ?? 1);
+      const ratio = contrast(over([255, 255, 255, opacity], bar), bar);
+      expect(
+        ratio,
+        `the subcount at opacity ${opacity} on the selection bar (${theme}) is ${ratio.toFixed(2)}:1`,
+      ).toBeGreaterThanOrEqual(4.5);
     });
   }
 });
