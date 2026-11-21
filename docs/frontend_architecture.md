@@ -102,8 +102,9 @@ same terms: host, `getStore`, hooks. It is everything the two shells do to one i
 row the form is open on, the copy of that row pinned while a refetch is in flight, the save
 and what a refused one leaves on screen, the read sheet's item, the check-out step, and one
 dispatch table for every event a row can raise. It renders the editor, the read sheet and
-the check-out popover. The hooks are the three things that genuinely differ: where a row tap
-goes, who answers a delete, and which shadow root the open form is in.
+the check-out popover, and the notice its host places beside the banner stacks when a delete
+made elsewhere closed the form or the sheet. The hooks are the three things that genuinely
+differ: where a row tap goes, who answers a delete, and which shadow root the open form is in.
 
 ---
 
@@ -838,6 +839,14 @@ Any other key in that record is ignored, so an older or newer payload never brea
   Sending the whole form would put their field back the way this form found it. *Re-apply*
   resends that same diff, which is what lets it land on top of the change that caused the
   conflict instead of over it.
+- **An item deleted elsewhere closes what is open on it, and says why.** The store remembers
+  each removed id with whether it sent the delete itself (`Store.wasRemovedElsewhere`): its
+  own delete removes the row before the event arrives, and a batch's deletes count as its own
+  while the batch runs, because the backend announces each row before answering. Another
+  device, tab or card, an automation or a service call is elsewhere. A form or read sheet
+  that closes on such a delete leaves a notice with the host's banners, saying the unsaved
+  changes were lost only when the form held typing; a delete sent from here closes it
+  silently, as it was asked for.
 - **Bulk work is chunked**, so progress is determinate and cancel stops cleanly after the
   in-flight chunk. Nothing is rolled back; the endpoint is not transactional, and the UI says
   so.

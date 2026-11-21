@@ -55,6 +55,15 @@ function typeInto(input: HTMLInputElement, text: string) {
   input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
 }
 
+const DELETED_ELSEWHERE = 'This item was deleted on another device.';
+const DELETED_ELSEWHERE_UNSAVED =
+  'This item was deleted on another device. Your unsaved changes were not saved.';
+
+/** What the card says about a form or sheet another device's delete closed, or null. */
+function deletedNotice(sr: ShadowRoot): string | null {
+  return q<HTMLElement & { message: string }>(sr, '[data-testid="deleted-notice"] hv-banner')?.message ?? null;
+}
+
 afterEach(() => {
   restoreWidth?.();
   restoreWidth = null;
@@ -1600,17 +1609,37 @@ describe('hv-card-shell: the open editor survives a refetch', () => {
     expect(list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')).toBe(null);
   });
 
-  // A pin is for a row that fell off the page, not for one that is gone.
-  it('closes rather than pins when the item is deleted', async () => {
-    const { el, store, sr } = await mountShell({ items: twoItems() });
-    await openAndType(el, sr, '1', 'Target EDITED');
+  // A pin is for a row that fell off the page, not for one that is gone. Gone
+  // by another device's hand, the closing form is all the user would see, so
+  // the card says why, and that the typing went with it only when there was any.
+  it.each([
+    { from: 'this card', typed: 'Target EDITED', notice: null },
+    { from: 'another device', typed: 'Target EDITED', notice: DELETED_ELSEWHERE_UNSAVED },
+    { from: 'another device', typed: null, notice: DELETED_ELSEWHERE },
+  ])(
+    'closes rather than pins when the item is deleted from $from (typed: $typed)',
+    async ({ from, typed, notice }) => {
+      const { el, store, hass, sr } = await mountShell({ items: twoItems() });
+      if (typed) {
+        await openAndType(el, sr, '1', typed);
+      } else {
+        const row = [...(list(sr).shadowRoot?.querySelectorAll('hv-list-row') ?? [])].find(
+          (r) => (r as HTMLElement & { item: Item }).item.id === '1',
+        );
+        (row?.shadowRoot?.querySelector('[data-testid="row-edit"]') as HTMLButtonElement).click();
+        await settle(el);
+      }
+      expect(editor(sr)).toBeTruthy();
 
-    await store.deleteItem('1', 1);
-    await settle(el);
+      if (from === 'this card') await store.deleteItem('1', 1);
+      else hass.__deleteElsewhere('1');
+      await settle(el);
 
-    expect(editor(sr)).toBe(null);
-    expect(list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')).toBe(null);
-  });
+      expect(editor(sr)).toBe(null);
+      expect(list(sr).shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')).toBe(null);
+      expect(deletedNotice(sr)).toBe(notice);
+    },
+  );
 });
 
 // The inline expander is the one surface that renders the editor through
@@ -1938,26 +1967,89 @@ describe('hv-card-shell: mobile detail sheet', () => {
 
     expect(store.state.value.items).toHaveLength(0);
     expect(sheet(sr).open).toBe(false);
+    expect(deletedNotice(sr)).toBe(null);
   });
 
   // The sheet holds an id, not a copy, so an item deleted from anywhere else —
   // another client, the expanded view, a service call — leaves it showing an
   // empty hero rather than closing. Falling off the page looks identical from
-  // the list alone, so the store is asked which happened.
-  it('closes the sheet when the store reports the item gone', async () => {
-    const { el, store, sr } = await mountShell({
-      items: [makeItem({ id: '1', name: 'Doomed' }), makeItem({ id: '2', name: 'Bystander' })],
-      mobile: true,
+  // the list alone, so the store is asked which happened, and by whom.
+  it.each([
+    { from: 'the expanded view', typed: false, notice: null },
+    { from: 'another device', typed: false, notice: DELETED_ELSEWHERE },
+    { from: 'another device', typed: true, notice: DELETED_ELSEWHERE_UNSAVED },
+  ])(
+    'closes the sheet when the item is deleted from $from (typed: $typed)',
+    async ({ from, typed, notice }) => {
+      const { el, store, hass, sr } = await mountShell({
+        items: [makeItem({ id: '1', name: 'Doomed' }), makeItem({ id: '2', name: 'Bystander' })],
+        mobile: true,
+      });
+      (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+      await settle(el);
+      expect(sheet(sr).open).toBe(true);
+      if (typed) {
+        (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+        await settle(el);
+        const editor = sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-editor"]') as HTMLElement;
+        typeInto(editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement, 'Kept?');
+        await settle(el);
+      }
+
+      if (from === 'another device') hass.__deleteElsewhere('1');
+      else await store.deleteItem('1', 1);
+      await settle(el);
+
+      expect(sheet(sr).open).toBe(false);
+      expect(sheet(sr).item).toBe(null);
+      expect(deletedNotice(sr)).toBe(notice);
+    },
+  );
+
+  // The sheet is modal and the card's banners sit under its scrim, so the
+  // notice has to be the card's, drawn once the sheet is gone; and the page may
+  // have scrolled the card's top out of view while the sheet was up.
+  describe('the deleted-elsewhere notice', () => {
+    type Scrollable = { scrollIntoView?: (options?: unknown) => void };
+    let scrolls: { el: Element; options: unknown }[] = [];
+    beforeEach(() => {
+      scrolls = [];
+      (Element.prototype as Scrollable).scrollIntoView = function (this: Element, options?: unknown) {
+        scrolls.push({ el: this, options });
+      };
     });
-    (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
-    await settle(el);
-    expect(sheet(sr).open).toBe(true);
+    afterEach(() => {
+      delete (Element.prototype as Scrollable).scrollIntoView;
+    });
 
-    await store.deleteItem('1', 1);
-    await settle(el);
+    it.each(['dismissed', 'another item opens'])('shows on the card, in view, until %s', async (until) => {
+      const { el, hass, sr } = await mountShell({
+        items: [makeItem({ id: '1', name: 'Doomed' }), makeItem({ id: '2', name: 'Bystander' })],
+        mobile: true,
+      });
+      (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+      await settle(el);
 
-    expect(sheet(sr).open).toBe(false);
-    expect(sheet(sr).item).toBe(null);
+      hass.__deleteElsewhere('1');
+      await settle(el);
+
+      const notice = sr.querySelector('[data-testid="deleted-notice"] hv-banner') as HTMLElement;
+      expect(deletedNotice(sr)).toBe(DELETED_ELSEWHERE);
+      expect(sheet(sr).shadowRoot?.querySelector('hv-bottom-sheet')?.shadowRoot?.querySelector('.scrim')).toBe(
+        null,
+      );
+      expect(scrolls).toEqual([{ el: notice, options: { block: 'nearest' } }]);
+
+      if (until === 'dismissed') {
+        (sr.querySelector('[data-testid="deleted-notice-dismiss"]') as HTMLButtonElement).click();
+      } else {
+        (firstRow(sr).shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+      }
+      await settle(el);
+
+      expect(deletedNotice(sr)).toBe(null);
+      expect(scrolls).toHaveLength(1);
+    });
   });
 });
 

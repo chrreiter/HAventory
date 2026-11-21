@@ -10,8 +10,18 @@ import {
   stubViewport,
 } from '../test.utils';
 import { deepActiveElement } from '../ui/dialog-focus';
+import { makeBulkOp } from '../store/store';
 import type { HVFullView } from './hv-full-view';
 import type { Item, Location, StatusDefinition } from '../store/types';
+
+const DELETED_ELSEWHERE = 'This item was deleted on another device.';
+const DELETED_ELSEWHERE_UNSAVED =
+  'This item was deleted on another device. Your unsaved changes were not saved.';
+
+/** What the view says about a form or sheet another device's delete closed, or null. */
+function deletedNotice(sr: ShadowRoot): string | null {
+  return q<HTMLElement & { message: string }>(sr, '[data-testid="deleted-notice"] hv-banner')?.message ?? null;
+}
 
 function loc(id: string, name: string, parentId: string | null = null): Location {
   const display = parentId ? `${parentId} / ${name}` : name;
@@ -570,18 +580,64 @@ describe('hv-full-view: editing', () => {
 
   // Without this the editor renders `.item` as null once the row is gone —
   // and a null item is the create form. On the panel there is no shell to
-  // clean up after the editor, so the view closes it itself.
-  it('closes the editor when the item being edited is deleted', async () => {
-    const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
+  // clean up after the editor, so the view closes it itself, and says why when
+  // the delete was not sent from here.
+  it.each([
+    { from: 'this view', embedded: false, typed: true, notice: null },
+    { from: 'another device', embedded: false, typed: false, notice: DELETED_ELSEWHERE },
+    { from: 'another device', embedded: true, typed: true, notice: DELETED_ELSEWHERE_UNSAVED },
+  ])(
+    'closes the editor when the item being edited is deleted from $from (embedded: $embedded)',
+    async ({ from, embedded, typed, notice }) => {
+      const { el, store, hass, sr } = await mount({
+        items: [makeItem({ id: '1', name: 'Wood Glue' })],
+        embedded,
+      });
+      const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+      (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+      await settle(el);
+      const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
+      expect(editor).toBeTruthy();
+      if (typed) {
+        const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+        name.value = 'Typed but unsaved';
+        name.dispatchEvent(new Event('input'));
+        await settle(el);
+      }
+
+      if (from === 'this view') await store.deleteItem('1', 1);
+      else hass.__deleteElsewhere('1');
+      await settle(el);
+
+      expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
+      expect(deletedNotice(sr)).toBe(notice);
+    },
+  );
+
+  // The backend announces each row of a batch before it answers the batch, so
+  // these deletes arrive as events before the store hears they were its own.
+  it('closes the editor without a notice on a batch delete sent from here', async () => {
+    const { el, store, hass, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
     const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
     (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
     await settle(el);
     expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
+    const call = hass.callWS.bind(hass);
+    hass.callWS = async <T>(msg: Record<string, unknown>): Promise<T> => {
+      const answer = await call<T>(msg);
+      if (msg.type === 'haventory/item/delete') {
+        hass.__emit('items', 'deleted', { item: makeItem({ id: String(msg.item_id), name: 'Wood Glue' }) });
+      }
+      return answer;
+    };
 
-    await store.deleteItem('1', 1);
+    const outcome = await store.bulkExecute([makeBulkOp('item_delete', { item_id: '1', expected_version: 1 })]);
     await settle(el);
 
+    expect(outcome.failed).toEqual([]);
+    expect(store.state.value.items).toEqual([]);
     expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
+    expect(deletedNotice(sr)).toBe(null);
   });
 
   it('keeps the editor open when some other item is deleted', async () => {
@@ -1627,18 +1683,26 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
     }
   });
 
-  it('closes the sheet when the item it shows is deleted', async () => {
+  it.each([
+    { from: 'this view', notice: null },
+    { from: 'another device', notice: DELETED_ELSEWHERE },
+  ])('closes the sheet when the item it shows is deleted from $from', async ({ from, notice }) => {
     const restore = stubViewport(true);
     try {
-      const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
+      const { el, store, hass, sr } = await mount({
+        items: [makeItem({ id: '1', name: 'Drill' })],
+        embedded: true,
+      });
       await openRow(el, sr);
       expect(sheet(sr)?.open).toBe(true);
 
       const item = defined(store.state.value.items[0], 'first item');
-      await store.deleteItem(item.id, item.version);
+      if (from === 'this view') await store.deleteItem(item.id, item.version);
+      else hass.__deleteElsewhere(item.id);
       await settle(el);
 
       expect(sheet(sr)?.open).toBe(false);
+      expect(deletedNotice(sr)).toBe(notice);
     } finally {
       restore();
     }

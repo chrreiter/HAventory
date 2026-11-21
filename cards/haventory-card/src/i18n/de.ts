@@ -66,6 +66,9 @@ export const de: CompleteDictionary = {
   'hv.banner.conflict.heading': 'Jemand anderes hat diesen Gegenstand geändert.',
   'hv.banner.conflict.viewLatest': 'Aktuellen Stand ansehen',
   'hv.banner.conflict.reapply': 'Meine Änderung erneut anwenden',
+  'hv.banner.deletedElsewhere.message': 'Dieser Gegenstand wurde auf einem anderen Gerät gelöscht.',
+  'hv.banner.deletedElsewhere.unsaved':
+    'Dieser Gegenstand wurde auf einem anderen Gerät gelöscht. Deine ungespeicherten Änderungen wurden nicht gespeichert.',
 
   'hv.discard.heading': 'Änderungen verwerfen?',
   'hv.discard.message': 'Alles, was du seit dem letzten Speichern eingegeben hast, geht verloren.',

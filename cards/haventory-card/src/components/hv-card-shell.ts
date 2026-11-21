@@ -553,6 +553,7 @@ export class HVCardShell extends LitElement {
           </div>`
       }
       ${renderDegradedBanners(st, this._bannerHooks)} ${renderErrorBanners(st, this._bannerHooks)}
+      ${this._workspace.renderDeletedNotice()}
 
       <hv-list
         .statuses=${st?.statuses ?? null}

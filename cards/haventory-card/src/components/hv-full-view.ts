@@ -683,6 +683,7 @@ export class HVFullView extends LitElement {
             ${this._renderContextBar()}
             <!-- A save failure is the open form's to say; everything else is this queue's. -->
             ${renderDegradedBanners(st, this._bannerHooks)} ${renderErrorBanners(st, this._bannerHooks)}
+            ${this._workspace.renderDeletedNotice()}
             <div class="panel-holder" id=${FILTER_PANEL_ID} ?hidden=${!this._filtersOpen}>
               ${
                 this._filtersOpen
