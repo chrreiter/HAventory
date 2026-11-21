@@ -1577,7 +1577,7 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
       name.value = 'New';
       name.dispatchEvent(new Event('input'));
       await inner.updateComplete;
-      (inner.shadowRoot?.querySelector('[data-testid="sheet-save"]') as HTMLButtonElement).click();
+      (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
       await settle(el);
       await settle(el);
 

@@ -570,7 +570,7 @@ describe('hv-detail-sheet: edit view', () => {
     expect(seen).toEqual([]);
   });
 
-  it('drives the embedded editor from the sheet header Save', async () => {
+  it("saves from the editor's footer Save", async () => {
     const el = await mount({ id: 'item-1', name: 'Old' });
     const saves: unknown[] = [];
     el.addEventListener('save', (e) => saves.push((e as CustomEvent).detail));
@@ -584,14 +584,50 @@ describe('hv-detail-sheet: edit view', () => {
     name.dispatchEvent(new Event('input'));
     await settle(el);
 
-    (q(el, '[data-testid="sheet-save"]') as HTMLButtonElement).click();
+    (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
     expect(saves).toHaveLength(1);
     expect((saves[0] as { changes: { name: string } }).changes.name).toBe('New');
   });
 
+  // The editor's sticky footer is the one Save, as on the add sheet: a second
+  // one in the bar showed beside it on a phone.
+  it('shows one Save in edit mode, in the editor footer and not in the bar', async () => {
+    const el = await mount({ id: 'item-1', name: 'Old' });
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+
+    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
+    const bar = q(el, '.bar.edit')!;
+
+    // The bar holds the back arrow and the heading, and no other button.
+    expect(Array.from(bar.querySelectorAll('button')).map((b) => b.getAttribute('data-testid'))).toEqual([
+      'sheet-back',
+    ]);
+    expect(bar.querySelector('.heading')?.textContent).toContain('Edit item');
+    expect(editor.shadowRoot?.querySelectorAll('[data-testid="editor-save"]')).toHaveLength(1);
+  });
+
+  it('shows the save in flight on the footer Save', async () => {
+    const el = await mount({ id: 'item-1', name: 'Old' });
+    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    await settle(el);
+    const editor = q<HTMLElement & { updateComplete: Promise<unknown> }>(el, '[data-testid="sheet-editor"]')!;
+    const footerSave = () =>
+      editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement;
+    expect(footerSave().disabled).toBe(false);
+    expect(footerSave().textContent).toContain('Save');
+
+    el.busy = true;
+    await settle(el);
+    await editor.updateComplete;
+
+    expect(footerSave().disabled).toBe(true);
+    expect(footerSave().textContent).toContain('Saving');
+  });
+
   /**
-   * Rename the item in the form, press the sheet's Save, and take the save in
-   * hand the way a host does: `busy` rises the moment it has the event.
+   * Rename the item in the form, press the editor's footer Save, and take the
+   * save in hand the way a host does: `busy` rises the moment it has the event.
    */
   async function saveFromSheet(el: HVDetailSheet, name = 'New') {
     (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
@@ -603,7 +639,7 @@ describe('hv-detail-sheet: edit view', () => {
     field.dispatchEvent(new Event('input'));
     await settle(el);
 
-    (q(el, '[data-testid="sheet-save"]') as HTMLButtonElement).click();
+    (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
     el.busy = true;
     await settle(el);
     return editor;

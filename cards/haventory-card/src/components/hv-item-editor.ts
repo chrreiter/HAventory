@@ -468,12 +468,6 @@ export class HVItemEditor extends LitElement {
     this._emit('save', detail);
   };
 
-  /** What pressing Save does, including nothing while a save is in flight. */
-  requestSave(): void {
-    if (this.busy) return;
-    this._save();
-  }
-
   private _cancel = () => {
     this._emit('cancel');
   };

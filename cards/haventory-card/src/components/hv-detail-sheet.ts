@@ -123,16 +123,6 @@ export class HVDetailSheet extends LitElement {
         padding: 0 14px;
         font: 500 14px var(--hv-font);
       }
-      .bar .save {
-        border: none;
-        background: var(--hv-primary);
-        color: var(--hv-text-on-primary);
-        border-radius: var(--hv-radius-chip);
-        height: 40px;
-        padding: 0 20px;
-        margin-right: 8px;
-        font: 500 14px var(--hv-font);
-      }
       .title {
         padding: 2px 18px 10px;
       }
@@ -885,14 +875,6 @@ export class HVDetailSheet extends LitElement {
           ${icon('arrowLeft', 21)}
         </button>
         <span class="heading">${t('hv.action.editItem')}</span>
-        <button
-          class="save"
-          data-testid="sheet-save"
-          ?disabled=${this.busy}
-          @click=${() => this._editor?.requestSave()}
-        >
-          ${this.busy ? t('hv.action.saving') : t('hv.action.save')}
-        </button>
       </div>
       <!-- Keyed by item id: a different item is a new form. -->
       ${keyed(
