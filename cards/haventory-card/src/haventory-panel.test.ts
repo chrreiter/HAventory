@@ -4,7 +4,7 @@ import { makeItem, makeMockHass, mountComponent, q, settle, stubViewport } from 
 import { COLUMN_PREFS_STORAGE_KEY, DEFAULT_COLUMNS } from './store/columns';
 import type { HAventoryPanel } from './haventory-panel';
 
-// A host renders nothing until the lazy runtime is in; `runtime-loader.test.ts` covers the wait.
+// A host draws only its placeholder until the lazy runtime is in; `host-placeholder.test.ts` covers the wait.
 await loadRuntime();
 
 type Panel = HAventoryPanel & { updateComplete: Promise<unknown> };

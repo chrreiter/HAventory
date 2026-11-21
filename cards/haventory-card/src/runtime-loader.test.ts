@@ -15,19 +15,22 @@ afterEach(() => {
 });
 
 describe('a host whose runtime is still loading', () => {
-  it('is defined at once, renders nothing, then renders in full once the runtime is in', async () => {
+  // `host-placeholder.test.ts` holds the runtime back to look at the placeholder.
+  it('is defined at once, draws its placeholder, then renders in full once the runtime is in', async () => {
     expect(customElements.get('haventory-card')).toBeTruthy();
     expect(customElements.get('haventory-panel')).toBeTruthy();
     expect(loadedRuntime()).toBeUndefined();
 
-    const { el, sr } = await mountComponent<Host>('haventory-card');
+    const { el } = await mountComponent<Host>('haventory-card');
     el.hass = makeMockHass();
-    expect(sr.childElementCount).toBe(0);
+    expect(q(el, '[data-testid="card-placeholder"]')).toBeTruthy();
+    expect(q(el, '[data-testid="card-shell"]')).toBeNull();
 
     await vi.waitFor(() => expect(loadedRuntime()).toBeTruthy());
     await settle(el);
 
     expect(q(el, '[data-testid="card-shell"]')).toBeTruthy();
+    expect(q(el, '[data-testid="card-placeholder"]')).toBeNull();
     expect(customElements.get('hv-card-shell')).toBeTruthy();
   });
 

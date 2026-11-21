@@ -15,6 +15,7 @@
  * | `hass.language` | the user's profile language, read once to pick a dictionary |
  * | `hass.connection.subscribeMessage` | the same channel's subscription half |
  * | `hass.fetchWithAuth` | the only way to POST attachment bytes to core's `/api/file_upload` |
+ * | `hass.localize` | one key, the name of HA's own sidebar toggle, for the panel's placeholder; a miss costs the button |
  * | `window.customCards` | how every custom card has advertised itself to the picker |
  * | `setConfig` / the `hass` setter | the Lovelace card lifecycle itself |
  * | the theme variables below | read with a fallback each, so a rename costs the binding and not the card |
@@ -54,6 +55,11 @@ export interface HassLike {
   selectedTheme?: unknown;
   /** `fetch` with the user's auth header, for POSTing attachment bytes. */
   fetchWithAuth?(path: string, init?: RequestInit): Promise<Response>;
+  /**
+   * Home Assistant's own catalog, in the user's language. A new function when
+   * the translations change, so it is compared by identity too.
+   */
+  localize?(key: string): string;
   connection: {
     /**
      * Delivers the inner `event` of the `{id, type:'event', event}` frame, not
@@ -84,6 +90,15 @@ export function subscribeMessage(
   msg: Record<string, unknown>,
 ): Unsubscribe | Promise<Unsubscribe> {
   return hass.connection.subscribeMessage(cb, msg);
+}
+
+/**
+ * The accessible name Home Assistant gives its own sidebar toggle
+ * (`ha-menu-button`), or `undefined` when its catalog has no such key. The
+ * panel's placeholder draws the toggle before the card's catalogs have loaded.
+ */
+export function sidebarToggleLabel(hass: HassLike | undefined): string | undefined {
+  return hass?.localize?.('ui.sidebar.sidebar_toggle') || undefined;
 }
 
 /** One entry in Home Assistant's card picker. */

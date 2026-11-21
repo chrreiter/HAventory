@@ -6,7 +6,7 @@ import { makeItem, makeMockHass, mountComponent, settle } from './test.utils';
 import type { MockHass } from './test.utils';
 import type { Store } from './store/store';
 
-// A host renders nothing until the lazy runtime is in; `runtime-loader.test.ts` covers the wait.
+// A host draws only its placeholder until the lazy runtime is in; `host-placeholder.test.ts` covers the wait.
 await loadRuntime();
 
 /** Both hosts, seen from a test: Home Assistant's property and Lit's promise. */
