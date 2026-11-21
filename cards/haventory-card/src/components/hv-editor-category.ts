@@ -3,7 +3,7 @@ import { LitElement, css, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { emitter } from '../events';
 import { tokens, base } from '../ui/tokens';
-import { editorFields } from '../ui/editor-fields';
+import { editorFields, selectChevron } from '../ui/editor-fields';
 import { icon } from '../ui/icons';
 
 /** The holder `aria-controls` names, so it can point at it while closed. */
@@ -27,32 +27,26 @@ export class HVEditorCategory extends LitElement {
     base,
     editorFields,
     css`
-      .combo {
-        position: relative;
-        display: flex;
-        align-items: center;
-      }
-      .combo .hv-input {
-        padding-right: 34px;
-      }
+      /* The toggle is the hit area over the glyph the shared .hv-select rules
+         draw, centred on it, so the glyph's size, ink and place are theirs and
+         only the target's size is set here. */
       .combo-arrow {
         position: absolute;
-        right: 4px;
-        display: inline-grid;
-        place-items: center;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
         width: 26px;
         height: 26px;
         border: none;
         border-radius: 50%;
         background: none;
-        color: var(--hv-text-tertiary);
         padding: 0;
+        pointer-events: auto;
       }
       .combo-arrow:hover {
         background: var(--hv-hover-overlay);
       }
       :host([mobile]) .combo-arrow {
-        right: 2px;
         width: var(--hv-tap-min, 32px);
         height: var(--hv-tap-min, 32px);
       }
@@ -190,7 +184,7 @@ export class HVEditorCategory extends LitElement {
     const options = this._options;
     return html`
       <label class="hv-label" id=${CATEGORY_LABEL_ID} for="editor-category">${t('hv.field.category')}</label>
-      <div class="combo">
+      <div class="hv-select">
         <input
           id="editor-category"
           class="hv-input"
@@ -214,7 +208,7 @@ export class HVEditorCategory extends LitElement {
         />
         ${
           this.suggestions.length
-            ? html`<button
+            ? selectChevron(html`<button
               class="combo-arrow"
               data-testid="editor-category-toggle"
               tabindex="-1"
@@ -227,9 +221,7 @@ export class HVEditorCategory extends LitElement {
                 if (this._open && this._showAll) this.close();
                 else this._openList(true);
               }}
-            >
-              ${icon('chevronDown', 18)}
-            </button>`
+            ></button>`)
             : null
         }
       </div>

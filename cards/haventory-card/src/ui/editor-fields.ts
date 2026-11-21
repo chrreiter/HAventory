@@ -1,11 +1,17 @@
-import { css, html } from 'lit';
+import { css, html, nothing } from 'lit';
+import type { TemplateResult } from 'lit';
 import { icon } from './icons';
 
 /**
- * The chevron `.hv-select` draws over its select. It goes after the select in
- * the wrapper, because the disabled rule reaches it as the select's next sibling.
+ * The chevron `.hv-select` draws over its field. It goes after a select in the
+ * wrapper, because the disabled rule reaches it as the select's next sibling.
+ *
+ * `overlay` is for a field whose chevron is also a button: it sits inside the
+ * glyph's box, centred on it, and takes the taps the chevron itself passes
+ * through. The category field's toggle is one.
  */
-export const selectChevron = () => html`<span class="chevron">${icon('chevronDown', 18)}</span>`;
+export const selectChevron = (overlay: TemplateResult | typeof nothing = nothing) =>
+  html`<span class="chevron">${icon('chevronDown', 18)}${overlay}</span>`;
 
 /**
  * The field chrome the item editor and its child elements share: the trigger
@@ -53,13 +59,15 @@ export const editorFields = css`
     cursor: not-allowed;
   }
   /* The wrapper is the grid or flex item, so a placement rule goes on it and the
-     select just fills it. The browser's own arrow is heavier than the drawn one. */
+     select just fills it. The browser's own arrow is heavier than the drawn one.
+     A text input takes the same wrapper when its chevron is a drop-down toggle. */
   .hv-select {
     position: relative;
     display: block;
     min-width: 0;
   }
-  .hv-select select.hv-input {
+  .hv-select select.hv-input,
+  .hv-select input.hv-input {
     display: block;
     appearance: none;
     /* The chevron sits in this padding, so a long label ends before it: the

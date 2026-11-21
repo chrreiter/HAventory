@@ -222,8 +222,23 @@ describe('hv-editor-category', () => {
   it('drops the arrow when there is nothing to list yet', async () => {
     const { el } = await mount({ suggestions: [] });
     expect(q(el, '[data-testid="editor-category-toggle"]')).toBe(null);
+    expect(q(el, '.chevron')).toBe(null);
     await focusCategory(el);
     expectListShut(el);
+  });
+
+  // The status, type and unit selects beside it draw their chevron from one
+  // `.hv-select` wrapper; the toggle sits in that same chevron, so the glyph
+  // has their size, ink and place instead of a copy of them.
+  it('draws the toggle in the chevron the editor selects draw', async () => {
+    const { el } = await mount();
+    const toggle = q(el, '[data-testid="editor-category-toggle"]');
+    const chevron = toggle?.parentElement;
+
+    expect(chevron?.classList.contains('chevron')).toBe(true);
+    expect(chevron?.parentElement?.classList.contains('hv-select')).toBe(true);
+    expect(chevron?.parentElement).toBe(input(el).parentElement);
+    expect(chevron?.querySelector(':scope > svg[data-icon="chevronDown"]')).toBeTruthy();
   });
 
   it('gives the arrow a finger-sized target on a phone', async () => {
