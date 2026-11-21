@@ -36,6 +36,12 @@ there:
 
 The development toolchain is **Linux/bash only**. The scripts, the test scaffolding and CI
 all assume it, and nothing here is tested on a Windows host. On Windows, develop inside WSL2.
+**Build the card on Linux.** `npm run build` on a native Windows host finishes and the card's
+tests pass, but the bundle it writes is broken: there is no `chunks/core-*.js`, and the
+runtime chunk imports the entry, which the build must never do. `vite.config.ts` decides
+what goes into `core` by comparing module paths, and on Windows the two sides spell their
+separators differently. Any card you deploy to a Home Assistant, or attach to a pull request
+as evidence, comes from WSL2, a Linux container, or CI.
 This is about contributing, not about running HAventory: the integration itself runs
 wherever Home Assistant does.
 

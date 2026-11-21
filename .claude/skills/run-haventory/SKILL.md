@@ -67,6 +67,29 @@ debug log line.
 Backend-only change and HA already has the current card? The same script is still the
 path: it redeploys both, and there is no partial-deploy variant.
 
+[Windows/Git Bash] **Never run this script from a native Windows checkout.** It builds the
+card on the host, and a Windows build writes a broken bundle (no `chunks/core-*.js`, and the
+runtime chunk imports the entry) while the card's tests still pass, so nothing warns you
+(`CONTRIBUTING.md` → "Development setup"). The script also overwrites the container's
+`configuration.yaml`. Build the committed branch in a Linux container instead, in the
+Playwright image that matches the card's own `playwright` version, and copy the integration
+in by hand:
+
+```bash
+B=$(mktemp -d); git archive HEAD | tar -x -C "$B"
+V=$(sed -n 's/.*"playwright": "^\([0-9.]*\)".*/\1/p' cards/haventory-card/package.json)
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(cd "$B" && pwd -W):/w" -v hav-npm-cache:/root/.npm \
+  -w /w/cards/haventory-card "mcr.microsoft.com/playwright:v$V-noble" \
+  bash -c "npm ci --no-audit --no-fund && npm run build"
+ls "$B/custom_components/haventory/www/chunks"    # core-*.js, runtime-*.js, manifest.json
+tar -C "$B/custom_components" -cf - haventory | MSYS_NO_PATHCONV=1 docker exec -i home-assistant \
+  sh -c 'rm -rf /config/custom_components/haventory && tar -xf - -C /config/custom_components'
+docker restart home-assistant
+```
+
+A card-only change can skip the restart: copy just `haventory/www` into
+`/config/custom_components/haventory/` the same way and reload the page.
+
 The integration serves the bundle itself at `/haventory_static/haventory-card.js`, with
 **no `Cache-Control` header**, so the browser revalidates and a rebuild is picked up on a
 normal reload; there is nothing to pin. To confirm the server has the new bytes:

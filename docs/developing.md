@@ -9,7 +9,9 @@ commit, the conventions, pull requests and releases.
 You need [uv](https://docs.astral.sh/uv/), git, and a Node inside the range `engines`
 declares in `cards/haventory-card/package.json`. uv fetches the Python that
 `requires-python` in `pyproject.toml` names. The toolchain is Linux/bash only; on Windows,
-work inside WSL2 ([CONTRIBUTING.md](../CONTRIBUTING.md#development-setup)).
+work inside WSL2 ([CONTRIBUTING.md](../CONTRIBUTING.md#development-setup)). That includes
+the card build: a build on a native Windows host passes its tests and still writes a broken
+bundle, so never deploy one.
 
 ```bash
 # One-shot bootstrap: uv env + card deps + pre-commit hooks
