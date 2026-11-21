@@ -139,6 +139,16 @@ export class HVFullView extends LitElement {
         .filters-button {
           min-height: var(--hv-tap-min, auto);
         }
+        /*
+         * The panel pads its own sides by 16px when mobile, on top of the
+         * holder's 20px, which left its content 16px right of the heading and
+         * the divider above it. The scroll box reaches back over that 16px, so
+         * the content starts at the heading's edge and the applied chip's ring
+         * (it draws 3px outside its box) still has room inside the box.
+         */
+        .panel-scroll {
+          margin-inline: -16px;
+        }
       }
       .main {
         display: flex;
