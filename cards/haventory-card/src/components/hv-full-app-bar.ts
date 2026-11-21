@@ -70,21 +70,22 @@ export class HVFullAppBar extends LitElement {
       .appbar .count {
         font: 500 18px var(--hv-font);
       }
+      /* White on the selection bar's fill is 4.8:1 and no more: a fade on this
+         12.5px text, or a white wash under the button below, takes it under 4.5. */
       .appbar .subcount {
         font-size: 12.5px;
-        opacity: 0.85;
       }
       .appbar .ghost {
         flex: none;
-        border: 1px solid rgba(255, 255, 255, 0.45);
-        background: rgba(255, 255, 255, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        background: none;
         color: #fff;
         border-radius: var(--hv-radius-chip);
         padding: 5px 13px;
         font: 500 12.5px var(--hv-font);
       }
       .appbar .ghost.plain {
-        background: none;
+        border-color: rgba(255, 255, 255, 0.45);
         font-weight: 400;
       }
       .appbar h2 {
