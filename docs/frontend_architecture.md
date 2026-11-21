@@ -789,11 +789,12 @@ one. Status, category and tags have none, so their headers are not clickable.
 validates and dedupes without re-sorting, and `canonicalOrder` is what "Reset order"
 restores. The full set is wider than a phone and wider than many desktops, which
 `hv-data-table` answers by scrolling sideways rather than dropping columns. The name track
-(`NAME_COLUMN_SIZE`) outweighs every flexible column beside it, and at phone width the table
-pins it, so it holds while the rest scrolls under it. The pinning is why `hv-data-table`
-scrolls **both** axes on its host rather than scrolling the rows in a box of their own: a
-sticky cell resolves its offsets against the nearest scroll container, and a nested one that
-never moves sideways pins nothing.
+(`NAME_COLUMN_SIZE`) outweighs every flexible column beside it, and the table pins it at every
+width, so it holds while the rest scrolls under it: at 1280 with Home Assistant's sidebar
+docked the default set is wider than the table's box, and the row's actions sit at its far
+end. The pinning is why `hv-data-table` scrolls **both** axes on its host rather than
+scrolling the rows in a box of their own: a sticky cell resolves its offsets against the
+nearest scroll container, and a nested one that never moves sideways pins nothing.
 
 Preferences persist in `localStorage` under `haventory:columns:v1` as `{ expanded: [...] }`.
 Any other key in that record is ignored, so an older or newer payload never breaks the load.
