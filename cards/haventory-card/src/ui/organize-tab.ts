@@ -11,6 +11,12 @@ import type { IconName } from './icons';
 import { counted } from './plural';
 
 /**
+ * The chevron `.hv-select` draws over a `select.control`, the size the picker
+ * triggers beside it draw. It goes after the select in the wrapper.
+ */
+export const selectChevron = () => html`<span class="chevron">${icon('chevronDown', 15)}</span>`;
+
+/**
  * What the organize dialog's three tab elements share: the toolbar, the
  * scrolling body, the row and its actions, the inline disclosure and its commit
  * row, the guard, the batch-rewrite status and the touch action sheet. Shadow
@@ -164,6 +170,30 @@ export const organizeTab = css`
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .hv-select {
+    position: relative;
+    display: block;
+    min-width: 0;
+  }
+  .hv-select select.control {
+    display: block;
+    appearance: none;
+    /* The chevron sits in this padding, so a long label ends before it: the
+       11px padding, the 15px icon and its 8px gap to the label. */
+    padding-right: 34px;
+    text-overflow: ellipsis;
+  }
+  /* Its right edge is a picker trigger's: the 1px border plus the 11px padding,
+     so it stands in the Parent location chevron's column. */
+  .hv-select .chevron {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: inline-flex;
+    color: var(--hv-text);
+    pointer-events: none;
   }
   .tree-holder {
     border: 1px solid var(--hv-divider);

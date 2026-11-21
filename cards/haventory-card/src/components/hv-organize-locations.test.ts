@@ -214,6 +214,18 @@ describe('hv-organize-locations: locations', () => {
       await settle(el);
     }
 
+    // The Parent location picker below it draws the card's chevron, so the
+    // select beside it draws the same one instead of the browser's arrow.
+    it('draws the card chevron on the area select', async () => {
+      const { sr } = await editLocation('shelf-a');
+      const select = q(sr, '[data-testid="location-area"]') as HTMLSelectElement;
+
+      expect(select.parentElement?.classList.contains('hv-select')).toBe(true);
+      expect(
+        select.parentElement?.querySelector(':scope > .chevron > svg[data-icon="chevronDown"]'),
+      ).toBeTruthy();
+    });
+
     it('says an area picked on a nested location lands on the tree root', async () => {
       const { el, sr } = await editLocation('shelf-a');
       await pickArea(el, sr, 'area-kitchen');

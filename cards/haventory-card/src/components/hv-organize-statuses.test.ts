@@ -184,6 +184,10 @@ describe('hv-organize-statuses: the tab', () => {
     const guard = q(sr, '[data-testid="status-guard"]');
     expect(guard?.textContent).toContain('1 item');
     expect(hass.__messages.some((m) => m.type === 'haventory/status/delete')).toBe(false);
+    const reassign = q(sr, '[data-testid="status-reassign"]') as HTMLSelectElement;
+    expect(
+      reassign.parentElement?.querySelector(':scope > .chevron > svg[data-icon="chevronDown"]'),
+    ).toBeTruthy();
 
     (q(sr, '[data-testid="status-guard-confirm"]') as HTMLButtonElement).click();
     await settle(el);

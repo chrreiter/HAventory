@@ -27,6 +27,7 @@ import {
   renderToolbar,
   reveal,
   rewriteState,
+  selectChevron,
 } from '../ui/organize-tab';
 import { SliceWatch } from '../ui/slice-watch';
 import type { RewriteState } from '../ui/organize-tab';
@@ -349,19 +350,23 @@ export class HVOrganizeLocations extends LitElement {
             areas.length
               ? html`<div class="cell">
                   <label class="hv-label" for="org-loc-area">${t('hv.organize.locationArea')}</label>
-                  <select
-                    id="org-loc-area"
-                    class="control"
-                    data-testid="location-area"
-                    @change=${(e: Event) => {
-                      this._locArea = (e.target as HTMLSelectElement).value || null;
-                    }}
-                  >
-                    <option value="" ?selected=${!this._locArea}>${areaDefaultLabel}</option>
-                    ${areas.map(
-                      (a) => html`<option value=${a.id} ?selected=${this._locArea === a.id}>${a.name}</option>`,
-                    )}
-                  </select>
+                  <span class="hv-select">
+                    <select
+                      id="org-loc-area"
+                      class="control"
+                      data-testid="location-area"
+                      @change=${(e: Event) => {
+                        this._locArea = (e.target as HTMLSelectElement).value || null;
+                      }}
+                    >
+                      <option value="" ?selected=${!this._locArea}>${areaDefaultLabel}</option>
+                      ${areas.map(
+                        (a) =>
+                          html`<option value=${a.id} ?selected=${this._locArea === a.id}>${a.name}</option>`,
+                      )}
+                    </select>
+                    ${selectChevron()}
+                  </span>
                   ${this._renderAreaPreview(preview)}
                 </div>`
               : null
