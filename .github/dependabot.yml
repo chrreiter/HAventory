@@ -77,21 +77,6 @@ updates:
     cooldown:
       default-days: 3
 
-  # The dev container's images: only `FROM` lines are read.
-  - package-ecosystem: "docker"
-    directory: "/.devcontainer"
-    schedule:
-      interval: "monthly"
-    groups:
-      devcontainer-images:
-        patterns: ["*"]
-
-  # The dev container's features (.devcontainer/devcontainer.json).
-  - package-ecosystem: "devcontainers"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-
   # Integration test harness (pip): `requirements-integration.txt` at the root.
   - package-ecosystem: "pip"
     directory: "/"
