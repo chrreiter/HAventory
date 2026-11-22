@@ -313,6 +313,37 @@ describe('hv-data-table: the pinned name column', () => {
     );
   });
 
+  // The header alone holds the table's full width, so the browser keeps a pan
+  // the rows no longer need: at 1280 docked the pinned name sat over a clipped
+  // Due header, and the empty state, only as wide as the box, was out of view.
+  it('comes back to rest when its last row goes', async () => {
+    const el = await mount([{ id: '1' }, { id: '2' }]);
+    el.scrollLeft = 606;
+    el.dispatchEvent(new Event('scroll'));
+    expect(el.hasAttribute('panned')).toBe(true);
+
+    el.items = [];
+    await el.updateComplete;
+
+    expect(el.scrollLeft).toBe(0);
+    expect(el.hasAttribute('panned')).toBe(false);
+    expect(q(el, '[data-testid="table-empty"]')).not.toBeNull();
+  });
+
+  // A -, + or Edit at the far end hands the table a new row set; throwing the
+  // pan back to the start on each would undo the reach those buttons needed.
+  it('keeps its pan while any row is left', async () => {
+    const el = await mount([{ id: '1' }, { id: '2' }]);
+    el.scrollLeft = 606;
+    el.dispatchEvent(new Event('scroll'));
+
+    el.items = [makeItem({ id: '1', quantity: 4 })];
+    await el.updateComplete;
+
+    expect(el.scrollLeft).toBe(606);
+    expect(el.hasAttribute('panned')).toBe(true);
+  });
+
   // An outline on the row paints beneath its pinned cells and loses its left side.
   it('draws the row focus ring as a layer above the pinned cells', () => {
     const text = cssAtEveryWidth();
