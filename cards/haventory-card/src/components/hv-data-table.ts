@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { emitter } from '../events';
 import type { HvEvent } from '../events';
 import { LitElement, css, html, unsafeCSS } from 'lit';
+import type { PropertyValues } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { ifDefined } from 'lit/directives/if-defined.js';
 import { repeat } from 'lit/directives/repeat.js';
@@ -374,6 +375,20 @@ export class HVDataTable extends LitElement {
 
   protected override willUpdate() {
     this._urls.configure(this.media?.sign ?? null);
+  }
+
+  /**
+   * With no rows the header alone still holds the table's full width, so the
+   * browser keeps a sideways pan: the pinned name would sit over a clipped
+   * header cell, and the empty state, only as wide as the box, out of view.
+   * A table with any row left keeps its pan, or every -, + and Edit at the far
+   * end would throw it back to the start.
+   */
+  protected override updated(changed: PropertyValues<this>) {
+    if (changed.has('items') && !this.items.length) {
+      this.scrollLeft = 0;
+      this.toggleAttribute('panned', false);
+    }
   }
 
   /**

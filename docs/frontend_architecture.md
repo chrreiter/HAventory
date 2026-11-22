@@ -823,7 +823,10 @@ width, so it holds while the rest scrolls under it: at 1280 with Home Assistant'
 docked the default set is wider than the table's box, and the row's actions sit at its far
 end. The pinning is why `hv-data-table` scrolls **both** axes on its host rather than
 scrolling the rows in a box of their own: a sticky cell resolves its offsets against the
-nearest scroll container, and a nested one that never moves sideways pins nothing.
+nearest scroll container, and a nested one that never moves sideways pins nothing. When the
+last row goes, the table scrolls back to its left edge: the header alone still holds the full
+width, so the browser would keep the pan, leaving the pinned name over a clipped header cell
+and the empty state, only as wide as the box, out of view. With any row left the pan stays.
 
 Preferences persist in `localStorage` under `haventory:columns:v1` as `{ expanded: [...] }`.
 Any other key in that record is ignored, so an older or newer payload never breaks the load.
