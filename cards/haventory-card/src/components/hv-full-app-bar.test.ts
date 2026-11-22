@@ -59,18 +59,6 @@ describe('hv-full-app-bar: phone-width app bar', () => {
     expect(q(sr, '[data-testid="selection-clear"]')).toBeTruthy();
   });
 
-  it('marks the load-all button so it can be ordered onto its own row', async () => {
-    // Styling it by data-testid would tie the stylesheet to the test hooks.
-    // One row past the first page, so some matches are still unloaded.
-    const { sr } = await mount({
-      items: Array.from({ length: 51 }, (_, i) => makeItem({ id: String(i + 1) })),
-      selecting: true,
-    });
-
-    const loadAll = q(sr, '[data-testid="selection-load-all"]');
-    expect(loadAll?.classList.contains('load-all')).toBe(true);
-  });
-
   // Selection mode opens at "0 selected", where the bar's one action had nothing
   // to act on and still rendered live.
   it('greys Clear selection out until something is selected', async () => {

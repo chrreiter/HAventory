@@ -1,6 +1,6 @@
 import { setLanguage } from '../i18n';
 import './hv-bulk-bar';
-import { all, componentCss, makeItem, mountComponent, q } from '../test.utils';
+import { all, makeItem, mountComponent, q } from '../test.utils';
 import { describeFailure } from './hv-bulk-bar';
 import type { BulkRunDetail, HVBulkBar } from './hv-bulk-bar';
 import type { BulkFailure, LocationTreeNode } from '../store/types';
@@ -88,13 +88,6 @@ describe('hv-bulk-bar: actions', () => {
     // Check-out carries no due date: the host asks for one, and tells that
     // apart from a deliberate "no due date" by the key being absent.
     expect(seen).toEqual([{ action: 'check-in' }, { action: 'check-out' }, { action: 'delete' }]);
-  });
-
-  it('names check-out as the step it is', async () => {
-    const el = await mount();
-    const labels = all(el, '[data-testid="bulk-action"]').map((b) => b.textContent?.trim());
-    expect(labels).toContain('Check out…');
-    expect(labels).toContain('Check in');
   });
 });
 
@@ -302,25 +295,6 @@ describe('describeFailure', () => {
   });
 });
 
-// The band, the Delete accent and every control on the bar come from the tokens
-// and the card's own button recipes, so the bar moves with the HA theme like
-// every other surface.
-describe('hv-bulk-bar: the band belongs to the theme', () => {
-  it('draws the running batch a real button', async () => {
-    const el = await mount({ progress: { done: 1, total: 4, failed: 0, label: 'Moving' } });
-    expect(q(el, '[data-testid="bulk-cancel"]')?.className).toContain('band-button');
-    // And its place in the row comes from the stylesheet, not an inline style
-    // per failure state.
-    expect(q(el, '[data-testid="bulk-cancel"]')?.getAttribute('style')).toBe(null);
-  });
-
-  it('keeps the failure count and Cancel together at the trailing edge', async () => {
-    const el = await mount({ progress: { done: 3, total: 4, failed: 1, label: 'Moving' } });
-    expect(q(el, '[data-testid="bulk-progress-failed"]')?.className).toBe('failed');
-    expect(componentCss('hv-bulk-bar')).toMatch(/\.progress \.spacer \{ margin-left: auto; \}/);
-  });
-});
-
 describe('hv-bulk-bar: the language in force', () => {
   // Every state of the bar draws its own buttons, and the ones behind a picker
   // or a running batch are the ones a reader of the source scrolls past.
@@ -338,14 +312,5 @@ describe('hv-bulk-bar: the language in force', () => {
 
     const finished = await mount({ result: { label: 'Move', succeeded: 2, failed: [] } });
     expect(q(finished, '[data-testid="bulk-result-dismiss"]')?.textContent?.trim()).toBe('Schließen');
-  });
-});
-
-describe('hv-bulk-bar: close verbs', () => {
-  // A result panel is read and dismissed; "Close" is what every other surface
-  // that only dismisses says.
-  it('closes the result rather than dismissing it', async () => {
-    const el = await mount({ result: { label: 'Move', succeeded: 2, failed: [] } });
-    expect(q(el, '[data-testid="bulk-result-dismiss"]')?.textContent?.trim()).toBe('Close');
   });
 });

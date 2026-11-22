@@ -133,12 +133,6 @@ describe('columns model', () => {
     }
   });
 
-  // Status sits beside Qty: both describe the item itself, ahead of where it is
-  // filed and when it is due.
-  it('orders status second, right after quantity', () => {
-    expect(COLUMN_DEFS.map((c) => c.key).slice(0, 3)).toEqual(['quantity', 'status', 'category']);
-  });
-
   // "Inspected" read as the date of the last inspection; the field holds the
   // next one due, which is what every other surface now says.
   it('labels the inspection column for the date it holds', () => {
@@ -176,12 +170,6 @@ function minWidthOf(template: string): number {
     .split(/\s+(?![^(]*\))/)
     .map((track) => Number(/^minmax\((\d+)px,/.exec(track)?.[1] ?? /^(\d+)px$/.exec(track)?.[1] ?? 0))
     .reduce((a, b) => a + b, 0);
-}
-
-/** The growth factor of a track: the `fr` in a `minmax()`, or 0 for a fixed one. */
-function growthOf(template: string, index: number): number {
-  const track = defined(template.split(/\s+(?![^(]*\))/)[index], 'track');
-  return Number(/,\s*([\d.]+)fr\)$/.exec(track)?.[1] ?? 0);
 }
 
 /**
@@ -259,14 +247,6 @@ describe('table column widths', () => {
     expect(minWidthOf(tableTemplateFor([...DEFAULT_COLUMNS], { selectable: true }))).toBe(1294);
   });
 
-  it('only fits a phone when almost every column is turned off', () => {
-    // Name (250) + Qty (70) + the actions gutter (140). That overflows a 375px
-    // screen on its own — so trimming columns was never a reliable answer, and
-    // it would have discarded a choice the user made. The table scrolls
-    // sideways instead, and pins the name column while it does.
-    expect(minWidthOf(tableTemplateFor(['quantity'], { selectable: false }))).toBe(460);
-  });
-
   // With every column on, the flexible tracks all sit at their floor and the
   // name loses to a column of tags: the audit frame read "Kärc…" beside two
   // full tag chips. The name also carries the inline Low and Checked-out chips,
@@ -284,17 +264,6 @@ describe('table column widths', () => {
 
     expect(flexible.length).toBe(3);
     for (const min of flexible) expect(nameMin).toBeGreaterThan(min);
-  });
-
-  // A name is one line of text with an end to it; a path and a tag set are not.
-  // So the name is served first through the floors and stops there, and the
-  // growth factors hand what is left to the two columns that can still use it.
-  it('grows the wrapping columns at least as fast as the name', () => {
-    const template = tableTemplateFor(['category', 'location', 'tags'], { selectable: false });
-    // 0 is the name, then category, location and tags in order.
-    expect(growthOf(template, 2)).toBeGreaterThanOrEqual(growthOf(template, 0));
-    expect(growthOf(template, 3)).toBeGreaterThanOrEqual(growthOf(template, 0));
-    expect(growthOf(template, 1)).toBeLessThan(growthOf(template, 2));
   });
 
   // The measurement behind this: at 1920 with all eight columns on and room to

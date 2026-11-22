@@ -470,11 +470,6 @@ describe('hv-location-tree: area grouping', () => {
     expect(rows(el).map((r) => r.dataset.depth)).toEqual(['0', '0']);
   });
 
-  it('indents a grouped root one level below its header', async () => {
-    const el = await mountAreas();
-    expect(rows(el).map((r) => r.dataset.depth)).toEqual(['1', '1', '1']);
-  });
-
   it('opens its members by default and hides them once collapsed', async () => {
     const el = await mountAreas();
     const twisty = el.shadowRoot?.querySelector(

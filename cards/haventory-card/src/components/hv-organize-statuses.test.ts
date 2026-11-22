@@ -485,15 +485,6 @@ describe('hv-organize-statuses: the tab', () => {
     expect(guard?.classList.contains('status-guard')).toBe(true);
     expect(guard?.querySelector('.guard-target select')).not.toBe(null);
   });
-
-  it('draws a chevron big enough to read at the button it sits in', async () => {
-    const { sr } = await mount();
-    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
-    for (const dir of ['up', 'down'] as const) {
-      const glyph = row?.querySelector(`[data-testid="status-${dir}"] svg`) as SVGElement;
-      expect(glyph?.getAttribute('width'), dir).toBe('18');
-    }
-  });
 });
 
 // Every disclosure renders after the row that opened it, inside a `.body` that

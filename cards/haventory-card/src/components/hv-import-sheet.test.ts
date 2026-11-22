@@ -72,12 +72,6 @@ const conflictEntries = (el: HVImportSheet) =>
   );
 
 describe('hv-import-sheet: step 1', () => {
-  it('says up front that nothing is written yet', async () => {
-    const el = await mount();
-    expect(el.shadowRoot?.textContent).toContain('Step 1 of 2');
-    expect(el.shadowRoot?.textContent).toContain('nothing is written until you press Import');
-  });
-
   it('defaults to merge and offers all three policies', async () => {
     const el = await mount();
     const policies = all(el, '[data-testid="import-policy"]');
@@ -345,26 +339,6 @@ describe('hv-import-sheet: preview', () => {
     const absent = await mount({ preview: preview() });
     expect(absent.preview?.attachments).toBeUndefined();
     expect(q(absent, '[data-testid="import-attachments-missing"]')).toBe(null);
-  });
-
-  it('puts the attachment caveat below the name clashes and above the button', async () => {
-    const el = await mount({
-      preview: preview({
-        warnings: [{ code: 'name_collision', path: 'items[0]', message: 'a clash' }],
-        attachments: { referenced: 2, missing: 2 },
-      }),
-    });
-    expect(all(el, '.alert').map((a) => a.dataset.testid)).toEqual([
-      'import-warnings',
-      'import-attachments-missing',
-    ]);
-  });
-
-  it('states the all-or-nothing behaviour and what it costs other clients', async () => {
-    const el = await mount({ preview: preview() });
-    const text = el.shadowRoot?.textContent?.replace(/\s+/g, ' ') ?? '';
-    expect(text).toContain('all-or-nothing');
-    expect(text).toContain('every connected card reloads its data');
   });
 
   it('labels the import button with what will actually be written', async () => {

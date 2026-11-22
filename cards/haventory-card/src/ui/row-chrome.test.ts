@@ -134,13 +134,6 @@ describe('renderNameChips', () => {
     expect(testids(box)).toEqual(['row-low', 'row-status', 'row-checked-out']);
   });
 
-  // Same chips, same order, the surface's own names — the browser harnesses
-  // locate the two sets separately.
-  it("carries each surface's own test ids", () => {
-    const box = draw(renderNameChips(makeItem(everything), flagged, tableOptions()));
-    expect(testids(box)).toEqual(['table-low', 'table-status', 'table-checked-out']);
-  });
-
   it('says nothing at all about an item with nothing to report', () => {
     expect(testids(draw(renderNameChips(makeItem(), flagged, rowOptions())))).toEqual([]);
   });

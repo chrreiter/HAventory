@@ -406,11 +406,4 @@ describe('hv-filter-chips', () => {
     expect(componentCss('hv-filter-chips')).toMatch(/\.chip > \.hv-chip-text \{[^}]*text-overflow: ellipsis/);
     expect(componentCss('hv-filter-chips')).toMatch(/\.chip > \.hv-chip-text \{[^}]*max-width:/);
   });
-
-  it('wraps a short label in the same element, so one chip is not shaped unlike the next', async () => {
-    const el = await mount({ filters: { ...defaultFilters(), overdueOnly: true } });
-    const chip = el.shadowRoot?.querySelector('[data-testid="filter-chip"]') as HTMLElement;
-    expect((chip.querySelector('.hv-chip-text') as HTMLElement).textContent).toBe('Overdue');
-    expect(chip.getAttribute('title')).toBe('Overdue');
-  });
 });

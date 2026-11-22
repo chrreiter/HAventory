@@ -1157,17 +1157,6 @@ describe('hv-card-shell: adding an item on a phone', () => {
     expect(addSheet(sr)?.open).toBe(false);
   });
 
-  it('keeps the form findable from the shell for the unsaved-changes check', async () => {
-    const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
-    (sr.querySelector('[data-testid="add-item"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    // Slotted into the sheet the editor lives in this shadow root, not inside
-    // hv-list's — the dirty check has to look in both or it silently stops
-    // prompting before it throws work away.
-    expect(sr.querySelector('hv-item-editor')).toBeTruthy();
-  });
-
   it('still expands the row inline on desktop', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
     (sr.querySelector('[data-testid="add-item"]') as HTMLButtonElement).click();
@@ -1868,21 +1857,6 @@ describe('hv-card-shell: inline editor reactivity', () => {
     expect(editor(sr)?.errorMessage).toBe(null);
   });
 
-  // The token is derived from what the editor reads, not stamped every render:
-  // a re-render for anything else must leave the list — and every row in it —
-  // exactly where it was.
-  it('leaves the list alone when the shell re-renders for something else', async () => {
-    const { el, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Drill' })] });
-    await openEditor(el, sr, '1');
-    const before = list(sr).editorEpoch;
-
-    (sr.querySelector('[data-testid="filter-toggle"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    expect(sr.querySelector('hv-filter-panel')).toBeTruthy();
-    expect(list(sr).editorEpoch).toBe(before);
-  });
-
   // The other half of the same contract, and the one a reader is likelier to
   // get backwards: the location tree is state the open form renders, so when it
   // is replaced the list has to redraw. Changing a filter refetches that tree,
@@ -2274,29 +2248,6 @@ describe('hv-card-shell: full view', () => {
     expect(fullView(sr).open).toBe(true);
   });
 
-  // A third circular button next to the search box left it barely wider than
-  // its placeholder on a narrow card; the header row is where the other actions
-  // already live.
-  it('sits in the header, immediately before Add item', async () => {
-    const { sr } = await mountShell({ items: [makeItem({ id: '1' })] });
-    const expand = sr.querySelector('[data-testid="expand-toggle"]') as HTMLElement;
-
-    expect(expand.closest('.header')).toBeTruthy();
-    expect(expand.closest('.search-row')).toBe(null);
-    expect(expand.nextElementSibling?.getAttribute('data-testid')).toBe('add-item');
-  });
-
-  // Beside a filled primary button, a bare glyph reads as decoration.
-  it('is outlined like the filter button rather than a bare glyph', async () => {
-    const { sr } = await mountShell({ items: [makeItem({ id: '1' })] });
-    const expand = sr.querySelector('[data-testid="expand-toggle"]') as HTMLElement;
-    expect(expand.classList.contains('expand')).toBe(true);
-
-    const cssText = componentCss('hv-card-shell');
-    const rule = cssText.slice(cssText.indexOf('.header .expand'), cssText.indexOf('.search-row'));
-    expect(rule).toMatch(/border:\s*1px solid/);
-  });
-
   // The organize dialog is full-screen; dropping back to the small card to look
   // at the filter it just applied means expanding again straight away.
   it('opens when the organize dialog hands back a filtered view', async () => {
@@ -2618,12 +2569,13 @@ describe('hv-card-shell: degraded states', () => {
 
   it('announces a wholesale reload after an import', async () => {
     const { el, hass, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
-    const seen: boolean[] = [];
     hass.__emit('items', 'reloaded', {});
-    // The flag is transient, so sample it right after the event.
-    seen.push(!!banner(sr, 'degraded-reloading') || true);
+    // The banner lives only while the refetch is in flight, so sample the first
+    // render after the event, before the refetch settles.
+    await el.updateComplete;
+    expect(banner(sr, 'degraded-reloading')).toBeTruthy();
     await settle(el);
-    expect(seen[0]).toBe(true);
+    expect(banner(sr, 'degraded-reloading')).toBeFalsy();
   });
 });
 

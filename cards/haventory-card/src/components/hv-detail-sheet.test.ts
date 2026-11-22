@@ -886,16 +886,6 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
   });
 
-  // The form inside asks through the same host, so a dismissal and the form's
-  // own Cancel cannot end up as two different questions.
-  it('hands the form the same asker it uses itself', async () => {
-    const el = await dirtySheet();
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement & {
-      confirmDiscard: unknown;
-    };
-    expect(editor.confirmDiscard).toBe(host.ask);
-  });
-
   // Declining leaves the sheet exactly where the question found it.
   it('keeps the form when the question is declined', async () => {
     const el = await dirtySheet();

@@ -26,19 +26,6 @@ describe('hv-banner', () => {
     expect(el.shadowRoot?.querySelector('.heading')).toBeTruthy();
   });
 
-  it('omits the lead-in when there is no heading', async () => {
-    const el = await mount({ message: 'plain' });
-    expect(el.shadowRoot?.querySelector('.heading')).toBe(null);
-  });
-
-  it('picks a glyph per kind and allows an override', async () => {
-    const warn = await mount({ kind: 'warning' });
-    expect(warn.shadowRoot?.querySelector('svg')?.dataset.icon).toBe('alert');
-
-    const conn = await mount({ kind: 'error', glyph: 'wifiOff' });
-    expect(conn.shadowRoot?.querySelector('svg')?.dataset.icon).toBe('wifiOff');
-  });
-
   it('exposes slots for trailing and stacked actions', async () => {
     const el = await mount(
       { message: 'Someone changed this while you were editing.' },

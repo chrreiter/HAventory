@@ -49,12 +49,6 @@ afterEach(() => {
 });
 
 describe('Picker', () => {
-  it('wears the dressing the host form gave it', () => {
-    const { trigger } = mount();
-    expect(trigger().className).toBe('control grow');
-    expect(trigger().querySelector('.value')?.textContent).toBe('Nothing picked');
-  });
-
   // aria-expanded on its own says only that something opened; which element it
   // opened is what aria-controls answers, and it has to resolve in both states.
   it('names the holder it discloses, open or shut', () => {

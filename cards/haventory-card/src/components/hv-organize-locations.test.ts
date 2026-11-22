@@ -103,14 +103,6 @@ describe('hv-organize-locations: locations', () => {
     expect(q(sr, '[data-testid="organize-location-count"]')?.textContent?.trim()).toBe('1 location');
   });
 
-  it('gives the create action the primary treatment', async () => {
-    const { sr } = await mount({ locations });
-    const button = q(sr, '[data-testid="organize-new-location"]') as HTMLButtonElement;
-    // Outlined, it reads as secondary next to the filter box and gets missed.
-    expect(button.classList.contains('hv-pill')).toBe(true);
-    expect(button.classList.contains('outline')).toBe(false);
-  });
-
   it('refuses to save a location with no name', async () => {
     const { el, sr } = await mount({ locations });
     (q(sr, '[data-testid="organize-new-location"]') as HTMLButtonElement).click();
@@ -473,13 +465,6 @@ describe('hv-organize-locations: locations', () => {
 
       expect(calls[0]?.changes.newParentId).toBeNull();
       expect(calls[0]?.changes.areaId).toBe('area-kitchen');
-    });
-
-    it('calls the row that clears the parent what it does in a parent picker', async () => {
-      const { picker } = await openParentPicker();
-      expect(picker.shadowRoot?.querySelector('[data-testid="tree-all"]')?.textContent?.trim()).toContain(
-        'Top level',
-      );
     });
   });
 

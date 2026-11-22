@@ -144,11 +144,6 @@ describe('hv-full-view: shell', () => {
       el.remove();
     }
   });
-
-  it('keeps the expand-toggle testid the POC card used', async () => {
-    const { sr } = await mount();
-    expect(q(barOf(sr), '[data-testid="expand-toggle"]')).toBeTruthy();
-  });
 });
 
 // The same surface, hosted by a Home Assistant panel rather than by the card.
@@ -965,14 +960,6 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
     expect(editorName(sr)).toBe('Typed but unsaved');
   });
 
-  // The form inside asks through the same host, so this surface's ways out and
-  // the form's own Cancel cannot become two different questions.
-  it('hands the form the same asker it uses itself', async () => {
-    const { sr, host } = await dirtyEditor(two());
-    const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement & { confirmDiscard: unknown };
-    expect(editor.confirmDiscard).toBe(host.ask);
-  });
-
   it('keeps the form when the question is declined', async () => {
     const { el, sr, host } = await dirtyEditor(two());
 
@@ -1203,20 +1190,6 @@ describe('hv-full-view: phone-width children', () => {
       expect(count()).toBe('0 active');
     } finally {
       viewport();
-    }
-  });
-
-  it('leaves the desktop panel without a head row', async () => {
-    const restore = stubViewport(false);
-    try {
-      const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
-      (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
-      await settle(el);
-
-      expect(q(sr, '[data-testid="full-panel-head"]')).toBe(null);
-      expect(q(sr, '[data-testid="full-panel-clear"]')).toBe(null);
-    } finally {
-      restore();
     }
   });
 

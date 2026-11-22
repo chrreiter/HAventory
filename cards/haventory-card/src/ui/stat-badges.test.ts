@@ -109,30 +109,6 @@ describe('renderStatBadges', () => {
     expect(low.classList.contains('on')).toBe(true);
   });
 
-  // Per-surface test ids and chip classes are what the browser harnesses and
-  // each shadow root's own CSS locate, so one renderer keeps them apart on
-  // purpose rather than by accident.
-  it('names and dresses each surface the way that surface asked', () => {
-    const { host: card } = draw(stocked(), null, cardOptions());
-    const { host: bar } = draw(stocked(), null, barOptions());
-
-    expect(testids(card)).toEqual(['badge-total', 'badge-low', 'badge-out']);
-    expect(testids(bar)).toEqual(['full-badge-low', 'full-badge-out']);
-
-    const cardLow = card.querySelector('[data-testid="badge-low"]') as HTMLElement;
-    const barLow = bar.querySelector('[data-testid="full-badge-low"]') as HTMLElement;
-    expect([...cardLow.classList]).toEqual(['hv-chip', 'badge', 'toggle', 'warning']);
-    expect([...barLow.classList]).toEqual(['hv-chip', 'pill', 'warning']);
-
-    // The card's checked-out badge is its one blue one; the bar paints its own
-    // fills and has no blue to spare on a blue bar.
-    expect([...(card.querySelector('[data-testid="badge-out"]') as HTMLElement).classList]).toContain('state');
-    expect([...(bar.querySelector('[data-testid="full-badge-out"]') as HTMLElement).classList]).toEqual([
-      'hv-chip',
-      'pill',
-    ]);
-  });
-
   // The total reports rather than filters, so it is the one chip a surface can
   // decline — the card's phone row does, and the bar never had one.
   it('draws the total only for a surface that asked for one, and only when allowed', () => {

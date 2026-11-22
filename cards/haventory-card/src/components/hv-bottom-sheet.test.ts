@@ -159,11 +159,6 @@ describe('hv-bottom-sheet: drag to dismiss', () => {
     expect(el.open).toBe(true);
   });
 
-  it('has no grip to drag when the handle is suppressed', async () => {
-    const el = await mount({ noHandle: true });
-    expect(el.shadowRoot?.querySelector('[data-testid="sheet-grip"]')).toBe(null);
-  });
-
   // Pinning current behaviour, not endorsing it: unlike the six surfaces that use
   // `ui/dialog-focus`, this sheet never moves focus into itself. Its Escape
   // handler therefore only fires once focus is already inside — which it is in

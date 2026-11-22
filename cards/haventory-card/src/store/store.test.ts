@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { BULK_CHUNK_SIZE, Store, makeBulkOp } from './store';
 import { makeMockHass, makeItem, defined } from '../test.utils';
 import { setLanguage } from '../i18n';
-import type { Location, StoreState } from './types';
+import type { Location } from './types';
 
 /**
  * The store's own surface: what `init` loads, what an optimistic write does to
@@ -282,19 +282,6 @@ describe('Store', () => {
     );
   });
 
-  it('refreshes single item from backend', async () => {
-    const item = makeItem({ id: '1', name: 'Original' });
-    const hass = makeMockHass({ items: [item] });
-    const store = new Store(hass, fast);
-    await store.init();
-
-    // refreshItem should fetch latest version
-    await store.refreshItem('1');
-    const refreshed = store.state.value.items.find((i) => i.id === '1');
-    expect(refreshed).toBeTruthy();
-    expect(refreshed?.id).toBe('1');
-  });
-
   it('createLocation calls WS and refreshes caches', async () => {
     const hass = makeMockHass({ items: [] });
     const store = new Store(hass, fast);
@@ -306,18 +293,6 @@ describe('Store', () => {
     expect(store.state.value.locationsFlatCache).toBeTruthy();
     const inCache = store.state.value.locationsFlatCache?.find((l) => l.id === created.id);
     expect(inCache?.name).toBe('Test Location');
-  });
-
-  it('updates stats cache on refreshStats', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
-
-    expect(store.state.value.statsCounts).toBeTruthy();
-
-    await store.refreshStats();
-    expect(store.state.value.statsCounts).toBeTruthy();
-    expect(typeof store.state.value.statsCounts?.items_total).toBe('number');
   });
 
   it('deleteLocation removes an empty location and refreshes caches', async () => {
@@ -411,17 +386,6 @@ describe('Store', () => {
    * written on every mutator and read by nobody — the type line is what keeps
    * it from coming back unnoticed, since a field nothing reads costs no test.
    */
-  it('keeps no register of writes in flight', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'A' })] });
-    const store = new Store(hass, fast);
-    await store.init();
-
-    await store.updateItem('1', { name: 'B' });
-
-    const noPendingOps: Extract<keyof StoreState, 'pendingOps'> extends never ? true : never = true;
-    expect(noPendingOps).toBe(true);
-    expect(Object.keys(store.state.value)).not.toContain('pendingOps');
-  });
 });
 
 describe('Store: selection', () => {

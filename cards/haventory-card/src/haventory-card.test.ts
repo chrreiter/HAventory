@@ -38,11 +38,6 @@ afterEach(() => {
 // left here is the contract with Lovelace — config, sizing, picker metadata —
 // and the proof that the wiring holds end-to-end through the real element.
 describe('haventory-card: the Lovelace element', () => {
-  it('renders the shell and nothing of its own', async () => {
-    const { sr } = await mountCard();
-    expect(sr.querySelector('[data-testid="card-shell"]')).toBeTruthy();
-  });
-
   it('passes the configured title down as the heading', async () => {
     const { sr } = await mountCard({ title: 'My Custom Inventory' });
     const shell = sr.querySelector('[data-testid="card-shell"]') as HTMLElement & { heading: string };

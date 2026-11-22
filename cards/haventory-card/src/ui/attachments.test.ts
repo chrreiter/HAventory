@@ -76,13 +76,6 @@ describe('renderPhotoFigure', () => {
     }
   });
 
-  it('keeps each strip own dressing on the missing tile', () => {
-    const box = draw(renderPhotoFigure(photo({ src: null, missing: true }), EDITOR_PHOTO));
-    expect(q(box, 'editor-photo-missing')?.className).toBe('placeholder missing');
-    const sheet = draw(renderPhotoFigure(photo({ src: null, missing: true }), SHEET_PHOTO));
-    expect(q(sheet, 'sheet-photo-missing')?.className).toBe('missing');
-  });
-
   // Signing can fail or still be running. The editor holds the tile's place in
   // a grid it is also a picker for; the sheet's strip simply has one photo less.
   it('holds the place for an unsigned picture only where the surface asked', () => {

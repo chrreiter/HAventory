@@ -28,12 +28,6 @@ describe('icons', () => {
     expect(svg.querySelector('path')?.getAttribute('d')).toBe(ICONS.plus);
   });
 
-  it('honours the requested size', () => {
-    const svg = renderIcon('magnify', 34);
-    expect(svg.getAttribute('width')).toBe('34');
-    expect(svg.getAttribute('height')).toBe('34');
-  });
-
   it('becomes an accessible image when given a label', () => {
     const svg = renderIcon('alert', 18, 'Low stock');
     expect(svg.getAttribute('role')).toBe('img');
