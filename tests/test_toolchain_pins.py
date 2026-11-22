@@ -79,10 +79,10 @@ PYTHON_VERSION_FORMS = re.compile(
         (
             rf"--python[ =]({_PY})",  # uv: `uv venv --python 3.14`
             rf"python install ({_PY})",  # uv: `uv python install 3.14`
-            rf"PYTHON:-({_PY})",  # shell default: `${HA_PYTHON:-3.14}`
+            rf"PYTHON:-({_PY})",  # shell default: `${HAVENTORY_INTEGRATION_PYTHON:-3.14}`
             rf"python[-_]version[\"']? *[:=] *\[? *[\"']?({_PY})",  # setup-python, mypy
             rf"requires-python *= *\">=({_PY})\"",  # the declaration
-            rf"[Cc]?[Pp]ython[ :]?({_PY})",  # prose, `python3.14`, image tags
+            rf"[Cc]?[Pp]ython[ :]?({_PY})",  # prose, `python3.14`
             rf"({_PY})-only",  # "the source is 3.14-only"
         )
     )
@@ -101,8 +101,6 @@ PYTHON_FLOOR_SITES: tuple[tuple[str, int, int], ...] = (
     (".github/workflows/card-smoke.yml", 3, 0),
     ("requirements-integration.txt", 2, 0),
     ("scripts/common.sh", 2, 0),
-    (".devcontainer/Dockerfile", 1, 0),
-    (".devcontainer/develop.sh", 2, 0),
     (".claude/hooks/session-start.sh", 6, 0),
     (".claude/skills/run-haventory/SKILL.md", 1, 0),
     (".claude/skills/test-haventory/SKILL.md", 3, 0),

@@ -230,9 +230,8 @@ Assistant contact surface, the phone breakpoints and the known gaps) is
   neither reports a check on a pull request: each opens or updates one issue (labelled
   `ci:ha-latest` / `ci:card-smoke`) and closes it again on a later passing run.
 - **Dependabot** groups updates for `github-actions`, `npm`, `uv`, `pip`
-  (`requirements-integration.txt`), `docker` (`.devcontainer/Dockerfile`) and
-  `devcontainers`. The `uv` and `pre-commit` blocks share one group, so a ruff bump moves the
-  pin and the hook rev in one pull request. The declared Home Assistant floor and the
+  (`requirements-integration.txt`) and `pre-commit`. The `uv` and `pre-commit` blocks share
+  one group, so a ruff bump moves the pin and the hook rev in one pull request. The declared Home Assistant floor and the
   frontend wheel it asks for are ignored for version updates, because they are floors, not
   dependencies to keep current.
 - **`main` is protected** by the checked-in ruleset `.github/rulesets/main.json`: a pull
@@ -251,24 +250,6 @@ Assistant contact surface, the phone breakpoints and the known gaps) is
 - **The social preview** is `docs/assets/social-preview.png`, rendered from the `.html`
   beside it. GitHub has no API for it; upload it under *Settings → General*.
 - **Releases** are cut by release-please: [CONTRIBUTING.md](../CONTRIBUTING.md#releases).
-
-## Reproducible dev environment (.devcontainer)
-
-Open the repository in VS Code or GitHub Codespaces and choose *Reopen in Container*. The
-post-create step runs `scripts/setup.sh` and `scripts/test.sh`.
-
-To run a real Home Assistant with HACS against the working tree, run
-`bash .devcontainer/develop.sh` (needs network). It installs the current stable Home
-Assistant into `.venv-ha/` with its config in `.ha-config/` (both git-ignored), symlinks the
-integration in and logs HAventory at debug. Open `http://localhost:8123`, onboard, then add
-the integration under *Settings → Devices & services*. A restart from the UI picks up the
-working tree's current code, and the browser smoke and the skills' helpers run against it with
-`HA_BASE_URL=http://localhost:8123` and a long-lived token from its profile page.
-
-On a Windows or macOS host, clone into a container volume (*Dev Containers: Clone Repository
-in Container Volume*) rather than reopening a bind-mounted checkout: `.venv`,
-`node_modules` and the Home Assistant environment are tens of thousands of small files, and a
-bind mount makes every one of them slow.
 
 ## Dev helper scripts
 
