@@ -310,6 +310,7 @@ export class HVFullView extends LitElement {
     openItem: (itemId) => this._openItem(itemId),
     editItem: (itemId) => this._openItem(itemId),
     requestDelete: (detail) => this._emit('request-delete', detail),
+    drawsSheet: () => this._viewport.narrow,
   });
 
   private readonly _emit = emitter<'hv-full-view'>(this);
@@ -431,6 +432,7 @@ export class HVFullView extends LitElement {
       store: this.store,
       onRefresh: () => this._menuAction({ id: 'refresh' }),
       onLatestShown: (itemId) => this._workspace.showLatest(itemId),
+      drawnElsewhere: (entry) => this._workspace.drawsInSheet(entry),
     };
   }
 
@@ -777,7 +779,7 @@ export class HVFullView extends LitElement {
           </div>
         </div>
 
-        ${this._viewport.narrow ? this._workspace.renderDetailSheet({ testid: 'full-detail-sheet' }) : null}
+        ${this._workspace.renderDetailSheet({ testid: 'full-detail-sheet', banners: this._bannerHooks })}
 
         ${this._workspace.renderCheckoutPopover({
           testid: 'full-checkout',

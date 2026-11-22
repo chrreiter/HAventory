@@ -3,13 +3,15 @@ import { keyed } from 'lit/directives/keyed.js';
 import { createRef, ref } from 'lit/directives/ref.js';
 import type { ReactiveController, ReactiveControllerHost, TemplateResult } from 'lit';
 import { t } from './i18n';
+import { isRecoverableConflict, renderErrorBanner } from './ui/banners';
+import type { BannerHooks } from './ui/banners';
 import { editorErrorText } from './ui/editor-error';
 import { HostState } from './ui/host-state';
 import { icon } from './ui/icons';
 import type { ConfirmDiscard } from './ui/discard';
 import type { MediaBindings } from './ui/media';
 import type { Store } from './store/store';
-import type { Item, Location, StoreState } from './store/types';
+import type { ErrorEntry, Item, Location, StoreState } from './store/types';
 import type { HVBanner } from './components/hv-banner';
 import type { HVDetailSheet } from './components/hv-detail-sheet';
 import type { HVItemEditor } from './components/hv-item-editor';
@@ -39,6 +41,8 @@ export interface WorkspaceHooks {
   editItem: (itemId: string) => void;
   /** A delete was asked for, from a row menu, the open form or the read sheet. */
   requestDelete: (detail: { itemId: string; name?: string }) => void;
+  /** Whether this host draws the read sheet, which it does where it lays out for a phone. */
+  drawsSheet: () => boolean;
 }
 
 type Checkout = { itemId: string; mode: 'check-out' | 'set-due-date'; anchor: DOMRect | null };
@@ -463,10 +467,34 @@ export class ItemWorkspace implements ReactiveController {
     </div>`;
   }
 
-  /** The phone read sheet, which reads the viewport itself. */
-  renderDetailSheet(opts: Pick<SurfaceOptions, 'testid'>): TemplateResult {
+  /** The item the read sheet is up on: drawn by the host, and only over a listed item. */
+  private get sheetItemId(): string | null {
+    const { detailItemId } = this.ui.value;
+    if (detailItemId === null || !this.hooks.drawsSheet()) return null;
+    return this.itemById(detailItemId) ? detailItemId : null;
+  }
+
+  /**
+   * Whether the read sheet draws `entry` instead of the host's stack: a conflict
+   * with its ways out, about the item the sheet is up on. The sheet's scrim
+   * covers the stack, and the banner's heading says "this item", so a conflict
+   * about any other item stays with the host.
+   */
+  drawsInSheet(entry: ErrorEntry): boolean {
+    const itemId = this.sheetItemId;
+    return itemId !== null && entry.itemId === itemId && isRecoverableConflict(entry);
+  }
+
+  /**
+   * The phone read sheet, where the host draws one. Its footer carries the
+   * conflicts `drawsInSheet` takes from the host's stack, acted on through the
+   * host's `banners` hooks and laid out by its `bannerStack`.
+   */
+  renderDetailSheet(opts: Pick<SurfaceOptions, 'testid'> & { banners: BannerHooks }): TemplateResult | null {
+    if (!this.hooks.drawsSheet()) return null;
     const st = this.st;
     const { detailItemId } = this.ui.value;
+    const conflicts = (st?.errorQueue ?? []).filter((e) => this.drawsInSheet(e));
     return html`<hv-detail-sheet
       ${ref(this.sheet)}
       .statuses=${st?.statuses ?? null}
@@ -495,7 +523,15 @@ export class ItemWorkspace implements ReactiveController {
       @check-out-confirmed=${(e: HvEvent<'hv-detail-sheet', 'check-out-confirmed'>) => this.onCheckOut(e)}
       @set-due-date=${(e: HvEvent<'hv-detail-sheet', 'set-due-date'>) => this.onSetDueDate(e)}
       @save=${this.onEditorSave}
-    ></hv-detail-sheet>`;
+    >
+      ${
+        conflicts.length
+          ? html`<div class="banners in-sheet" slot="conflicts" data-testid="sheet-banners">
+            ${conflicts.map((e) => renderErrorBanner(e, opts.banners))}
+          </div>`
+          : null
+      }
+    </hv-detail-sheet>`;
   }
 
   /**

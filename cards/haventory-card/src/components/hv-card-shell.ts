@@ -292,6 +292,7 @@ export class HVCardShell extends LitElement {
     },
     editItem: (itemId) => this._workspace.startEdit(itemId),
     requestDelete: (detail) => this.surfaces.requestDeleteById(detail.itemId),
+    drawsSheet: () => this.mobile,
   });
 
   /** The dialogs both hosts share — confirm, organize, import, diagnostics. */
@@ -675,7 +676,7 @@ export class HVCardShell extends LitElement {
           : null
       }
 
-      ${mobile ? this._workspace.renderDetailSheet({ testid: 'card-detail-sheet' }) : null}
+      ${this._workspace.renderDetailSheet({ testid: 'card-detail-sheet', banners: this._bannerHooks })}
       ${this._workspace.renderCheckoutPopover({ testid: 'card-checkout', mobile })}
 
       ${this.surfaces.renderSurfaces()}
@@ -688,6 +689,7 @@ export class HVCardShell extends LitElement {
       store: this.store,
       onRefresh: () => void this.surfaces.refresh(),
       onLatestShown: (itemId) => this._workspace.showLatest(itemId),
+      drawnElsewhere: (entry) => this._workspace.drawsInSheet(entry),
     };
   }
 

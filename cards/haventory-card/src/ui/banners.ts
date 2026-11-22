@@ -3,14 +3,15 @@ import type { TemplateResult } from 'lit';
 import { t } from '../i18n';
 import { icon } from './icons';
 import type { Store } from '../store/store';
-import type { StoreState } from '../store/types';
+import type { ErrorEntry, StoreState } from '../store/types';
 // Registers the element this file emits, so no host renders it unregistered.
 import '../components/hv-banner';
 
 /**
  * The two stacks that say something is wrong: the connection, and refused
  * operations. Every surface renders them from here; a refused save is also
- * reported inside the open form.
+ * reported inside the open form. The phone read sheet draws the conflicts about
+ * its own item, since its scrim covers the stack and their ways out with it.
  */
 
 /** Layout for the two stacks. Hosts add this to their own styles. */
@@ -19,6 +20,11 @@ export const bannerStack = css`
     display: grid;
     gap: 6px;
     padding: 0 16px 10px;
+  }
+  /* In a phone sheet's footer, under the divider the sheet draws, and clear of
+     the home indicator. */
+  .banners.in-sheet {
+    padding: 10px 16px max(10px, env(safe-area-inset-bottom));
   }
 `;
 
@@ -34,6 +40,17 @@ export interface BannerHooks {
    * dropped only for something newer to show.
    */
   onLatestShown: (itemId: string) => void;
+  /**
+   * An entry a surface drawn over the stack shows instead, so the stack leaves
+   * it out: the phone read sheet's scrim covers the stack, and the sheet draws
+   * the conflicts about its own item.
+   */
+  drawnElsewhere: (entry: ErrorEntry) => boolean;
+}
+
+/** A conflict filed with its item, whose banner offers the ways out of it. */
+export function isRecoverableConflict(entry: ErrorEntry): boolean {
+  return entry.kind === 'conflict' && !!entry.itemId;
 }
 
 /** Conditions that make the surface untrustworthy, with the re-read on offer. */
@@ -96,69 +113,70 @@ export function renderDegradedBanners(st: StoreState | null, hooks: BannerHooks)
   return banners.length ? html`<div class="banners" data-testid="degraded-banners">${banners}</div>` : null;
 }
 
-/** The queue of operations that came back refused, newest last. */
+/** The queue of operations that came back refused, newest last, less what is drawn elsewhere. */
 export function renderErrorBanners(st: StoreState | null, hooks: BannerHooks): TemplateResult | null {
-  const errors = st?.errorQueue ?? [];
+  const errors = (st?.errorQueue ?? []).filter((e) => !hooks.drawnElsewhere(e));
   if (!errors.length) return null;
-  const store = hooks.store;
   return html`
-    <div class="banners" data-testid="banners">
-      ${errors.map((e) => {
-        const conflict = e.kind === 'conflict';
-        // A conflict shows its heading only; its message names version numbers.
-        // The ways out need an item, which a refused quantity delta is filed without.
-        const recoverable = conflict && e.itemId;
-        return html`<hv-banner
-          kind=${conflict ? 'warning' : 'error'}
-          .heading=${conflict ? t('hv.banner.conflict.heading') : null}
-          .message=${conflict ? '' : e.message}
-          data-testid="banner-entry"
-          data-code=${e.code}
-        >
+    <div class="banners" data-testid="banners">${errors.map((e) => renderErrorBanner(e, hooks))}</div>
+  `;
+}
+
+/** One refused operation, the same in the host's stack and in the phone read sheet. */
+export function renderErrorBanner(e: ErrorEntry, hooks: BannerHooks): TemplateResult {
+  const store = hooks.store;
+  const conflict = e.kind === 'conflict';
+  // A conflict shows its heading only; its message names version numbers.
+  // The ways out need an item, which a refused quantity delta is filed without.
+  const recoverable = isRecoverableConflict(e);
+  return html`<hv-banner
+    kind=${conflict ? 'warning' : 'error'}
+    .heading=${conflict ? t('hv.banner.conflict.heading') : null}
+    .message=${conflict ? '' : e.message}
+    data-testid="banner-entry"
+    data-code=${e.code}
+  >
+    ${
+      recoverable
+        ? html`<span slot="below">
+          <button
+            class="hv-pill outline"
+            data-testid="banner-view-latest"
+            @click=${() => {
+              const itemId = e.itemId!;
+              void store?.refreshItem(itemId).then((landed) => {
+                if (landed) hooks.onLatestShown(itemId);
+              });
+              store?.dismissError(e.id);
+            }}
+          >
+            ${t('hv.banner.conflict.viewLatest')}
+          </button>
           ${
-            recoverable
-              ? html`<span slot="below">
-                <button
-                  class="hv-pill outline"
-                  data-testid="banner-view-latest"
-                  @click=${() => {
-                    const itemId = e.itemId!;
-                    void store?.refreshItem(itemId).then((landed) => {
-                      if (landed) hooks.onLatestShown(itemId);
-                    });
-                    store?.dismissError(e.id);
-                  }}
-                >
-                  ${t('hv.banner.conflict.viewLatest')}
-                </button>
-                ${
-                  e.changes
-                    ? html`<button
-                      class="hv-pill"
-                      data-testid="banner-reapply"
-                      @click=${() => {
-                        void store?.updateItem(e.itemId!, e.changes!);
-                        store?.dismissError(e.id);
-                      }}
-                    >
-                      ${t('hv.banner.conflict.reapply')}
-                    </button>`
-                    : null
-                }
-              </span>`
+            e.changes
+              ? html`<button
+                class="hv-pill"
+                data-testid="banner-reapply"
+                @click=${() => {
+                  void store?.updateItem(e.itemId!, e.changes!);
+                  store?.dismissError(e.id);
+                }}
+              >
+                ${t('hv.banner.conflict.reapply')}
+              </button>`
               : null
           }
-          <button
-            slot="actions"
-            class="hv-icon-button"
-            data-testid="banner-dismiss"
-            aria-label=${t('hv.action.dismiss')}
-            @click=${() => store?.dismissError(e.id)}
-          >
-            ${icon('close', 16)}
-          </button>
-        </hv-banner>`;
-      })}
-    </div>
-  `;
+        </span>`
+        : null
+    }
+    <button
+      slot="actions"
+      class="hv-icon-button"
+      data-testid="banner-dismiss"
+      aria-label=${t('hv.action.dismiss')}
+      @click=${() => store?.dismissError(e.id)}
+    >
+      ${icon('close', 16)}
+    </button>
+  </hv-banner>`;
 }
