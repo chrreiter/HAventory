@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.9.5](https://github.com/chrreiter/HAventory/compare/v0.9.4...v0.9.5) (2026-11-22)
+
+
+### Bug Fixes
+
+* bring the emptied table back to its left edge ([#883](https://github.com/chrreiter/HAventory/issues/883)) ([#885](https://github.com/chrreiter/HAventory/issues/885)) ([cb657b7](https://github.com/chrreiter/HAventory/commit/cb657b72934159639534a0140ec738c078f3f767))
+* clear the form's conflict message once Re-apply lands ([#881](https://github.com/chrreiter/HAventory/issues/881)) ([#889](https://github.com/chrreiter/HAventory/issues/889)) ([bb4c1c1](https://github.com/chrreiter/HAventory/commit/bb4c1c1e217aed037eeac86198ec09dcb2e8fc25))
+* draw a conflict's ways out inside the phone sheet ([#878](https://github.com/chrreiter/HAventory/issues/878)) ([#886](https://github.com/chrreiter/HAventory/issues/886)) ([5edbeb0](https://github.com/chrreiter/HAventory/commit/5edbeb01d14254af95fbec5a93a2790f554b6877))
+* draw a placeholder while the card's runtime loads ([#880](https://github.com/chrreiter/HAventory/issues/880)) ([4e29894](https://github.com/chrreiter/HAventory/commit/4e298949b293cf5f0b0c518660fb2c4485156171)), closes [#876](https://github.com/chrreiter/HAventory/issues/876)
+* draw the Category toggle with the editor selects' chevron ([#859](https://github.com/chrreiter/HAventory/issues/859)) ([#867](https://github.com/chrreiter/HAventory/issues/867)) ([ddd5f07](https://github.com/chrreiter/HAventory/commit/ddd5f0751b82a6b8620f0a2903554b33837b1a03))
+* draw the editor selects with the card's chevron, not the browser arrow ([#846](https://github.com/chrreiter/HAventory/issues/846)) ([693833c](https://github.com/chrreiter/HAventory/commit/693833cc7040b8d04d53790f356f3f6e21acb76b))
+* draw the Organize dialog's selects with the card's chevron ([#849](https://github.com/chrreiter/HAventory/issues/849)) ([#851](https://github.com/chrreiter/HAventory/issues/851)) ([16ca3af](https://github.com/chrreiter/HAventory/commit/16ca3afe721b2def2fc74bf8f2c8ff3422f2565b))
+* drop two unread count fields, a redundant lock, and other review leftovers ([#834](https://github.com/chrreiter/HAventory/issues/834)) ([f8f4476](https://github.com/chrreiter/HAventory/commit/f8f44769bfa068c288cef848483cd994b98bd2c4))
+* end a cut search placeholder in an ellipsis and drop "Search all 0 items" ([#848](https://github.com/chrreiter/HAventory/issues/848)) ([36f52a1](https://github.com/chrreiter/HAventory/commit/36f52a1a1f9629c501dd4586c191eaa55a9fc94b)), closes [#836](https://github.com/chrreiter/HAventory/issues/836)
+* give the item editor's category list an accessible name ([0933aeb](https://github.com/chrreiter/HAventory/commit/0933aeb2d839456c0161eb9d08b7ee2d92f8d366))
+* hold the loaded card to its sections cell and its masonry size ([#887](https://github.com/chrreiter/HAventory/issues/887)) ([e634a6b](https://github.com/chrreiter/HAventory/commit/e634a6bfdba25c5331a53f94c8a600dbbc397e63)), closes [#882](https://github.com/chrreiter/HAventory/issues/882)
+* indent the sidebar's empty location note like the other empty lists ([#845](https://github.com/chrreiter/HAventory/issues/845)) ([764cc5b](https://github.com/chrreiter/HAventory/commit/764cc5bc88596a78d08eb2ff77b98fa7a4b4e149)), closes [#839](https://github.com/chrreiter/HAventory/issues/839)
+* keep a percent sign in log context from dropping the line ([#803](https://github.com/chrreiter/HAventory/issues/803)) ([7f99be1](https://github.com/chrreiter/HAventory/commit/7f99be1a04cbbc2c2662304773ead5173d55b16e))
+* keep the card at 6 rows or more in a sections view ([#890](https://github.com/chrreiter/HAventory/issues/890)) ([#891](https://github.com/chrreiter/HAventory/issues/891)) ([6e592ec](https://github.com/chrreiter/HAventory/commit/6e592ecf8360906de41cbd8e30c457f291583427))
+* keep the selection bar and the Add pill readable in dark mode ([#843](https://github.com/chrreiter/HAventory/issues/843)) ([5bf8d58](https://github.com/chrreiter/HAventory/commit/5bf8d58a4a89947978a56866b60e79a77dbea376))
+* keep the selection bar's subcount and Load all button at 4.5:1 ([#855](https://github.com/chrreiter/HAventory/issues/855)) ([#866](https://github.com/chrreiter/HAventory/issues/866)) ([5573d7a](https://github.com/chrreiter/HAventory/commit/5573d7af4ef9b86dac55e51995a9838507174a0d))
+* line the phone filter panel up with its heading ([#860](https://github.com/chrreiter/HAventory/issues/860)) ([#868](https://github.com/chrreiter/HAventory/issues/868)) ([a39cb89](https://github.com/chrreiter/HAventory/commit/a39cb8960db84d1d88cc19e6b87f5a624f6b6cea))
+* load a missing item quantity as one, and sweep small review slips ([#821](https://github.com/chrreiter/HAventory/issues/821)) ([a12fd83](https://github.com/chrreiter/HAventory/commit/a12fd834e27991c851a51c2a3017b95762d6e5d5))
+* log a schema refusal once, naming the stored and the supported version ([#872](https://github.com/chrreiter/HAventory/issues/872)) ([3c425e5](https://github.com/chrreiter/HAventory/commit/3c425e5c5a09e8348f0f6d59b4967529d4363e79))
+* make the phone quantity stepper smaller ([#854](https://github.com/chrreiter/HAventory/issues/854)) ([#865](https://github.com/chrreiter/HAventory/issues/865)) ([b401c2e](https://github.com/chrreiter/HAventory/commit/b401c2ed8c8ebdf69a72d27870cb4b233f2d7bd0))
+* name the deleted item in a bulk delete's low-stock cleared event ([#813](https://github.com/chrreiter/HAventory/issues/813)) ([8e8d916](https://github.com/chrreiter/HAventory/commit/8e8d91630ac198d7052c3f2bb86c0c13612e9444)), closes [#812](https://github.com/chrreiter/HAventory/issues/812)
+* name the import preview's conflicts, and stop claiming nothing changes ([#869](https://github.com/chrreiter/HAventory/issues/869)) ([615b81d](https://github.com/chrreiter/HAventory/commit/615b81df870282134165d556ae3c29d9be9d7e4f)), closes [#856](https://github.com/chrreiter/HAventory/issues/856)
+* pin the full view table's name column at every width ([#870](https://github.com/chrreiter/HAventory/issues/870)) ([74ee5fb](https://github.com/chrreiter/HAventory/commit/74ee5fb4688c9d95841b0c1a45230db6e90845f5)), closes [#852](https://github.com/chrreiter/HAventory/issues/852)
+* price the sidebar status rows against the active filter ([#847](https://github.com/chrreiter/HAventory/issues/847)) ([41e902d](https://github.com/chrreiter/HAventory/commit/41e902dca5e132bc77b78d39025ab73b57b3c724)), closes [#841](https://github.com/chrreiter/HAventory/issues/841)
+* re-read the area names when live updates come back after a restart ([#842](https://github.com/chrreiter/HAventory/issues/842)) ([240e8b4](https://github.com/chrreiter/HAventory/commit/240e8b4689c9da7dd7e481f3c82fbdd30fc2b7ae)), closes [#835](https://github.com/chrreiter/HAventory/issues/835)
+* say so when the card's runtime will not load, and offer a reload ([#888](https://github.com/chrreiter/HAventory/issues/888)) ([a9bc243](https://github.com/chrreiter/HAventory/commit/a9bc243549a0665e8e6084832cfe726d2c93717c)), closes [#884](https://github.com/chrreiter/HAventory/issues/884)
+* say why a checked-out item cannot change quantity in the detail sheet ([#844](https://github.com/chrreiter/HAventory/issues/844)) ([0bd7d29](https://github.com/chrreiter/HAventory/commit/0bd7d2938e6bf560453c4f422f575c15db1093cb)), closes [#838](https://github.com/chrreiter/HAventory/issues/838)
+* say why an open item closed when another device deleted it ([#879](https://github.com/chrreiter/HAventory/issues/879)) ([cde1bbe](https://github.com/chrreiter/HAventory/commit/cde1bbebdf6a6ee730c088bf89ad1aa13c68e1b9))
+* settle the German wording, and one ellipsis rule for both languages ([#873](https://github.com/chrreiter/HAventory/issues/873)) ([172b6b9](https://github.com/chrreiter/HAventory/commit/172b6b9c2e744e041637cd4cd1f93c91f436c9e0)), closes [#862](https://github.com/chrreiter/HAventory/issues/862)
+* show one Save on the phone edit sheet ([#853](https://github.com/chrreiter/HAventory/issues/853)) ([#864](https://github.com/chrreiter/HAventory/issues/864)) ([ed57d35](https://github.com/chrreiter/HAventory/commit/ed57d35a8d2f7624b34456001c73e9281e86f6f4))
+* start the open form over when View latest brings a newer version ([#877](https://github.com/chrreiter/HAventory/issues/877)) ([505049c](https://github.com/chrreiter/HAventory/commit/505049c7d17611046cc0c9a900207454edcf354f))
+* stop naming an English model on the HAventory device ([#858](https://github.com/chrreiter/HAventory/issues/858)) ([#871](https://github.com/chrreiter/HAventory/issues/871)) ([5e3d785](https://github.com/chrreiter/HAventory/commit/5e3d785b87c5ddbd7e4dc3b712ff450afa1fde72))
+* tie the card's wire types to what the backend sends ([#816](https://github.com/chrreiter/HAventory/issues/816)) ([40d81f8](https://github.com/chrreiter/HAventory/commit/40d81f88462ee882753da50ef564290311d08218))
+* undo a write whose save failed, so a later save cannot write it ([#806](https://github.com/chrreiter/HAventory/issues/806)) ([faf6de9](https://github.com/chrreiter/HAventory/commit/faf6de9b765c133960b3d0da7bf8756bfcd3322b))
+* word backend refusals in the household's language and register services from async_setup ([#807](https://github.com/chrreiter/HAventory/issues/807)) ([2b4b8e0](https://github.com/chrreiter/HAventory/commit/2b4b8e05e28d2c169213d39b87f4b4c1eb55fd27))
+
+
+### Performance Improvements
+
+* do less work on the event loop for each write ([#810](https://github.com/chrreiter/HAventory/issues/810)) ([8e46fb4](https://github.com/chrreiter/HAventory/commit/8e46fb43f14c42235437f40b36f24959c1a4d0ef))
+* load the card's code only on pages that show it ([#820](https://github.com/chrreiter/HAventory/issues/820)) ([388eaff](https://github.com/chrreiter/HAventory/commit/388eaff31cf278fae364c55d798dae579afe4dbe))
+
+
+### Documentation
+
+* add a rule that keeps tests few, and move the design decisions to the README ([#822](https://github.com/chrreiter/HAventory/issues/822)) ([807749c](https://github.com/chrreiter/HAventory/commit/807749c28aa915ae8f0798675111e4edba40e546))
+* build the card on Linux, and name the facet keys the card leaves out ([#850](https://github.com/chrreiter/HAventory/issues/850)) ([c472c8c](https://github.com/chrreiter/HAventory/commit/c472c8cbf34f0eb9531eda5d7f922d1f5fb8e0e0))
+* say a rebuild that keeps the version is not revalidated ([#861](https://github.com/chrreiter/HAventory/issues/861)) ([#863](https://github.com/chrreiter/HAventory/issues/863)) ([87db1b2](https://github.com/chrreiter/HAventory/commit/87db1b21104f5ba8b9b1efc57a28affd88818452))
+
 ## [0.9.4](https://github.com/chrreiter/HAventory/compare/v0.9.3...v0.9.4) (2026-11-12)
 
 
