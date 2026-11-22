@@ -52,6 +52,9 @@ export const de: CompleteDictionary = {
   'hv.empty.noItems.detail': 'Füge deinen ersten Gegenstand hinzu oder stelle ein Backup wieder her.',
   'hv.empty.noItems.addAction': 'Ersten Gegenstand hinzufügen',
 
+  'hv.loader.failed': 'HAventory konnte nicht geladen werden',
+  'hv.loader.reload': 'Seite neu laden',
+
   'hv.banner.connectionLost.heading': 'Verbindung unterbrochen',
   'hv.banner.connectionLost.message':
     ' · es werden die bereits geladenen Daten angezeigt. Änderungen werden möglicherweise nicht gespeichert.',

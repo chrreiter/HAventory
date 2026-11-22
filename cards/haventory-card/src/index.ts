@@ -3,6 +3,7 @@ import { registerCustomCard } from './ha-contract';
 import { StoreHostElement } from './store-host';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { hostTokens } from './ui/host-tokens';
+import { loadFailureStyles } from './ui/load-failure';
 import { normalizeQuickFilters } from './ui/quick-filters';
 import type { QuickFilterKey } from './ui/quick-filters';
 import { registerBrandIcon } from './ui/brand-icon';
@@ -54,6 +55,7 @@ export class HAventoryCard extends StoreHostElement {
    */
   static override styles = [
     hostTokens,
+    loadFailureStyles,
     css`
       :host {
         display: flex;
@@ -167,7 +169,7 @@ export class HAventoryCard extends StoreHostElement {
         <div class="placeholder-head">
           ${title ? html`<h2 class="placeholder-title" data-testid="card-placeholder-title">${title}</h2>` : nothing}
         </div>
-        <div class="placeholder-body" aria-busy="true"></div>
+        ${this.renderPlaceholderBody()}
       </div>
     `;
   }

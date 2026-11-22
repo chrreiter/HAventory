@@ -54,6 +54,12 @@ export const en = {
   'hv.empty.noItems.detail': 'Add your first item, or restore a backup.',
   'hv.empty.noItems.addAction': 'Add your first item',
 
+  // ui/load-failure — a host's placeholder once the runtime will not load. The
+  // catalogs are in that runtime, so the build copies these keys into the core
+  // chunk (`i18n/loader-copy`); a headline, so no full stop.
+  'hv.loader.failed': "HAventory couldn't load",
+  'hv.loader.reload': 'Reload page',
+
   // ui/banners — the two stacks that say something is wrong.
   'hv.banner.connectionLost.heading': 'Connection lost',
   'hv.banner.connectionLost.message': ' · showing the data already loaded. Changes may not save.',

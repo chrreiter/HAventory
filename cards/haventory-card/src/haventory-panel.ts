@@ -4,6 +4,7 @@ import { StoreHostElement } from './store-host';
 import { sidebarToggleLabel } from './ha-contract';
 import { DEFAULT_CARD_TITLE } from './ui/card-title';
 import { hostTokens } from './ui/host-tokens';
+import { loadFailureStyles } from './ui/load-failure';
 import type { QuickFilterKey } from './ui/quick-filters';
 import { defineCardElement } from './register';
 import type { HostSurfaces } from './host-surfaces';
@@ -32,6 +33,7 @@ export class HAventoryPanel extends StoreHostElement {
    */
   static override styles = [
     hostTokens,
+    loadFailureStyles,
     css`
       :host {
         display: block;
@@ -127,7 +129,8 @@ export class HAventoryPanel extends StoreHostElement {
   }
 
   /**
-   * The app bar's first row and an empty page. The title is the registration's,
+   * The app bar's first row over a page that is empty unless the runtime has
+   * failed to load. The title is the registration's,
    * which is what the real bar shows, and the sidebar toggle is named by Home
    * Assistant's catalog, since the card's own is in the runtime; without that
    * name there is no button rather than a nameless one.
@@ -155,7 +158,7 @@ export class HAventoryPanel extends StoreHostElement {
           }
           ${title ? html`<h2 class="placeholder-title" data-testid="panel-placeholder-title">${title}</h2>` : nothing}
         </div>
-        <div class="placeholder-body" aria-busy="true"></div>
+        ${this.renderPlaceholderBody()}
       </div>
     `;
   }

@@ -1,13 +1,18 @@
 import { rmSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { runnerImport } from 'vite';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
+import type { Dictionary } from './src/i18n';
 
 const ENTRY = resolve(import.meta.dirname, 'src/index.ts');
 // Inside the integration package: that directory is the only tree HACS copies
 // for an integration-category repo, and the integration serves it over its own
 // static path.
 const OUT_DIR = resolve(import.meta.dirname, '../../custom_components/haventory/www');
+const I18N = resolve(import.meta.dirname, 'src/i18n/index.ts');
+/** The namespace `LoaderKey` in `src/i18n/loader-copy.ts` is drawn from. */
+const LOADER_PREFIX = 'hv.loader.';
 
 /**
  * `chunks/` holds only what one build emitted. A chunk name changes with its
@@ -20,6 +25,31 @@ function emptyChunksDir(): Plugin {
     apply: 'build',
     buildStart() {
       rmSync(resolve(OUT_DIR, 'chunks'), { recursive: true, force: true });
+    },
+  };
+}
+
+/**
+ * `__HV_LOADER_COPY__`: every dictionary's `hv.loader.*` strings, which a host's
+ * placeholder says once the runtime will not load. The catalogs are in the
+ * runtime chunk, the file that failed, so these few are written into the core
+ * chunk instead. Defined for the tests as well, so they read what the build
+ * writes. The catalogs are read through Vite's module runner: imported here,
+ * their extensionless TypeScript imports would have Vite warn on every run that
+ * its native config loader cannot follow them.
+ */
+function loaderCopy(): Plugin {
+  return {
+    name: 'haventory-loader-copy',
+    async config() {
+      const { module } = await runnerImport<{ DICTIONARIES: Readonly<Record<string, Dictionary>> }>(I18N);
+      const copy = Object.fromEntries(
+        Object.entries(module.DICTIONARIES).map(([tag, dictionary]) => [
+          tag,
+          Object.fromEntries(Object.entries(dictionary).filter(([key]) => key.startsWith(LOADER_PREFIX))),
+        ]),
+      );
+      return { define: { __HV_LOADER_COPY__: JSON.stringify(copy) } };
     },
   };
 }
@@ -43,7 +73,7 @@ function isEager(id: string, getModuleInfo: ModuleInfoLookup, seen = new Set<str
 }
 
 export default defineConfig({
-  plugins: [emptyChunksDir()],
+  plugins: [emptyChunksDir(), loaderCopy()],
   test: {
     environment: 'jsdom',
     // Each file still gets its own context and its own custom-element registry,
