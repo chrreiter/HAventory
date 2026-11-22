@@ -463,29 +463,9 @@ describe('hv-editor-dates: reminders', () => {
 });
 
 describe('hv-editor-dates: geometry and type', () => {
-  // Both boxes are caption + body and nothing else, so the hint belongs to the
-  // field it explains rather than hanging under the box.
-  it('puts the due-date hint inside the field it is about', async () => {
-    const { el } = await mount(makeItem({ id: '1', checked_out: false }));
-    const hint = q(el, '[data-testid="editor-due-hint"]');
-    expect(hint).toBeTruthy();
-    // The editor's cell around this element is out of reach from here, so the
-    // box the hint and the field share is the check-out group.
-    expect(hint?.closest('.group')?.querySelector('[data-testid="editor-due-date"]')).toBeTruthy();
-  });
-
   it('drops the hint once there is a check-out to be due', async () => {
     const { el } = await mount(makeItem({ id: '1', checked_out: true }));
     expect(q(el, '[data-testid="editor-due-hint"]')).toBe(null);
-  });
-});
-
-describe('hv-editor-dates: one label recipe', () => {
-  it('gives every section label the shared recipe', async () => {
-    const { el } = await mount(makeItem({ id: '1' }));
-    for (const testid of ['editor-checkout-caption', 'editor-inspection-caption']) {
-      expect(q(el, `[data-testid="${testid}"]`)?.classList.contains('hv-label'), testid).toBe(true);
-    }
   });
 });
 

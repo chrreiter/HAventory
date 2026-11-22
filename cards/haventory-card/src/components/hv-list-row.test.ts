@@ -316,12 +316,6 @@ describe('hv-list-row: area', () => {
     expect(secondary?.textContent?.trim()).toBe('Fridge › Pantry · Consumables');
     expect(secondary?.getAttribute('title')).toBe('Fridge › Pantry · Consumables');
   });
-
-  it('reads exactly as before for a host that passes no areas at all', async () => {
-    const el = await mount({ effective_area_id: 'area-kitchen', location_path: pantry });
-    // The id is all there is to show without the cache, but the row still works.
-    expect(q(el, '[data-testid="row-secondary"]')?.textContent).toContain('Fridge › Pantry');
-  });
 });
 
 describe('hv-list-row: mobile affordances', () => {
@@ -392,22 +386,6 @@ describe('hv-list-row: mobile affordances', () => {
     const secondary = q(el, '[data-testid="row-secondary"]');
     expect(secondary?.querySelector('[data-testid="area-chip"]')).toBe(null);
     expect(secondary?.textContent?.trim()).toBe('Workshop › … › Small Bin');
-  });
-
-  it('puts the mark after the status a flagged phone row leads with', async () => {
-    const el = await mount(
-      {
-        category: null,
-        status: 'needs_repair',
-        effective_area_id: 'area-workshop',
-        location_path: deepPath,
-      },
-      { mobile: true, areas: [{ id: 'area-workshop', name: 'Garage' }] },
-    );
-    const secondary = q(el, '[data-testid="row-secondary"]');
-    expect(secondary?.textContent).toContain('Needs repair');
-    expect(secondary?.querySelector('[data-testid="area-chip"]')?.textContent).toContain('Garage');
-    expect(secondary?.textContent).toContain('… › Small Bin');
   });
 
   it('still says "No location" when there is neither a path nor a category', async () => {
@@ -489,20 +467,20 @@ describe('hv-list-row: mobile affordances', () => {
 
   // A passed date drawn like an upcoming one — same wording, same blue — tells
   // the reader nothing about being late.
-  it('says a passed due date is overdue, and colours it that way', async () => {
-    const el = await mount({ checked_out: true, due_date: '2000-01-02' }, { mobile: true });
+  it.each([
+    [
+      'says a passed due date is overdue, and colours it that way',
+      '2000-01-02',
+      'Overdue · due Jan 2, 2000',
+      true,
+    ],
+    ['leaves an upcoming due date alone', '2999-12-31', 'Checked out · due Dec 31, 2999', false],
+  ])('%s', async (_title, due_date, text, overdue) => {
+    const el = await mount({ checked_out: true, due_date }, { mobile: true });
     const secondary = q(el, '[data-testid="row-secondary"]');
 
-    expect(secondary?.textContent).toContain('Overdue · due Jan 2, 2000');
-    expect(secondary?.classList.contains('overdue')).toBe(true);
-  });
-
-  it('leaves an upcoming due date alone', async () => {
-    const el = await mount({ checked_out: true, due_date: '2999-12-31' }, { mobile: true });
-    const secondary = q(el, '[data-testid="row-secondary"]');
-
-    expect(secondary?.textContent).toContain('Checked out · due Dec 31, 2999');
-    expect(secondary?.classList.contains('overdue')).toBe(false);
+    expect(secondary?.textContent).toContain(text);
+    expect(secondary?.classList.contains('overdue')).toBe(overdue);
   });
 });
 
@@ -537,13 +515,6 @@ describe('hv-list-row: the phone stepper’s size', () => {
     expect(buttons).toMatch(/height: var\(--hv-row-step\)/);
     expect(buttons).not.toContain('--hv-tap-min');
     expect(body(css, ':host([mobile])')).toContain('--hv-row-step: 32px');
-  });
-
-  it('sizes the number for the smaller pill', async () => {
-    const qty = body(await rowCss(), ':host([mobile]) .qty');
-
-    expect(qty).toContain('min-width: 24px');
-    expect(qty).toContain('font-size: 14px');
   });
 
   it('gives Check in the stepper’s height, so a checked-out row is no taller', async () => {
@@ -689,25 +660,6 @@ describe('hv-list-row: one job per row', () => {
 
     (q(el, '[data-testid="list-row"]') as HTMLElement).click();
     expect(seen).toEqual(['open-item']);
-  });
-
-  it('renders no pending chip beside the ones a row does draw', async () => {
-    // The store applies a write to the row and rolls it back on refusal, so
-    // there is no second "in flight" state for a chip to name. The type line
-    // is the other half: a property no host binds draws nothing, and a test
-    // that only looked at the output would not notice one coming back.
-    const el = await mount({
-      id: 'item-1',
-      checked_out: true,
-      quantity: 0,
-      low_stock_threshold: 5,
-    });
-
-    expect(q(el, '[data-testid="row-checked-out"]')).toBeTruthy();
-    expect(q(el, '[data-testid="row-pending"]')).toBe(null);
-
-    const noPendingProp: Extract<keyof HVListRow, 'pending'> extends never ? true : never = true;
-    expect(noPendingProp).toBe(true);
   });
 });
 

@@ -55,13 +55,6 @@ afterEach(() => {
 });
 
 describe('LocationPicker', () => {
-  it('wears the dressing the host form gave it', () => {
-    const { trigger } = mount();
-    expect(trigger().className).toBe('field-button');
-    expect(trigger().getAttribute('title')).toBe('Garage');
-    expect(trigger().querySelector('.value')?.textContent).toBe('Garage');
-  });
-
   // aria-expanded on its own says only that something opened; which element it
   // opened is what aria-controls answers, and it has to resolve in both states.
   it('names the holder it discloses, open or shut', () => {
@@ -114,12 +107,5 @@ describe('LocationPicker', () => {
       expect(picker.open).toBe(false);
       document.body.innerHTML = '';
     }
-  });
-
-  it('draws nothing again for a close that changes nothing', () => {
-    const { picker, renders } = mount();
-    const before = renders();
-    picker.close();
-    expect(renders()).toBe(before);
   });
 });

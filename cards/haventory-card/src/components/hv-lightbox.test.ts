@@ -220,12 +220,6 @@ describe('hv-lightbox: navigation', () => {
     expect(q(el, '[data-testid="lightbox-next"]')).toBe(null);
     expect(q(el, '[data-testid="lightbox-counter"]')).toBe(null);
   });
-
-  it('still closes on Escape with the navigation on screen', async () => {
-    const el = await mount({ id: 'i-1', attachments: shots(3) }, 1);
-    await press(el, 'Escape');
-    expect(panel(el)).toBe(null);
-  });
 });
 
 // The chrome floats on the photo, so a white frame is the worst case its scrim

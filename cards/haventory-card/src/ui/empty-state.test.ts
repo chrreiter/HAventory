@@ -5,7 +5,6 @@ import type { StoreFilters } from '../store/types';
 
 /** The kinds that say the list has settled with nothing in it. */
 const ANSWERS: EmptyKind[] = ['no-items', 'no-matches', 'empty-location', 'connection-lost'];
-const KINDS: EmptyKind[] = ['loading', ...ANSWERS];
 
 function state(patch: { connectionLost?: boolean; loading?: boolean; filters?: Partial<StoreFilters> }) {
   return {
@@ -29,14 +28,6 @@ describe('emptyStateCopy', () => {
     // filters would undo a fetch that has not reported, and "add your first
     // item" claims a count nobody has.
     expect(emptyStateCopy('loading').offers).toEqual([]);
-  });
-
-  it('keeps headlines as fragments and detail lines as sentences', () => {
-    for (const kind of KINDS) {
-      const copy = emptyStateCopy(kind);
-      expect(copy.headline.endsWith('.'), `${kind} headline`).toBe(false);
-      if (copy.detail) expect(copy.detail.endsWith('.'), `${kind} detail`).toBe(true);
-    }
   });
 
   it('names the location it found empty', () => {

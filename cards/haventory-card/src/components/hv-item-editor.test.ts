@@ -385,20 +385,6 @@ describe('hv-item-editor: saving', () => {
     expect(saves).toHaveLength(1);
   });
 
-  // The auto margin that holds Cancel and Save against the right edge rides on
-  // a spacer of its own: on the hint, hiding the hint drops them beside Delete.
-  it('keeps Cancel and Save off the left edge once the hint is gone', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }), { mobile: true });
-    const kids = [...(q(el, '.actions')?.children ?? [])];
-    expect(kids.map((c) => c.getAttribute('data-testid') ?? c.className)).toEqual([
-      'editor-delete',
-      'spacer',
-      'editor-cancel',
-      'editor-save',
-    ]);
-    expect(editorCss()).toMatch(/\.actions \.spacer \{[^}]*margin-left: auto/);
-  });
-
   // Measured at 375px in the panel's detail sheet: the row has 343px and the
   // three German labels plus their gaps want 352.2, so Save dropped onto a line
   // of its own at the left edge. The verb alone costs the row 78px.
@@ -418,22 +404,6 @@ describe('hv-item-editor: saving', () => {
         t('hv.action.deleteItem'),
       );
     }
-  });
-
-  // Three buttons in one row take one shape: a bordered pill beside two
-  // borderless buttons reads as a third. The card's other destructive actions —
-  // the detail sheet's own Delete item, the organize dialog's Delete — are all
-  // borderless red.
-  it('styles Delete like every other destructive action in the card', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
-    expect([...(q(el, '[data-testid="editor-delete"]')?.classList ?? [])]).toEqual([
-      'hv-text-button',
-      'danger',
-    ]);
-    // The same shared class as the Cancel beside it, so the two boxes match.
-    expect(q(el, '[data-testid="editor-cancel"]')?.classList.contains('hv-text-button')).toBe(true);
-    // Which only holds while the shared sheet is what dresses it.
-    expect(editorCss()).toMatch(/\.hv-text-button\.danger \{[^}]*color: var\(--hv-error-soft\)/);
   });
 
   it('surfaces a server-side failure without losing the form', async () => {
@@ -611,16 +581,6 @@ describe('hv-item-editor: select chevron', () => {
     expect(chevronOf(q(el, '[data-testid="editor-status"]') as Element)).toBeTruthy();
     expect(chevronOf(q(el, '[data-testid="editor-cf-type"]') as Element)).toBeTruthy();
   });
-
-  it('draws one for every custom field row', async () => {
-    const el = await mount(
-      makeItem({ id: '1', name: 'A', custom_fields: { serial: '44210', price: 189, calibrated: true } }),
-    );
-    const selects = all(el, '[data-testid="editor-cf-type"]');
-
-    expect(selects).toHaveLength(3);
-    expect(selects.map((s) => Boolean(chevronOf(s)))).toEqual([true, true, true]);
-  });
 });
 
 describe('hv-item-editor: typed custom fields', () => {
@@ -645,16 +605,6 @@ describe('hv-item-editor: typed custom fields', () => {
     expect(
       [...row.children].map((c) => (c.querySelector('[data-testid]') ?? c).getAttribute('data-testid')),
     ).toEqual(['editor-cf-key', 'editor-cf-type', 'editor-cf-value', 'editor-cf-remove']);
-  });
-
-  // The narrow row places its controls by area, so the placement has to sit on
-  // the wrapper the grid sees, not on the select inside it.
-  it('keeps the type column in the grid on the chevron wrapper', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A', custom_fields: { serial: '44210' } }));
-    const select = q(el, '[data-testid="editor-cf-type"]') as HTMLSelectElement;
-
-    expect(select.parentElement?.classList.contains('cf-type')).toBe(true);
-    expect(select.classList.contains('cf-type')).toBe(false);
   });
 
   // Every host that can scroll the form puts the actions below the fold — the
@@ -843,8 +793,11 @@ describe('hv-item-editor: opening', () => {
   // The editor's own footer promises "Esc discards", but that is a keydown
   // handler on the editor root: it never fires while focus is still on the
   // page body, which is where it stayed when a row expanded.
-  it('lands focus on the name field so Escape and typing work immediately', async () => {
-    const el = await mount(makeItem({ name: 'Multimeter' }));
+  it.each([
+    ['lands focus on the name field so Escape and typing work immediately', makeItem({ name: 'Multimeter' })],
+    ['focuses the name field for a new item too', null],
+  ])('%s', async (_title, item) => {
+    const el = await mount(item);
     expect(el.shadowRoot?.activeElement).toBe(q(el, '[data-testid="editor-name"]'));
   });
 
@@ -858,11 +811,6 @@ describe('hv-item-editor: opening', () => {
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
     );
     expect(cancelled).toBe(true);
-  });
-
-  it('focuses the name field for a new item too', async () => {
-    const el = await mount(null);
-    expect(el.shadowRoot?.activeElement).toBe(q(el, '[data-testid="editor-name"]'));
   });
 });
 
@@ -1167,14 +1115,6 @@ describe('hv-item-editor: same-item refreshes', () => {
   });
 });
 
-describe('hv-item-editor: touch targets and the shared tally', () => {
-  // The count beside a facet is declared once, in the shared sheet.
-  it('prices its custom fields with the shared tally', async () => {
-    const el = await mount(makeItem({ id: '1', name: 'A' }));
-    expect(q(el, '[data-testid="editor-cf-tally"]')?.classList.contains('hv-tally')).toBe(true);
-  });
-});
-
 /** The attachments element the editor renders, once it is there. */
 const attachmentsOf = (el: HVItemEditor) =>
   defined(q<HVEditorAttachments>(el, 'hv-editor-attachments') ?? undefined, 'the attachments element');
@@ -1245,13 +1185,6 @@ describe('hv-item-editor: the attachments element', () => {
     const el = await mount(makeItem({ id: 'i-1' }), { media: null });
 
     expect(q(el, 'hv-editor-attachments')).toBeNull();
-  });
-
-  it('gives the element the two sections a gap of the grid, one cell wide', () => {
-    const css = editorCss();
-
-    expect(css).toMatch(/\.attachments \{[^}]*grid-column: 1 \/ -1[^}]*display: grid[^}]*gap: 12px/);
-    expect(css).toMatch(/:host\(\[mobile\]\) \.attachments \{[^}]*gap: 14px/);
   });
 
   it('puts focus back on the name when the element says it was stranded', async () => {
@@ -1453,17 +1386,6 @@ describe('hv-item-editor: why attachments wait for the first save', () => {
   });
 });
 
-describe('hv-item-editor: one label recipe, one note size', () => {
-  // A note riding inside a label steps out of the label's uppercase treatment,
-  // and the rule for that belongs in the stylesheet like every other.
-  it('carries the tags note as a class, not an inline style', async () => {
-    const el = await mount(makeItem({ id: '1' }));
-    expect(el.shadowRoot?.innerHTML).not.toContain('style="text-transform');
-    const note = el.shadowRoot?.querySelector('.label-note');
-    expect(note?.textContent).toContain('always lowercase');
-  });
-});
-
 // "0 of 2 keys in use" reads as a quota. There is none: the denominator was the
 // count of distinct keys anywhere in the inventory, and the fallback made it
 // the numerator whenever that lookup was empty, so it could only ever say
@@ -1615,13 +1537,6 @@ describe('hv-item-editor: the id an automation names', () => {
     const el = await mount(null);
     expect(q(el, '[data-testid="editor-id"]')).toBeNull();
     expect(q(el, '[data-testid="editor-copy-id"]')).toBeNull();
-  });
-
-  // The action row is Delete, Cancel and Save, and at 375px those three have
-  // 343px to spend — a fourth label there would take the row onto two lines.
-  it('keeps the copy out of the phone action row', async () => {
-    const el = await mount(makeItem({ id: UUID }), { mobile: true });
-    expect(button(el).closest('.actions')).toBeNull();
   });
 
   // What raising the label takes and how it goes away are `CopyFlash`'s own

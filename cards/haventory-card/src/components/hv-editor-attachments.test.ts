@@ -145,43 +145,34 @@ describe('hv-editor-attachments: pictures', () => {
     expect(media.uploads.map((u) => u.file.name)).toEqual(['bad.png', 'good.png']);
   });
 
-  it('refuses an oversized file before it is sent', async () => {
+  it.each([
+    [
+      'refuses an oversized file before it is sent',
+      [],
+      new File(['x'.repeat(64)], 'huge.png', { type: 'image/png' }),
+      'over the',
+    ],
+    [
+      'refuses a type the backend does not accept before it is sent',
+      [],
+      new File(['x'], 'drawing.svg', { type: 'image/svg+xml' }),
+      'not an accepted image',
+    ],
+    [
+      'refuses a file past the per-item cap before it is sent',
+      [makeAttachment({ id: 'a' }), makeAttachment({ id: 'b' })],
+      png(),
+      '2 photos is the limit',
+    ],
+  ])('%s', async (_title, attachments, file, message) => {
     const media = makeMediaBindings();
-    const el = await mount(makeItem({ id: 'i-1' }), { media, mediaConfig: CONFIG });
+    const el = await mount(makeItem({ id: 'i-1', attachments }), { media, mediaConfig: CONFIG });
 
-    pick(el, [new File(['x'.repeat(64)], 'huge.png', { type: 'image/png' })]);
+    pick(el, [file]);
     for (let i = 0; i < 4; i += 1) await el.updateComplete;
 
     expect(media.uploads).toHaveLength(0);
-    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('over the');
-  });
-
-  it('refuses a type the backend does not accept before it is sent', async () => {
-    const media = makeMediaBindings();
-    const el = await mount(makeItem({ id: 'i-1' }), { media, mediaConfig: CONFIG });
-
-    pick(el, [new File(['x'], 'drawing.svg', { type: 'image/svg+xml' })]);
-    for (let i = 0; i < 4; i += 1) await el.updateComplete;
-
-    expect(media.uploads).toHaveLength(0);
-    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('not an accepted image');
-  });
-
-  it('refuses a file past the per-item cap before it is sent', async () => {
-    const media = makeMediaBindings();
-    const el = await mount(
-      makeItem({
-        id: 'i-1',
-        attachments: [makeAttachment({ id: 'a' }), makeAttachment({ id: 'b' })],
-      }),
-      { media, mediaConfig: CONFIG },
-    );
-
-    pick(el, [png()]);
-    for (let i = 0; i < 4; i += 1) await el.updateComplete;
-
-    expect(media.uploads).toHaveLength(0);
-    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain('2 photos is the limit');
+    expect(q(el, '[data-testid="editor-upload"]')?.textContent).toContain(message);
   });
 
   // Deleting an attachment destroys the only copy of the file, so it asks —
@@ -1033,42 +1024,20 @@ describe('hv-editor-attachments: dropping files onto the sections', () => {
     await el.updateComplete;
   }
 
-  it('attaches an image dropped on the photo strip as a photo', async () => {
-    const media = makeMediaBindings();
-    const el = await mount(makeItem({ id: 'i-1' }), { media });
-
-    await dropOn(el, 'editor-photos', [png()]);
-
-    expect(media.uploads.map((u) => [u.file.name, u.kind])).toEqual([['photo.png', 'picture']]);
-  });
-
-  it('attaches a document dropped on the document list as a manual', async () => {
-    const media = makeMediaBindings();
-    const el = await mount(makeItem({ id: 'i-1' }), { media });
-
-    await dropOn(el, 'editor-documents', [pdf()]);
-
-    expect(media.uploads.map((u) => [u.file.name, u.kind])).toEqual([['manual.pdf', 'manual']]);
-  });
-
   // The file decides, not the cell it crossed: refusing a PDF because it landed
   // on the photo strip would be arguing with something the user can see.
-  it('attaches a document dropped on the photo strip as a manual', async () => {
+  it.each([
+    ['attaches an image dropped on the photo strip as a photo', 'editor-photos', png(), 'picture'],
+    ['attaches a document dropped on the document list as a manual', 'editor-documents', pdf(), 'manual'],
+    ['attaches a document dropped on the photo strip as a manual', 'editor-photos', pdf(), 'manual'],
+    ['attaches an image dropped on the document list as a photo', 'editor-documents', png(), 'picture'],
+  ])('%s', async (_title, target, file, kind) => {
     const media = makeMediaBindings();
     const el = await mount(makeItem({ id: 'i-1' }), { media });
 
-    await dropOn(el, 'editor-photos', [pdf()]);
+    await dropOn(el, target, [file]);
 
-    expect(media.uploads.map((u) => u.kind)).toEqual(['manual']);
-  });
-
-  it('attaches an image dropped on the document list as a photo', async () => {
-    const media = makeMediaBindings();
-    const el = await mount(makeItem({ id: 'i-1' }), { media });
-
-    await dropOn(el, 'editor-documents', [png()]);
-
-    expect(media.uploads.map((u) => u.kind)).toEqual(['picture']);
+    expect(media.uploads.map((u) => [u.file.name, u.kind])).toEqual([[file.name, kind]]);
   });
 
   it('routes a mixed multi-file drop file by file', async () => {

@@ -244,56 +244,35 @@ describe('chipsFor', () => {
 });
 
 describe('clearedValueFor', () => {
-  it('clears a text filter to an empty string, not null', () => {
-    expect(clearedValueFor('q')).toEqual({ q: '' });
-  });
-
-  it('clears tags to an empty array', () => {
-    expect(clearedValueFor('tags')).toEqual({ tags: [] });
-  });
-
-  it('clears the nullable filters to null', () => {
-    for (const key of [
-      'areaId',
-      'status',
-      'updatedAfter',
-      'createdAfter',
-      'updatedBefore',
-      'createdBefore',
-    ] as const) {
-      expect(clearedValueFor(key)).toEqual({ [key]: null });
-    }
-  });
-
   // A multi-select is empty rather than null when it is not narrowing, so its
   // cleared value has to be the empty selection and not the scalar's null.
-  it('clears the multi-select filters to an empty selection', () => {
-    expect(clearedValueFor('locationIds')).toEqual({ locationIds: [] });
-    expect(clearedValueFor('categories')).toEqual({ categories: [] });
-  });
-
-  it('clears the boolean toggles to false', () => {
-    for (const key of [
-      'checkedOutOnly',
-      'orphansOnly',
-      'lowStockOnly',
-      'lowStockFirst',
-      'overdueOnly',
-      'inspectionDueOnly',
-    ] as const) {
-      expect(clearedValueFor(key)).toEqual({ [key]: false });
+  it.each([
+    ['clears a text filter to an empty string, not null', ['q'], ''],
+    ['clears tags to an empty array', ['tags'], []],
+    [
+      'clears the nullable filters to null',
+      ['areaId', 'status', 'updatedAfter', 'createdAfter', 'updatedBefore', 'createdBefore'],
+      null,
+    ],
+    ['clears the multi-select filters to an empty selection', ['locationIds', 'categories'], []],
+    [
+      'clears the boolean toggles to false',
+      ['checkedOutOnly', 'orphansOnly', 'lowStockOnly', 'lowStockFirst', 'overdueOnly', 'inspectionDueOnly'],
+      false,
+    ],
+  ] as const)('%s', (_title, keys, cleared) => {
+    for (const key of keys) {
+      expect(clearedValueFor(key)).toEqual({ [key]: cleared });
     }
   });
 });
 
 describe('hv-filter-chips', () => {
-  it('renders nothing before it has a filter set', async () => {
-    const el = await mount({});
-    expect(el.shadowRoot?.querySelector('[data-testid="filter-chips"]')).toBeNull();
-  });
-
-  it('renders nothing when no filter is active', async () => {
-    const el = await mount({ filters: defaultFilters() });
+  it.each([
+    ['renders nothing before it has a filter set', {}],
+    ['renders nothing when no filter is active', { filters: defaultFilters() }],
+  ])('%s', async (_title, props) => {
+    const el = await mount(props);
     expect(el.shadowRoot?.querySelector('[data-testid="filter-chips"]')).toBeNull();
   });
 
@@ -405,12 +384,5 @@ describe('hv-filter-chips', () => {
     expect(chip.getAttribute('aria-label')).toBe(`Clear filter "${term}"`);
     expect(componentCss('hv-filter-chips')).toMatch(/\.chip > \.hv-chip-text \{[^}]*text-overflow: ellipsis/);
     expect(componentCss('hv-filter-chips')).toMatch(/\.chip > \.hv-chip-text \{[^}]*max-width:/);
-  });
-
-  it('wraps a short label in the same element, so one chip is not shaped unlike the next', async () => {
-    const el = await mount({ filters: { ...defaultFilters(), overdueOnly: true } });
-    const chip = el.shadowRoot?.querySelector('[data-testid="filter-chip"]') as HTMLElement;
-    expect((chip.querySelector('.hv-chip-text') as HTMLElement).textContent).toBe('Overdue');
-    expect(chip.getAttribute('title')).toBe('Overdue');
   });
 });

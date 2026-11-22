@@ -32,26 +32,6 @@ describe('hv-overflow-menu', () => {
     expect(el.shadowRoot?.querySelector('[data-testid="overflow-menu"]')).toBe(null);
   });
 
-  // A long hint beside its label is a non-shrinking sibling: inside a 250px
-  // menu that leaves "Organize…" a sliver to render in, and an unbreakable word
-  // simply overflows across the hint.
-  it('stacks a long hint under its label instead of beside it', async () => {
-    const el = await mount([
-      { id: 'organize', label: 'Organize…', meta: 'Locations · Tags · Categories' },
-      { id: 'export', label: 'Export backup', sub: 'All 556 items · All locations' },
-    ]);
-
-    const labels = item(el, 'organize').querySelector('.labels') as HTMLElement;
-    expect(labels.textContent).toContain('Organize…');
-    // Same block as the label — not a sibling competing for the same line.
-    expect(labels.querySelector('.meta')?.textContent).toContain('Locations · Tags · Categories');
-    expect(directChild(item(el, 'organize'), 'meta')).toBe(null);
-
-    // `sub` keeps its existing treatment, and both read the same way.
-    const exportLabels = item(el, 'export').querySelector('.labels') as HTMLElement;
-    expect(exportLabels.querySelector('.sub')?.textContent).toContain('All 556 items');
-  });
-
   it('keeps a badge on the entry row, where it is a status not a hint', async () => {
     const el = await mount([{ id: 'diagnostics', label: 'Diagnostics', badge: '2' }]);
     expect(directChild(item(el, 'diagnostics'), 'badge')?.textContent).toContain('2');

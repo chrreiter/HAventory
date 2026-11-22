@@ -53,6 +53,29 @@ function captured(el: HVDetailSheet, names: string[]) {
   return seen;
 }
 
+/** The form the sheet swaps in, with the element's own update handle. */
+type EditorEl = HTMLElement & { updateComplete: Promise<unknown>; dirty: boolean };
+
+/** Press the read view's Edit and hand back the form that replaces it. */
+async function openEditor(el: HVDetailSheet) {
+  (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+  await settle(el);
+  return q<EditorEl>(el, '[data-testid="sheet-editor"]')!;
+}
+
+/** A control inside the form's own shadow root. */
+const inEditor = <T extends HTMLElement = HTMLElement>(editor: HTMLElement, testid: string) =>
+  editor.shadowRoot?.querySelector(`[data-testid="${testid}"]`) as T;
+
+/** Type into the form's name field and let the sheet catch up. */
+async function typeName(el: HVDetailSheet, editor: HTMLElement, value: string) {
+  const field = inEditor<HTMLInputElement>(editor, 'editor-name');
+  field.value = value;
+  field.dispatchEvent(new Event('input'));
+  await settle(el);
+  return field;
+}
+
 describe('hv-detail-sheet: area', () => {
   const AREAS = [{ id: 'area-garage', name: 'Garage' }];
 
@@ -462,11 +485,14 @@ describe('hv-detail-sheet: read view', () => {
 });
 
 describe('hv-detail-sheet: edit view', () => {
-  it('swaps to the form in the same sheet, never a second dialog', async () => {
+  it.each([
+    ['swaps to the form in the same sheet, never a second dialog', 'sheet-edit'],
+    ['reaches the form from "Edit details" too', 'sheet-edit-details'],
+  ])('%s', async (_title, button) => {
     const el = await mount({ id: '1', name: 'Multimeter' });
     expect(q(el, '[data-testid="sheet-editor"]')).toBe(null);
 
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+    (q(el, `[data-testid="${button}"]`) as HTMLButtonElement).click();
     await settle(el);
 
     expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
@@ -476,17 +502,9 @@ describe('hv-detail-sheet: edit view', () => {
     expect(q(el, '[data-testid="sheet-qty"]')).toBe(null);
   });
 
-  it('reaches the form from "Edit details" too', async () => {
-    const el = await mount({ id: '1' });
-    (q(el, '[data-testid="sheet-edit-details"]') as HTMLButtonElement).click();
-    await settle(el);
-    expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
-  });
-
   it('goes back to the read view', async () => {
     const el = await mount({ id: '1' });
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openEditor(el);
 
     (q(el, '[data-testid="sheet-back"]') as HTMLButtonElement).click();
     await settle(el);
@@ -495,42 +513,33 @@ describe('hv-detail-sheet: edit view', () => {
 
   // Every cancel in the card is composed, and the form sits inside the sheet
   // that would read one as its own dismissal. The form's own way out is the
-  // read view, the same place the Back arrow lands.
-  it('lands the form’s own Cancel on the read view', async () => {
+  // read view, the same place the Back arrow lands. The footer button and
+  // Escape are one path inside the form, so the sheet sees the same event
+  // from both.
+  it.each([
+    [
+      'lands the form’s own Cancel on the read view',
+      (editor: HTMLElement) => inEditor<HTMLButtonElement>(editor, 'editor-cancel').click(),
+    ],
+    [
+      'lands Escape inside the form on the read view',
+      (editor: HTMLElement) =>
+        inEditor(editor, 'editor-name').dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
+        ),
+    ],
+  ])('%s', async (_title, leave) => {
     const el = await mount({ id: '1', name: 'Multimeter' });
     const seen = captured(el, ['cancel']);
 
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
-    (editor.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement).click();
+    const editor = await openEditor(el);
+    leave(editor);
     await settle(el);
 
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
     expect(q(el, '[data-testid="sheet-editor"]')).toBe(null);
     expect(el.open).toBe(true);
     // The host hears nothing: it would close the sheet on a cancel.
-    expect(seen).toEqual([]);
-  });
-
-  // The footer button and Escape are one path inside the form, so the sheet
-  // sees the same event from both.
-  it('lands Escape inside the form on the read view', async () => {
-    const el = await mount({ id: '1', name: 'Multimeter' });
-    const seen = captured(el, ['cancel']);
-
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
-    (editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLElement).dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
-    );
-    await settle(el);
-
-    expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
-    expect(el.open).toBe(true);
     expect(seen).toEqual([]);
   });
 
@@ -541,15 +550,10 @@ describe('hv-detail-sheet: edit view', () => {
     const el = await mount({ id: '1', name: 'A' }, { confirmDiscard: host.ask });
     const seen = captured(el, ['cancel']);
 
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
-    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
-    name.value = 'A longer name';
-    name.dispatchEvent(new Event('input'));
-    await settle(el);
+    const editor = await openEditor(el);
+    const name = await typeName(el, editor, 'A longer name');
 
-    const cancel = editor.shadowRoot?.querySelector('[data-testid="editor-cancel"]') as HTMLButtonElement;
+    const cancel = inEditor<HTMLButtonElement>(editor, 'editor-cancel');
     cancel.click();
     await settle(el);
     expect(host.asked).toBe(1);
@@ -575,16 +579,10 @@ describe('hv-detail-sheet: edit view', () => {
     const saves: unknown[] = [];
     el.addEventListener('save', (e) => saves.push((e as CustomEvent).detail));
 
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    const editor = await openEditor(el);
+    await typeName(el, editor, 'New');
 
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
-    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
-    name.value = 'New';
-    name.dispatchEvent(new Event('input'));
-    await settle(el);
-
-    (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    inEditor<HTMLButtonElement>(editor, 'editor-save').click();
     expect(saves).toHaveLength(1);
     expect((saves[0] as { changes: { name: string } }).changes.name).toBe('New');
   });
@@ -593,10 +591,7 @@ describe('hv-detail-sheet: edit view', () => {
   // one in the bar showed beside it on a phone.
   it('shows one Save in edit mode, in the editor footer and not in the bar', async () => {
     const el = await mount({ id: 'item-1', name: 'Old' });
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
+    const editor = await openEditor(el);
     const bar = q(el, '.bar.edit')!;
 
     // The bar holds the back arrow and the heading, and no other button.
@@ -609,11 +604,8 @@ describe('hv-detail-sheet: edit view', () => {
 
   it('shows the save in flight on the footer Save', async () => {
     const el = await mount({ id: 'item-1', name: 'Old' });
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
-    const editor = q<HTMLElement & { updateComplete: Promise<unknown> }>(el, '[data-testid="sheet-editor"]')!;
-    const footerSave = () =>
-      editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement;
+    const editor = await openEditor(el);
+    const footerSave = () => inEditor<HTMLButtonElement>(editor, 'editor-save');
     expect(footerSave().disabled).toBe(false);
     expect(footerSave().textContent).toContain('Save');
 
@@ -630,16 +622,10 @@ describe('hv-detail-sheet: edit view', () => {
    * save in hand the way a host does: `busy` rises the moment it has the event.
    */
   async function saveFromSheet(el: HVDetailSheet, name = 'New') {
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    const editor = await openEditor(el);
+    await typeName(el, editor, name);
 
-    const editor = q<HTMLElement & { updateComplete: Promise<unknown> }>(el, '[data-testid="sheet-editor"]')!;
-    const field = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
-    field.value = name;
-    field.dispatchEvent(new Event('input'));
-    await settle(el);
-
-    (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+    inEditor<HTMLButtonElement>(editor, 'editor-save').click();
     el.busy = true;
     await settle(el);
     return editor;
@@ -674,11 +660,8 @@ describe('hv-detail-sheet: edit view', () => {
     await editor.updateComplete;
 
     expect(q(el, '[data-testid="sheet-editor"]')).toBeTruthy();
-    const field = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
-    expect(field.value).toBe('New');
-    expect(editor.shadowRoot?.querySelector('[data-testid="editor-error"]')?.textContent).toContain(
-      'the store is read-only',
-    );
+    expect(inEditor<HTMLInputElement>(editor, 'editor-name').value).toBe('New');
+    expect(inEditor(editor, 'editor-error')?.textContent).toContain('the store is read-only');
   });
 
   it('returns to the read view when a retry lands after a refusal', async () => {
@@ -718,11 +701,8 @@ describe('hv-detail-sheet: edit view', () => {
     const el = await mount({ id: 'item-1', name: 'Multimeter' });
     const seen = captured(el, ['request-delete', 'delete-item']);
 
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
-    (editor.shadowRoot?.querySelector('[data-testid="editor-delete"]') as HTMLButtonElement).click();
+    const editor = await openEditor(el);
+    inEditor<HTMLButtonElement>(editor, 'editor-delete').click();
 
     // One event, and the same one the read view's Delete sends — the host has a
     // single confirmation path to hang off.
@@ -733,22 +713,16 @@ describe('hv-detail-sheet: edit view', () => {
     const el = await mount({ id: '1', name: 'A' });
     expect(el.dirty).toBe(false);
 
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    const editor = await openEditor(el);
     expect(el.dirty).toBe(false);
 
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
-    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
-    name.value = 'B';
-    name.dispatchEvent(new Event('input'));
-    await settle(el);
+    await typeName(el, editor, 'B');
     expect(el.dirty).toBe(true);
   });
 
   it('returns to the read view when a different item is loaded', async () => {
     const el = await mount({ id: '1', name: 'A' });
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openEditor(el);
 
     el.item = makeItem({ id: '2', name: 'B' });
     await settle(el);
@@ -759,8 +733,7 @@ describe('hv-detail-sheet: edit view', () => {
   // `.item` from the fresh copy — closing the form the user is standing in.
   it('stays in the edit form when the same item comes back with a new version', async () => {
     const el = await mount({ id: '1', name: 'A', version: 3 });
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openEditor(el);
 
     el.item = makeItem({ id: '1', name: 'A', version: 4 });
     await settle(el);
@@ -771,8 +744,7 @@ describe('hv-detail-sheet: edit view', () => {
 
   it('returns to the read view when the sheet is re-opened on the same item', async () => {
     const el = await mount({ id: '1', name: 'A' });
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openEditor(el);
 
     el.open = false;
     await settle(el);
@@ -795,13 +767,8 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
   /** Open the edit form and type into it. */
   async function dirtySheet() {
     const el = await mount({ id: '1', name: 'A' }, { confirmDiscard: host.ask });
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement;
-    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
-    name.value = 'A longer name';
-    name.dispatchEvent(new Event('input'));
-    await settle(el);
+    const editor = await openEditor(el);
+    await typeName(el, editor, 'A longer name');
     expect(el.dirty).toBe(true);
     return el;
   }
@@ -886,16 +853,6 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
     expect(q(el, '[data-testid="sheet-qty"]')).toBeTruthy();
   });
 
-  // The form inside asks through the same host, so a dismissal and the form's
-  // own Cancel cannot end up as two different questions.
-  it('hands the form the same asker it uses itself', async () => {
-    const el = await dirtySheet();
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement & {
-      confirmDiscard: unknown;
-    };
-    expect(editor.confirmDiscard).toBe(host.ask);
-  });
-
   // Declining leaves the sheet exactly where the question found it.
   it('keeps the form when the question is declined', async () => {
     const el = await dirtySheet();
@@ -937,8 +894,7 @@ describe('hv-detail-sheet: a dirty form is asked about before it goes', () => {
 
   it('closes a clean form on the scrim without asking', async () => {
     const el = await mount({ id: '1', name: 'A' }, { confirmDiscard: host.ask });
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openEditor(el);
     let cancels = 0;
     el.addEventListener('cancel', () => {
       cancels += 1;
@@ -1503,13 +1459,8 @@ describe('hv-detail-sheet: the action pair', () => {
 // of what to forget.
 describe('hv-detail-sheet: the edit form belongs to an item id', () => {
   async function editing(el: HVDetailSheet) {
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
-    const editor = q(el, '[data-testid="sheet-editor"]') as HTMLElement & { dirty: boolean };
-    const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
-    name.value = 'typed here';
-    name.dispatchEvent(new Event('input'));
-    await settle(el);
+    const editor = await openEditor(el);
+    await typeName(el, editor, 'typed here');
     return editor;
   }
 
@@ -1522,9 +1473,7 @@ describe('hv-detail-sheet: the edit form belongs to an item id', () => {
 
     expect(q(el, '[data-testid="sheet-editor"]')).toBe(editor);
     expect(editor.dirty).toBe(true);
-    expect((editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe(
-      'typed here',
-    );
+    expect(inEditor<HTMLInputElement>(editor, 'editor-name').value).toBe('typed here');
   });
 
   it('starts a new form when the sheet moves to another item', async () => {
@@ -1535,12 +1484,9 @@ describe('hv-detail-sheet: the edit form belongs to an item id', () => {
     await settle(el);
     // Another item lands on its read view first.
     expect(q(el, '[data-testid="sheet-editor"]')).toBe(null);
-    (q(el, '[data-testid="sheet-edit"]') as HTMLButtonElement).click();
-    await settle(el);
-
-    const next = q(el, '[data-testid="sheet-editor"]') as HTMLElement & { dirty: boolean };
+    const next = await openEditor(el);
     expect(next).not.toBe(editor);
     expect(next.dirty).toBe(false);
-    expect((next.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe('B');
+    expect(inEditor<HTMLInputElement>(next, 'editor-name').value).toBe('B');
   });
 });

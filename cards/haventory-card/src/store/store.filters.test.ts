@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { makeMockHass, makeItem } from '../test.utils';
+import { makeMockHass, makeItem, mountStore } from '../test.utils';
 import { Store, activeFilterCount, defaultFilters, toWireFilter } from './store';
 
 /**
@@ -152,8 +152,7 @@ describe('activeFilterCount', () => {
 describe('Store: filtered total and loading', () => {
   it('keeps the filtered total from the list response', async () => {
     const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}`, name: `Item ${i}` }));
-    const store = new Store(makeMockHass({ items }), fast);
-    await store.init();
+    const { store } = await mountStore({ items });
 
     // 50 loaded of 60 matching.
     expect(store.state.value.items).toHaveLength(50);
@@ -173,8 +172,7 @@ describe('Store: filtered total and loading', () => {
       makeItem({ id: '2', name: 'M4 Screws', category: 'Hardware' }),
       makeItem({ id: '3', name: 'Cable Ties', category: 'Hardware' }),
     ];
-    const store = new Store(makeMockHass({ items }), fast);
-    await store.init();
+    const { store } = await mountStore({ items });
 
     const count = await store.countMatching({ ...defaultFilters(), categories: ['Hardware'] });
     expect(count).toBe(2);
@@ -184,9 +182,7 @@ describe('Store: filtered total and loading', () => {
   });
 
   it('reports null rather than throwing when the count probe fails', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [] });
     hass.__failNext(1);
     expect(await store.countMatching(defaultFilters())).toBe(null);
   });
@@ -195,9 +191,7 @@ describe('Store: filtered total and loading', () => {
 describe('Store', () => {
   it('debounces search and lists items; prefetch at ~70%', async () => {
     const items = Array.from({ length: 80 }, (_, i) => makeItem({ id: `${i}`, name: `Item ${i}` }));
-    const hass = makeMockHass({ items });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items });
     expect(store.state.value.items.length).toBeGreaterThan(0);
     // First page default 50
     expect(store.state.value.items.length).toBe(50);
@@ -209,9 +203,7 @@ describe('Store', () => {
 
   it('handles filter changes and restarts paging', async () => {
     const items = Array.from({ length: 30 }, (_, i) => makeItem({ id: `${i}`, name: `Item ${i}` }));
-    const hass = makeMockHass({ items });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items });
 
     const initialCount = store.state.value.items.length;
     expect(initialCount).toBe(30);
@@ -225,9 +217,7 @@ describe('Store', () => {
   // took the open editor with it. The refetch replaces the rows when it lands.
   it('keeps the loaded rows and the total while a filter refetch is in flight', async () => {
     const items = Array.from({ length: 3 }, (_, i) => makeItem({ id: `${i}`, name: `Item ${i}` }));
-    const hass = makeMockHass({ items });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items });
     const before = store.state.value.items;
     const total = store.state.value.total;
     expect(total).toBe(3);
@@ -243,9 +233,7 @@ describe('Store', () => {
   });
 
   it('sends orphaned_only to the backend when the orphans filter is on', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [] });
 
     const listFilters: any[] = [];
     const origCallWS = hass.callWS.bind(hass);
@@ -272,9 +260,7 @@ describe('Store', () => {
       location_path: { id_path: ['loc1'], name_path: ['Garage'], display_path: 'Garage', sort_key: 'garage' },
     });
     const orphan = makeItem({ id: 'o1', name: 'Orphan' });
-    const hass = makeMockHass({ items: [placed, orphan] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [placed, orphan] });
     expect(store.state.value.items.length).toBe(2);
 
     store.setFilters({ orphansOnly: true });
@@ -289,9 +275,7 @@ describe('Store', () => {
   it('q filter narrows the visible items end-to-end through the mock', async () => {
     const a = makeItem({ id: 'a', name: 'Electric Saw' });
     const b = makeItem({ id: 'b', name: 'Glue', tags: ['adhesive'] });
-    const hass = makeMockHass({ items: [a, b] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [a, b] });
 
     store.setFilters({ q: 'saw' });
     await flush(2);
@@ -307,9 +291,7 @@ describe('Store', () => {
     const early = makeItem({ id: 'e', name: 'Early', checked_out: true, due_date: '2024-01-01' });
     const late = makeItem({ id: 'l', name: 'Late', checked_out: true, due_date: '2024-03-01' });
     const undated = makeItem({ id: 'u', name: 'Undated' });
-    const hass = makeMockHass({ items: [undated, late, early] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [undated, late, early] });
 
     store.setFilters({ sort: { field: 'due_date', order: 'asc' } });
     await flush(2);
@@ -345,9 +327,7 @@ describe('Store', () => {
       }),
       makeItem({ id: '4', name: 'Shallow', location_id: 'garage', location_path: path('Garage', ['garage']) }),
     ];
-    const hass = makeMockHass({ items });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items });
 
     store.setFilters({ sort: { field: 'location', order: 'asc' } });
     await vi.waitUntil(() => store.state.value.items[0]?.name === 'Elsewhere');
@@ -367,11 +347,9 @@ describe('Store', () => {
 // list asked for under an older filter must not overwrite the newer one's rows.
 describe('Store: overlapping list requests', () => {
   async function storeWithHeldFirstList() {
-    const hass = makeMockHass({
+    const { hass, store } = await mountStore({
       items: [makeItem({ id: 't', name: 'Tool', category: 'Tools' }), makeItem({ id: 'b', name: 'Book' })],
     });
-    const store = new Store(hass, fast);
-    await store.init();
 
     const original = hass.callWS.bind(hass);
     let release: ((outcome: 'answer' | 'refuse') => void) | null = null;

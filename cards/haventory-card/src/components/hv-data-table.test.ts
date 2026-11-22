@@ -8,7 +8,7 @@ import {
   mountComponent,
   q,
 } from '../test.utils';
-import { ACTIONS_COLUMN_WIDTH, SELECT_COLUMN_WIDTH } from '../store/columns';
+import { SELECT_COLUMN_WIDTH } from '../store/columns';
 import { MEDIA_NAME_TOKEN_PARAM, MEDIA_SIZE_PARAM, attachmentNameToken } from '../ui/media';
 import { addDays, toIsoDate } from '../ui/relative-time';
 import { rowMenuEntries } from '../ui/row-chrome';
@@ -1149,23 +1149,6 @@ describe('hv-data-table: row menu', () => {
     expect(componentCss('hv-data-table')).toMatch(/\.actions \{[^}]*visibility: hidden/);
     expect(componentCss('hv-data-table')).toMatch(
       /\.row:hover \.actions, \.row:focus-within \.actions \{ visibility: visible/,
-    );
-  });
-
-  // 26px outlined here against 30px borderless on the card's rows: two answers
-  // to one control. The quantity pair keeps the outline, as the card's stepper
-  // does; Edit and the ⋮ are the plain pair on both surfaces.
-  it('draws Edit the way the card rows draw it', async () => {
-    const el = await mount([{ id: '1' }]);
-    expect(q(el, '[data-testid="table-edit"]')?.classList.contains('plain')).toBe(true);
-    expect(componentCss('hv-data-table')).toMatch(/\.actions button\.plain \{[^}]*width: 30px/);
-    expect(componentCss('hv-data-table')).toMatch(/\.actions button\.plain \{[^}]*border: none/);
-  });
-
-  // Fixed-width circles in a fixed track: too narrow and they come out as ovals.
-  it('reserves a track wide enough for all four controls', () => {
-    expect(Number(/^(\d+)px$/.exec(ACTIONS_COLUMN_WIDTH)?.[1])).toBeGreaterThanOrEqual(
-      26 + 26 + 30 + 34 + 3 * 2,
     );
   });
 

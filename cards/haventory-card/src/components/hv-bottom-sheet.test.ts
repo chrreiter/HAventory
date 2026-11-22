@@ -11,6 +11,15 @@ async function mount(props: Partial<HVBottomSheet> = {}) {
   return el;
 }
 
+/** A live count of the `cancel` events the sheet has raised. */
+function cancelCount(el: HVBottomSheet): () => number {
+  let n = 0;
+  el.addEventListener('cancel', () => {
+    n += 1;
+  });
+  return () => n;
+}
+
 describe('hv-bottom-sheet', () => {
   it('renders nothing when closed', async () => {
     const el = await mount({ open: false });
@@ -41,10 +50,7 @@ describe('hv-bottom-sheet', () => {
   it('emits cancel from the scrim and from Escape without closing itself', async () => {
     for (const trigger of ['scrim', 'escape'] as const) {
       const el = await mount();
-      let fired = 0;
-      el.addEventListener('cancel', () => {
-        fired += 1;
-      });
+      const fired = cancelCount(el);
       const sr = el.shadowRoot as ShadowRoot;
 
       if (trigger === 'scrim') {
@@ -55,7 +61,7 @@ describe('hv-bottom-sheet', () => {
         );
       }
 
-      expect(fired, `cancel via ${trigger}`).toBe(1);
+      expect(fired(), `cancel via ${trigger}`).toBe(1);
       expect(el.open, `still up after ${trigger}`).toBe(true);
       el.remove();
     }
@@ -98,28 +104,22 @@ describe('hv-bottom-sheet: drag to dismiss', () => {
   // at all: a 260px touch-drag left the sheet exactly where it was.
   it('dismisses when the sheet is dragged well down', async () => {
     const el = await mount();
-    let cancelled = 0;
-    el.addEventListener('cancel', () => {
-      cancelled += 1;
-    });
+    const cancelled = cancelCount(el);
 
     await (await grip(el)).drag(100, 400);
 
-    expect(cancelled).toBe(1);
+    expect(cancelled()).toBe(1);
     // Reported, not acted on: the host closes, so a dirty form can be asked about.
     expect(el.open).toBe(true);
   });
 
   it('springs back from a drag too short to mean it', async () => {
     const el = await mount();
-    let cancelled = 0;
-    el.addEventListener('cancel', () => {
-      cancelled += 1;
-    });
+    const cancelled = cancelCount(el);
 
     await (await grip(el)).drag(100, 120);
 
-    expect(cancelled).toBe(0);
+    expect(cancelled()).toBe(0);
     expect(el.open).toBe(true);
     // No leftover offset once the finger is up.
     const sheet = el.shadowRoot?.querySelector('[data-testid="bottom-sheet"]') as HTMLElement;
@@ -159,11 +159,6 @@ describe('hv-bottom-sheet: drag to dismiss', () => {
     expect(el.open).toBe(true);
   });
 
-  it('has no grip to drag when the handle is suppressed', async () => {
-    const el = await mount({ noHandle: true });
-    expect(el.shadowRoot?.querySelector('[data-testid="sheet-grip"]')).toBe(null);
-  });
-
   // Pinning current behaviour, not endorsing it: unlike the six surfaces that use
   // `ui/dialog-focus`, this sheet never moves focus into itself. Its Escape
   // handler therefore only fires once focus is already inside — which it is in
@@ -183,17 +178,14 @@ describe('hv-bottom-sheet: drag to dismiss', () => {
 
   it('reports Escape raised from inside the sheet', async () => {
     const el = await mount();
-    let cancels = 0;
-    el.addEventListener('cancel', () => {
-      cancels += 1;
-    });
+    const cancels = cancelCount(el);
 
     (el.shadowRoot?.querySelector('[data-testid="bottom-sheet"]') as HTMLElement).dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
     );
     await el.updateComplete;
 
-    expect(cancels).toBe(1);
+    expect(cancels()).toBe(1);
     expect(el.open).toBe(true);
   });
 

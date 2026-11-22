@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { Store } from './store';
-import { makeMockHass, makeItem } from '../test.utils';
+import { makeItem, mountStore } from '../test.utils';
+
+/** An export document as an import receives it. */
+function incomingDocument(items: ReturnType<typeof makeItem>[]) {
+  return { haventory_export_version: 1, schema_version: 4, items, locations: [] };
+}
 
 describe('Store import/export', () => {
   it('exports a versioned document of the current inventory', async () => {
     const items = [makeItem({ id: '1', name: 'Hammer' }), makeItem({ id: '2', name: 'Nails' })];
-    const store = new Store(makeMockHass({ items }));
-    await store.init();
+    const { store } = await mountStore({ items });
 
     const doc = await store.exportDocument();
     expect(doc.haventory_export_version).toBe(1);
@@ -15,15 +18,9 @@ describe('Store import/export', () => {
 
   it('previews an import without mutating the current list', async () => {
     const existing = [makeItem({ id: '1', name: 'Existing' })];
-    const store = new Store(makeMockHass({ items: existing }));
-    await store.init();
+    const { store } = await mountStore({ items: existing });
 
-    const incoming = {
-      haventory_export_version: 1,
-      schema_version: 4,
-      items: [makeItem({ id: 'x', name: 'Fresh' })],
-      locations: [],
-    };
+    const incoming = incomingDocument([makeItem({ id: 'x', name: 'Fresh' })]);
     const preview = await store.previewImport(incoming, 'merge');
     expect(preview.valid).toBe(true);
     expect(preview.counts.items?.add).toBe(1);
@@ -32,15 +29,12 @@ describe('Store import/export', () => {
   });
 
   it('executes an import and reloads the list to reflect the new dataset', async () => {
-    const store = new Store(makeMockHass({ items: [makeItem({ id: '1', name: 'Old' })] }));
-    await store.init();
+    const { store } = await mountStore({ items: [makeItem({ id: '1', name: 'Old' })] });
 
-    const incoming = {
-      haventory_export_version: 1,
-      schema_version: 4,
-      items: [makeItem({ id: 'a', name: 'Imported A' }), makeItem({ id: 'b', name: 'Imported B' })],
-      locations: [],
-    };
+    const incoming = incomingDocument([
+      makeItem({ id: 'a', name: 'Imported A' }),
+      makeItem({ id: 'b', name: 'Imported B' }),
+    ]);
     const summary = await store.executeImport(incoming, 'replace');
     expect(summary.applied).toBe(true);
     expect(summary.totals.items_total).toBe(2);

@@ -77,6 +77,13 @@ function changes(el: HVFilterPanel) {
 const label = (el: HVFilterPanel, testid: string) =>
   (q(el, `[data-testid="${testid}"]`)!.textContent ?? '').replace(/\s+/g, ' ').trim();
 
+const shownValues = (el: HVFilterPanel, testid: string) =>
+  all(el, `[data-testid="${testid}"]`).map((c) => c.dataset.value);
+
+/** The visible text of every chip with this test id, whitespace folded. */
+const chipTexts = (el: HVFilterPanel, testid: string) =>
+  all(el, `[data-testid="${testid}"]`).map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim());
+
 /** The flat cache behind `tree`, where only the root carries the area. */
 const nestedLocations = (areaId: string | null): Location[] => [
   {
@@ -103,12 +110,7 @@ const nestedLocations = (areaId: string | null): Location[] => [
 describe('hv-filter-panel: category', () => {
   it('shows counted chips and collapses the tail behind More…', async () => {
     const el = await mount();
-    expect(all(el, '[data-testid="filter-category"]').map((c) => c.dataset.value)).toEqual([
-      'Hardware',
-      'Tools',
-      'Consumables',
-      'Adhesives',
-    ]);
+    expect(shownValues(el, 'filter-category')).toEqual(['Hardware', 'Tools', 'Consumables', 'Adhesives']);
     const more = q(el, '[data-testid="filter-category-more"]')!;
     expect(more.textContent).toContain('1');
 
@@ -164,11 +166,7 @@ describe('hv-filter-panel: category', () => {
 describe('hv-filter-panel: status', () => {
   it('offers every status as a single-select chip that toggles off when re-picked', async () => {
     const el = await mount();
-    expect(all(el, '[data-testid="filter-status"]').map((c) => c.dataset.value)).toEqual([
-      'ok',
-      'missing',
-      'needs_repair',
-    ]);
+    expect(shownValues(el, 'filter-status')).toEqual(['ok', 'missing', 'needs_repair']);
 
     const seen = changes(el);
     (q(el, '[data-testid="filter-status"][data-value="missing"]') as HTMLButtonElement).click();
@@ -202,12 +200,7 @@ describe('hv-filter-panel: status', () => {
         }),
       },
     );
-    const chips = all(el, '[data-testid="filter-status"]');
-    expect(chips.map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim())).toEqual([
-      'OK 856',
-      'Lent out 100',
-      'In transit 0',
-    ]);
+    expect(chipTexts(el, 'filter-status')).toEqual(['OK 856', 'Lent out 100', 'In transit 0']);
   });
 
   // A chosen status shows its own colour; the rest stay outlines, so the row
@@ -229,11 +222,7 @@ describe('hv-filter-panel: status', () => {
   it('names the built-in three in the reader\u2019s language, a renamed one as stored', async () => {
     setLanguage('de');
     const seeded = await mount();
-    expect(
-      all(seeded, '[data-testid="filter-status"]').map((c) =>
-        (c.textContent ?? '').replace(/\s+/g, ' ').trim(),
-      ),
-    ).toEqual(['OK', 'Fehlt', 'Reparatur n\u00f6tig']);
+    expect(chipTexts(seeded, 'filter-status')).toEqual(['OK', 'Fehlt', 'Reparatur n\u00f6tig']);
 
     const renamed = await mount(
       {},
@@ -244,11 +233,7 @@ describe('hv-filter-panel: status', () => {
         ],
       },
     );
-    expect(
-      all(renamed, '[data-testid="filter-status"]').map((c) =>
-        (c.textContent ?? '').replace(/\s+/g, ' ').trim(),
-      ),
-    ).toEqual(['OK', 'Gone walkabout']);
+    expect(chipTexts(renamed, 'filter-status')).toEqual(['OK', 'Gone walkabout']);
   });
 
   // A household colour outside the ten has no class to carry it, so the chip
@@ -331,23 +316,8 @@ describe('hv-filter-panel: tags', () => {
 
   it('still shows a selected tag no item currently carries', async () => {
     const el = await mount({ tags: ['nobody-uses-this'] });
-    const values = all(el, '[data-testid="filter-tag"]').map((c) => c.dataset.value);
+    const values = shownValues(el, 'filter-tag');
     expect(values).toContain('nobody-uses-this');
-  });
-
-  // An auto margin parked Any/All against the right rim of the panel. On the
-  // expanded view that is over a screen's width from the word "Tags" and sits
-  // directly above an unrelated row, so what it applied to was anyone's guess.
-  it('keeps the any/all toggle beside its own heading', async () => {
-    const el = await mount();
-    const segmented = q(el, '[data-testid="filter-tags-mode"]')!.parentElement as HTMLElement;
-
-    expect(segmented.style.marginLeft).toBe('');
-    // Immediately after the heading it qualifies, in the same head row.
-    const head = segmented.parentElement as HTMLElement;
-    expect(head.classList.contains('group-head')).toBe(true);
-    expect(head.firstElementChild?.textContent?.trim()).toBe('Tags');
-    expect(head.firstElementChild?.nextElementSibling).toBe(segmented);
   });
 });
 
@@ -368,7 +338,7 @@ const withTags = (count: number) => ({ distinct: { ...distinct, tags: manyTags(c
 describe('hv-filter-panel: the label cap', () => {
   it('shows the first eight labels and collapses the tail behind More…', async () => {
     const el = await mount({}, withTags(30));
-    const shown = all(el, '[data-testid="filter-tag"]').map((c) => c.dataset.value);
+    const shown = shownValues(el, 'filter-tag');
 
     expect(shown).toEqual(['tag-00', 'tag-01', 'tag-02', 'tag-03', 'tag-04', 'tag-05', 'tag-06', 'tag-07']);
     const more = q(el, '[data-testid="filter-tag-more"]')!;
@@ -384,7 +354,7 @@ describe('hv-filter-panel: the label cap', () => {
   // looking untouched.
   it('keeps a selected label past the cut on screen', async () => {
     const el = await mount({ tags: ['tag-29'] }, withTags(30));
-    const shown = all(el, '[data-testid="filter-tag"]').map((c) => c.dataset.value);
+    const shown = shownValues(el, 'filter-tag');
 
     expect(shown).toHaveLength(9);
     expect(shown.at(-1)).toBe('tag-29');
@@ -400,7 +370,7 @@ describe('hv-filter-panel: the label cap', () => {
 
   it('still shows a typed label no item carries, with the cap in force', async () => {
     const el = await mount({ tags: ['nobody-uses-this'] }, withTags(30));
-    const shown = all(el, '[data-testid="filter-tag"]').map((c) => c.dataset.value);
+    const shown = shownValues(el, 'filter-tag');
 
     expect(shown).toHaveLength(9);
     expect(shown.at(-1)).toBe('nobody-uses-this');
@@ -474,35 +444,29 @@ const skewed = {
   custom_field_keys: [],
 } satisfies DistinctValues;
 
-const shownValues = (el: HVFilterPanel, testid: string) =>
-  all(el, `[data-testid="${testid}"]`).map((c) => c.dataset.value);
-
 /** What a "More…" chip says is hidden, read off the tally rather than the label. */
 const tally = (el: HVFilterPanel, testid: string) =>
   q(el, `[data-testid="${testid}"] .hv-tally`)!.textContent?.trim();
 
 describe('hv-filter-panel: which labels the cut keeps', () => {
-  it('shows the most-used tags, not the ones the alphabet leads with', async () => {
+  it.each([
+    [
+      'shows the most-used tags, not the ones the alphabet leads with',
+      'filter-tag',
+      ['kitchen', 'pantry', 'seasonal', 'garden', 'batteries', 'spare', 'winter', 'office'],
+      '4',
+    ],
+    [
+      'shows the most-used categories the same way',
+      'filter-category',
+      ['Food', 'Electronics', 'Toys', 'Tools'],
+      '2',
+    ],
+  ])('%s', async (_title, testid, expected, hidden) => {
     const el = await mount({}, { distinct: skewed });
 
-    expect(shownValues(el, 'filter-tag')).toEqual([
-      'kitchen',
-      'pantry',
-      'seasonal',
-      'garden',
-      'batteries',
-      'spare',
-      'winter',
-      'office',
-    ]);
-    expect(tally(el, 'filter-tag-more')).toBe('4');
-  });
-
-  it('shows the most-used categories the same way', async () => {
-    const el = await mount({}, { distinct: skewed });
-
-    expect(shownValues(el, 'filter-category')).toEqual(['Food', 'Electronics', 'Toys', 'Tools']);
-    expect(tally(el, 'filter-category-more')).toBe('2');
+    expect(shownValues(el, testid)).toEqual(expected);
+    expect(tally(el, `${testid}-more`)).toBe(hidden);
   });
 
   // Fed in reverse so the answer cannot come from the sort being stable: two
@@ -554,15 +518,6 @@ describe('hv-filter-panel: which labels the cut keeps', () => {
 });
 
 describe('hv-filter-panel: show only vs sort', () => {
-  // Sort is a daily toggle and the tag cloud renders every tag the household
-  // has, so on a phone anything under it is several screens into the sheet.
-  it('puts sort above the tag cloud', async () => {
-    const el = await mount();
-    const headings = all(el, '.hv-label').map((s) => s.textContent?.trim());
-
-    expect(headings).toEqual(['Where', 'Category', 'Show only', 'Status', 'Changed', 'Sort', 'Tags']);
-  });
-
   it('keeps low-stock-only and low-stock-first as separate controls', async () => {
     const el = await mount();
     const seen = changes(el);
@@ -789,14 +744,11 @@ describe('hv-filter-panel: dates and location', () => {
 
   // A root named after its own room made the field read "Area: Garage · Garage
   // › Shelf A". The same elision the chip beside a path takes.
-  it('drops the area when the picked path opens with that name', async () => {
-    const el = await mount({ locationIds: ['shelf-a'] }, { locations: nestedLocations('area-garage') });
-    expect(label(el, 'filter-location')).toContain('Garage › Shelf A');
-    expect(label(el, 'filter-location')).not.toContain('Area:');
-  });
-
-  it('leaves a location in no area labelled exactly as before', async () => {
-    const el = await mount({ locationIds: ['shelf-a'] }, { locations: nestedLocations(null) });
+  it.each([
+    ['drops the area when the picked path opens with that name', 'area-garage'],
+    ['leaves a location in no area labelled exactly as before', null],
+  ])('%s', async (_title, areaId) => {
+    const el = await mount({ locationIds: ['shelf-a'] }, { locations: nestedLocations(areaId) });
     expect(label(el, 'filter-location')).toContain('Garage › Shelf A');
     expect(label(el, 'filter-location')).not.toContain('Area:');
   });

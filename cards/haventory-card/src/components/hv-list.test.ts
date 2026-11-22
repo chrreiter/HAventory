@@ -120,28 +120,19 @@ describe('hv-list: which branch renders', () => {
     expect(el.shadowRoot?.querySelector('[data-testid="pinned-editor-hint"]')).toBe(null);
   });
 
-  it('keeps a pinned editor instead of falling back to the empty state', async () => {
+  it.each([
+    ['keeps a pinned editor instead of falling back to the empty state', false, 'empty-state'],
+    ['keeps a pinned editor instead of falling back to the skeleton', true, 'list-skeleton'],
+  ])('%s', async (_title, loading, fallback) => {
     const el = await mount({
       items: [],
-      loading: false,
+      loading,
       editingItemId: 'a',
       pinnedItem: makeItem({ id: 'a', name: 'A' }),
       editorTemplate: (id) => html`<div data-testid="stub-editor">${id}</div>`,
     });
     expect(el.shadowRoot?.querySelector('[data-testid="stub-editor"]')).toBeTruthy();
-    expect(el.shadowRoot?.querySelector('[data-testid="empty-state"]')).toBe(null);
-  });
-
-  it('keeps a pinned editor instead of falling back to the skeleton', async () => {
-    const el = await mount({
-      items: [],
-      loading: true,
-      editingItemId: 'a',
-      pinnedItem: makeItem({ id: 'a', name: 'A' }),
-      editorTemplate: (id) => html`<div data-testid="stub-editor">${id}</div>`,
-    });
-    expect(el.shadowRoot?.querySelector('[data-testid="stub-editor"]')).toBeTruthy();
-    expect(el.shadowRoot?.querySelector('[data-testid="list-skeleton"]')).toBe(null);
+    expect(el.shadowRoot?.querySelector(`[data-testid="${fallback}"]`)).toBe(null);
   });
 
   it('names the empty situation once loading has finished', async () => {

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Store } from './store';
-import { makeMockHass, makeItem } from '../test.utils';
+import { makeMockHass, makeItem, callCount } from '../test.utils';
 
 /**
  * A file of its own, because the day clock is module state: it arms on its
@@ -22,42 +22,45 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+/** One item due tomorrow, and a count of the `haventory/stats` reads so far. */
+async function mountClock() {
+  const hass = makeMockHass({ items: [makeItem({ id: '1', inspection_date: TOMORROW })] });
+  const store = new Store(hass);
+  await store.init();
+  const statsCalls = () => callCount(hass, 'haventory/stats');
+  return { store, statsCalls };
+}
+
 describe('Store and the day clock', () => {
   it('re-reads the counts when the day turns over', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', inspection_date: TOMORROW })] });
-    const store = new Store(hass);
-    await store.init();
+    const { store, statsCalls } = await mountClock();
     expect(store.state.value.statsCounts?.inspection_due_count).toBe(0);
-    const before = hass.__calls.filter((c) => c === 'haventory/stats').length;
+    const before = statsCalls();
 
     await vi.advanceTimersByTimeAsync(3_000);
 
-    expect(hass.__calls.filter((c) => c === 'haventory/stats').length).toBe(before + 1);
+    expect(statsCalls()).toBe(before + 1);
     expect(store.state.value.statsCounts?.inspection_due_count).toBe(1);
     store.dispose();
   });
 
   it('stops reading once the store is disposed', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', inspection_date: TOMORROW })] });
-    const store = new Store(hass);
-    await store.init();
-    const before = hass.__calls.filter((c) => c === 'haventory/stats').length;
+    const { store, statsCalls } = await mountClock();
+    const before = statsCalls();
 
     store.dispose();
     await vi.advanceTimersByTimeAsync(3_000);
 
-    expect(hass.__calls.filter((c) => c === 'haventory/stats').length).toBe(before);
+    expect(statsCalls()).toBe(before);
   });
 
   it('leaves the counts alone until the day actually turns', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', inspection_date: TOMORROW })] });
-    const store = new Store(hass);
-    await store.init();
-    const before = hass.__calls.filter((c) => c === 'haventory/stats').length;
+    const { store, statsCalls } = await mountClock();
+    const before = statsCalls();
 
     await vi.advanceTimersByTimeAsync(1_000);
 
-    expect(hass.__calls.filter((c) => c === 'haventory/stats').length).toBe(before);
+    expect(statsCalls()).toBe(before);
     expect(store.state.value.statsCounts?.inspection_due_count).toBe(0);
     store.dispose();
   });

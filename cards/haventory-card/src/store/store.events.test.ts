@@ -1,15 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
-import { Store } from './store';
-import { makeMockHass, makeItem } from '../test.utils';
+import { makeItem, mountStore, withFakeTimers, callCount } from '../test.utils';
 
 /**
  * What arrives on the open subscriptions and what the card does with it: a row
  * another browser created, a path a location rename moved, counts pushed from
  * the backend, and the totals the footer prints beside them.
  */
-
-/** Stores under test never wait on real backoff. */
-const fast = { retryBaseMs: 0 };
 
 /** Let queued microtasks and any zero-delay timers run. */
 async function flush(rounds = 1): Promise<void> {
@@ -18,9 +14,7 @@ async function flush(rounds = 1): Promise<void> {
 
 describe('Store', () => {
   it('reloads the item list when a locations moved/renamed event arrives', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: 'i1', name: 'Widget' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass } = await mountStore({ items: [makeItem({ id: 'i1', name: 'Widget' })] });
 
     // Count item/list calls from here on via the callWS wrapper
     let listCalls = 0;
@@ -53,9 +47,7 @@ describe('Store', () => {
 
   it('leaves a changed row on a page not yet loaded where it is', async () => {
     const items = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}`, name: `Item ${i}` }));
-    const hass = makeMockHass({ items });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items });
     expect(store.state.value.items).toHaveLength(50);
     expect(store.state.value.total).toBe(60);
 
@@ -71,9 +63,7 @@ describe('Store', () => {
   });
 
   it('re-reads the list after a reconnect, since the events in between are gone', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'Spanner' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1', name: 'Spanner' })] });
 
     // Another browser renames the item while this socket is down.
     hass.__setItems([makeItem({ id: '1', name: 'Wrench' })]);
@@ -84,9 +74,7 @@ describe('Store', () => {
   });
 
   it('updates statsCounts live from a stats counts event', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [] });
 
     const counts = { items_total: 42, low_stock_count: 3, checked_out_count: 1, locations_total: 7 };
     hass.__emit('stats', 'counts', { counts });
@@ -99,9 +87,7 @@ describe('Store', () => {
 
 describe('Store: import reload signalling', () => {
   it('flags a reload while re-listing after an import replaced the dataset', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1' })] });
 
     const seen: boolean[] = [];
     store.state.onChange(() => seen.push(store.state.value.degraded.reloading));
@@ -120,9 +106,7 @@ describe('Store: import reload signalling', () => {
   // in one call, so the backend announces the move with no item to merge. Read
   // as a per-item event this threw and the card kept showing the old rows.
   it('refetches on an item event that carries no item', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'Ladder' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1', name: 'Ladder' })] });
     hass.__setItems([makeItem({ id: '1', name: 'Ladder', status: 'ok' }), makeItem({ id: '2' })]);
 
     const seen: boolean[] = [];
@@ -149,44 +133,40 @@ describe('Store: the filtered total after an event-inserted row', () => {
 
   /** A store with `q` applied and its first filtered page loaded. */
   async function searched(q: string, items = [spanner]) {
-    const hass = makeMockHass({ items });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items });
     store.setFilters({ q });
     await vi.advanceTimersByTimeAsync(300);
     return { hass, store };
   }
 
-  it('counts a row an event inserts, with no round trip to wait for', async () => {
-    vi.useFakeTimers();
-    try {
+  it(
+    'counts a row an event inserts, with no round trip to wait for',
+    withFakeTimers(async () => {
       const { hass, store } = await searched('spanner', []);
       expect(store.state.value.total).toBe(0);
 
       // The mock's own list is what a recount reads, so the item exists there
       // too — this is the other browser having created it.
       hass.__setItems([spanner]);
-      const listsBefore = hass.__calls.filter((c) => c === 'haventory/item/list').length;
+      const listsBefore = callCount(hass, 'haventory/item/list');
       hass.__emit('items', 'created', { item: spanner });
 
       // Straight away, before the recount is even scheduled to fire.
       expect(store.state.value.items).toHaveLength(1);
       expect(store.state.value.total).toBe(1);
-      expect(hass.__calls.filter((c) => c === 'haventory/item/list').length).toBe(listsBefore);
+      expect(callCount(hass, 'haventory/item/list')).toBe(listsBefore);
 
       await vi.advanceTimersByTimeAsync(300);
       expect(store.state.value.total).toBe(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
   // The subscription is filtered by location, not by the search text, so a row
   // that does not match the typed query arrives all the same. The card cannot
   // tell — the server can.
-  it('takes the total back off the server when the row does not match', async () => {
-    vi.useFakeTimers();
-    try {
+  it(
+    'takes the total back off the server when the row does not match',
+    withFakeTimers(async () => {
       const { hass, store } = await searched('spanner');
       expect(store.state.value.total).toBe(1);
 
@@ -199,14 +179,12 @@ describe('Store: the filtered total after an event-inserted row', () => {
       // `showingCount` is what stops that pair printing an impossible line.
       expect(store.state.value.total).toBe(1);
       expect(store.state.value.items).toHaveLength(2);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('follows a delete down, and never below zero', async () => {
-    vi.useFakeTimers();
-    try {
+  it(
+    'follows a delete down, and never below zero',
+    withFakeTimers(async () => {
       const { hass, store } = await searched('spanner');
       hass.__setItems([]);
       hass.__emit('items', 'deleted', { item: spanner });
@@ -214,17 +192,15 @@ describe('Store: the filtered total after an event-inserted row', () => {
       expect(store.state.value.total).toBe(0);
       await vi.advanceTimersByTimeAsync(300);
       expect(store.state.value.total).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
   // An item on a page nobody has scrolled to leaves the match set without
   // touching the loaded rows, so there is no delta to apply — only the server
   // knows the set got smaller.
-  it('re-prices a change the loaded list cannot see', async () => {
-    vi.useFakeTimers();
-    try {
+  it(
+    're-prices a change the loaded list cannot see',
+    withFakeTimers(async () => {
       const other = makeItem({ id: 'sp2', name: 'Spanner, small' });
       const { hass, store } = await searched('spanner', [spanner, other]);
       expect(store.state.value.total).toBe(2);
@@ -235,49 +211,43 @@ describe('Store: the filtered total after an event-inserted row', () => {
 
       await vi.advanceTimersByTimeAsync(300);
       expect(store.state.value.total).toBe(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
   // `updated` rather than `created`, so the number below counts one thing: a
   // create also books a tree refetch, which prices its own filtered count
   // through the same command and cannot be told apart from this one.
-  it('asks once for a burst, and not at all with no filter on', async () => {
-    vi.useFakeTimers();
-    try {
+  it(
+    'asks once for a burst, and not at all with no filter on',
+    withFakeTimers(async () => {
       const { hass, store } = await searched('spanner');
-      const before = hass.__calls.filter((c) => c === 'haventory/item/list').length;
+      const before = callCount(hass, 'haventory/item/list');
       for (const quantity of [1, 2, 3]) {
         hass.__emit('items', 'updated', { item: { ...spanner, quantity } });
       }
       await vi.advanceTimersByTimeAsync(300);
-      expect(hass.__calls.filter((c) => c === 'haventory/item/list').length - before).toBe(1);
+      expect(callCount(hass, 'haventory/item/list') - before).toBe(1);
 
       store.clearFilters();
       await vi.advanceTimersByTimeAsync(300);
-      const unfiltered = hass.__calls.filter((c) => c === 'haventory/item/list').length;
+      const unfiltered = callCount(hass, 'haventory/item/list');
       hass.__emit('items', 'created', { item: makeItem({ id: 'd', name: 'Chisel' }) });
       await vi.advanceTimersByTimeAsync(300);
-      expect(hass.__calls.filter((c) => c === 'haventory/item/list').length).toBe(unfiltered);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+      expect(callCount(hass, 'haventory/item/list')).toBe(unfiltered);
+    }),
+  );
 
-  it('cancels a recount the dispose leaves pending', async () => {
-    vi.useFakeTimers();
-    try {
+  it(
+    'cancels a recount the dispose leaves pending',
+    withFakeTimers(async () => {
       const { hass, store } = await searched('spanner', [spanner, hammer]);
       hass.__emit('items', 'created', { item: hammer });
-      const listed = hass.__calls.filter((c) => c === 'haventory/item/list').length;
+      const listed = callCount(hass, 'haventory/item/list');
       store.dispose();
       await vi.advanceTimersByTimeAsync(300);
-      expect(hass.__calls.filter((c) => c === 'haventory/item/list').length).toBe(listed);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+      expect(callCount(hass, 'haventory/item/list')).toBe(listed);
+    }),
+  );
 
   // The filter can change while the count for the previous one is on the wire.
   // `listItems` has already answered for the new filter by then, so the late
@@ -285,9 +255,7 @@ describe('Store: the filtered total after an event-inserted row', () => {
   // the two really do overlap.
   it('drops a recount whose filter moved while it was in flight', async () => {
     const small = makeItem({ id: 'ha2', name: 'Hammer, small' });
-    const hass = makeMockHass({ items: [spanner, hammer, small] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [spanner, hammer, small] });
     store.setFilters({ q: 'spanner' });
     await vi.waitUntil(() => store.state.value.total === 1);
 

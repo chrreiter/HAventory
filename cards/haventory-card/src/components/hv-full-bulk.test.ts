@@ -29,6 +29,12 @@ async function mount(opts: { items: Item[]; locations?: Location[]; mobile?: boo
 describe('hv-full-bulk: running an action over the selection', () => {
   const bulkBar = (sr: ShadowRoot) => q(sr, '[data-testid="full-bulk-bar"]') as HTMLElement;
 
+  /** Press one of the bulk bar's action buttons and let the view settle. */
+  async function pressBulk(el: HVFullBulk, sr: ShadowRoot, action: string) {
+    (bulkBar(sr).shadowRoot?.querySelector(`[data-action="${action}"]`) as HTMLButtonElement).click();
+    await settle(el);
+  }
+
   it('runs a bulk move and reports it', async () => {
     const locations = [loc('workshop', 'Workshop')];
     const items = [makeItem({ id: '1' }), makeItem({ id: '2' })];
@@ -71,8 +77,7 @@ describe('hv-full-bulk: running an action over the selection', () => {
     };
 
     const bar = bulkBar(sr);
-    (bar.shadowRoot?.querySelector('[data-action="check-in"]') as HTMLButtonElement).click();
-    await settle(el);
+    await pressBulk(el, sr, 'check-in');
     await settle(el);
 
     expect(bar.shadowRoot?.querySelector('[data-testid="bulk-result-summary"]')?.textContent).toContain(
@@ -89,8 +94,7 @@ describe('hv-full-bulk: running an action over the selection', () => {
       const items = [makeItem({ id: '1' }), makeItem({ id: '2' })];
       const mounted = await mount({ items, mobile });
       const { el, sr } = mounted;
-      (bulkBar(sr).shadowRoot?.querySelector('[data-action="check-out"]') as HTMLButtonElement).click();
-      await settle(el);
+      await pressBulk(el, sr, 'check-out');
 
       const popover = q(sr, '[data-testid="full-bulk-checkout"]') as HTMLElement & {
         open: boolean;
@@ -162,8 +166,7 @@ describe('hv-full-bulk: running an action over the selection', () => {
       const items = [makeItem({ id: '1', checked_out: true }), makeItem({ id: '2', checked_out: true })];
       const { el, store, sr } = await mount({ items });
 
-      (bulkBar(sr).shadowRoot?.querySelector('[data-action="check-in"]') as HTMLButtonElement).click();
-      await settle(el);
+      await pressBulk(el, sr, 'check-in');
       await settle(el);
 
       expect(store.state.value.items.every((i) => !i.checked_out)).toBe(true);
@@ -174,8 +177,7 @@ describe('hv-full-bulk: running an action over the selection', () => {
     const items = [makeItem({ id: '1' }), makeItem({ id: '2', checked_out: true })];
     const { el, store, sr } = await mount({ items });
 
-    (bulkBar(sr).shadowRoot?.querySelector('[data-action="delete"]') as HTMLButtonElement).click();
-    await settle(el);
+    await pressBulk(el, sr, 'delete');
 
     const confirm = q(sr, '[data-testid="bulk-confirm"]') as HTMLElement & { open: boolean };
     expect(confirm.open).toBe(true);
@@ -193,16 +195,14 @@ describe('hv-full-bulk: running an action over the selection', () => {
   // width flips every overlay, so a phone never shows a centred box over sheets.
   it('raises its delete confirm as a sheet on a phone viewport', async () => {
     const { el, sr } = await mount({ items: [makeItem({ id: '1' })], mobile: true });
-    (bulkBar(sr).shadowRoot?.querySelector('[data-action="delete"]') as HTMLButtonElement).click();
-    await settle(el);
+    await pressBulk(el, sr, 'delete');
 
     expect(q(sr, '[data-testid="bulk-confirm"]')?.hasAttribute('mobile')).toBe(true);
   });
 
   it('leaves everything alone when the delete is cancelled', async () => {
     const { el, store, sr } = await mount({ items: [makeItem({ id: '1' })] });
-    (bulkBar(sr).shadowRoot?.querySelector('[data-action="delete"]') as HTMLButtonElement).click();
-    await settle(el);
+    await pressBulk(el, sr, 'delete');
 
     const confirm = q(sr, '[data-testid="bulk-confirm"]') as HTMLElement & { open: boolean };
     (confirm.shadowRoot?.querySelector('[data-testid="confirm-cancel"]') as HTMLButtonElement).click();

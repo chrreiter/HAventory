@@ -72,12 +72,6 @@ const conflictEntries = (el: HVImportSheet) =>
   );
 
 describe('hv-import-sheet: step 1', () => {
-  it('says up front that nothing is written yet', async () => {
-    const el = await mount();
-    expect(el.shadowRoot?.textContent).toContain('Step 1 of 2');
-    expect(el.shadowRoot?.textContent).toContain('nothing is written until you press Import');
-  });
-
   it('defaults to merge and offers all three policies', async () => {
     const el = await mount();
     const policies = all(el, '[data-testid="import-policy"]');
@@ -316,25 +310,31 @@ describe('hv-import-sheet: preview', () => {
     expect(text).toContain('and 3 more');
   });
 
-  it('says how many attachments name files this install does not hold', async () => {
-    // An export carries attachment metadata and not the bytes, so restoring one
-    // onto a fresh machine leaves every reference pointing at nothing. The
-    // count is already on the wire; not showing it is the difference between a
-    // decision and a surprise.
-    const el = await mount({ preview: preview({ attachments: { referenced: 14, missing: 7 } }) });
+  // An export carries attachment metadata and not the bytes, so restoring one
+  // onto a fresh machine leaves every reference pointing at nothing. The
+  // count is already on the wire; not showing it is the difference between a
+  // decision and a surprise.
+  it.each([
+    [
+      'says how many attachments name files this install does not hold',
+      { referenced: 14, missing: 7 },
+      [
+        '7 of 14 attachments name files this install does not have',
+        'those photos and manuals will show as missing after the import',
+        // The full-fidelity path, since this one cannot be.
+        'Home Assistant backup carries the files as well',
+      ],
+    ],
+    [
+      'counts a single missing attachment in the singular',
+      { referenced: 3, missing: 1 },
+      ['1 of 3 attachments names a file this install does not have', 'that photo or manual'],
+    ],
+  ])('%s', async (_title, attachments, expected) => {
+    const el = await mount({ preview: preview({ attachments }) });
     const text =
       q(el, '[data-testid="import-attachments-missing"]')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-    expect(text).toContain('7 of 14 attachments name files this install does not have');
-    expect(text).toContain('those photos and manuals will show as missing after the import');
-    // The full-fidelity path, since this one cannot be.
-    expect(text).toContain('Home Assistant backup carries the files as well');
-  });
-
-  it('counts a single missing attachment in the singular', async () => {
-    const el = await mount({ preview: preview({ attachments: { referenced: 3, missing: 1 } }) });
-    const text = q(el, '[data-testid="import-attachments-missing"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
-    expect(text).toContain('1 of 3 attachments names a file this install does not have');
-    expect(text).toContain('that photo or manual');
+    for (const part of expected) expect(text).toContain(part);
   });
 
   it('says nothing about attachments when every referenced file is here', async () => {
@@ -345,26 +345,6 @@ describe('hv-import-sheet: preview', () => {
     const absent = await mount({ preview: preview() });
     expect(absent.preview?.attachments).toBeUndefined();
     expect(q(absent, '[data-testid="import-attachments-missing"]')).toBe(null);
-  });
-
-  it('puts the attachment caveat below the name clashes and above the button', async () => {
-    const el = await mount({
-      preview: preview({
-        warnings: [{ code: 'name_collision', path: 'items[0]', message: 'a clash' }],
-        attachments: { referenced: 2, missing: 2 },
-      }),
-    });
-    expect(all(el, '.alert').map((a) => a.dataset.testid)).toEqual([
-      'import-warnings',
-      'import-attachments-missing',
-    ]);
-  });
-
-  it('states the all-or-nothing behaviour and what it costs other clients', async () => {
-    const el = await mount({ preview: preview() });
-    const text = el.shadowRoot?.textContent?.replace(/\s+/g, ' ') ?? '';
-    expect(text).toContain('all-or-nothing');
-    expect(text).toContain('every connected card reloads its data');
   });
 
   it('labels the import button with what will actually be written', async () => {

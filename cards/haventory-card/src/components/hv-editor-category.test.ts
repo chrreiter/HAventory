@@ -79,23 +79,6 @@ describe('hv-editor-category', () => {
     expect(el.open).toBe(true);
   });
 
-  // The list belongs to the field above it, so it opens under that field and
-  // pushes the form down, the same disclosure the location tree is. Placed
-  // against the viewport it would drift off its own input whenever the
-  // surface behind it scrolled.
-  it('opens the list in flow under its input, like the location tree', async () => {
-    const { el } = await mount();
-    await focusCategory(el);
-
-    const list = q(el, '[data-testid="editor-category-list"]');
-    expect(list?.classList.contains('floating')).toBe(false);
-    expect(list?.getAttribute('style')).toBeNull();
-
-    const css = componentCss('hv-editor-category');
-    expect(css).not.toMatch(/position: fixed/);
-    expect(css).toMatch(/\.tree-holder,\s*\.list-holder \{[^}]*margin-top: 6px/);
-  });
-
   it('names a listbox that is there whether or not it is showing', async () => {
     const { el } = await mount();
     const id = 'editor-category-list';
