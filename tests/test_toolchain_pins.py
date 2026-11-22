@@ -79,10 +79,10 @@ PYTHON_VERSION_FORMS = re.compile(
         (
             rf"--python[ =]({_PY})",  # uv: `uv venv --python 3.14`
             rf"python install ({_PY})",  # uv: `uv python install 3.14`
-            rf"PYTHON:-({_PY})",  # shell default: `${HA_PYTHON:-3.14}`
+            rf"PYTHON:-({_PY})",  # shell default: `${HAVENTORY_INTEGRATION_PYTHON:-3.14}`
             rf"python[-_]version[\"']? *[:=] *\[? *[\"']?({_PY})",  # setup-python, mypy
             rf"requires-python *= *\">=({_PY})\"",  # the declaration
-            rf"[Cc]?[Pp]ython[ :]?({_PY})",  # prose, `python3.14`, image tags
+            rf"[Cc]?[Pp]ython[ :]?({_PY})",  # prose, `python3.14`
             rf"({_PY})-only",  # "the source is 3.14-only"
         )
     )
