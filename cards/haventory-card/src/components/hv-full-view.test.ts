@@ -9,7 +9,7 @@ import {
   settle,
   stubViewport,
 } from '../test.utils';
-import { deepActiveElement } from '../ui/dialog-focus';
+import { deepActiveElement, deepFocusables } from '../ui/dialog-focus';
 import { makeBulkOp } from '../store/store';
 import type { HVFullView } from './hv-full-view';
 import type { Item, Location, StatusDefinition } from '../store/types';
@@ -1678,6 +1678,58 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
       expect(sheet(sr)?.open).toBe(true);
       expect(inner.shadowRoot?.querySelector('[data-testid="sheet-editor"]')).toBe(null);
       expect(inner.shadowRoot?.querySelector('[data-testid="sheet-name"]')?.textContent).toContain('New');
+    } finally {
+      restore();
+    }
+  });
+
+  // The sheet's scrim covers this view's banner stack. The panel at phone width
+  // is this view embedded, so both carry the conflict inside the sheet.
+  it.each([
+    { variant: 'the overlay', embedded: false },
+    { variant: 'the panel', embedded: true },
+  ])('offers View latest and Re-apply inside the sheet in $variant', async ({ embedded }) => {
+    const restore = stubViewport(true);
+    try {
+      const { el, hass, sr } = await mount({
+        items: [makeItem({ id: '1', name: 'Old', version: 4 })],
+        embedded,
+      });
+      await openRow(el, sr);
+      const inner = sheet(sr)!;
+      (inner.shadowRoot?.querySelector('[data-testid="sheet-edit"]') as HTMLButtonElement).click();
+      await inner.updateComplete;
+      const form = () =>
+        (inner.shadowRoot?.querySelector('[data-testid="sheet-editor"]') as HTMLElement)
+          .shadowRoot as ShadowRoot;
+      const name = form().querySelector('[data-testid="editor-name"]') as HTMLInputElement;
+      name.value = 'Mine';
+      name.dispatchEvent(new Event('input'));
+      await inner.updateComplete;
+      hass.__setConflict(true);
+      (form().querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
+      await settle(el);
+      await settle(el);
+
+      const dialog = inner.shadowRoot
+        ?.querySelector('hv-bottom-sheet')
+        ?.shadowRoot?.querySelector('[data-testid="bottom-sheet"]');
+      const controls = deepFocusables(dialog);
+      const order = controls.map((c) => c.dataset.testid);
+      expect(order).toContain('banner-reapply');
+      expect(order.indexOf('banner-view-latest')).toBeGreaterThan(order.indexOf('editor-save'));
+      expect(q(sr, '[data-testid="banners"]')).toBe(null);
+
+      // What the other member saved, which reached the server but not this view.
+      hass.__setConflict(false);
+      hass.__setItems([makeItem({ id: '1', name: 'Theirs', version: 5 })]);
+      defined(controls.find((c) => c.dataset.testid === 'banner-view-latest')).click();
+      await settle(el);
+      await settle(el);
+
+      expect((form().querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe('Theirs');
+      expect(form().querySelector('[data-testid="editor-error"]')).toBe(null);
+      expect(q(sr, '[data-testid="banner-entry"]')).toBe(null);
     } finally {
       restore();
     }

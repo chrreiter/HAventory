@@ -31,6 +31,7 @@ import {
 import type { MediaBindings } from '../ui/media';
 import { docIcon, renderDocumentRow, renderLightboxHost, renderPhotoFigure } from '../ui/attachments';
 import type { ConfirmDiscard } from '../ui/discard';
+import { focusStranded } from '../ui/dialog-focus';
 import { CopyFlash } from '../ui/clipboard';
 import type {
   AreaRef,
@@ -64,6 +65,9 @@ const QTY_HINT_ID = 'sheet-qty-hint';
  *   `check-in`, `check-out-confirmed` and `set-due-date` with the date,
  *   `reminder-bump` and `request-delete`, each carrying `itemId`, and `cancel`
  *   once the sheet has closed.
+ * - **Slot** `conflicts`: the host's conflict banners about this item, which
+ *   the sheet's scrim would otherwise cover. They sit in the sheet's footer, in
+ *   view however far the form is scrolled and after its controls in tab order.
  * - The sheet guards the form, which a host cannot see into: a dismissal (the
  *   scrim, a swipe, ✕, Escape over the read view) with unsaved typing asks
  *   first. The form's Cancel and Escape land on the read view, as Back does.
@@ -535,6 +539,15 @@ export class HVDetailSheet extends LitElement {
     this._send('cancel');
   };
 
+  /**
+   * A banner leaves the footer once its button is used, and the focus on that
+   * button falls to the page under the scrim. The panel takes it back, where
+   * Escape is bound. A closing sheet takes its banners down too, and keeps none.
+   */
+  private _onConflictsChange = () => {
+    if (this.open && focusStranded()) this._sheet?.focusPanel();
+  };
+
   /** Leave the form for the read view (Back) or dismiss the sheet, asking first about unsaved typing. */
   private _leaveEdit(to: 'read' | 'close') {
     const leave = () => {
@@ -930,6 +943,7 @@ export class HVDetailSheet extends LitElement {
         }}
       >
         ${item ? (this._mode === 'edit' ? this._renderEdit(item) : this._renderRead(item)) : null}
+        <slot name="conflicts" slot="footer" @slotchange=${this._onConflictsChange}></slot>
       </hv-bottom-sheet>
 
       ${renderLightboxHost({

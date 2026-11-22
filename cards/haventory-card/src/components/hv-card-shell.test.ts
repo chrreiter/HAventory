@@ -2,6 +2,7 @@ import './hv-card-shell';
 import { Store } from '../store/store';
 import {
   componentCss,
+  defined,
   makeItem,
   makeMockHass,
   mountComponent,
@@ -12,6 +13,7 @@ import {
   stubViewport,
 } from '../test.utils';
 import type { MockHass } from '../test.utils';
+import { deepActiveElement, deepFocusables } from '../ui/dialog-focus';
 import { discardPrompt } from '../ui/discard';
 import { SEARCH_DEBOUNCE_MS } from '../ui/filter-chrome';
 import { addDays, toIsoDate } from '../ui/relative-time';
@@ -1947,6 +1949,96 @@ describe('hv-card-shell: mobile detail sheet', () => {
     );
     const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
     expect(name.value).toBe('New');
+  });
+
+  // The sheet's scrim covers the card and its banner stack, so a conflict's
+  // ways out have to be inside the sheet, or the only way to reach them is to
+  // close the sheet on the typing.
+  describe('a conflict about the item it shows', () => {
+    const dialog = (sr: ShadowRoot) =>
+      sheet(sr)
+        .shadowRoot?.querySelector('hv-bottom-sheet')
+        ?.shadowRoot?.querySelector('[data-testid="bottom-sheet"]');
+    /** The sheet's controls in tab order, by test id. */
+    const tabOrder = (sr: ShadowRoot) => deepFocusables(dialog(sr)).map((c) => c.dataset.testid);
+    /** Item 1's sheet, whatever order the list puts it in. */
+    const openSheet = async (el: HVCardShell, sr: ShadowRoot) => {
+      const rows = [
+        ...((sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelectorAll('hv-list-row') ?? []),
+      ];
+      const row = rows.find((r) => (r as HTMLElement & { item: Item }).item.id === '1') as HTMLElement;
+      (row.shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).click();
+      await settle(el);
+    };
+    const conflictOn = async (el: HVCardShell, store: Store, itemId: string) => {
+      store['pushError']({ code: 'conflict', message: 'version conflict' }, { itemId, changes: { name: 'B' } });
+      await settle(el);
+    };
+
+    it('offers View latest and Re-apply inside the sheet, after Save', async () => {
+      const { el, hass, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Old' })], mobile: true });
+      hass.__setConflict(true);
+      await editInSheet(el, sr);
+
+      const order = tabOrder(sr);
+      expect(order).toContain('banner-view-latest');
+      expect(order).toContain('banner-reapply');
+      expect(order.indexOf('banner-view-latest')).toBeGreaterThan(order.indexOf('editor-save'));
+      // Drawn once: the card's own stack, under the scrim, leaves it out.
+      expect(sr.querySelectorAll('[data-testid="banner-entry"]')).toHaveLength(1);
+      expect(sr.querySelector('[data-testid="banners"]')).toBe(null);
+    });
+
+    // A used banner leaves the footer, and the focus on its button would fall
+    // to the page under the scrim, where Escape no longer closes the sheet.
+    it.each(['banner-view-latest', 'banner-reapply'])(
+      'keeps focus in the sheet once %s is used',
+      async (testid) => {
+        const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'A' })], mobile: true });
+        await openSheet(el, sr);
+        await conflictOn(el, store, '1');
+        const button = defined(deepFocusables(dialog(sr)).find((c) => c.dataset.testid === testid));
+
+        button.focus();
+        button.click();
+        await settle(el);
+        await settle(el);
+
+        expect(sr.querySelector('[data-testid="banner-entry"]')).toBe(null);
+        expect(deepActiveElement()).toBe(dialog(sr));
+      },
+    );
+
+    // A conflict outlives the sheet it was drawn in, and "Someone else changed
+    // this item." names the item it is drawn on, so the card keeps the rest.
+    it.each([
+      {
+        when: 'the sheet closes',
+        provoke: async (el: HVCardShell, store: Store, sr: ShadowRoot) => {
+          await openSheet(el, sr);
+          await conflictOn(el, store, '1');
+          expect(tabOrder(sr)).toContain('banner-view-latest');
+          (sheet(sr).shadowRoot?.querySelector('[data-testid="sheet-close"]') as HTMLButtonElement).click();
+          await settle(el);
+        },
+      },
+      {
+        when: 'it is about another item',
+        provoke: async (el: HVCardShell, store: Store, sr: ShadowRoot) => {
+          await conflictOn(el, store, '2');
+          await openSheet(el, sr);
+          expect(tabOrder(sr)).not.toContain('banner-view-latest');
+        },
+      },
+    ])('leaves the conflict to the card when $when', async ({ provoke }) => {
+      const { el, store, sr } = await mountShell({
+        items: [makeItem({ id: '1', name: 'A' }), makeItem({ id: '2', name: 'B' })],
+        mobile: true,
+      });
+      await provoke(el, store, sr);
+
+      expect(sr.querySelector('[data-testid="banners"] [data-testid="banner-view-latest"]')).toBeTruthy();
+    });
   });
 
   it('deletes through the same confirmation and closes the sheet', async () => {

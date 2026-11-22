@@ -104,8 +104,9 @@ row the form is open on, the copy of that row pinned while a refetch is in fligh
 and what a refused one leaves on screen, the read sheet's item, the check-out step, and one
 dispatch table for every event a row can raise. It renders the editor, the read sheet and
 the check-out popover, and the notice its host places beside the banner stacks when a delete
-made elsewhere closed the form or the sheet. The hooks are the three things that genuinely
-differ: where a row tap goes, who answers a delete, and which shadow root the open form is in.
+made elsewhere closed the form or the sheet. The hooks are the four things that genuinely
+differ: where a row tap goes, who answers a delete, which shadow root the open form is in,
+and whether the host draws the read sheet at all, which it does where it lays out for a phone.
 
 ---
 
@@ -863,7 +864,11 @@ Any other key in that record is ignored, so an older or newer payload never brea
   it, and a conflict renders as a banner with *View latest* / *Re-apply*. *View latest*
   re-reads the item, and a form open on it starts over from that copy, without the typing
   or the refused save's message (`ItemWorkspace.showLatest`, through the banner's
-  `onLatestShown` hook). A re-read that fails leaves the form as it was.
+  `onLatestShown` hook). A re-read that fails leaves the form as it was. On a phone the read
+  sheet's scrim covers the host's banners, so the sheet draws the conflicts about its own
+  item in its footer, under the form's Save, and the host's stack leaves them out until
+  the sheet closes (`ItemWorkspace.drawsInSheet`). A conflict about another item stays in
+  the host's stack, since the banner's heading says "this item".
 - **An item save carries only what the edit changed**, measured against the copy of the
   item the form was filled from. The form stays open across live events, so by the time
   Save is pressed the version it writes against can already carry another member's edit.
