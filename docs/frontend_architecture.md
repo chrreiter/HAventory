@@ -44,6 +44,20 @@ files. `getConfigElement` is async and awaits the runtime, which holds the edito
 that call. `getGridOptions` sizes the card in a sections view, while `getCardSize` still
 answers the masonry view.
 
+**The card is as tall as its frame, never its content.** The host is a flex column at
+`height: 100%`, and its one flex item, the placeholder or `hv-card-shell`, is sized by one
+rule in `src/index.ts`: `.placeholder, hv-card-shell { flex: 1 1 500px; min-height: 0 }`. In
+a sections view 100% is the cell `getGridOptions` sized (the nearest block ancestor with a
+definite height, since HA's `hui-card` wrapper between them is inline), and the frame grows
+or shrinks to fill it exactly. Anywhere else 100% is auto and the basis holds: `MASONRY_ROWS`
+× 50px, the ten rows `getCardSize` reports, which is the default eight-row sections cell
+(504px) to the nearest masonry row. The masonry view places cards by `getCardSize` before
+they draw, so the frame does not depend on what the inventory holds. Inside the shell the
+rows above the list and the footer keep their height, and `hv-list` takes the rest and
+scrolls inside it, the inline editor included, whose action bar is sticky. An open desktop
+filter panel shares that room with the list, never taking more than its own height, and
+scrolls in its share.
+
 It also publishes the active HA theme as `color-scheme` on the host, which every nested
 component inherits. HA assigns a new `hass` on every state change anywhere, so the setter
 compares `hass.themes` and `hass.selectedTheme` by identity and reads computed style only
@@ -146,12 +160,10 @@ between them is empty, and a host that connects once the runtime is in never dra
   `title:` and nothing else (no title, no text: the integration's title and the default
   arrive with the store), over an empty `aria-busy` body. The row is 60px, or 68px at the
   width where the shell turns mobile, which a container query on the host finds. While it
-  waits the host carries `loading`, and `:host([loading])` is `height: 100%` and that
-  container (only then: a size container would be the containing block for the real tree's
-  `position: fixed` surfaces). In a sections view 100% is the cell `getGridOptions` sized,
-  the nearest block ancestor with a definite height, since HA's `hui-card` wrapper between
-  them is inline. Anywhere else 100% is auto, and the body's flex basis makes the
-  placeholder `getCardSize()` × 50px tall, HA's masonry unit.
+  waits the host carries `loading`, and `:host([loading])` makes it that container (only
+  then: a size container would be the containing block for the real tree's
+  `position: fixed` surfaces). The frame rule above sizes the placeholder and the shell
+  alike, so the swap moves no edge, in a sections cell or a masonry column.
 - **The panel** draws its own placeholder rather than the card's, because it stands in for
   a different shape: the app bar's first row in `--hv-primary`, with the registration's
   title (the one the real bar shows), over an empty page. When `narrow`, the bar carries the

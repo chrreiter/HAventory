@@ -15,6 +15,15 @@ import './haventory-panel';
 export const MASONRY_ROW_PX = 50;
 
 /**
+ * The card's height in a masonry view, in those rows, whatever the inventory
+ * holds: the masonry view places cards by `getCardSize` before they have drawn
+ * anything. 500px is, to the nearest row, the 504px of the eight rows
+ * `getGridOptions` asks a sections view for at Home Assistant's 56px row and
+ * 8px gap, so the card is one size on either kind of view.
+ */
+export const MASONRY_ROWS = 10;
+
+/**
  * hv-card-shell's header row: 14px and 10px of padding around its 36px buttons,
  * or around the 44px ones it takes on a card `ui/responsive` calls mobile.
  */
@@ -29,12 +38,13 @@ export const PLACEHOLDER_MOBILE_MAX_PX = 602;
 export class HAventoryCard extends StoreHostElement {
   /**
    * The placeholder is hv-card-shell's frame and header row, so the swap moves
-   * neither. While the host carries `loading` it takes `height: 100%`: in a
-   * sections view that is the cell getGridOptions sized, the nearest block
-   * ancestor with a definite height, since HA's `hui-card` wrapper between them
-   * is inline. Anywhere else 100% is auto, and the body's flex basis makes the
-   * card as tall as getCardSize says: the masonry rows, less the head and the
-   * two 1px borders. In a sections cell the body shrinks or grows to fill.
+   * neither, and one rule sizes the two: whichever is drawn is the host's one
+   * flex item. The host takes `height: 100%`, which in a sections view is the
+   * cell getGridOptions sized, the nearest block ancestor with a definite
+   * height, since HA's `hui-card` wrapper between them is inline; the frame
+   * grows or shrinks to fill it exactly. Anywhere else 100% is auto, and the
+   * frame's flex basis makes it the MASONRY_ROWS rows getCardSize reports.
+   * Inside the shell the list takes what the rows above it leave, and scrolls.
    *
    * The host is a size container only while it waits: one would be the
    * containing block for the real tree's `position: fixed` surfaces.
@@ -46,21 +56,26 @@ export class HAventoryCard extends StoreHostElement {
     hostTokens,
     css`
       :host {
-        display: block;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
         font-family: var(--paper-font-body1_-_font-family, var(--ha-card-font-family, Arial, sans-serif));
         font-size: var(--mdc-typography-body2-font-size, 14px);
         line-height: var(--mdc-typography-body2-line-height, 20px);
       }
       :host([loading]) {
-        height: 100%;
         container-type: inline-size;
+      }
+      .placeholder,
+      hv-card-shell {
+        flex: 1 1 ${MASONRY_ROWS * MASONRY_ROW_PX}px;
+        min-height: 0;
       }
       .placeholder {
         --hv-placeholder-head: ${PLACEHOLDER_HEAD_PX.wide}px;
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
-        height: 100%;
         background: var(--hv-surface);
         color: var(--hv-text);
         font-family: var(--hv-font);
@@ -90,8 +105,7 @@ export class HAventoryCard extends StoreHostElement {
         white-space: nowrap;
       }
       .placeholder-body {
-        flex: 1 1 calc(var(--hv-card-size) * ${MASONRY_ROW_PX}px - var(--hv-placeholder-head) - 2px);
-        min-height: 0;
+        flex: 1 1 0;
       }
     `,
   ];
@@ -126,9 +140,9 @@ export class HAventoryCard extends StoreHostElement {
     this.requestUpdate();
   }
 
-  /** Masonry-view height estimate. */
+  /** The masonry-view height the frame's flex basis holds the card to. */
   public getCardSize(): number {
-    return 6;
+    return MASONRY_ROWS;
   }
 
   /** Sections-view sizing; below the minimums the list has room for no rows. */
@@ -149,7 +163,7 @@ export class HAventoryCard extends StoreHostElement {
   protected override renderPlaceholder() {
     const title = this.config?.title;
     return html`
-      <div class="placeholder" data-testid="card-placeholder" style="--hv-card-size: ${this.getCardSize()}">
+      <div class="placeholder" data-testid="card-placeholder">
         <div class="placeholder-head">
           ${title ? html`<h2 class="placeholder-title" data-testid="card-placeholder-title">${title}</h2>` : nothing}
         </div>

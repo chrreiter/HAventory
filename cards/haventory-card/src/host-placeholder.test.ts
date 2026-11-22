@@ -16,7 +16,7 @@ vi.mock('./runtime', async (importOriginal) => {
   return importOriginal();
 });
 
-import { MASONRY_ROW_PX, PLACEHOLDER_HEAD_PX, PLACEHOLDER_MOBILE_MAX_PX } from './index';
+import { PLACEHOLDER_HEAD_PX, PLACEHOLDER_MOBILE_MAX_PX } from './index';
 import { HAventoryPanel, MENU_ICON_PATH } from './haventory-panel';
 import { loadRuntime } from './runtime-loader';
 // Defined for its stylesheet only; the hosts still wait on the runtime above.
@@ -28,7 +28,7 @@ import { tokens } from './ui/tokens';
 import { componentCss, makeMockHass, mountComponent, q, settle, sheetsOf } from './test.utils';
 
 type Host = HTMLElement & { hass?: unknown; updateComplete: Promise<unknown> };
-type Card = Host & { setConfig(cfg: unknown): void; getCardSize(): number };
+type Card = Host & { setConfig(cfg: unknown): void };
 type Panel = Host & { narrow: boolean; panel?: unknown };
 
 const SIDEBAR_TOGGLE = 'Sidebar toggle';
@@ -78,30 +78,19 @@ describe('haventory-card while its runtime is loading', () => {
     expect(q(el, '[data-testid="card-placeholder-title"]')).toBeNull();
   });
 
-  it('fills the cell a sections view sizes from getGridOptions', async () => {
+  // jsdom lays nothing out, so the sizing is read off the stylesheet. One rule
+  // sizes the frame and the shell that replaces it, in a sections cell and in
+  // a masonry column alike, so the swap moves no edge; the body takes what the
+  // head leaves.
+  it('is sized by the rule that sizes the shell replacing it', async () => {
     const el = await mountCard({});
     const css = componentCss('haventory-card');
 
     expect(el.hasAttribute('loading')).toBe(true);
-    expect(css).toMatch(/:host\(\[loading\]\) \{ height: 100%;/);
-    expect(css).toMatch(/\.placeholder \{[^}]*height: 100%;/);
-  });
-
-  // jsdom lays nothing out, so the arithmetic is read off the stylesheet: the
-  // body's basis, the head and the two 1px borders add up to the rows
-  // getCardSize promises.
-  it('is as tall as getCardSize promises where nothing above it has a height', async () => {
-    const el = await mountCard({});
-    const frame = q(el, '[data-testid="card-placeholder"]');
-    const css = componentCss('haventory-card');
-
-    expect(frame?.style.getPropertyValue('--hv-card-size')).toBe(String(el.getCardSize()));
-    expect(MASONRY_ROW_PX).toBe(50);
-    expect(css).toMatch(/\.placeholder-head \{[^}]*height: var\(--hv-placeholder-head\);/);
+    expect(css).toMatch(/\.placeholder, hv-card-shell \{ flex: 1 1 \d+px; min-height: 0; \}/);
     expect(css).toMatch(/\.placeholder \{[^}]*box-sizing: border-box;[^}]*border: 1px solid/);
-    expect(css).toMatch(
-      /\.placeholder-body \{ flex: 1 1 calc\(var\(--hv-card-size\) \* 50px - var\(--hv-placeholder-head\) - 2px\);/,
-    );
+    expect(css).toMatch(/\.placeholder-head \{ flex: none;[^}]*height: var\(--hv-placeholder-head\);/);
+    expect(css).toMatch(/\.placeholder-body \{ flex: 1 1 0; \}/);
   });
 
   // The head stands in for the shell's header row, whose height is its padding
