@@ -5,7 +5,8 @@ import { hostTokens } from './host-tokens';
  * Design tokens. Each binds the HA theme variable first, with a fallback; those
  * with no HA equivalent carry a `light-dark()` pair, resolved by the
  * `color-scheme` the host publishes (`ui/theme.ts`), not by the OS preference.
- * The surface, text, divider, primary, card radius and font are `hostTokens`.
+ * The surface, text, divider, primary, the ink on it, card radius and font are
+ * `hostTokens`.
  *
  * Usage: `static styles = [tokens, css\`...\`]`; it only declares `:host` properties.
  */
@@ -20,7 +21,6 @@ export const tokens = css`
     /* Text */
     --hv-text-secondary: var(--secondary-text-color, light-dark(#727272, #9b9b9b));
     --hv-text-tertiary: light-dark(#9e9e9e, #7d7d7d);
-    --hv-text-on-primary: var(--text-primary-color, #fff);
 
     /* Lines */
     --hv-row-divider: light-dark(#ededed, #2e2e2e);

@@ -10,25 +10,19 @@
 import { en } from './en';
 import type { CompleteDictionary, Dictionary, PluralForm, PluralKey, TranslationKey } from './en';
 import { de } from './de';
+import { FALLBACK_LANGUAGE, resolveTag } from './resolve';
 
 export type { CompleteDictionary, Dictionary, PluralForm, PluralKey, TranslationKey };
+export { FALLBACK_LANGUAGE };
 
 export type TranslationParams = Readonly<Record<string, string | number>>;
 
 /** Keyed by lower-case BCP-47 tag, so a regional `de-CH` can match exactly. */
 export const DICTIONARIES: Readonly<Record<string, Dictionary>> = { en, de };
 
-/** The language every dictionary is complete for, and the fallback for the rest. */
-export const FALLBACK_LANGUAGE = 'en';
-
 /** Exact tag first, then the primary subtag, then English. */
 export function resolveLanguage(tag: string | null | undefined): string {
-  if (!tag) return FALLBACK_LANGUAGE;
-  const exact = tag.toLowerCase();
-  if (exact in DICTIONARIES) return exact;
-  const primary = exact.split('-')[0];
-  if (primary && primary in DICTIONARIES) return primary;
-  return FALLBACK_LANGUAGE;
+  return resolveTag(tag, DICTIONARIES);
 }
 
 let current = FALLBACK_LANGUAGE;

@@ -1,7 +1,9 @@
-import { LitElement } from 'lit';
+import { LitElement, html, nothing } from 'lit';
+import type { TemplateResult } from 'lit';
 import { loadRuntime, loadedRuntime } from './runtime-loader';
 import type { Runtime } from './runtime-loader';
 import type { Store } from './store/store';
+import { renderLoadFailure } from './ui/load-failure';
 import { resolveColorScheme } from './ui/theme';
 import type { HassLike } from './store/types';
 
@@ -17,8 +19,9 @@ function themeChanged(prev: HassLike | undefined, next: HassLike | undefined): b
  *
  * This class is in the eager entry; the store, the catalogs and the elements a
  * host renders are in the lazy runtime. Until that has loaded, a host draws its
- * placeholder, which holds no word from the catalogs, so the first text the
- * card writes is already in the user's language.
+ * placeholder, which holds no word from the catalogs but the loader's own
+ * (`i18n/loader-copy`), picked by `hass.language`, so the first text the card
+ * writes is already in the user's language.
  */
 export abstract class StoreHostElement extends LitElement {
   protected store?: Store;
@@ -27,6 +30,8 @@ export abstract class StoreHostElement extends LitElement {
   private _schemeFrame?: number;
   /** Set once `runtimeReady` has run, which is what `renderReady` relies on. */
   private _ready = false;
+  /** Set when the runtime's import failed while this host waited for it. */
+  private _loadFailed = false;
 
   get hass(): HassLike | undefined {
     return this._hass;
@@ -35,7 +40,7 @@ export abstract class StoreHostElement extends LitElement {
   /**
    * Home Assistant assigns a fresh `hass` on every state change anywhere in the
    * instance, so this does no style work unless the theme moved, and redraws a
-   * placeholder only when Home Assistant's own catalog did.
+   * placeholder only when Home Assistant's own catalog or the language did.
    */
   set hass(h: HassLike | undefined) {
     const prev = this._hass;
@@ -45,7 +50,7 @@ export abstract class StoreHostElement extends LitElement {
       // Ahead of the store, so the first render is already in the user's language.
       if (rt.setLanguage(h?.language)) this.requestUpdate();
       if (h && !this.store) this._openStore(rt, h);
-    } else if (prev?.localize !== h?.localize) {
+    } else if (prev?.localize !== h?.localize || prev?.language !== h?.language) {
       this.requestUpdate();
     }
     if (themeChanged(prev, h)) this._scheduleColorScheme();
@@ -56,12 +61,31 @@ export abstract class StoreHostElement extends LitElement {
     const rt = loadedRuntime();
     // HA re-attaches this element without handing it `hass` again.
     if (rt) this._onRuntime(rt);
-    else
-      void loadRuntime().then(
-        (loaded) => this._onRuntime(loaded),
-        () => undefined,
-      );
+    else this._awaitRuntime();
     this._syncColorScheme();
+  }
+
+  /**
+   * A failed import is not final: `loadRuntime` forgets it, and every connect
+   * asks again, with the body busy until the answer is in. Home Assistant
+   * detaches a panel or a dashboard's cards on navigation and re-attaches them
+   * on the way back, so that is when a dropped download is retried.
+   */
+  private _awaitRuntime(): void {
+    if (this._loadFailed) {
+      this._loadFailed = false;
+      this.requestUpdate();
+    }
+    void loadRuntime().then(
+      (loaded) => this._onRuntime(loaded),
+      () => this._onRuntimeFailed(),
+    );
+  }
+
+  private _onRuntimeFailed(): void {
+    if (!this.isConnected || this._ready) return;
+    this._loadFailed = true;
+    this.requestUpdate();
   }
 
   override disconnectedCallback(): void {
@@ -84,12 +108,31 @@ export abstract class StoreHostElement extends LitElement {
 
   /**
    * What the host draws until then, from what the entry loads eagerly: no `hv-*`
-   * element and no catalog text, since both are in the runtime.
+   * element and no catalog text, since both are in the runtime, other than
+   * what `renderPlaceholderBody` says when the runtime fails.
    */
   protected abstract renderPlaceholder(): unknown;
 
   protected override render(): unknown {
     return this._ready ? this.renderReady() : this.renderPlaceholder();
+  }
+
+  /**
+   * The placeholder's body, under the head each host draws: busy while the
+   * runtime is on its way, and once its import has failed, the line that says
+   * so and a button that reloads the page. Each host sizes `.placeholder-body`
+   * and adds `loadFailureStyles`.
+   */
+  protected renderPlaceholderBody(): TemplateResult {
+    const failed = this._loadFailed;
+    return html`<div class="placeholder-body" aria-busy=${failed ? 'false' : 'true'}>
+      ${failed ? renderLoadFailure(this._hass?.language, () => this.reloadPage()) : nothing}
+    </div>`;
+  }
+
+  /** A new page load is what pairs the entry with chunks the server still has. */
+  protected reloadPage(): void {
+    window.location.reload();
   }
 
   /** `:host([loading])` is how a host's styles size its placeholder. */

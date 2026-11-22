@@ -1,6 +1,8 @@
 import { DICTIONARIES, language, resolveLanguage, setLanguage, t, tn } from './index';
 import type { Dictionary, PluralKey } from './index';
 import { en } from './en';
+import { loaderText } from './loader-copy';
+import type { LoaderKey } from './loader-copy';
 
 describe('resolveLanguage', () => {
   it('takes an exact tag', () => {
@@ -67,6 +69,20 @@ describe('t', () => {
       expect(t('hv.action.retry')).toBe('Try again');
     } finally {
       delete (DICTIONARIES as Record<string, Dictionary>).fr;
+    }
+  });
+});
+
+describe('loaderText', () => {
+  it('says what t() would, in every language and for every tag a profile can carry', () => {
+    // The build copies these keys into the core chunk, and the tests read that
+    // copy. A key or a language it left out is a word in the wrong language at
+    // the one moment the card can say nothing else.
+    const keys = Object.keys(en).filter((key): key is LoaderKey => key.startsWith('hv.loader.'));
+    expect(keys.length).toBeGreaterThan(0);
+    for (const tag of [...Object.keys(DICTIONARIES), 'de-CH', 'DE', 'sv', undefined]) {
+      setLanguage(tag);
+      for (const key of keys) expect([tag, key, loaderText(key, tag)]).toEqual([tag, key, t(key)]);
     }
   });
 });

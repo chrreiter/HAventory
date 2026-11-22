@@ -131,7 +131,7 @@ The build writes four files into `custom_components/haventory/www/`:
 | File | Size | Holds |
 |---|---|---|
 | `haventory-card.js` | about 3 kB | The entry, the card's host and its placeholder. Its name is fixed: it is the one URL the loaders get, with `?v=<version>`. |
-| `chunks/core-<hash>.js` | about 28 kB | Lit, `StoreHostElement`, the panel's host and its placeholder, and everything else the entry imports statically. |
+| `chunks/core-<hash>.js` | about 28 kB | Lit, `StoreHostElement`, the panel's host and its placeholder, the loader's copy in every language, and everything else the entry imports statically. |
 | `chunks/runtime-<hash>.js` | about 560 kB | `src/runtime.ts` and its graph: the store, both language catalogs, every `hv-*` element, the card editor and `HostSurfaces`. |
 | `chunks/manifest.json` | | The Vite manifest, which names the chunks of this build. |
 
@@ -150,11 +150,12 @@ element doesn't exist" error card for them. Nothing in the entry's static graph 
 **Until the runtime is in, a host draws a placeholder** (`renderPlaceholder`, chosen in
 `StoreHostElement.render`). On a slow link the runtime is seconds of download after the
 element connects, and a blank there reads as a broken card. The placeholder is built from
-the core alone: no `hv-*` element and no word from the catalogs, so the first text the card
-writes is still in the user's language. It paints with `ui/host-tokens`, the six tokens
-`ui/tokens` takes from it, so its frame and the tree that replaces it bind one surface. The
-update that flips the host to ready replaces the placeholder with the real tree; no frame
-between them is empty, and a host that connects once the runtime is in never draws one.
+the core alone: no `hv-*` element and no word from the catalogs but the loader's own (see
+below), so the first text the card writes is still in the user's language. It paints with
+`ui/host-tokens`, the seven tokens `ui/tokens` takes from it, so its frame and the tree that
+replaces it bind one surface. The update that flips the host to ready replaces the
+placeholder with the real tree; no frame between them is empty, and a host that connects
+once the runtime is in never draws one.
 
 - **The card** draws `hv-card-shell`'s frame and its header row, holding the dashboard's
   `title:` and nothing else (no title, no text: the integration's title and the default
@@ -170,7 +171,24 @@ between them is empty, and a host that connects once the runtime is in never dra
   sidebar toggle, sending `hass-toggle-menu` as the real bar does. Its name comes from Home
   Assistant's own catalog (`hass.localize('ui.sidebar.sidebar_toggle')`, the key HA's
   `ha-menu-button` reads), and without a name there is no button. The host redraws the
-  placeholder for a new `hass.localize`, compared by identity, and for no other `hass`.
+  placeholder for a new `hass.localize`, compared by identity, or a new `hass.language`,
+  and for no other `hass`.
+
+**When the runtime will not load, the placeholder says so.** The usual cause is a tab left
+open across an upgrade: its entry names the runtime by the old hash, and the setup sweep
+has deleted that file. Both hosts then swap the busy body for a line saying HAventory
+couldn't load and a button that reloads the page (`renderPlaceholderBody` in
+`StoreHostElement`, drawn by `ui/load-failure`), announced as an alert and reachable by
+keyboard; the head above it stays, so a narrow panel keeps its sidebar toggle. The failure
+is not final: `loadRuntime` forgets it, and every connect asks again, so a card or panel
+that Home Assistant re-attaches after a navigation retries a dropped download.
+
+That text cannot come from the catalogs, which are in the chunk that failed. It is the
+catalogs' own `hv.loader.*` keys, in `en.ts` and `de.ts` with every other string: the build
+copies them out of each registered dictionary into the core chunk (a plugin in
+`vite.config.ts` defines `__HV_LOADER_COPY__`, which `i18n/loader-copy` reads, picking the
+language by `hass.language` as `t()` does). The tests read the same copy, and a new
+language brings its own with no further step.
 
 **The core is its own chunk.** A chunk that imported the entry would reach it by its bare
 URL, without `?v=`. The browser treats that as a different module, so the entry would run
