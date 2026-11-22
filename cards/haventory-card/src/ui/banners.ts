@@ -41,6 +41,12 @@ export interface BannerHooks {
    */
   onLatestShown: (itemId: string) => void;
   /**
+   * "Re-apply" landed the refused changes on this item: a form open on it holds
+   * that typing already, so it keeps it and drops the refusal. A retry refused
+   * again never calls it, so the form keeps saying its save did not land.
+   */
+  onReapplied: (itemId: string) => void;
+  /**
    * An entry a surface drawn over the stack shows instead, so the stack leaves
    * it out: the phone read sheet's scrim covers the stack, and the sheet draws
    * the conflicts about its own item.
@@ -158,7 +164,10 @@ export function renderErrorBanner(e: ErrorEntry, hooks: BannerHooks): TemplateRe
                 class="hv-pill"
                 data-testid="banner-reapply"
                 @click=${() => {
-                  void store?.updateItem(e.itemId!, e.changes!);
+                  const itemId = e.itemId!;
+                  void store?.updateItem(itemId, e.changes!).then((landed) => {
+                    if (landed) hooks.onReapplied(itemId);
+                  });
                   store?.dismissError(e.id);
                 }}
               >

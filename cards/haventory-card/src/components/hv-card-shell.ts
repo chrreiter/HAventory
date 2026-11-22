@@ -705,6 +705,7 @@ export class HVCardShell extends LitElement {
       store: this.store,
       onRefresh: () => void this.surfaces.refresh(),
       onLatestShown: (itemId) => this._workspace.showLatest(itemId),
+      onReapplied: (itemId) => this._workspace.reapplied(itemId),
       drawnElsewhere: (entry) => this._workspace.drawsInSheet(entry),
     };
   }

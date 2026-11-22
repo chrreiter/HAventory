@@ -880,8 +880,9 @@ describe('hv-card-shell: banners', () => {
 
 // Two members on one item, and this card's save lost the race. "View latest" is
 // how its member sees what the other one wrote, so the open form shows that,
-// not the refused typing under the newer version number.
-describe('hv-card-shell: View latest starts the open form over', () => {
+// not the refused typing under the newer version number. "Re-apply" lands the
+// typing over what they wrote, so the form keeps it and stops saying it failed.
+describe("hv-card-shell: a conflict's ways out, in the open form", () => {
   const list = (sr: ShadowRoot) => sr.querySelector('hv-list') as HTMLElement;
   const sheet = (sr: ShadowRoot) => sr.querySelector('[data-testid="card-detail-sheet"]') as HTMLElement;
   /** Item 1's row, whatever order the list puts it in. */
@@ -990,6 +991,93 @@ describe('hv-card-shell: View latest starts the open form over', () => {
     await viewLatest(el, sr);
 
     expect(field(inline.form(sr), 'editor-name')?.value).toBe('Mine');
+  });
+
+  const reapply = async (el: HVCardShell, sr: ShadowRoot) => {
+    (sr.querySelector('[data-testid="banner-reapply"]') as HTMLButtonElement).click();
+    await settle(el);
+    await settle(el);
+  };
+
+  it.each(hosts)(
+    'drops the refusal in $host once Re-apply lands, and only then',
+    async ({ mobile, open, form }) => {
+      const { el, store, hass, sr } = await mountShell({
+        items: [makeItem({ id: '1', name: 'Old', version: 4 })],
+        mobile,
+      });
+      await open(el, sr);
+      await typeName(el, form(sr), 'Mine');
+      hass.__setConflict(true);
+      await save(el, form(sr));
+      // Typed after the refusal: the retry does not carry it, and the form keeps it.
+      await typeName(el, form(sr), 'Mine, and more');
+      const expected: (number | undefined)[] = [];
+      let land!: (item: Item) => void;
+      store['ws'].updateItem = (_id, _changes, expectedVersion) => {
+        expected.push(expectedVersion);
+        return new Promise<Item>((resolve) => (land = resolve));
+      };
+
+      await reapply(el, sr);
+      // Sent, not landed: the save still has not gone through.
+      expect(field(form(sr), 'editor-error')?.textContent).toContain('Someone else changed this item');
+
+      land(makeItem({ id: '1', name: 'Mine', version: 6 }));
+      await settle(el);
+      await settle(el);
+      expect(field(form(sr), 'editor-error')).toBe(null);
+      expect(field(form(sr), 'editor-name')?.value).toBe('Mine, and more');
+
+      // Checked against the version the retry made, or the form conflicts with itself.
+      store['ws'].updateItem = async (id, _changes, expectedVersion) => {
+        expected.push(expectedVersion);
+        return makeItem({ id, name: 'Mine, and more', version: 7 });
+      };
+      await save(el, form(sr));
+      expect(expected).toEqual([undefined, 6]);
+    },
+  );
+
+  it.each([
+    {
+      when: 'it is refused again',
+      provoke: async (_el: HVCardShell, store: Store) => {
+        store['ws'].updateItem = async () => {
+          throw { code: 'storage_error', message: 'disk full' };
+        };
+      },
+      sent: (store: Store) =>
+        expect(store.state.value.errorQueue.map((e) => e.code)).toEqual(['storage_error']),
+    },
+    {
+      when: 'it lands on another item',
+      provoke: async (el: HVCardShell, store: Store, hass: MockHass) => {
+        hass.__setConflict(false);
+        // The other item's banner is the only one left to press.
+        store.dismissError(defined(store.state.value.errorQueue[0]).id);
+        store['pushError'](
+          { code: 'conflict', message: 'version conflict' },
+          { itemId: '2', changes: { name: 'B' } },
+        );
+        await settle(el);
+      },
+      sent: (store: Store) => expect(store.state.value.items.find((i) => i.id === '2')?.name).toBe('B'),
+    },
+  ])('keeps the refusal in the form when Re-apply $when', async ({ provoke, sent }) => {
+    const { el, store, hass, sr } = await mountShell({
+      items: [makeItem({ id: '1', name: 'Old' }), makeItem({ id: '2', name: 'Other' })],
+    });
+    await inline.open(el, sr);
+    await typeName(el, inline.form(sr), 'Mine');
+    hass.__setConflict(true);
+    await save(el, inline.form(sr));
+    await provoke(el, store, hass);
+
+    await reapply(el, sr);
+
+    sent(store);
+    expect(field(inline.form(sr), 'editor-error')?.textContent).toContain('Someone else changed this item');
   });
 });
 

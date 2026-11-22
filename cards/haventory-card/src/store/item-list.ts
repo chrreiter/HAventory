@@ -218,20 +218,23 @@ export class ItemList {
    * Show `patch` on the row while the call is in flight, then take the server's
    * copy, or restore the row when refused. A null `patch` means the answer
    * cannot be guessed. `details` lets a conflict banner offer the edit again.
+   * True once the server's copy is in the list; a refusal is queued instead.
    */
   private async optimisticWrite(
     itemId: string,
     patch: ((before: Item) => Partial<Item> | ItemUpdate) | null,
     call: () => Promise<Item>,
     details?: { itemId?: string; changes?: ItemUpdate },
-  ): Promise<void> {
+  ): Promise<boolean> {
     const before = patch ? this.slice.value.items.find((i) => i.id === itemId) : undefined;
     if (patch && before) this.applyOptimistic({ ...before, ...patch(before) } as Item);
     try {
       this.applyOptimistic(await this.run(call));
+      return true;
     } catch (err) {
       this.pushError(err, details);
       if (before) this.applyOptimistic(before);
+      return false;
     }
   }
 
@@ -245,8 +248,8 @@ export class ItemList {
     }
   }
 
-  async updateItem(itemId: string, changes: ItemUpdate, expectedVersion?: number) {
-    await this.optimisticWrite(
+  async updateItem(itemId: string, changes: ItemUpdate, expectedVersion?: number): Promise<boolean> {
+    return this.optimisticWrite(
       itemId,
       () => changes,
       () => this.ws.updateItem(itemId, changes, expectedVersion),
