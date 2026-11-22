@@ -237,13 +237,11 @@ describe('haventory-card: the Lovelace element', () => {
       expect(shell.heading).toBe('HAventory');
     });
 
-    it('sizes itself for a sections view, with minimums under the defaults', async () => {
+    // Six rows is the smallest cell that still shows a few full list rows on a
+    // narrow card, so a different minimum is a layout decision, not a tidy-up.
+    it('sizes itself for a sections view, with the minimums it can still show list rows in', async () => {
       const { el } = await mountCard();
-      const grid = (el as unknown as { getGridOptions(): Record<string, number> }).getGridOptions();
-      expect(grid.columns).toBeGreaterThan(0);
-      expect(grid.rows).toBeGreaterThan(0);
-      expect(grid.min_columns).toBeLessThan(defined(grid.columns, 'grid columns'));
-      expect(grid.min_rows).toBeLessThan(defined(grid.rows, 'grid rows'));
+      expect(el.getGridOptions()).toEqual({ columns: 12, rows: 8, min_columns: 6, min_rows: 6 });
     });
 
     it('registers with the card picker, documentation link and all', async () => {
