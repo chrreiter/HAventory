@@ -147,14 +147,18 @@ export class HAventoryCard extends StoreHostElement {
     return MASONRY_ROWS;
   }
 
-  /** Sections-view sizing; below the minimums the list has room for no rows. */
+  /**
+   * Sections-view sizing. `min_rows` is the smallest cell that still shows a
+   * few full list rows on a narrow card; below the minimums the list has room
+   * for none.
+   */
   public getGridOptions(): {
     columns: number;
     rows: number;
     min_columns: number;
     min_rows: number;
   } {
-    return { columns: 12, rows: 8, min_columns: 6, min_rows: 4 };
+    return { columns: 12, rows: 8, min_columns: 6, min_rows: 6 };
   }
 
   /**
