@@ -40,6 +40,12 @@ async function mount(props: Partial<HVBulkBar> = {}) {
   return el;
 }
 
+/** Press one of the bar's action buttons and let the picker it opens render. */
+async function pressAction(el: HVBulkBar, action: string) {
+  (q(el, `[data-action="${action}"]`) as HTMLButtonElement).click();
+  await el.updateComplete;
+}
+
 function runs(el: HVBulkBar) {
   const seen: BulkRunDetail[] = [];
   el.addEventListener('run', (e) => seen.push((e as CustomEvent).detail));
@@ -73,8 +79,7 @@ describe('hv-bulk-bar: actions', () => {
     const el = await mount({ selectedCount: 1 });
     expect(q(el, '[data-testid="bulk-lead"]')?.textContent).toContain('Apply to 1 item');
 
-    (q(el, '[data-action="move"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await pressAction(el, 'move');
     expect(q(el, '[data-testid="bulk-picker"]')?.textContent).toContain('Move 1 item to');
   });
 
@@ -97,8 +102,7 @@ describe('hv-bulk-bar: inline pickers', () => {
     const seen = runs(el);
     expect(q(el, '[data-testid="bulk-picker"]')).toBe(null);
 
-    (q(el, '[data-action="move"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await pressAction(el, 'move');
     expect((q(el, '[data-testid="bulk-picker"]') as HTMLElement).dataset.picker).toBe('move');
 
     const treeEl = el.shadowRoot?.querySelector('hv-location-tree') as HTMLElement;
@@ -111,8 +115,7 @@ describe('hv-bulk-bar: inline pickers', () => {
   it('collects tags before running, and will not run with none', async () => {
     const el = await mount();
     const seen = runs(el);
-    (q(el, '[data-action="add-tags"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await pressAction(el, 'add-tags');
 
     expect((q(el, '[data-testid="bulk-picker-apply"]') as HTMLButtonElement).disabled).toBe(true);
 
@@ -130,8 +133,7 @@ describe('hv-bulk-bar: inline pickers', () => {
   it('treats a blank category as clearing it', async () => {
     const el = await mount();
     const seen = runs(el);
-    (q(el, '[data-action="set-category"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await pressAction(el, 'set-category');
 
     (q(el, '[data-testid="bulk-picker-apply"]') as HTMLButtonElement).click();
     expect(seen).toEqual([{ action: 'set-category', category: null }]);
@@ -140,8 +142,7 @@ describe('hv-bulk-bar: inline pickers', () => {
   it('requires a non-zero delta before adjusting quantity', async () => {
     const el = await mount();
     const seen = runs(el);
-    (q(el, '[data-action="adjust-qty"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await pressAction(el, 'adjust-qty');
     expect((q(el, '[data-testid="bulk-picker-apply"]') as HTMLButtonElement).disabled).toBe(true);
 
     const input = q(el, '[data-testid="bulk-delta"]') as HTMLInputElement;
@@ -159,10 +160,8 @@ describe('hv-bulk-bar: inline pickers', () => {
 
   it('closes a picker when its own button is clicked again', async () => {
     const el = await mount();
-    (q(el, '[data-action="move"]') as HTMLButtonElement).click();
-    await el.updateComplete;
-    (q(el, '[data-action="move"]') as HTMLButtonElement).click();
-    await el.updateComplete;
+    await pressAction(el, 'move');
+    await pressAction(el, 'move');
     expect(q(el, '[data-testid="bulk-picker"]')).toBe(null);
   });
 });
@@ -302,8 +301,7 @@ describe('hv-bulk-bar: the language in force', () => {
     setLanguage('de');
 
     const picking = await mount();
-    (q(picking, '[data-action="adjust-qty"]') as HTMLButtonElement).click();
-    await picking.updateComplete;
+    await pressAction(picking, 'adjust-qty');
     expect(q(picking, '[data-testid="bulk-picker-cancel"]')?.textContent?.trim()).toBe('Abbrechen');
     expect(q(picking, '[data-testid="bulk-picker-apply"]')?.textContent?.trim()).toBe('Anwenden');
 

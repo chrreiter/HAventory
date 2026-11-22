@@ -60,14 +60,12 @@ describe('haventory-panel: the surface', () => {
     expect(view().open).toBe(true);
   });
 
-  it('forwards the frontend narrow flag so the view can offer the menu button', async () => {
-    const { view } = await mountPanel({ narrow: true });
-    expect(view().narrow).toBe(true);
-  });
-
-  it('leaves narrow off by default', async () => {
-    const { view } = await mountPanel();
-    expect(view().narrow).toBe(false);
+  it.each([
+    ['forwards the frontend narrow flag so the view can offer the menu button', { narrow: true }, true],
+    ['leaves narrow off by default', {}, false],
+  ])('%s', async (_title, opts, narrow) => {
+    const { view } = await mountPanel(opts);
+    expect(view().narrow).toBe(narrow);
   });
 });
 
@@ -75,27 +73,19 @@ describe('haventory-panel: the surface', () => {
 // can narrow its pills — the reason the setting exists on the integration at
 // all rather than only in card YAML.
 describe('haventory-panel: quick-filter pills', () => {
-  it('offers every pill while the integration has no opinion', async () => {
-    const { el, view } = await mountPanel({ quickFilters: null });
+  it.each([
+    ['offers every pill while the integration has no opinion', { quickFilters: null }, null],
+    [
+      'narrows to the pills the integration chose',
+      { quickFilters: ['low_stock', 'overdue'] },
+      ['low_stock', 'overdue'],
+    ],
+    ['honours an integration that wants no pills at all', { quickFilters: [] }, []],
+    ['offers every pill before the store has answered', { withHass: false }, null],
+  ])('%s', async (_title, opts, expected) => {
+    const { el, view } = await mountPanel(opts);
     await settle(el);
-    expect(view().quickFilters).toBe(null);
-  });
-
-  it('narrows to the pills the integration chose', async () => {
-    const { el, view } = await mountPanel({ quickFilters: ['low_stock', 'overdue'] });
-    await settle(el);
-    expect(view().quickFilters).toEqual(['low_stock', 'overdue']);
-  });
-
-  it('honours an integration that wants no pills at all', async () => {
-    const { el, view } = await mountPanel({ quickFilters: [] });
-    await settle(el);
-    expect(view().quickFilters).toEqual([]);
-  });
-
-  it('offers every pill before the store has answered', async () => {
-    const { view } = await mountPanel({ withHass: false });
-    expect(view().quickFilters).toBe(null);
+    expect(view().quickFilters).toEqual(expected);
   });
 });
 
@@ -105,20 +95,12 @@ describe('haventory-panel: heading', () => {
     expect(view().heading).toBe('Garage');
   });
 
-  it('falls back to the integration name when the panel carries no title', async () => {
-    const { el, view } = await mountPanel({ config: {}, cardTitle: 'Pantry' });
-    await settle(el);
-    expect(view().heading).toBe('Pantry');
-  });
-
-  it('falls back when there is no panel object at all', async () => {
-    const { el, view } = await mountPanel({ cardTitle: 'Pantry' });
-    await settle(el);
-    expect(view().heading).toBe('Pantry');
-  });
-
-  it('ignores a title that is not a string', async () => {
-    const { el, view } = await mountPanel({ config: { title: 42 }, cardTitle: 'Pantry' });
+  it.each([
+    ['falls back to the integration name when the panel carries no title', { config: {} }],
+    ['falls back when there is no panel object at all', {}],
+    ['ignores a title that is not a string', { config: { title: 42 } }],
+  ])('%s', async (_title, opts) => {
+    const { el, view } = await mountPanel({ ...opts, cardTitle: 'Pantry' });
     await settle(el);
     expect(view().heading).toBe('Pantry');
   });
@@ -383,24 +365,15 @@ describe('haventory-panel: the shared dialog surfaces', () => {
   // The panel shares the one `matchMedia` subscription the surfaces keep rather
   // than holding its own, so the page and the card agree at a single width
   // without either owning the query.
-  it('hands every dialog the phone form on a phone viewport', async () => {
-    const restore = stubViewport(true);
+  it.each([
+    ['hands every dialog the phone form on a phone viewport', true],
+    ['keeps them centred on a desktop viewport', false],
+  ])('%s', async (_title, phone) => {
+    const restore = stubViewport(phone);
     try {
       const { sr } = await mountPanel();
       for (const id of ['host-columns', 'host-confirm', 'host-organize', 'host-import', 'host-diagnostics']) {
-        expect(dialog(sr, id).hasAttribute('mobile'), id).toBe(true);
-      }
-    } finally {
-      restore();
-    }
-  });
-
-  it('keeps them centred on a desktop viewport', async () => {
-    const restore = stubViewport(false);
-    try {
-      const { sr } = await mountPanel();
-      for (const id of ['host-columns', 'host-confirm', 'host-organize', 'host-import', 'host-diagnostics']) {
-        expect(dialog(sr, id).hasAttribute('mobile'), id).toBe(false);
+        expect(dialog(sr, id).hasAttribute('mobile'), id).toBe(phone);
       }
     } finally {
       restore();

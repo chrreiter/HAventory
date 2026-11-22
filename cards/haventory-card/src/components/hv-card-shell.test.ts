@@ -52,6 +52,18 @@ async function mountShell(opts: { items?: Item[]; locations?: Location[]; mobile
   });
 }
 
+/** The first row the list draws. */
+const firstRow = (sr: ShadowRoot) =>
+  (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector('hv-list-row') as HTMLElement;
+
+/** Clicks the card's overflow trigger and waits for the menu to draw. */
+async function openCardMenu(el: HVCardShell, sr: ShadowRoot) {
+  const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
+  (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
+  await settle(el);
+  return menu;
+}
+
 function typeInto(input: HTMLInputElement, text: string) {
   input.value = text;
   input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
@@ -247,9 +259,7 @@ describe('hv-card-shell: overflow menu', () => {
   // one reads as a different kind of thing rather than the same kind of list.
   it('capitalizes every word of a meta line', async () => {
     const { el, sr } = await mountShell({ items: [makeItem({ id: '1' })] });
-    const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
-    (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
-    await settle(el);
+    const menu = await openCardMenu(el, sr);
 
     const metaOf = (id: string) =>
       menu.shadowRoot?.querySelector(`[data-id="${id}"] .meta`)?.textContent?.trim();
@@ -269,9 +279,7 @@ describe('hv-card-shell: overflow menu', () => {
     // are on screen to be checked together.
     store.setFilters({ categories: ['Tools'] });
     await settle(el);
-    const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
-    (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
-    await settle(el);
+    const menu = await openCardMenu(el, sr);
 
     const lines = [...(menu.shadowRoot?.querySelectorAll('.meta, .sub') ?? [])].map((n) =>
       (n.textContent ?? '').trim(),
@@ -363,9 +371,7 @@ describe('hv-card-shell: overflow menu', () => {
   // "the current view" is the whole inventory Export backup already offers.
   it('offers "Export current view" only while a filter is narrowing the list', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', category: 'Tools' })] });
-    const menu = sr.querySelector('[data-testid="card-overflow"]') as HTMLElement;
-    (menu.shadowRoot?.querySelector('[data-testid="overflow-trigger"]') as HTMLButtonElement).click();
-    await settle(el);
+    const menu = await openCardMenu(el, sr);
     expect(menu.shadowRoot?.querySelector('[data-id="export-view"]')).toBe(null);
     expect(menu.shadowRoot?.querySelector('[data-id="export-all"]')).toBeTruthy();
 
@@ -605,9 +611,7 @@ describe('hv-card-shell: list and footer', () => {
 
   it('adjusts quantity from the row stepper', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', quantity: 5 })] });
-    const row = (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector(
-      'hv-list-row',
-    ) as HTMLElement;
+    const row = firstRow(sr);
 
     (row.shadowRoot?.querySelector('[data-testid="row-increment"]') as HTMLButtonElement).click();
     await settle(el);
@@ -620,9 +624,7 @@ describe('hv-card-shell: list and footer', () => {
 
   it('never sends a decrement that would take the quantity below zero', async () => {
     const { el, store, hass, sr } = await mountShell({ items: [makeItem({ id: '1', quantity: 0 })] });
-    const row = (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector(
-      'hv-list-row',
-    ) as HTMLElement;
+    const row = firstRow(sr);
 
     (row.shadowRoot?.querySelector('[data-testid="row-decrement"]') as HTMLButtonElement).click();
     await settle(el);
@@ -633,9 +635,7 @@ describe('hv-card-shell: list and footer', () => {
 
   it('confirms in-app before deleting, instead of window.confirm', async () => {
     const { el, store, sr } = await mountShell({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
-    const row = (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector(
-      'hv-list-row',
-    ) as HTMLElement;
+    const row = firstRow(sr);
 
     (row.shadowRoot?.querySelector('[data-testid="list-row"]') as HTMLElement).dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }),
@@ -1404,9 +1404,7 @@ describe('hv-card-shell: mobile', () => {
   it('swaps the stepper for Check in on a checked-out row', async () => {
     const items = [makeItem({ id: '1', checked_out: true, due_date: '2026-07-28' })];
     const { el, store, sr } = await mountShell({ items, mobile: true });
-    const row = (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector(
-      'hv-list-row',
-    ) as HTMLElement;
+    const row = firstRow(sr);
 
     expect(row.shadowRoot?.querySelector('[data-testid="row-stepper"]')).toBe(null);
     (row.shadowRoot?.querySelector('[data-testid="row-check-in"]') as HTMLButtonElement).click();
@@ -1594,38 +1592,18 @@ describe('hv-card-shell: the open editor survives a refetch', () => {
     makeItem({ id: '2', name: 'Decoy', quantity: 0, low_stock_threshold: 4 }),
   ];
 
-  it('survives typing in the search box', async () => {
+  it.each([
+    ['survives typing in the search box', { q: 'Tar' }],
+    ['survives a filter toggle', { lowStockOnly: true }],
+    // The sort patch is the one `setFilters` skips the tree refresh for, so it
+    // moves no editor-epoch input — which is how the issue proved this is not the
+    // epoch's doing.
+    ['survives a sort change', { sort: { field: 'name', order: 'desc' } }],
+  ] as const)('%s', async (_title, patch) => {
     const { el, store, sr } = await mountShell({ items: twoItems() });
     const before = await openAndType(el, sr, '1', 'Target EDITED');
 
-    store.setFilters({ q: 'Tar' });
-    await settle(el);
-    await settle(el);
-
-    expect(editor(sr)).toBe(before);
-    expect(nameField(sr).value).toBe('Target EDITED');
-  });
-
-  it('survives a filter toggle', async () => {
-    const { el, store, sr } = await mountShell({ items: twoItems() });
-    const before = await openAndType(el, sr, '1', 'Target EDITED');
-
-    store.setFilters({ lowStockOnly: true });
-    await settle(el);
-    await settle(el);
-
-    expect(editor(sr)).toBe(before);
-    expect(nameField(sr).value).toBe('Target EDITED');
-  });
-
-  // The sort patch is the one `setFilters` skips the tree refresh for, so it
-  // moves no editor-epoch input — which is how the issue proved this is not the
-  // epoch's doing.
-  it('survives a sort change', async () => {
-    const { el, store, sr } = await mountShell({ items: twoItems() });
-    const before = await openAndType(el, sr, '1', 'Target EDITED');
-
-    store.setFilters({ sort: { field: 'name', order: 'desc' } });
+    store.setFilters(patch);
     await settle(el);
     await settle(el);
 
@@ -2343,24 +2321,15 @@ describe('hv-card-shell: full view', () => {
 describe('hv-card-shell: host dialogs follow the viewport, not the card', () => {
   const HOSTED = ['host-columns', 'host-confirm', 'host-organize', 'host-import', 'host-diagnostics'];
 
-  it('leaves them centred for a narrow card in a wide window', async () => {
-    const restore = stubViewport(false);
+  it.each([
+    ['leaves them centred for a narrow card in a wide window', false, true],
+    ['gives every one of them the phone form on a phone viewport', true, false],
+  ])('%s', async (_title, phoneViewport, narrowCard) => {
+    const restore = stubViewport(phoneViewport);
     try {
-      const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: true });
+      const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: narrowCard });
       for (const id of HOSTED) {
-        expect(sr.querySelector(`[data-testid="${id}"]`)?.hasAttribute('mobile'), id).toBe(false);
-      }
-    } finally {
-      restore();
-    }
-  });
-
-  it('gives every one of them the phone form on a phone viewport', async () => {
-    const restore = stubViewport(true);
-    try {
-      const { sr } = await mountShell({ items: [makeItem({ id: '1' })], mobile: false });
-      for (const id of HOSTED) {
-        expect(sr.querySelector(`[data-testid="${id}"]`)?.hasAttribute('mobile'), id).toBe(true);
+        expect(sr.querySelector(`[data-testid="${id}"]`)?.hasAttribute('mobile'), id).toBe(phoneViewport);
       }
     } finally {
       restore();
@@ -2392,9 +2361,7 @@ describe('hv-card-shell: host dialogs follow the viewport, not the card', () => 
 
 describe('hv-card-shell: check-out with a due date', () => {
   const rowMenu = (sr: ShadowRoot) => {
-    const row = (sr.querySelector('hv-list') as HTMLElement).shadowRoot?.querySelector(
-      'hv-list-row',
-    ) as HTMLElement;
+    const row = firstRow(sr);
     return row.shadowRoot?.querySelector('[data-testid="row-menu"]') as HTMLElement;
   };
   const openRowMenu = async (el: HVCardShell, sr: ShadowRoot) => {

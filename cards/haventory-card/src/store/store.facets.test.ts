@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { Store } from './store';
-import { makeMockHass, makeItem, defined } from '../test.utils';
+import { makeItem, defined, mountStore } from '../test.utils';
 
 /**
  * The facet lists and the per-location counts beside them: what the card asks
@@ -8,9 +7,6 @@ import { makeMockHass, makeItem, defined } from '../test.utils';
  * land when two requests overlap. A value the user names before any item
  * carries it is a draft, and rides the same lists.
  */
-
-/** Stores under test never wait on real backoff. */
-const fast = { retryBaseMs: 0 };
 
 /** Past the window item events gather in before the one tally they cause. */
 const settleFacets = () => new Promise((r) => setTimeout(r, 300));
@@ -22,9 +18,7 @@ describe('Store', () => {
       makeItem({ id: '2', category: 'Tools', tags: ['red', 'blue'] }),
       makeItem({ id: '3', category: 'Books', tags: ['blue'] }),
     ];
-    const hass = makeMockHass({ items });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items });
 
     const distinct = store.state.value.distinctValuesCache;
     expect(distinct).toBeTruthy();
@@ -39,9 +33,7 @@ describe('Store', () => {
   });
 
   it('refreshes distinct values after an item is created', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [] });
     expect(store.state.value.distinctValuesCache?.categories).toEqual([]);
 
     await store.createItem({ name: 'Drill', category: 'Tools' });
@@ -58,8 +50,7 @@ describe('Store', () => {
   // has no registry to create an empty one in. A value the user names up front
   // is therefore kept on the card until an item adopts it.
   it('lists a newly named category alongside the ones in use, at zero', async () => {
-    const store = new Store(makeMockHass({ items: [makeItem({ id: '1', category: 'Tools' })] }), fast);
-    await store.init();
+    const { store } = await mountStore({ items: [makeItem({ id: '1', category: 'Tools' })] });
 
     expect(store.addDraftValue('category', 'Consumables')).toBe(true);
     expect(store.state.value.distinctValuesCache?.categories).toEqual([
@@ -69,16 +60,14 @@ describe('Store', () => {
   });
 
   it('normalizes a new tag the way the backend would', async () => {
-    const store = new Store(makeMockHass({ items: [] }), fast);
-    await store.init();
+    const { store } = await mountStore({ items: [] });
 
     store.addDraftValue('tag', '  Power Tools  ');
     expect(store.state.value.distinctValuesCache?.tags).toEqual([{ value: 'power tools', count: 0 }]);
   });
 
   it('refuses a name that already exists, whatever its casing', async () => {
-    const store = new Store(makeMockHass({ items: [makeItem({ id: '1', category: 'Tools' })] }), fast);
-    await store.init();
+    const { store } = await mountStore({ items: [makeItem({ id: '1', category: 'Tools' })] });
 
     expect(store.addDraftValue('category', 'tools')).toBe(false);
     expect(store.addDraftValue('category', '   ')).toBe(false);
@@ -86,9 +75,7 @@ describe('Store', () => {
   });
 
   it('stops carrying the draft once an item actually uses it', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [] });
     store.addDraftValue('category', 'Consumables');
 
     await store.createItem({ name: 'Sponges', category: 'Consumables' });
@@ -102,8 +89,7 @@ describe('Store', () => {
   });
 
   it('discards a draft again', async () => {
-    const store = new Store(makeMockHass({ items: [] }), fast);
-    await store.init();
+    const { store } = await mountStore({ items: [] });
     store.addDraftValue('tag', 'seasonal');
     store.removeDraftValue('tag', 'seasonal');
 
@@ -111,9 +97,9 @@ describe('Store', () => {
   });
 
   it('asks for unpriced facets while nothing is filtering', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', category: 'Tools', tags: ['red'] })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({
+      items: [makeItem({ id: '1', category: 'Tools', tags: ['red'] })],
+    });
 
     const sent = hass.__messages.filter((m) => m.type === 'haventory/distinct_values');
     expect(sent).toHaveLength(1);
@@ -129,9 +115,7 @@ describe('Store', () => {
       makeItem({ id: '2', category: 'Tools', tags: ['red'] }),
       makeItem({ id: '3', category: 'Books', tags: ['blue'] }),
     ];
-    const hass = makeMockHass({ items });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items });
 
     // A category and a tag are picked alongside the narrowing filter; neither
     // may reach the wire, or every other row would be priced at zero.
@@ -157,9 +141,7 @@ describe('Store', () => {
       makeItem({ id: '1', category: 'Tools', tags: ['red'] }),
       makeItem({ id: '2', category: 'Books', tags: ['blue'] }),
     ];
-    const hass = makeMockHass({ items });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items });
 
     store.setFilters({ categories: ['Tools'] });
     await vi.waitUntil(
@@ -180,7 +162,7 @@ describe('Store', () => {
   // The same asymmetry the other way round: a lone location filter must not
   // leave the tree bare while the facet lists beside it carry a pair.
   it('prices the tree when the only filter is the one it drops', async () => {
-    const hass = makeMockHass({
+    const { store } = await mountStore({
       items: [makeItem({ id: '1', location_id: 'garage' })],
       locations: [
         {
@@ -192,8 +174,6 @@ describe('Store', () => {
         },
       ],
     });
-    const store = new Store(hass, fast);
-    await store.init();
 
     store.setFilters({ locationIds: ['garage'] });
     await vi.waitUntil(() => store.state.value.locationTreeCache?.[0]?.matching_subtree_count !== undefined);
@@ -203,9 +183,7 @@ describe('Store', () => {
   });
 
   it('coalesces the facet refetch across a burst of filter patches', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', category: 'Tools' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1', category: 'Tools' })] });
     const before = hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length;
 
     // What a filter panel does: several keys in a row, one answer wanted.
@@ -238,9 +216,7 @@ describe('Store', () => {
   // tally is a full scan on the backend: the burst asks once.
   it('asks for the tallies once for a burst of item events', async () => {
     const items = Array.from({ length: 25 }, (_, i) => makeItem({ id: String(i + 1), category: 'Tools' }));
-    const hass = makeMockHass({ items });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass } = await mountStore({ items });
     const facetCalls = () => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length;
     const before = facetCalls();
 
@@ -264,9 +240,7 @@ describe('Store', () => {
   // that lands last is not the one that was issued last. The newest request is
   // the only one allowed to assign.
   it('drops a facet response from a superseded request', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', category: 'Fresh' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1', category: 'Fresh' })] });
 
     const original = hass.callWS.bind(hass);
     let release: (() => void) | null = null;
@@ -305,9 +279,7 @@ describe('Store', () => {
       area_id: null,
       path: { id_path: ['garage'], name_path: ['Garage'], display_path: 'Garage', sort_key: 'garage' },
     };
-    const hass = makeMockHass({ items: [], locations: [garage] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [], locations: [garage] });
 
     const original = hass.callWS.bind(hass);
     let release: (() => void) | null = null;
@@ -346,9 +318,9 @@ describe('Store', () => {
   });
 
   it('gives a draft the priced shape once the server priced the rest', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1', category: 'Tools', checked_out: true })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({
+      items: [makeItem({ id: '1', category: 'Tools', checked_out: true })],
+    });
 
     store.setFilters({ checkedOutOnly: true });
     await vi.waitUntil(() => hass.__messages.filter((m) => m.type === 'haventory/distinct_values').length > 1);

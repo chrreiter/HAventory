@@ -99,22 +99,13 @@ describe('locationPathParts', () => {
 });
 
 describe('pathTitle', () => {
-  it('names the area ahead of the path', () => {
-    expect(pathTitle({ areaName: 'Kitchen', path: 'Fridge › Top Shelf' })).toBe(
-      'Area: Kitchen · Fridge › Top Shelf',
-    );
-  });
-
-  it('is just the path when there is no area', () => {
-    expect(pathTitle({ areaName: null, path: 'Fridge › Top Shelf' })).toBe('Fridge › Top Shelf');
-  });
-
-  it('is just the area when there is no path', () => {
-    expect(pathTitle({ areaName: 'Kitchen', path: '' })).toBe('Area: Kitchen');
-  });
-
-  it('is empty when there is neither', () => {
-    expect(pathTitle({ areaName: null, path: '' })).toBe('');
+  it.each([
+    ['names the area ahead of the path', 'Kitchen', 'Fridge › Top Shelf', 'Area: Kitchen · Fridge › Top Shelf'],
+    ['is just the path when there is no area', null, 'Fridge › Top Shelf', 'Fridge › Top Shelf'],
+    ['is just the area when there is no path', 'Kitchen', '', 'Area: Kitchen'],
+    ['is empty when there is neither', null, '', ''],
+  ])('%s', (_name, areaName, path, title) => {
+    expect(pathTitle({ areaName, path })).toBe(title);
   });
 });
 
@@ -145,15 +136,22 @@ describe('elidePath', () => {
   });
 
   // The leaf is the whole point: it is the segment that says where the item
-  // actually is, and right-clipping was dropping exactly that.
-  it('drops the middle rather than the leaf', () => {
-    expect(elidePath('Workshop › Parts Cabinet › Drawer A › Small Bin')).toBe('Workshop › … › Small Bin');
-  });
-
-  // A phone row has ~200px for this line, and three real segments plus a
-  // category needs well over that, so three has to elide as well.
-  it('elides at three segments, not just at four', () => {
-    expect(elidePath('Workshop › Parts Cabinet › Drawer A')).toBe('Workshop › … › Drawer A');
+  // actually is, and right-clipping was dropping exactly that. A phone row has
+  // ~200px for this line, and three real segments plus a category needs well
+  // over that, so three has to elide as well.
+  it.each([
+    [
+      'drops the middle rather than the leaf',
+      'Workshop › Parts Cabinet › Drawer A › Small Bin',
+      'Workshop › … › Small Bin',
+    ],
+    [
+      'elides at three segments, not just at four',
+      'Workshop › Parts Cabinet › Drawer A',
+      'Workshop › … › Drawer A',
+    ],
+  ])('%s', (_name, path, elided) => {
+    expect(elidePath(path)).toBe(elided);
   });
 
   it('keeps both ends however deep the tree gets', () => {

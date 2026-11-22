@@ -8,6 +8,7 @@ import {
   q,
   settle,
   stubViewport,
+  type ViewportStub,
 } from '../test.utils';
 import { deepActiveElement, deepFocusables } from '../ui/dialog-focus';
 import { makeBulkOp } from '../store/store';
@@ -73,6 +74,23 @@ async function mount(
     { renders: 2 },
   );
   return { ...mounted, host };
+}
+
+/** Press the first row's edit button and let the editor open. */
+async function openFirstEdit(el: HVFullView, sr: ShadowRoot) {
+  const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
+  (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
+  await settle(el);
+}
+
+/** Run one test body at a pinned viewport, and put the real `matchMedia` back after it. */
+async function withViewport(narrow: boolean, run: (viewport: ViewportStub) => Promise<void>) {
+  const viewport = stubViewport(narrow);
+  try {
+    await run(viewport);
+  } finally {
+    viewport();
+  }
 }
 
 describe('hv-full-view: phone-width context bar and panel', () => {
@@ -506,10 +524,7 @@ describe('hv-full-view: empty table', () => {
 describe('hv-full-view: editing', () => {
   it('edits in place above the table', async () => {
     const { el, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
 
     const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
     expect(editor).toBeTruthy();
@@ -523,9 +538,7 @@ describe('hv-full-view: editing', () => {
     const { el, store, hass, sr } = await mount({
       items: [makeItem({ id: '1', name: 'Wood Glue', quantity: 10, version: 2 })],
     });
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
 
     const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
     const description = editor.shadowRoot?.querySelector(
@@ -588,9 +601,7 @@ describe('hv-full-view: editing', () => {
         items: [makeItem({ id: '1', name: 'Wood Glue' })],
         embedded,
       });
-      const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-      (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-      await settle(el);
+      await openFirstEdit(el, sr);
       const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
       expect(editor).toBeTruthy();
       if (typed) {
@@ -613,9 +624,7 @@ describe('hv-full-view: editing', () => {
   // these deletes arrive as events before the store hears they were its own.
   it('closes the editor without a notice on a batch delete sent from here', async () => {
     const { el, store, hass, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
     expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
     const call = hass.callWS.bind(hass);
     hass.callWS = async <T>(msg: Record<string, unknown>): Promise<T> => {
@@ -639,9 +648,7 @@ describe('hv-full-view: editing', () => {
     const { el, store, sr } = await mount({
       items: [makeItem({ id: '1', name: 'Wood Glue' }), makeItem({ id: '2', name: 'Clamps' })],
     });
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
     expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
 
     await store.deleteItem('2', 1);
@@ -654,9 +661,7 @@ describe('hv-full-view: editing', () => {
   // edits are still worth saving, so the form is pinned and says why.
   it('pins the editor when a filter change drops the item from the list', async () => {
     const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
 
     const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement & { item: { name: string } | null };
     const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
@@ -715,9 +720,7 @@ describe('hv-full-view: editing', () => {
   // close and no account of why.
   describe('a rejected save', () => {
     const openEditor = async (el: HVFullView, sr: ShadowRoot) => {
-      const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-      (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-      await settle(el);
+      await openFirstEdit(el, sr);
       return q(sr, '[data-testid="full-editor"]') as HTMLElement & { busy: boolean };
     };
     const save = async (el: HVFullView, sr: ShadowRoot) => {
@@ -815,9 +818,7 @@ describe('hv-full-view: editing', () => {
 
   it('releases the pin when the editor is cancelled', async () => {
     const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Wood Glue' })] });
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
 
     store.setFilters({ q: 'matches nothing at all' });
     await settle(el);
@@ -841,9 +842,7 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
   async function dirtyEditor(items: Item[]) {
     const mounted = await mount({ items });
     const { el, sr } = mounted;
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
     const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
     const name = editor.shadowRoot?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
     name.value = 'Typed but unsaved';
@@ -928,9 +927,7 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
 
   it('leaves a clean form without a word', async () => {
     const { el, sr, host } = await mount({ items: two() });
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
 
     leave['row switch'](sr);
     await settle(el);
@@ -943,9 +940,7 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
   // rows in the same table.
   it('asks on a row switch in the embedded panel too', async () => {
     const { el, sr, host } = await mount({ items: two(), embedded: true });
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
     const name = (q(sr, '[data-testid="full-editor"]') as HTMLElement).shadowRoot?.querySelector(
       '[data-testid="editor-name"]',
     ) as HTMLInputElement;
@@ -978,28 +973,16 @@ describe('hv-full-view: leaving a dirty form always asks', () => {
 // so at 375px the expanded view drew the editor's three-column desktop grid in
 // 156px + 78px + 78px, with "Low-stock at" wrapping over its own field.
 describe('hv-full-view: phone-width children', () => {
-  it('tells the item editor when it is on a phone', async () => {
-    const restore = stubViewport(true);
-    try {
+  it.each([
+    ['tells the item editor when it is on a phone', true],
+    ['leaves the editor on its desktop layout at desktop widths', false],
+  ])('%s', async (_title, narrow) => {
+    await withViewport(narrow, async () => {
       const { el, sr } = await mount({ items: [] });
       (q(barOf(sr), '[data-testid="full-add-item"]') as HTMLButtonElement).click();
       await settle(el);
-      expect(q(sr, '[data-testid="full-editor"]')?.hasAttribute('mobile')).toBe(true);
-    } finally {
-      restore();
-    }
-  });
-
-  it('leaves the editor on its desktop layout at desktop widths', async () => {
-    const restore = stubViewport(false);
-    try {
-      const { el, sr } = await mount({ items: [] });
-      (q(barOf(sr), '[data-testid="full-add-item"]') as HTMLButtonElement).click();
-      await settle(el);
-      expect(q(sr, '[data-testid="full-editor"]')?.hasAttribute('mobile')).toBe(false);
-    } finally {
-      restore();
-    }
+      expect(q(sr, '[data-testid="full-editor"]')?.hasAttribute('mobile')).toBe(narrow);
+    });
   });
 
   // The table is scrolled sideways at this width, so its LOCATION column is off
@@ -1007,13 +990,10 @@ describe('hv-full-view: phone-width children', () => {
   // The table cannot read the media query itself; this is where it learns.
   it('tells the table when it is on a phone', async () => {
     for (const narrow of [true, false]) {
-      const restore = stubViewport(narrow);
-      try {
+      await withViewport(narrow, async () => {
         const { sr } = await mount({ items: [makeItem({ id: '1' })] });
         expect(q(sr, '[data-testid="full-table"]')?.hasAttribute('narrow'), String(narrow)).toBe(narrow);
-      } finally {
-        restore();
-      }
+      });
     }
   });
 
@@ -1021,8 +1001,7 @@ describe('hv-full-view: phone-width children', () => {
   // its host to provide one. Telling it "phone" without that would stage every
   // edit with no way to apply it.
   it('stages the phone filter panel behind a commit row', async () => {
-    const restore = stubViewport(true);
-    try {
+    await withViewport(true, async () => {
       const { el, store, sr } = await mount({
         items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })],
       });
@@ -1043,9 +1022,7 @@ describe('hv-full-view: phone-width children', () => {
       expect(store.state.value.filters.lowStockOnly).toBe(true);
       // Applying closes the panel, as it does in the card's filter sheet.
       expect(q(sr, '[data-testid="full-filter-panel"]')).toBe(null);
-    } finally {
-      restore();
-    }
+    });
   });
 
   // aria-expanded on its own says only that something opened; which element it
@@ -1084,8 +1061,7 @@ describe('hv-full-view: phone-width children', () => {
   });
 
   it('keeps the desktop panel live-applying, with no commit row', async () => {
-    const restore = stubViewport(false);
-    try {
+    await withViewport(false, async () => {
       const { el, store, sr } = await mount({
         items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })],
       });
@@ -1099,9 +1075,7 @@ describe('hv-full-view: phone-width children', () => {
       (panel.shadowRoot?.querySelector('[data-testid="filter-low-stock-only"]') as HTMLButtonElement).click();
       await settle(el);
       expect(store.state.value.filters.lowStockOnly).toBe(true);
-    } finally {
-      restore();
-    }
+    });
   });
 
   // Three controls on one 375px row is one too many for a language that spells
@@ -1110,8 +1084,7 @@ describe('hv-full-view: phone-width children', () => {
   // card's filter sheet already carries the clear in a head row; this is that
   // shape.
   it('carries the clear-all in a head row and leaves the phone footer two buttons', async () => {
-    const restore = stubViewport(true);
-    try {
+    await withViewport(true, async () => {
       const { el, sr } = await mount({ items: [makeItem({ id: '1' })] });
       (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
       await settle(el);
@@ -1128,14 +1101,11 @@ describe('hv-full-view: phone-width children', () => {
       // The head is read before the filters it clears, so it sits above the
       // scroll box rather than after it.
       expect(head.nextElementSibling?.classList.contains('panel-scroll')).toBe(true);
-    } finally {
-      restore();
-    }
+    });
   });
 
   it('clears the staged set from the moved clear button, and counts what is staged', async () => {
-    const restore = stubViewport(true);
-    try {
+    await withViewport(true, async () => {
       const { el, sr } = await mount({ items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })] });
       (q(sr, '[data-testid="full-filters-toggle"]') as HTMLButtonElement).click();
       await settle(el);
@@ -1156,9 +1126,7 @@ describe('hv-full-view: phone-width children', () => {
           'aria-pressed',
         ),
       ).toBe('false');
-    } finally {
-      restore();
-    }
+    });
   });
 
   // Turn the phone sideways with the panel open and the panel drops its own
@@ -1166,9 +1134,7 @@ describe('hv-full-view: phone-width children', () => {
   // held across that flip would leave the head row counting filters the
   // controls under it no longer carry.
   it('drops the staged set when the viewport stops being narrow', async () => {
-    // The stub is the restore, and it announces the flip.
-    const viewport = stubViewport(true);
-    try {
+    await withViewport(true, async (viewport) => {
       const { el, sr } = await mount({
         items: [makeItem({ id: '1', quantity: 0, low_stock_threshold: 5 })],
       });
@@ -1188,31 +1154,21 @@ describe('hv-full-view: phone-width children', () => {
       viewport.announce(true);
       await settle(el);
       expect(count()).toBe('0 active');
-    } finally {
-      viewport();
-    }
+    });
   });
 
   // The ⋮ menu carries "Columns…" on every host, so the phone toolbar can drop
   // the icon button and keep its remaining controls on one row.
-  it('drops the column picker button on a phone', async () => {
-    const restore = stubViewport(true);
-    try {
+  it.each([
+    ['drops the column picker button on a phone', true],
+    ['keeps the column picker button where the row has room for it', false],
+  ])('%s', async (_title, narrow) => {
+    await withViewport(narrow, async () => {
       const { sr } = await mount({ items: [makeItem({ id: '1' })] });
-      expect(q(sr, '[data-testid="columns-expanded"]')).toBe(null);
-    } finally {
-      restore();
-    }
-  });
-
-  it('keeps the column picker button where the row has room for it', async () => {
-    const restore = stubViewport(false);
-    try {
-      const { sr } = await mount({ items: [makeItem({ id: '1' })] });
-      expect(q(sr, '[data-testid="columns-expanded"]')).toBeTruthy();
-    } finally {
-      restore();
-    }
+      const picker = q(sr, '[data-testid="columns-expanded"]');
+      if (narrow) expect(picker).toBe(null);
+      else expect(picker).toBeTruthy();
+    });
   });
 });
 
@@ -1343,9 +1299,7 @@ describe('hv-full-view: failures are visible here too', () => {
     });
     hass.__setConflict(true);
 
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
     const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
     const description = editor.shadowRoot?.querySelector(
       '[data-testid="editor-description"]',
@@ -1384,9 +1338,7 @@ describe('hv-full-view: failures are visible here too', () => {
       items: [makeItem({ id: '1', name: 'Old', version: 4 })],
       embedded,
     });
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
     const form = () => (q(sr, '[data-testid="full-editor"]') as HTMLElement).shadowRoot;
     const name = form()?.querySelector('[data-testid="editor-name"]') as HTMLInputElement;
     name.value = 'Mine';
@@ -1437,9 +1389,7 @@ describe('hv-full-view: failures are visible here too', () => {
     store['ws'].updateItem = async () => {
       throw { code: 'storage_error', message: 'the store is read-only' };
     };
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
     const editor = q(sr, '[data-testid="full-editor"]') as HTMLElement;
     (editor.shadowRoot?.querySelector('[data-testid="editor-save"]') as HTMLButtonElement).click();
     await settle(el);
@@ -1504,8 +1454,7 @@ describe('hv-full-view: table row actions', () => {
   // which is why `touch` follows the narrow branch while the placement does not.
   it('presents the single-row check-out centred and scrimmed at every width', async () => {
     for (const narrow of [false, true]) {
-      const restore = stubViewport(narrow);
-      try {
+      await withViewport(narrow, async () => {
         const { el, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
         pick(sr, 'check-out');
         await settle(el);
@@ -1528,9 +1477,7 @@ describe('hv-full-view: table row actions', () => {
         expect(card?.getAttribute('style'), where).toContain('left: 50%');
 
         el.remove();
-      } finally {
-        restore();
-      }
+      });
     }
   });
 
@@ -1565,9 +1512,7 @@ describe('hv-full-view: table row actions', () => {
     const { el, sr, host } = await mount({
       items: [makeItem({ id: '1', name: 'First' }), makeItem({ id: '2', name: 'Second' })],
     });
-    const table = q(sr, '[data-testid="full-table"]') as HTMLElement;
-    (table.shadowRoot?.querySelector('[data-testid="table-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openFirstEdit(el, sr);
     const name = (q(sr, '[data-testid="full-editor"]') as HTMLElement).shadowRoot?.querySelector(
       '[data-testid="editor-name"]',
     ) as HTMLInputElement;
@@ -1603,22 +1548,18 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
   };
 
   it('opens the sheet on a row tap, not the form', async () => {
-    const restore = stubViewport(true);
-    try {
+    await withViewport(true, async () => {
       const { el, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
       await openRow(el, sr);
 
       expect(sheet(sr)?.open).toBe(true);
       expect(sheet(sr)?.item?.name).toBe('Drill');
       expect(q(sr, '[data-testid="full-editor"]')).toBe(null);
-    } finally {
-      restore();
-    }
+    });
   });
 
   it('puts Edit one tap deeper, inside the sheet', async () => {
-    const restore = stubViewport(true);
-    try {
+    await withViewport(true, async () => {
       const { el, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
       await openRow(el, sr);
 
@@ -1627,14 +1568,11 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
       await inner.updateComplete;
 
       expect(inner.shadowRoot?.querySelector('[data-testid="sheet-editor"]')).toBeTruthy();
-    } finally {
-      restore();
-    }
+    });
   });
 
   it('saves through the surface that owns the store', async () => {
-    const restore = stubViewport(true);
-    try {
+    await withViewport(true, async () => {
       const { el, store, sr } = await mount({ items: [makeItem({ id: '1', name: 'Old' })] });
       await openRow(el, sr);
 
@@ -1656,9 +1594,7 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
       expect(sheet(sr)?.open).toBe(true);
       expect(inner.shadowRoot?.querySelector('[data-testid="sheet-editor"]')).toBe(null);
       expect(inner.shadowRoot?.querySelector('[data-testid="sheet-name"]')?.textContent).toContain('New');
-    } finally {
-      restore();
-    }
+    });
   });
 
   // The sheet's scrim covers this view's banner stack. The panel at phone width
@@ -1667,8 +1603,7 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
     { variant: 'the overlay', embedded: false },
     { variant: 'the panel', embedded: true },
   ])('offers View latest and Re-apply inside the sheet in $variant', async ({ embedded }) => {
-    const restore = stubViewport(true);
-    try {
+    await withViewport(true, async () => {
       const { el, hass, sr } = await mount({
         items: [makeItem({ id: '1', name: 'Old', version: 4 })],
         embedded,
@@ -1708,17 +1643,14 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
       expect((form().querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe('Theirs');
       expect(form().querySelector('[data-testid="editor-error"]')).toBe(null);
       expect(q(sr, '[data-testid="banner-entry"]')).toBe(null);
-    } finally {
-      restore();
-    }
+    });
   });
 
   it.each([
     { from: 'this view', notice: null },
     { from: 'another device', notice: DELETED_ELSEWHERE },
   ])('closes the sheet when the item it shows is deleted from $from', async ({ from, notice }) => {
-    const restore = stubViewport(true);
-    try {
+    await withViewport(true, async () => {
       const { el, store, hass, sr } = await mount({
         items: [makeItem({ id: '1', name: 'Drill' })],
         embedded: true,
@@ -1733,23 +1665,18 @@ describe('hv-full-view: the detail sheet is the narrow read view', () => {
 
       expect(sheet(sr)?.open).toBe(false);
       expect(deletedNotice(sr)).toBe(notice);
-    } finally {
-      restore();
-    }
+    });
   });
 
   // The table is its own read surface at a width that can show it, and the row
   // says most of what the sheet would.
   it('keeps the inline form on a desktop viewport', async () => {
-    const restore = stubViewport(false);
-    try {
+    await withViewport(false, async () => {
       const { el, sr } = await mount({ items: [makeItem({ id: '1', name: 'Drill' })] });
       await openRow(el, sr);
 
       expect(q(sr, '[data-testid="full-detail-sheet"]')).toBe(null);
       expect(q(sr, '[data-testid="full-editor"]')).toBeTruthy();
-    } finally {
-      restore();
-    }
+    });
   });
 });

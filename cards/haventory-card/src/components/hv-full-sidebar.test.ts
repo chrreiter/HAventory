@@ -206,6 +206,13 @@ describe('hv-full-sidebar: facets', () => {
   ];
   const rows = (sr: ShadowRoot, section: string) =>
     [...sr.querySelectorAll(`[data-testid="sidebar-${section}-row"]`)] as HTMLElement[];
+  /** Press the facet row carrying `value` and let the sidebar settle. */
+  async function pickFacet(el: HVFullSidebar, sr: ShadowRoot, section: string, value: string) {
+    rows(sr, section)
+      .find((r) => r.dataset.value === value)
+      ?.click();
+    await settle(el);
+  }
 
   // A facet row and a location row are the same control in two shadow roots,
   // one list under the other in the same column, and they had drifted apart on
@@ -224,10 +231,7 @@ describe('hv-full-sidebar: facets', () => {
       expect(row.querySelector('.hv-browse-row-label')?.textContent).toBe(row.dataset.value);
     }
 
-    rows(sr, 'categories')
-      .find((r) => r.dataset.value === 'Tools')
-      ?.click();
-    await settle(el);
+    await pickFacet(el, sr, 'categories', 'Tools');
     const picked = rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')!;
     // Picked, the same slot holds the check — the label does not move sideways.
     expect(picked.querySelector('.hv-browse-row-lead')?.classList.contains('placeholder')).toBe(false);
@@ -295,17 +299,11 @@ describe('hv-full-sidebar: facets', () => {
   it('filters to one category and clears it on a second press', async () => {
     const { el, store, sr } = await mount({ items: faceted });
 
-    rows(sr, 'categories')
-      .find((r) => r.dataset.value === 'Tools')
-      ?.click();
-    await settle(el);
+    await pickFacet(el, sr, 'categories', 'Tools');
     expect(store.state.value.filters.categories).toEqual(['Tools']);
     expect(rows(sr, 'categories').find((r) => r.dataset.value === 'Tools')?.classList).toContain('selected');
 
-    rows(sr, 'categories')
-      .find((r) => r.dataset.value === 'Tools')
-      ?.click();
-    await settle(el);
+    await pickFacet(el, sr, 'categories', 'Tools');
     expect(store.state.value.filters.categories).toEqual([]);
   });
 
@@ -315,24 +313,15 @@ describe('hv-full-sidebar: facets', () => {
   it('accumulates categories rather than replacing the selection', async () => {
     const { el, store, sr } = await mount({ items: faceted });
 
-    rows(sr, 'categories')
-      .find((r) => r.dataset.value === 'Tools')
-      ?.click();
-    await settle(el);
-    rows(sr, 'categories')
-      .find((r) => r.dataset.value === 'Cleaning')
-      ?.click();
-    await settle(el);
+    await pickFacet(el, sr, 'categories', 'Tools');
+    await pickFacet(el, sr, 'categories', 'Cleaning');
     expect(store.state.value.filters.categories).toEqual(['Tools', 'Cleaning']);
     // Both rows read as picked, and the list keeps every row it had.
     for (const value of ['Tools', 'Cleaning']) {
       expect(rows(sr, 'categories').find((r) => r.dataset.value === value)?.classList).toContain('selected');
     }
 
-    rows(sr, 'categories')
-      .find((r) => r.dataset.value === 'Tools')
-      ?.click();
-    await settle(el);
+    await pickFacet(el, sr, 'categories', 'Tools');
     expect(store.state.value.filters.categories).toEqual(['Cleaning']);
   });
 
@@ -340,14 +329,8 @@ describe('hv-full-sidebar: facets', () => {
   // carries one of each, so a selection of several can only mean OR.
   it('offers no match mode for categories, however many are picked', async () => {
     const { el, store, sr } = await mount({ items: faceted });
-    rows(sr, 'categories')
-      .find((r) => r.dataset.value === 'Tools')
-      ?.click();
-    await settle(el);
-    rows(sr, 'categories')
-      .find((r) => r.dataset.value === 'Cleaning')
-      ?.click();
-    await settle(el);
+    await pickFacet(el, sr, 'categories', 'Tools');
+    await pickFacet(el, sr, 'categories', 'Cleaning');
 
     expect(store.state.value.filters.categories).toHaveLength(2);
     expect(q(sr, '[data-testid="sidebar-categories-mode"]')).toBe(null);
@@ -358,20 +341,11 @@ describe('hv-full-sidebar: facets', () => {
   it('accumulates tags rather than replacing the selection', async () => {
     const { el, store, sr } = await mount({ items: faceted });
 
-    rows(sr, 'tags')
-      .find((r) => r.dataset.value === 'metric')
-      ?.click();
-    await settle(el);
-    rows(sr, 'tags')
-      .find((r) => r.dataset.value === 'heavy')
-      ?.click();
-    await settle(el);
+    await pickFacet(el, sr, 'tags', 'metric');
+    await pickFacet(el, sr, 'tags', 'heavy');
     expect(store.state.value.filters.tags).toEqual(['metric', 'heavy']);
 
-    rows(sr, 'tags')
-      .find((r) => r.dataset.value === 'metric')
-      ?.click();
-    await settle(el);
+    await pickFacet(el, sr, 'tags', 'metric');
     expect(store.state.value.filters.tags).toEqual(['heavy']);
   });
 
@@ -382,16 +356,10 @@ describe('hv-full-sidebar: facets', () => {
     const { el, store, sr } = await mount({ items: faceted });
     expect(q(sr, '[data-testid="sidebar-tags-mode"]')).toBe(null);
 
-    rows(sr, 'tags')
-      .find((r) => r.dataset.value === 'metric')
-      ?.click();
-    await settle(el);
+    await pickFacet(el, sr, 'tags', 'metric');
     expect(q(sr, '[data-testid="sidebar-tags-mode"]'), 'one tag needs no mode').toBe(null);
 
-    rows(sr, 'tags')
-      .find((r) => r.dataset.value === 'heavy')
-      ?.click();
-    await settle(el);
+    await pickFacet(el, sr, 'tags', 'heavy');
     const modes = [...sr.querySelectorAll('[data-testid="sidebar-tags-mode"]')] as HTMLElement[];
     expect(modes.map((m) => m.dataset.mode)).toEqual(['any', 'all']);
     expect(modes[0]?.classList.contains('on')).toBe(true);

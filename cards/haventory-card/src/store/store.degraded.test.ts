@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { makeMockHass, makeItem, defined } from '../test.utils';
+import { makeMockHass, makeItem, defined, mountStore, mountStoreWith, withFakeTimers } from '../test.utils';
 import { Store, subscribeRetryDelayMs } from './store';
 
 /**
@@ -7,9 +7,6 @@ import { Store, subscribeRetryDelayMs } from './store';
  * drops under an idle surface: what the card retries, how long it waits, what it
  * tells the user, and when it stops.
  */
-
-/** Stores under test never wait on real backoff. */
-const fast = { retryBaseMs: 0 };
 
 /** Let queued microtasks and any zero-delay timers run. */
 async function flush(rounds = 1): Promise<void> {
@@ -37,9 +34,7 @@ describe('Store: the backend going away and coming back', () => {
   }
 
   it('re-opens the subscriptions a reload took away', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1' })] });
     expect(hass.__subscribeCalls).toHaveLength(4);
 
     tearDown(hass);
@@ -57,9 +52,7 @@ describe('Store: the backend going away and coming back', () => {
   });
 
   it('waits out the window in which the backend is still refusing', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [] });
 
     // Setup has not finished, so the first two re-subscribe rounds are refused
     // exactly the way a command is during a reload.
@@ -80,9 +73,7 @@ describe('Store: the backend going away and coming back', () => {
   it('re-reads the inventory once the backend answers again', async () => {
     // A backend that went away and came back re-read its store, and every event
     // in between went to a subscription that no longer existed.
-    const hass = makeMockHass({ items: [makeItem({ id: '1', name: 'Before' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1', name: 'Before' })] });
     expect(store.state.value.items.map((i) => i.name)).toEqual(['Before']);
 
     hass.__setItems([makeItem({ id: '2', name: 'After' })]);
@@ -93,9 +84,7 @@ describe('Store: the backend going away and coming back', () => {
   });
 
   it('gives up once the budget is spent, and says what stopped', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [] });
 
     // Disabled or removed rather than reloading: nothing is coming back.
     hass.__failSubscribe(UNAVAILABLE);
@@ -117,9 +106,7 @@ describe('Store: the backend going away and coming back', () => {
   });
 
   it('treats one teardown as one outage, however many topics report it', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass } = await mountStore({ items: [] });
 
     // All four topics carry the same signal; four re-subscribe rounds for one
     // reload would triple the load on a backend that is still starting up.
@@ -130,9 +117,7 @@ describe('Store: the backend going away and coming back', () => {
   });
 
   it('starts a fresh budget for a second teardown', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [] });
 
     tearDown(hass);
     await flush(3);
@@ -158,9 +143,7 @@ describe('subscribeRetryDelayMs', () => {
   });
 
   it('declares the connection lost after consecutive transport failures', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [] });
 
     hass.__failNext(2, new Error('socket closed'));
     await store.refreshStats().catch(() => undefined);
@@ -170,9 +153,7 @@ describe('subscribeRetryDelayMs', () => {
   });
 
   it('does not treat a domain error as an outage', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1' })] });
 
     hass.__failNext(3, { code: 'validation_error', message: 'nope' });
     await store.adjustQuantity('1', 1);
@@ -183,9 +164,7 @@ describe('subscribeRetryDelayMs', () => {
   });
 
   it('clears the degraded flags on an explicit refresh', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1' })] });
 
     hass.__failNext(2, new Error('socket closed'));
     await store.refreshStats().catch(() => undefined);
@@ -197,9 +176,7 @@ describe('subscribeRetryDelayMs', () => {
   });
 
   it('re-subscribes on a refresh even when the re-read is refused', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1' })] });
     const subscribesBefore = hass.__subscribeCalls.length;
 
     hass.__failNext(1, { code: 'storage_error', message: 'disk' });
@@ -213,9 +190,7 @@ describe('subscribeRetryDelayMs', () => {
     // carry out. It travelled the socket to get here, so it proves the transport
     // works — reporting it as an outage would blame the connection for a fault
     // that is entirely server-side.
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1' })] });
 
     hass.__failNext(3, { code: 'unknown_error', message: 'boom' });
     await store.adjustQuantity('1', 1);
@@ -231,9 +206,7 @@ describe('subscribeRetryDelayMs', () => {
     // its own: no top-level code, no message a person could read. Reported
     // verbatim it says "Unknown error", which reads as a fault in what the user
     // just did rather than in the connection.
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1' })] });
 
     hass.__failNext(1, { type: 'result', success: false, error: { code: 3, message: 'Connection lost' } });
     await store.adjustQuantity('1', 1);
@@ -247,9 +220,7 @@ describe('subscribeRetryDelayMs', () => {
     // An outage fails everything in flight and everything tried next. Stacking
     // one banner per call buries the rest of the queue under copies of a
     // sentence the user has already read.
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1' })] });
 
     hass.__failNext(4, new Error('socket closed'));
     await store.adjustQuantity('1', 1);
@@ -271,15 +242,13 @@ describe('subscribeRetryDelayMs', () => {
 describe('Store: an idle surface going offline', () => {
   const backoff = { retryBaseMs: 10 };
 
-  it('says the connection is lost when the socket closes and stays closed', async () => {
-    // Nobody is touching this surface, so no call can report the outage. Without
-    // the socket's own event the list would sit there showing pre-outage data
-    // until someone tried something and got a failure.
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-      const store = new Store(hass, backoff);
-      await store.init();
+  it(
+    'says the connection is lost when the socket closes and stays closed',
+    withFakeTimers(async () => {
+      // Nobody is touching this surface, so no call can report the outage. Without
+      // the socket's own event the list would sit there showing pre-outage data
+      // until someone tried something and got a failure.
+      const { hass, store } = await mountStoreWith({ items: [makeItem({ id: '1' })] }, backoff);
 
       hass.__disconnect();
       await vi.advanceTimersByTimeAsync(5000);
@@ -288,19 +257,15 @@ describe('Store: an idle surface going offline', () => {
       // The degraded stack carries this one; nothing was refused, so nothing
       // belongs in the queue of refused operations.
       expect(store.state.value.errorQueue).toEqual([]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('sits out a reconnect that lands inside the grace period', async () => {
-    // Home Assistant reconnects by itself and a blip is over before anyone could
-    // act on it. Announcing it at once would flash a banner and withdraw it.
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-      const store = new Store(hass, backoff);
-      await store.init();
+  it(
+    'sits out a reconnect that lands inside the grace period',
+    withFakeTimers(async () => {
+      // Home Assistant reconnects by itself and a blip is over before anyone could
+      // act on it. Announcing it at once would flash a banner and withdraw it.
+      const { hass, store } = await mountStoreWith({ items: [makeItem({ id: '1' })] }, backoff);
 
       hass.__disconnect();
       await vi.advanceTimersByTimeAsync(500);
@@ -310,22 +275,18 @@ describe('Store: an idle surface going offline', () => {
       await vi.advanceTimersByTimeAsync(5000);
 
       expect(store.state.value.degraded.connectionLost).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('sits out a reconnect that lands on the three-second retry rung', async () => {
-    // Home Assistant's client retries on a ladder — at once, then +1 s, +3 s,
-    // +6 s — so a socket dropped while the network is briefly away misses the
-    // first two rungs and returns on the third. That is an ordinary Wi-Fi roam
-    // and the grace period exists to sit it out; a shorter one would put a
-    // banner up and take it down again a second later.
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-      const store = new Store(hass, backoff);
-      await store.init();
+  it(
+    'sits out a reconnect that lands on the three-second retry rung',
+    withFakeTimers(async () => {
+      // Home Assistant's client retries on a ladder — at once, then +1 s, +3 s,
+      // +6 s — so a socket dropped while the network is briefly away misses the
+      // first two rungs and returns on the third. That is an ordinary Wi-Fi roam
+      // and the grace period exists to sit it out; a shorter one would put a
+      // banner up and take it down again a second later.
+      const { hass, store } = await mountStoreWith({ items: [makeItem({ id: '1' })] }, backoff);
 
       hass.__disconnect();
       await vi.advanceTimersByTimeAsync(3_100);
@@ -335,17 +296,13 @@ describe('Store: an idle surface going offline', () => {
       await vi.advanceTimersByTimeAsync(5_000);
 
       expect(store.state.value.degraded.connectionLost).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('takes the banner back down when the socket returns', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-      const store = new Store(hass, backoff);
-      await store.init();
+  it(
+    'takes the banner back down when the socket returns',
+    withFakeTimers(async () => {
+      const { hass, store } = await mountStoreWith({ items: [makeItem({ id: '1' })] }, backoff);
 
       hass.__disconnect();
       await vi.advanceTimersByTimeAsync(5000);
@@ -355,27 +312,21 @@ describe('Store: an idle surface going offline', () => {
       await vi.advanceTimersByTimeAsync(300);
 
       expect(store.state.value.degraded.connectionLost).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('stops watching the socket once the store is disposed', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-      const store = new Store(hass, backoff);
-      await store.init();
+  it(
+    'stops watching the socket once the store is disposed',
+    withFakeTimers(async () => {
+      const { hass, store } = await mountStoreWith({ items: [makeItem({ id: '1' })] }, backoff);
 
       store.dispose();
       hass.__disconnect();
       await vi.advanceTimersByTimeAsync(5000);
 
       expect(store.state.value.degraded.connectionLost).toBe(false);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 });
 
 describe('Store: a card built while the backend cannot answer', () => {
@@ -387,9 +338,9 @@ describe('Store: a card built while the backend cannot answer', () => {
   // still be opened.
   const REFUSED = { code: 'unknown_command', message: 'Unknown command.' };
 
-  it('still watches the socket after a first load that failed', async () => {
-    vi.useFakeTimers();
-    try {
+  it(
+    'still watches the socket after a first load that failed',
+    withFakeTimers(async () => {
       const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
       hass.__failNext(50, REFUSED);
       const store = new Store(hass, backoff);
@@ -400,28 +351,24 @@ describe('Store: a card built while the backend cannot answer', () => {
       await vi.advanceTimersByTimeAsync(6_000);
 
       expect(store.state.value.degraded.connectionLost).toBe(true);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('still opens the subscriptions after a first load that failed', async () => {
-    vi.useFakeTimers();
-    try {
+  it(
+    'still opens the subscriptions after a first load that failed',
+    withFakeTimers(async () => {
       const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
       hass.__failNext(50, REFUSED);
       const store = new Store(hass, backoff);
       await store.init().catch(() => undefined);
 
       expect(hass.__subscribeCalls).toContain('items');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('waits out a subscribe refused because the command is not registered yet', async () => {
-    vi.useFakeTimers();
-    try {
+  it(
+    'waits out a subscribe refused because the command is not registered yet',
+    withFakeTimers(async () => {
       const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
       hass.__failSubscribeNext(4, REFUSED);
       const store = new Store(hass, backoff);
@@ -436,18 +383,16 @@ describe('Store: a card built while the backend cannot answer', () => {
       await vi.advanceTimersByTimeAsync(60_000);
 
       expect(store.state.value.degraded.liveUpdates).toBe('live');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('reads the inventory once the backend starts answering', async () => {
-    // Nothing the user does is involved: the refused subscribe retries on its
-    // own backoff, and landing it re-reads everything the failed load missed,
-    // the area names included: the registry watch is HA core's own and is never
-    // refused, so it never catches up on its own.
-    vi.useFakeTimers();
-    try {
+  it(
+    'reads the inventory once the backend starts answering',
+    withFakeTimers(async () => {
+      // Nothing the user does is involved: the refused subscribe retries on its
+      // own backoff, and landing it re-reads everything the failed load missed,
+      // the area names included: the registry watch is HA core's own and is never
+      // refused, so it never catches up on its own.
       const hass = makeMockHass({
         items: [makeItem({ id: '1' })],
         areas: [{ id: 'kitchen', name: 'Kitchen' }],
@@ -469,8 +414,6 @@ describe('Store: a card built while the backend cannot answer', () => {
       expect(store.state.value.items.map((i) => i.id)).toEqual(['1']);
       expect(store.state.value.areasCache?.areas[0]?.name).toBe('Kitchen');
       expect(store.state.value.degraded.liveUpdates).toBe('live');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 });

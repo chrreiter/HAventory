@@ -793,8 +793,11 @@ describe('hv-item-editor: opening', () => {
   // The editor's own footer promises "Esc discards", but that is a keydown
   // handler on the editor root: it never fires while focus is still on the
   // page body, which is where it stayed when a row expanded.
-  it('lands focus on the name field so Escape and typing work immediately', async () => {
-    const el = await mount(makeItem({ name: 'Multimeter' }));
+  it.each([
+    ['lands focus on the name field so Escape and typing work immediately', makeItem({ name: 'Multimeter' })],
+    ['focuses the name field for a new item too', null],
+  ])('%s', async (_title, item) => {
+    const el = await mount(item);
     expect(el.shadowRoot?.activeElement).toBe(q(el, '[data-testid="editor-name"]'));
   });
 
@@ -808,11 +811,6 @@ describe('hv-item-editor: opening', () => {
       new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, composed: true }),
     );
     expect(cancelled).toBe(true);
-  });
-
-  it('focuses the name field for a new item too', async () => {
-    const el = await mount(null);
-    expect(el.shadowRoot?.activeElement).toBe(q(el, '[data-testid="editor-name"]'));
   });
 });
 

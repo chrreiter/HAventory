@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { BULK_CHUNK_SIZE, Store, makeBulkOp } from './store';
-import { makeMockHass, makeItem, defined } from '../test.utils';
+import { makeMockHass, makeItem, defined, mountStore, callCount } from '../test.utils';
 import { setLanguage } from '../i18n';
 import type { Location } from './types';
 
@@ -40,9 +40,7 @@ async function flush(rounds = 1): Promise<void> {
 describe('Store', () => {
   it('initializes with stats, areas, locations, and first page of items', async () => {
     const items = Array.from({ length: 30 }, (_, i) => makeItem({ id: `${i}`, name: `Item ${i}` }));
-    const hass = makeMockHass({ items });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items });
 
     expect(store.state.value.statsCounts).toBeTruthy();
     expect(store.state.value.areasCache).toBeTruthy();
@@ -53,9 +51,7 @@ describe('Store', () => {
   });
 
   it('creates item and updates state optimistically', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [] });
 
     await store.createItem({ name: 'New Item', quantity: 5 });
     const created = store.state.value.items.find((i) => i.name === 'New Item');
@@ -65,9 +61,7 @@ describe('Store', () => {
 
   it('updates item optimistically and reconciles on success', async () => {
     const base = makeItem({ id: '1', name: 'Original', quantity: 10 });
-    const hass = makeMockHass({ items: [base] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [base] });
 
     await store.updateItem('1', { name: 'Updated', quantity: 20 });
     const updated = store.state.value.items.find((i) => i.id === '1');
@@ -77,9 +71,7 @@ describe('Store', () => {
 
   it('optimistic update on updateItem; conflict surfaces banner with actions', async () => {
     const base = makeItem({ id: '1', name: 'A' });
-    const hass = makeMockHass({ items: [base], conflictOnUpdate: true });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [base], conflictOnUpdate: true });
     // Trigger conflict
     await store.updateItem('1', { name: 'A2' }).catch(() => undefined);
     const errs = store.state.value.errorQueue;
@@ -98,9 +90,7 @@ describe('Store', () => {
 
   it('rolls back optimistic changes when updateItem fails', async () => {
     const base = makeItem({ id: '1', name: 'Original', quantity: 1 });
-    const hass = makeMockHass({ items: [base], conflictOnUpdate: true });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [base], conflictOnUpdate: true });
 
     await store.updateItem('1', { name: 'Changed', quantity: 5 }).catch(() => undefined);
 
@@ -112,47 +102,30 @@ describe('Store', () => {
 
   it('deletes item optimistically and rolls back on error', async () => {
     const item = makeItem({ id: '1', name: 'ToDelete' });
-    const hass = makeMockHass({ items: [item] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [item] });
 
     expect(store.state.value.items.length).toBe(1);
     await store.deleteItem('1');
     expect(store.state.value.items.length).toBe(0);
   });
 
-  it('adjusts quantity with optimistic update', async () => {
+  it.each([
+    ['adjusts', (store: Store) => store.adjustQuantity('1', 5), 15],
+    ['sets', (store: Store) => store.setQuantity('1', 25), 25],
+  ])('%s quantity with optimistic update', async (_verb, write, expected) => {
     const item = makeItem({ id: '1', quantity: 10 });
-    const hass = makeMockHass({ items: [item] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [item] });
 
-    // Optimistic update happens immediately
-    const adjustPromise = store.adjustQuantity('1', 5);
-    // Check optimistic state before promise resolves
+    // The row shows the result before the call resolves.
+    const pending = write(store);
     const optimistic = store.state.value.items.find((i) => i.id === '1');
-    expect(optimistic?.quantity).toBe(15);
-    await adjustPromise;
-  });
-
-  it('sets quantity with optimistic update', async () => {
-    const item = makeItem({ id: '1', quantity: 10 });
-    const hass = makeMockHass({ items: [item] });
-    const store = new Store(hass, fast);
-    await store.init();
-
-    // Optimistic update happens immediately
-    const setPromise = store.setQuantity('1', 25);
-    const optimistic = store.state.value.items.find((i) => i.id === '1');
-    expect(optimistic?.quantity).toBe(25);
-    await setPromise;
+    expect(optimistic?.quantity).toBe(expected);
+    await pending;
   });
 
   it('checks out and checks in items with optimistic updates', async () => {
     const item = makeItem({ id: '1', checked_out: false });
-    const hass = makeMockHass({ items: [item] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [item] });
 
     // Check out optimistically
     const checkOutPromise = store.checkOut('1', '2025-12-31');
@@ -170,9 +143,7 @@ describe('Store', () => {
 
   it('sets low stock threshold with optimistic update', async () => {
     const item = makeItem({ id: '1', low_stock_threshold: null });
-    const hass = makeMockHass({ items: [item] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [item] });
 
     // Set threshold optimistically
     const setPromise = store.setLowStockThreshold('1', 5);
@@ -190,9 +161,7 @@ describe('Store', () => {
   it('moves item to different location with optimistic update', async () => {
     // Optimistic update: location_id changes immediately before server response
     const item = makeItem({ id: '1', location_id: 'loc1' });
-    const hass = makeMockHass({ items: [item] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [item] });
 
     // Start move - optimistic update should happen immediately
     const movePromise = store.moveItem('1', 'loc2');
@@ -209,11 +178,9 @@ describe('Store', () => {
   // the filtered page, and one that is gone. Only the second closes an editor.
   describe('wasRemoved', () => {
     it('reports nothing removed for a row that is merely filtered out', async () => {
-      const hass = makeMockHass({
+      const { store } = await mountStore({
         items: [makeItem({ id: 'a', name: 'Alpha' }), makeItem({ id: 'b', name: 'Beta' })],
       });
-      const store = new Store(hass, fast);
-      await store.init();
 
       store.setFilters({ q: 'Alpha' });
       await flush(2);
@@ -222,18 +189,14 @@ describe('Store', () => {
     });
 
     it('reports a deleted row as removed', async () => {
-      const hass = makeMockHass({ items: [makeItem({ id: 'a' })] });
-      const store = new Store(hass, fast);
-      await store.init();
+      const { store } = await mountStore({ items: [makeItem({ id: 'a' })] });
 
       await store.deleteItem('a', 1);
       expect(store.wasRemoved('a')).toBe(true);
     });
 
     it('forgets a delete that was rolled back', async () => {
-      const hass = makeMockHass({ items: [makeItem({ id: 'a' })] });
-      const store = new Store(hass, fast);
-      await store.init();
+      const { hass, store } = await mountStore({ items: [makeItem({ id: 'a' })] });
       const passthrough = hass.callWS.bind(hass);
       hass.callWS = async <T>(msg: Record<string, unknown>): Promise<T> => {
         if (msg.type === 'haventory/item/delete') throw new Error('nope');
@@ -248,9 +211,7 @@ describe('Store', () => {
 
   it('dismisses errors from error queue', async () => {
     const item = makeItem({ id: '1' });
-    const hass = makeMockHass({ items: [item], conflictOnUpdate: true });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [item], conflictOnUpdate: true });
 
     // Trigger an error
     await store.updateItem('1', { name: 'New' }).catch(() => undefined);
@@ -263,9 +224,7 @@ describe('Store', () => {
 
   it('queues a keyed refusal in the language in force', async () => {
     setLanguage('de');
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1' })] });
     hass.callWS = async <T>(): Promise<T> => {
       throw {
         code: 'not_found',
@@ -283,9 +242,7 @@ describe('Store', () => {
   });
 
   it('createLocation calls WS and refreshes caches', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [] });
 
     const created = await store.createLocation('Test Location', null);
     expect(created).toBeTruthy();
@@ -296,9 +253,7 @@ describe('Store', () => {
   });
 
   it('deleteLocation removes an empty location and refreshes caches', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [] });
 
     const created = await store.createLocation('Doomed', null);
     expect(store.state.value.locationsFlatCache?.some((l) => l.id === created.id)).toBe(true);
@@ -308,9 +263,7 @@ describe('Store', () => {
   });
 
   it('deleteLocation rejects with validation_error when the location is not empty', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [] });
 
     const parent = await store.createLocation('Parent', null);
     await store.createLocation('Child', parent.id);
@@ -321,9 +274,7 @@ describe('Store', () => {
   });
 
   it('deleteLocation rejects when items still reference the location', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [] });
 
     const loc = await store.createLocation('Occupied', null);
     hass.__setItems([makeItem({ id: 'i1', name: 'Blocker', location_id: loc.id })]);
@@ -332,9 +283,7 @@ describe('Store', () => {
   });
 
   it('moveLocationSubtree reparents and refreshes locations and items', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: 'i1', name: 'Inside' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [makeItem({ id: 'i1', name: 'Inside' })] });
 
     const src = await store.createLocation('Source', null);
     const dst = await store.createLocation('Dest', null);
@@ -355,9 +304,7 @@ describe('Store', () => {
       reminder_anchor: '2026-01-31',
       reminder_interval: { unit: 'days', count: 7 },
     });
-    const hass = makeMockHass({ items: [item] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [item] });
 
     await store.bumpReminder('1', item.version);
 
@@ -369,9 +316,7 @@ describe('Store', () => {
 
   it('surfaces a refused bump as an error and leaves the item alone', async () => {
     const item = makeItem({ id: '1', reminder_date: '2026-08-31', reminder_interval: null });
-    const hass = makeMockHass({ items: [item] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [item] });
 
     await store.bumpReminder('1', item.version);
 
@@ -392,8 +337,7 @@ describe('Store: selection', () => {
   const items = [makeItem({ id: '1' }), makeItem({ id: '2' }), makeItem({ id: '3' })];
 
   it('toggles, replaces and clears', async () => {
-    const store = new Store(makeMockHass({ items }), fast);
-    await store.init();
+    const { store } = await mountStore({ items });
 
     store.toggleSelected('1');
     store.toggleSelected('2');
@@ -410,8 +354,7 @@ describe('Store: selection', () => {
   });
 
   it('publishes a new Set so subscribers see the change', async () => {
-    const store = new Store(makeMockHass({ items }), fast);
-    await store.init();
+    const { store } = await mountStore({ items });
     const before = store.state.value.selection;
     store.toggleSelected('1');
     expect(store.state.value.selection).not.toBe(before);
@@ -419,8 +362,7 @@ describe('Store: selection', () => {
 
   it('select-all covers loaded rows only, and load-all extends it', async () => {
     const many = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}` }));
-    const store = new Store(makeMockHass({ items: many }), fast);
-    await store.init();
+    const { store } = await mountStore({ items: many });
 
     store.selectAllLoaded();
     expect(store.state.value.selection.size).toBe(50);
@@ -431,8 +373,7 @@ describe('Store: selection', () => {
   });
 
   it('drops the selection when the filter changes', async () => {
-    const store = new Store(makeMockHass({ items }), fast);
-    await store.init();
+    const { store } = await mountStore({ items });
     store.selectAllLoaded();
     expect(store.state.value.selection.size).toBe(3);
 
@@ -449,8 +390,7 @@ describe('Store: bulk operations', () => {
   ];
 
   it('applies every successful op and reports the items back', async () => {
-    const store = new Store(makeMockHass({ items: three }), fast);
-    await store.init();
+    const { store } = await mountStore({ items: three });
 
     const outcome = await store.bulkExecute(
       three.map((i) => makeBulkOp('item_adjust_quantity', { item_id: i.id, delta: 2 })),
@@ -464,8 +404,7 @@ describe('Store: bulk operations', () => {
   });
 
   it('separates the failures and names the row each belongs to', async () => {
-    const store = new Store(makeMockHass({ items: three }), fast);
-    await store.init();
+    const { store } = await mountStore({ items: three });
 
     const outcome = await store.bulkExecute([
       makeBulkOp('item_adjust_quantity', { item_id: '1', delta: 1 }),
@@ -487,9 +426,7 @@ describe('Store: bulk operations', () => {
 
   it('chunks the work and reports determinate progress', async () => {
     const many = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}`, quantity: 1 }));
-    const hass = makeMockHass({ items: many });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: many });
     await store.loadAllPages();
 
     const progress: [number, number][] = [];
@@ -503,23 +440,20 @@ describe('Store: bulk operations', () => {
       [50, 60],
       [60, 60],
     ]);
-    expect(hass.__calls.filter((c) => c === 'haventory/items/bulk')).toHaveLength(3);
+    expect(callCount(hass, 'haventory/items/bulk')).toBe(3);
   });
 
   it('defaults to the documented chunk size', async () => {
     const many = Array.from({ length: BULK_CHUNK_SIZE + 1 }, (_, i) => makeItem({ id: `i${i}` }));
-    const hass = makeMockHass({ items: many });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: many });
 
     await store.bulkExecute(many.map((i) => makeBulkOp('item_check_in', { item_id: i.id })));
-    expect(hass.__calls.filter((c) => c === 'haventory/items/bulk')).toHaveLength(2);
+    expect(callCount(hass, 'haventory/items/bulk')).toBe(2);
   });
 
   it('stops between chunks when cancelled, keeping what already ran', async () => {
     const many = Array.from({ length: 60 }, (_, i) => makeItem({ id: `i${i}`, quantity: 1 }));
-    const store = new Store(makeMockHass({ items: many }), fast);
-    await store.init();
+    const { store } = await mountStore({ items: many });
     await store.loadAllPages();
 
     let chunks = 0;
@@ -540,9 +474,7 @@ describe('Store: bulk operations', () => {
   });
 
   it('attributes a whole-call failure to every op in the chunk', async () => {
-    const hass = makeMockHass({ items: three });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: three });
     hass.__failNext(1, { code: 'storage_error', message: 'disk full' });
 
     const outcome = await store.bulkExecute(three.map((i) => makeBulkOp('item_check_in', { item_id: i.id })));
@@ -553,8 +485,7 @@ describe('Store: bulk operations', () => {
   });
 
   it('removes successfully deleted rows from the list', async () => {
-    const store = new Store(makeMockHass({ items: three }), fast);
-    await store.init();
+    const { store } = await mountStore({ items: three });
 
     await store.bulkExecute([
       makeBulkOp('item_delete', { item_id: '1' }),
@@ -573,8 +504,7 @@ describe('Store: location tree and diagnostics data', () => {
       makeItem({ id: '2', location_id: 'shelf-a' }),
       makeItem({ id: '3', location_id: 'shelf-a' }),
     ];
-    const store = new Store(makeMockHass({ items, locations }), fast);
-    await store.init();
+    const { store } = await mountStore({ items, locations });
 
     const tree = store.state.value.locationTreeCache!;
     expect(tree).toHaveLength(1);
@@ -589,11 +519,7 @@ describe('Store: location tree and diagnostics data', () => {
   // so nodes come back without the matching pair.
   it('leaves the tree unfiltered until something is actually narrowing', async () => {
     const locations = [loc('garage', 'Garage')];
-    const store = new Store(
-      makeMockHass({ items: [makeItem({ id: '1', location_id: 'garage' })], locations }),
-      fast,
-    );
-    await store.init();
+    const { store } = await mountStore({ items: [makeItem({ id: '1', location_id: 'garage' })], locations });
 
     expect(store.state.value.locationTreeCache?.[0]?.matching_subtree_count).toBeUndefined();
     expect(store.state.value.locationMatchTotal).toBe(null);
@@ -608,10 +534,8 @@ describe('Store: location tree and diagnostics data', () => {
       makeItem({ id: '4', location_id: 'kitchen', category: 'Tools' }),
       makeItem({ id: '5', category: 'Tools' }),
     ];
-    const hass = makeMockHass({ items, locations });
-    const store = new Store(hass, fast);
-    await store.init();
-    const treeCalls = () => hass.__calls.filter((c) => c === 'haventory/location/tree').length;
+    const { hass, store } = await mountStore({ items, locations });
+    const treeCalls = () => callCount(hass, 'haventory/location/tree');
     const before = treeCalls();
 
     // The refresh rides a 250 ms debounce, so the test drives that clock rather
@@ -646,11 +570,12 @@ describe('Store: location tree and diagnostics data', () => {
   });
 
   it('does not re-walk the tree for a re-order, which changes no count', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })], locations: [loc('garage', 'Garage')] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({
+      items: [makeItem({ id: '1' })],
+      locations: [loc('garage', 'Garage')],
+    });
 
-    const before = hass.__calls.filter((c) => c === 'haventory/location/tree').length;
+    const before = callCount(hass, 'haventory/location/tree');
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       store.setFilters({ sort: { field: 'name', order: 'asc' } });
@@ -660,29 +585,23 @@ describe('Store: location tree and diagnostics data', () => {
     } finally {
       vi.useRealTimers();
     }
-    expect(hass.__calls.filter((c) => c === 'haventory/location/tree').length).toBe(before);
+    expect(callCount(hass, 'haventory/location/tree')).toBe(before);
   });
 
   it('caches the integration version for diagnostics', async () => {
-    const hass = makeMockHass({ items: [] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [] });
 
     expect(store.state.value.versionInfo?.integration_version).toBe('0.0.1');
   });
 
   it('reads the card heading configured in the integration', async () => {
-    const hass = makeMockHass({ items: [], cardTitle: 'Pantry' });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [], cardTitle: 'Pantry' });
 
     expect(store.state.value.cardTitle).toBe('Pantry');
   });
 
   it('reads the quick-filter pills configured in the integration', async () => {
-    const hass = makeMockHass({ items: [], quickFilters: ['low_stock', 'overdue'] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [], quickFilters: ['low_stock', 'overdue'] });
 
     expect(store.state.value.quickFilters).toEqual(['low_stock', 'overdue']);
   });
@@ -690,26 +609,21 @@ describe('Store: location tree and diagnostics data', () => {
   // `null` and `[]` are different answers, and the store is where the two
   // could most easily collapse into one falsy value.
   it('keeps an explicit "no pills" apart from "no choice made"', async () => {
-    const none = new Store(makeMockHass({ items: [], quickFilters: [] }), fast);
-    await none.init();
+    const { store: none } = await mountStore({ items: [], quickFilters: [] });
     expect(none.state.value.quickFilters).toEqual([]);
 
-    const unset = new Store(makeMockHass({ items: [], quickFilters: null }), fast);
-    await unset.init();
+    const { store: unset } = await mountStore({ items: [], quickFilters: null });
     expect(unset.state.value.quickFilters).toBeNull();
   });
 
   it('drops a pill name this bundle does not know', async () => {
-    const hass = makeMockHass({ items: [], quickFilters: ['low_stock', 'sideways'] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { store } = await mountStore({ items: [], quickFilters: ['low_stock', 'sideways'] });
 
     expect(store.state.value.quickFilters).toEqual(['low_stock']);
   });
 
   it('leaves the pills unset against a backend that does not report them', async () => {
-    const store = new Store(makeMockHass({ items: [] }), fast);
-    await store.init();
+    const { store } = await mountStore({ items: [] });
 
     expect(store.state.value.quickFilters).toBeNull();
   });

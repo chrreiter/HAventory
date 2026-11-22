@@ -18,6 +18,29 @@ async function mount(opts: { items?: Item[]; statuses?: StatusDefinition[] } = {
   );
 }
 
+type Ctx = { el: HVOrganizeStatuses; sr: ShadowRoot };
+
+/** Open the editor for a new status from the toolbar. */
+async function openNew({ el, sr }: Ctx) {
+  (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
+  await settle(el);
+}
+
+/** Open the editor over the status with this slug, the way its row's ✎ does. */
+async function editStatus({ el, sr }: Ctx, slug: string) {
+  const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === slug);
+  (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
+  await settle(el);
+}
+
+/** Type into the editor's label field, as the household would. */
+function typeLabel(sr: ShadowRoot, text: string) {
+  const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
+  input.value = text;
+  input.dispatchEvent(new Event('input'));
+  return input;
+}
+
 describe('hv-organize-statuses: the tab', () => {
   const ladder = makeItem({ id: 'i1', name: 'Ladder', status: 'missing' });
 
@@ -79,11 +102,8 @@ describe('hv-organize-statuses: the tab', () => {
   it('creates a status, deriving the slug from the label', async () => {
     const { el, sr, hass } = await mount();
 
-    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
-    await settle(el);
-    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
-    input.value = 'Lent out';
-    input.dispatchEvent(new Event('input'));
+    await openNew({ el, sr });
+    typeLabel(sr, 'Lent out');
     await settle(el);
     expect(q(sr, '[data-testid="status-slug-preview"]')?.textContent?.trim()).toBe('lent_out');
 
@@ -97,12 +117,8 @@ describe('hv-organize-statuses: the tab', () => {
   it('renames without touching any item', async () => {
     const { el, sr, hass } = await mount({ items: [ladder] });
 
-    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
-    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
-    await settle(el);
-    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
-    input.value = 'Gone walkabout';
-    input.dispatchEvent(new Event('input'));
+    await editStatus({ el, sr }, 'missing');
+    typeLabel(sr, 'Gone walkabout');
     (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
     await settle(el);
 
@@ -157,12 +173,8 @@ describe('hv-organize-statuses: the tab', () => {
   it('renames the default status without the backend hearing about any item', async () => {
     const { el, sr, hass } = await mount();
 
-    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'ok');
-    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
-    await settle(el);
-    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
-    input.value = 'In Ordnung';
-    input.dispatchEvent(new Event('input'));
+    await editStatus({ el, sr }, 'ok');
+    typeLabel(sr, 'In Ordnung');
     (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
     await settle(el);
 
@@ -251,11 +263,8 @@ describe('hv-organize-statuses: the tab', () => {
   it('sends the colour and glyph chosen in the picker', async () => {
     const { el, sr, hass } = await mount();
 
-    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
-    await settle(el);
-    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
-    input.value = 'Lent out';
-    input.dispatchEvent(new Event('input'));
+    await openNew({ el, sr });
+    typeLabel(sr, 'Lent out');
     await settle(el);
     (
       all(sr, '[data-testid="status-color"]').find(
@@ -280,8 +289,7 @@ describe('hv-organize-statuses: the tab', () => {
   // they are washes never meant to stand on their own.
   it('paints each swatch as a miniature chip carrying the glyph being chosen', async () => {
     const { el, sr } = await mount();
-    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openNew({ el, sr });
 
     const swatches = all(sr, '[data-testid="status-color"]');
     expect(swatches).toHaveLength(10);
@@ -310,8 +318,7 @@ describe('hv-organize-statuses: the tab', () => {
   it('sends a colour picked outside the ten as the literal it is', async () => {
     const { el, sr, hass } = await mount();
 
-    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openNew({ el, sr });
     const label = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
     label.value = 'Lent out';
     label.dispatchEvent(new Event('input'));
@@ -336,9 +343,7 @@ describe('hv-organize-statuses: the tab', () => {
     const { el, sr } = await mount({
       statuses: [{ slug: 'sold', label: 'Sold', order: 0, color: '#ffe082', icon: 'check' }],
     });
-    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'sold');
-    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await editStatus({ el, sr }, 'sold');
 
     const custom = q(sr, '[data-testid="status-color-custom"]') as HTMLElement;
     expect(custom.style.getPropertyValue('--hv-status-bg')).toBe('#ffe082');
@@ -351,8 +356,7 @@ describe('hv-organize-statuses: the tab', () => {
   // editor says so rather than letting a household find out on a theme switch.
   it('says a literal colour ignores the theme, and only while one is chosen', async () => {
     const { el, sr } = await mount();
-    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openNew({ el, sr });
 
     expect(q(sr, '[data-testid="status-color-custom-hint"]')).toBe(null);
 
@@ -382,9 +386,7 @@ describe('hv-organize-statuses: the tab', () => {
         { slug: 'sold', label: 'Sold', order: 1, color: 'red', icon: 'not-a-glyph' },
       ],
     });
-    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'sold');
-    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await editStatus({ el, sr }, 'sold');
 
     for (const s of all(sr, '[data-testid="status-color"]')) {
       expect(s.querySelector('svg')).toBe(null);
@@ -397,12 +399,9 @@ describe('hv-organize-statuses: the tab', () => {
   // what this editor hides.
   it('warns when a label collides with one already in use, without blocking it', async () => {
     const { el, sr } = await mount();
-    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openNew({ el, sr });
 
-    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
-    input.value = '  missing ';
-    input.dispatchEvent(new Event('input'));
+    typeLabel(sr, '  missing ');
     await settle(el);
 
     expect(q(sr, '[data-testid="status-duplicate-hint"]')?.textContent).toContain('Missing');
@@ -414,17 +413,13 @@ describe('hv-organize-statuses: the tab', () => {
 
   it('drops the hint once the label is its own again', async () => {
     const { el, sr } = await mount();
-    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openNew({ el, sr });
 
-    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
-    input.value = 'Missing';
-    input.dispatchEvent(new Event('input'));
+    typeLabel(sr, 'Missing');
     await settle(el);
     expect(q(sr, '[data-testid="status-duplicate-hint"]')).not.toBe(null);
 
-    input.value = 'Lent out';
-    input.dispatchEvent(new Event('input'));
+    typeLabel(sr, 'Lent out');
     await settle(el);
     expect(q(sr, '[data-testid="status-duplicate-hint"]')).toBe(null);
   });
@@ -432,9 +427,7 @@ describe('hv-organize-statuses: the tab', () => {
   it('does not call a status a duplicate of itself while it is being edited', async () => {
     const { el, sr } = await mount();
 
-    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
-    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await editStatus({ el, sr }, 'missing');
 
     expect((q(sr, '[data-testid="status-label"]') as HTMLInputElement).value).toBe('Missing');
     expect(q(sr, '[data-testid="status-duplicate-hint"]')).toBe(null);
@@ -444,12 +437,9 @@ describe('hv-organize-statuses: the tab', () => {
   // identifier it exists to show while the row still had free width.
   it('shows the derived slug in full, and titles it', async () => {
     const { el, sr } = await mount();
-    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
-    await settle(el);
+    await openNew({ el, sr });
 
-    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
-    input.value = 'Lent out to the neighbours';
-    input.dispatchEvent(new Event('input'));
+    typeLabel(sr, 'Lent out to the neighbours');
     await settle(el);
 
     const preview = q(sr, '[data-testid="status-slug-preview"]');
@@ -534,9 +524,7 @@ describe('hv-organize-statuses: disclosures come into view', () => {
 
   it('brings the status editor into view and puts the caret in its label field', async () => {
     const { el, sr } = await mount({ items });
-    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'ok');
-    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await editStatus({ el, sr }, 'ok');
 
     expect(scrolled()).toEqual([q(sr, '[data-testid="status-editor"]')]);
     expect(sr.activeElement).toBe(q(sr, '[data-testid="status-label"]'));
@@ -578,9 +566,7 @@ describe('hv-organize-statuses: in German', () => {
     setLanguage('de');
     const { el, sr } = await mount();
 
-    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
-    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await editStatus({ el, sr }, 'missing');
 
     expect((q(sr, '[data-testid="status-label"]') as HTMLInputElement).value).toBe('Missing');
     expect(q(sr, '[data-testid="status-shown"]')?.textContent?.trim()).toBe('Fehlt');
@@ -593,9 +579,7 @@ describe('hv-organize-statuses: in German', () => {
     setLanguage('de');
     const { el, sr, hass } = await mount();
 
-    const row = all(sr, '[data-testid="status-row"]').find((r) => r.dataset.value === 'missing');
-    (row?.querySelector('[data-testid="status-edit"]') as HTMLButtonElement).click();
-    await settle(el);
+    await editStatus({ el, sr }, 'missing');
     (q(sr, '[data-testid="status-save"]') as HTMLButtonElement).click();
     await settle(el);
 
@@ -611,16 +595,12 @@ describe('hv-organize-statuses: in German', () => {
     setLanguage('de');
     const { el, sr } = await mount();
 
-    (q(sr, '[data-testid="organize-new-status"]') as HTMLButtonElement).click();
-    await settle(el);
-    const input = q(sr, '[data-testid="status-label"]') as HTMLInputElement;
-    input.value = 'Fehlt';
-    input.dispatchEvent(new Event('input'));
+    await openNew({ el, sr });
+    typeLabel(sr, 'Fehlt');
     await settle(el);
     expect(q(sr, '[data-testid="status-duplicate-hint"]')?.textContent).toContain('Fehlt');
 
-    input.value = 'Missing';
-    input.dispatchEvent(new Event('input'));
+    typeLabel(sr, 'Missing');
     await settle(el);
     expect(q(sr, '[data-testid="status-duplicate-hint"]')).toBe(null);
   });

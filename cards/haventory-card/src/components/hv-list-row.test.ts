@@ -467,20 +467,20 @@ describe('hv-list-row: mobile affordances', () => {
 
   // A passed date drawn like an upcoming one — same wording, same blue — tells
   // the reader nothing about being late.
-  it('says a passed due date is overdue, and colours it that way', async () => {
-    const el = await mount({ checked_out: true, due_date: '2000-01-02' }, { mobile: true });
+  it.each([
+    [
+      'says a passed due date is overdue, and colours it that way',
+      '2000-01-02',
+      'Overdue · due Jan 2, 2000',
+      true,
+    ],
+    ['leaves an upcoming due date alone', '2999-12-31', 'Checked out · due Dec 31, 2999', false],
+  ])('%s', async (_title, due_date, text, overdue) => {
+    const el = await mount({ checked_out: true, due_date }, { mobile: true });
     const secondary = q(el, '[data-testid="row-secondary"]');
 
-    expect(secondary?.textContent).toContain('Overdue · due Jan 2, 2000');
-    expect(secondary?.classList.contains('overdue')).toBe(true);
-  });
-
-  it('leaves an upcoming due date alone', async () => {
-    const el = await mount({ checked_out: true, due_date: '2999-12-31' }, { mobile: true });
-    const secondary = q(el, '[data-testid="row-secondary"]');
-
-    expect(secondary?.textContent).toContain('Checked out · due Dec 31, 2999');
-    expect(secondary?.classList.contains('overdue')).toBe(false);
+    expect(secondary?.textContent).toContain(text);
+    expect(secondary?.classList.contains('overdue')).toBe(overdue);
   });
 });
 

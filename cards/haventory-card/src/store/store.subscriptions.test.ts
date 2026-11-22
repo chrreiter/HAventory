@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { Store } from './store';
-import { makeMockHass, makeItem } from '../test.utils';
+import { makeMockHass, makeItem, mountStore, mountStoreWith, withFakeTimers, callCount } from '../test.utils';
 
 /**
  * Opening, scoping and closing the sockets: the four topics the card subscribes
@@ -13,9 +13,7 @@ const fast = { retryBaseMs: 0 };
 
 describe('Store', () => {
   it('scopes the items subscription to the active area and re-opens it when the area changes', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1' })] });
 
     const itemsSubscribe = () => {
       const sent = hass.__subscribeMessages.filter((m) => m.topic === 'items');
@@ -45,9 +43,7 @@ describe('Store', () => {
   // reached the page query would leave the socket delivering the other
   // locations' events — and the card would act on them.
   it('scopes the items subscription to every selected location', async () => {
-    const hass = makeMockHass({ items: [makeItem({ id: '1' })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1' })] });
     const itemsSubscribe = () => {
       const sent = hass.__subscribeMessages.filter((m) => m.topic === 'items');
       return sent[sent.length - 1];
@@ -76,9 +72,7 @@ describe('Store: subscription lifecycle', () => {
   it('replaces subscriptions rather than stacking them', async () => {
     // subscribeTopics runs again on a location filter change and on refreshAll.
     // A leaked handle would apply every live event twice.
-    const hass = makeMockHass({ items: [makeItem({ id: '1', quantity: 5 })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1', quantity: 5 })] });
 
     store.subscribeTopics();
     store.subscribeTopics();
@@ -93,9 +87,7 @@ describe('Store: subscription lifecycle', () => {
   it('stops applying live events once disposed', async () => {
     // The element holding the store disposes it on unmount, so this is what
     // every navigation away from the card or the panel runs.
-    const hass = makeMockHass({ items: [makeItem({ id: '1', quantity: 5 })] });
-    const store = new Store(hass, fast);
-    await store.init();
+    const { hass, store } = await mountStore({ items: [makeItem({ id: '1', quantity: 5 })] });
     expect(store.state.value.connected).toEqual({ items: true, stats: true });
 
     store.dispose();
@@ -127,12 +119,10 @@ describe('Store: subscription lifecycle', () => {
 describe('Store: HA area registry watch', () => {
   const AREA_EVENT = 'area_registry_updated';
 
-  it('refetches the areas when the registry changes', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
-      const store = new Store(hass, fast);
-      await store.init();
+  it(
+    'refetches the areas when the registry changes',
+    withFakeTimers(async () => {
+      const { hass, store } = await mountStore({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
       expect(store.state.value.areasCache?.areas[0]?.name).toBe('Kitchen');
 
       hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
@@ -140,37 +130,29 @@ describe('Store: HA area registry watch', () => {
       await vi.advanceTimersByTimeAsync(300);
 
       expect(store.state.value.areasCache?.areas[0]?.name).toBe('Scullery');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('coalesces a burst of registry events into one refetch', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
-      const store = new Store(hass, fast);
-      await store.init();
-      const before = hass.__calls.filter((c) => c === 'haventory/areas/list').length;
+  it(
+    'coalesces a burst of registry events into one refetch',
+    withFakeTimers(async () => {
+      const { hass } = await mountStore({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+      const before = callCount(hass, 'haventory/areas/list');
 
       hass.__emitHaEvent(AREA_EVENT, { action: 'create', area_id: 'a' });
       hass.__emitHaEvent(AREA_EVENT, { action: 'create', area_id: 'b' });
       hass.__emitHaEvent(AREA_EVENT, { action: 'remove', area_id: 'c' });
       await vi.advanceTimersByTimeAsync(300);
 
-      const after = hass.__calls.filter((c) => c === 'haventory/areas/list').length;
+      const after = callCount(hass, 'haventory/areas/list');
       expect(after - before).toBe(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('stops watching the registry once disposed', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
-      const store = new Store(hass, fast);
-      await store.init();
+  it(
+    'stops watching the registry once disposed',
+    withFakeTimers(async () => {
+      const { hass, store } = await mountStore({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
       expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(1);
 
       hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
@@ -182,10 +164,8 @@ describe('Store: HA area registry watch', () => {
       // nobody listening.
       expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(0);
       expect(store.state.value.areasCache?.areas[0]?.name).toBe('Kitchen');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
   it('keeps working when Home Assistant refuses the registry subscription', async () => {
     const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
@@ -235,13 +215,19 @@ describe('Store: HA area registry watch', () => {
   // distinguishable from "it never stopped trying".
   const backoff = { retryBaseMs: 100 };
 
-  it('retries a refused registry subscribe and watches once it is accepted', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
-      const refusing = refusingRegistry(hass, 1);
-      const store = new Store(refusing.hass, backoff);
-      await store.init();
+  /** One kitchen area, a store over a registry that refuses `refusals` subscribes, and backoff on. */
+  async function mountRefusing(refusals: number) {
+    const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
+    const refusing = refusingRegistry(hass, refusals);
+    const store = new Store(refusing.hass, backoff);
+    await store.init();
+    return { hass, refusing, store };
+  }
+
+  it(
+    'retries a refused registry subscribe and watches once it is accepted',
+    withFakeTimers(async () => {
+      const { hass, refusing, store } = await mountRefusing(1);
       expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(0);
 
       await vi.advanceTimersByTimeAsync(200);
@@ -253,18 +239,13 @@ describe('Store: HA area registry watch', () => {
       hass.__emitHaEvent(AREA_EVENT, { action: 'update', area_id: 'kitchen' });
       await vi.advanceTimersByTimeAsync(300);
       expect(store.state.value.areasCache?.areas[0]?.name).toBe('Scullery');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('re-reads the areas after a gap nothing was listening through', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
-      const refusing = refusingRegistry(hass, 1);
-      const store = new Store(refusing.hass, backoff);
-      await store.init();
+  it(
+    're-reads the areas after a gap nothing was listening through',
+    withFakeTimers(async () => {
+      const { hass, store } = await mountRefusing(1);
 
       // The rename lands while the watch is refused, so no event reports it.
       // Re-opening the watch alone would leave the card naming a stale area.
@@ -272,20 +253,16 @@ describe('Store: HA area registry watch', () => {
       await vi.advanceTimersByTimeAsync(500);
 
       expect(store.state.value.areasCache?.areas[0]?.name).toBe('Scullery');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
   // A dropped socket is the gap the watch itself cannot report: Home Assistant
   // re-issues the subscriptions it held before it says `ready`, so nothing is
   // refused and nothing re-opens, while the events fired meanwhile are gone.
-  it('re-reads the areas after a reconnect the watch never noticed', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
-      const store = new Store(hass, backoff);
-      await store.init();
+  it(
+    're-reads the areas after a reconnect the watch never noticed',
+    withFakeTimers(async () => {
+      const { hass, store } = await mountStoreWith({ areas: [{ id: 'kitchen', name: 'Kitchen' }] }, backoff);
 
       // The registry moves while the socket is down: no event is delivered.
       hass.__setAreas([{ id: 'kitchen', name: 'Scullery' }]);
@@ -296,17 +273,13 @@ describe('Store: HA area registry watch', () => {
       await vi.advanceTimersByTimeAsync(300);
 
       expect(store.state.value.areasCache?.areas[0]?.name).toBe('Scullery');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('keeps the watch it already holds across a reconnect', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
-      const store = new Store(hass, backoff);
-      await store.init();
+  it(
+    'keeps the watch it already holds across a reconnect',
+    withFakeTimers(async () => {
+      const { hass } = await mountStoreWith({ areas: [{ id: 'kitchen', name: 'Kitchen' }] }, backoff);
 
       hass.__reconnect();
       await vi.advanceTimersByTimeAsync(300);
@@ -315,31 +288,25 @@ describe('Store: HA area registry watch', () => {
       // would leave two watches refetching for every registry edit, and the
       // first one unreferenced and unstoppable.
       expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('stops re-reading the areas once the store is disposed', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
-      const store = new Store(hass, backoff);
-      await store.init();
+  it(
+    'stops re-reading the areas once the store is disposed',
+    withFakeTimers(async () => {
+      const { hass, store } = await mountStoreWith({ areas: [{ id: 'kitchen', name: 'Kitchen' }] }, backoff);
 
       store.dispose();
-      const before = hass.__calls.filter((c) => c === 'haventory/areas/list').length;
+      const before = callCount(hass, 'haventory/areas/list');
       hass.__reconnect();
       await vi.advanceTimersByTimeAsync(1000);
 
       // The connection outlives the card, so a listener left attached would
       // refetch for a dead store on every reconnect for as long as the page is
       // open.
-      expect(hass.__calls.filter((c) => c === 'haventory/areas/list').length).toBe(before);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+      expect(callCount(hass, 'haventory/areas/list')).toBe(before);
+    }),
+  );
 
   it('works against a connection that exposes no lifecycle events', async () => {
     const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
@@ -358,13 +325,10 @@ describe('Store: HA area registry watch', () => {
     expect(() => store.dispose()).not.toThrow();
   });
 
-  it('gives up on the registry watch quietly once the budget is spent', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
-      const refusing = refusingRegistry(hass, Number.POSITIVE_INFINITY);
-      const store = new Store(refusing.hass, backoff);
-      await store.init();
+  it(
+    'gives up on the registry watch quietly once the budget is spent',
+    withFakeTimers(async () => {
+      const { refusing, store } = await mountRefusing(Number.POSITIVE_INFINITY);
 
       await vi.advanceTimersByTimeAsync(60_000);
       const spent = refusing.attempts();
@@ -378,18 +342,13 @@ describe('Store: HA area registry watch', () => {
       expect(store.state.value.errorQueue).toEqual([]);
       expect(store.state.value.degraded.liveUpdates).toBe('live');
       expect(store.state.value.areasCache?.areas[0]?.name).toBe('Kitchen');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 
-  it('does not re-open the registry watch after dispose', async () => {
-    vi.useFakeTimers();
-    try {
-      const hass = makeMockHass({ areas: [{ id: 'kitchen', name: 'Kitchen' }] });
-      const refusing = refusingRegistry(hass, 1);
-      const store = new Store(refusing.hass, backoff);
-      await store.init();
+  it(
+    'does not re-open the registry watch after dispose',
+    withFakeTimers(async () => {
+      const { hass, refusing, store } = await mountRefusing(1);
       expect(refusing.attempts()).toBe(1);
 
       store.dispose();
@@ -397,8 +356,6 @@ describe('Store: HA area registry watch', () => {
 
       expect(refusing.attempts()).toBe(1);
       expect(hass.__haEventSubscriberCount(AREA_EVENT)).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    }),
+  );
 });

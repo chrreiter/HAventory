@@ -33,6 +33,23 @@ describe('DialogFocus', () => {
     document.body.innerHTML = '';
   });
 
+  /** A button that holds focus, standing in for the control that opened the surface. */
+  function focusedTrigger(): HTMLButtonElement {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+    return trigger;
+  }
+
+  /** The surface opened from a focused trigger. */
+  function openFromTrigger() {
+    const trigger = focusedTrigger();
+    const p = panel();
+    const f = new DialogFocus();
+    f.sync(true, () => p);
+    return { trigger, p, f };
+  }
+
   it('moves focus into the surface when it opens', () => {
     const p = panel();
     new DialogFocus().sync(true, () => p);
@@ -65,9 +82,7 @@ describe('DialogFocus', () => {
   });
 
   it('hands focus back to the opener when the surface closes', () => {
-    const trigger = document.createElement('button');
-    document.body.appendChild(trigger);
-    trigger.focus();
+    const trigger = focusedTrigger();
 
     const p = panel();
     const f = new DialogFocus();
@@ -89,9 +104,7 @@ describe('DialogFocus', () => {
   // update that opened it — the lightbox has no image URL until the signature
   // comes back. Focus has to land when the panel appears, not be given up on.
   it('waits for a surface that appears an update later', () => {
-    const trigger = document.createElement('button');
-    document.body.appendChild(trigger);
-    trigger.focus();
+    const trigger = focusedTrigger();
 
     const f = new DialogFocus();
     let p: HTMLElement | null = null;
@@ -138,13 +151,7 @@ describe('DialogFocus', () => {
   // A surface can close because the thing that opened it was deleted. Focus is
   // on the panel being removed, so leaving it there drops it on <body>.
   it('asks the caller where focus goes when the opener is gone', () => {
-    const trigger = document.createElement('button');
-    document.body.appendChild(trigger);
-    trigger.focus();
-
-    const p = panel();
-    const f = new DialogFocus();
-    f.sync(true, () => p);
+    const { trigger, p, f } = openFromTrigger();
 
     trigger.remove();
     p.remove();
@@ -154,13 +161,7 @@ describe('DialogFocus', () => {
   });
 
   it('leaves the fallback alone when the opener is still there', () => {
-    const trigger = document.createElement('button');
-    document.body.appendChild(trigger);
-    trigger.focus();
-
-    const p = panel();
-    const f = new DialogFocus();
-    f.sync(true, () => p);
+    const { trigger, p, f } = openFromTrigger();
 
     const rescue = vi.fn();
     f.sync(false, () => p, rescue);
@@ -173,13 +174,7 @@ describe('DialogFocus', () => {
   // to focus it. jsdom performs no layout and accepts any focus, so the
   // refusal is modelled by stubbing the opener's `focus`.
   it('rescues focus when a connected opener refuses the return', () => {
-    const trigger = document.createElement('button');
-    document.body.appendChild(trigger);
-    trigger.focus();
-
-    const p = panel();
-    const f = new DialogFocus();
-    f.sync(true, () => p);
+    const { trigger, p, f } = openFromTrigger();
 
     trigger.focus = () => undefined;
     p.remove();
@@ -189,13 +184,7 @@ describe('DialogFocus', () => {
   });
 
   it('leaves a refused return alone when the user already moved on', () => {
-    const trigger = document.createElement('button');
-    document.body.appendChild(trigger);
-    trigger.focus();
-
-    const p = panel();
-    const f = new DialogFocus();
-    f.sync(true, () => p);
+    const { trigger, p, f } = openFromTrigger();
 
     trigger.focus = () => undefined;
     const elsewhere = document.createElement('input');
@@ -211,13 +200,7 @@ describe('DialogFocus', () => {
   // Closing a dialog whose opener is gone is not on its own a reason to move
   // focus: the user may already be typing somewhere else entirely.
   it('does not yank focus away from wherever it already went', () => {
-    const trigger = document.createElement('button');
-    document.body.appendChild(trigger);
-    trigger.focus();
-
-    const p = panel();
-    const f = new DialogFocus();
-    f.sync(true, () => p);
+    const { trigger, p, f } = openFromTrigger();
 
     trigger.remove();
     const elsewhere = document.createElement('input');

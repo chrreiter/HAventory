@@ -1,7 +1,7 @@
 import type { CSSResult } from 'lit';
 import { vi } from 'vitest';
 
-import { Store } from './store/store';
+import { Store, type StoreOptions } from './store/store';
 import type { ConfirmDiscard } from './ui/discard';
 import { toIsoDate } from './ui/relative-time';
 import type {
@@ -1279,6 +1279,20 @@ export async function mountStore(config: MockConfig = {}): Promise<{
 }
 
 /**
+ * `mountStore` with the store's own options, for a test that needs a real retry
+ * delay (a fake-timer test waiting out a backoff) rather than none.
+ */
+export async function mountStoreWith(
+  config: MockConfig,
+  options: StoreOptions,
+): Promise<{ hass: MockHass; store: Store }> {
+  const hass = makeMockHass(config);
+  const store = new Store(hass, options);
+  await store.init();
+  return { hass, store };
+}
+
+/**
  * Mount one of the host components over a store of its own.
  *
  * `hv-card-shell`, `hv-full-view` and `hv-organize-dialog` each take a `store`
@@ -1365,4 +1379,24 @@ export function sheetsOf(tag: string): CSSResult[] {
 export function defined<T>(value: T | undefined, what = 'value'): T {
   if (value === undefined) throw new Error(`expected ${what} to be defined`);
   return value;
+}
+
+/**
+ * Run a test body on fake timers and put the real ones back however it ends,
+ * so a failing body cannot leave the next test on a frozen clock.
+ */
+export function withFakeTimers(body: () => Promise<void>): () => Promise<void> {
+  return async () => {
+    vi.useFakeTimers();
+    try {
+      await body();
+    } finally {
+      vi.useRealTimers();
+    }
+  };
+}
+
+/** How many times the mock hass has been asked for one WebSocket command. */
+export function callCount(hass: Pick<MockHass, '__calls'>, type: string): number {
+  return hass.__calls.filter((c) => c === type).length;
 }

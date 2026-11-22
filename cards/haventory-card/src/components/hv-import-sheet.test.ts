@@ -310,25 +310,31 @@ describe('hv-import-sheet: preview', () => {
     expect(text).toContain('and 3 more');
   });
 
-  it('says how many attachments name files this install does not hold', async () => {
-    // An export carries attachment metadata and not the bytes, so restoring one
-    // onto a fresh machine leaves every reference pointing at nothing. The
-    // count is already on the wire; not showing it is the difference between a
-    // decision and a surprise.
-    const el = await mount({ preview: preview({ attachments: { referenced: 14, missing: 7 } }) });
+  // An export carries attachment metadata and not the bytes, so restoring one
+  // onto a fresh machine leaves every reference pointing at nothing. The
+  // count is already on the wire; not showing it is the difference between a
+  // decision and a surprise.
+  it.each([
+    [
+      'says how many attachments name files this install does not hold',
+      { referenced: 14, missing: 7 },
+      [
+        '7 of 14 attachments name files this install does not have',
+        'those photos and manuals will show as missing after the import',
+        // The full-fidelity path, since this one cannot be.
+        'Home Assistant backup carries the files as well',
+      ],
+    ],
+    [
+      'counts a single missing attachment in the singular',
+      { referenced: 3, missing: 1 },
+      ['1 of 3 attachments names a file this install does not have', 'that photo or manual'],
+    ],
+  ])('%s', async (_title, attachments, expected) => {
+    const el = await mount({ preview: preview({ attachments }) });
     const text =
       q(el, '[data-testid="import-attachments-missing"]')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
-    expect(text).toContain('7 of 14 attachments name files this install does not have');
-    expect(text).toContain('those photos and manuals will show as missing after the import');
-    // The full-fidelity path, since this one cannot be.
-    expect(text).toContain('Home Assistant backup carries the files as well');
-  });
-
-  it('counts a single missing attachment in the singular', async () => {
-    const el = await mount({ preview: preview({ attachments: { referenced: 3, missing: 1 } }) });
-    const text = q(el, '[data-testid="import-attachments-missing"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
-    expect(text).toContain('1 of 3 attachments names a file this install does not have');
-    expect(text).toContain('that photo or manual');
+    for (const part of expected) expect(text).toContain(part);
   });
 
   it('says nothing about attachments when every referenced file is here', async () => {
