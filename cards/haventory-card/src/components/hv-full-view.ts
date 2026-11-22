@@ -432,6 +432,7 @@ export class HVFullView extends LitElement {
       store: this.store,
       onRefresh: () => this._menuAction({ id: 'refresh' }),
       onLatestShown: (itemId) => this._workspace.showLatest(itemId),
+      onReapplied: (itemId) => this._workspace.reapplied(itemId),
       drawnElsewhere: (entry) => this._workspace.drawsInSheet(entry),
     };
   }

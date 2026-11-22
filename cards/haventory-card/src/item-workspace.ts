@@ -294,6 +294,20 @@ export class ItemWorkspace implements ReactiveController {
     });
   }
 
+  /**
+   * "Re-apply" landed the refused save's changes on `itemId`. A form open on
+   * it, inline or in the read sheet, already holds that typing and anything
+   * typed since, so it keeps all of it and drops only the refused save's
+   * message. Its `item` is the saved copy from the store's list, so a further
+   * Save is checked against the version Re-apply made. A form on another item
+   * keeps its message.
+   */
+  reapplied(itemId: string): void {
+    const { editing, detailItemId } = this.ui.value;
+    if (editing !== itemId && detailItemId !== itemId) return;
+    this.ui.set({ editorError: null });
+  }
+
   /** How often `showLatest` started `itemId`'s form over; the form is keyed on it. */
   private formGeneration(itemId: string): number {
     return this.ui.value.formResets[itemId] ?? 0;

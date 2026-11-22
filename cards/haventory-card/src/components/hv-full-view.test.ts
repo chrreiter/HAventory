@@ -1397,11 +1397,16 @@ describe('hv-full-view: failures are visible here too', () => {
   });
 
   // "View latest" is how the member whose save lost the race sees what the
-  // other one wrote; the panel renders this view embedded, so both carry it.
+  // other one wrote, and starts the form over from it; "Re-apply" lands the
+  // typing over it, and the form keeps the typing. Either way the form stands on
+  // the server's version and stops saying the save failed. The panel renders
+  // this view embedded, so both carry it.
   it.each([
-    { variant: 'the overlay', embedded: false },
-    { variant: 'the panel', embedded: true },
-  ])('starts the open form over from the newer version in $variant', async ({ embedded }) => {
+    { button: 'banner-view-latest', shows: 'Theirs', variant: 'the overlay', embedded: false },
+    { button: 'banner-view-latest', shows: 'Theirs', variant: 'the panel', embedded: true },
+    { button: 'banner-reapply', shows: 'Mine', variant: 'the overlay', embedded: false },
+    { button: 'banner-reapply', shows: 'Mine', variant: 'the panel', embedded: true },
+  ])('$button leaves the open form on the newer version in $variant', async ({ button, shows, embedded }) => {
     const { el, hass, sr } = await mount({
       items: [makeItem({ id: '1', name: 'Old', version: 4 })],
       embedded,
@@ -1422,11 +1427,11 @@ describe('hv-full-view: failures are visible here too', () => {
 
     hass.__setConflict(false);
     hass.__setItems([makeItem({ id: '1', name: 'Theirs', version: 5 })]);
-    (banner(sr, 'banner-view-latest') as HTMLButtonElement).click();
+    (banner(sr, button) as HTMLButtonElement).click();
     await settle(el);
     await settle(el);
 
-    expect((form()?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe('Theirs');
+    expect((form()?.querySelector('[data-testid="editor-name"]') as HTMLInputElement).value).toBe(shows);
     expect(form()?.querySelector('[data-testid="editor-version"]')?.textContent).toContain('v5');
     expect(form()?.querySelector('[data-testid="editor-error"]')).toBe(null);
   });

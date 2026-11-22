@@ -894,11 +894,15 @@ Any other key in that record is ignored, so an older or newer payload never brea
   it, and a conflict renders as a banner with *View latest* / *Re-apply*. *View latest*
   re-reads the item, and a form open on it starts over from that copy, without the typing
   or the refused save's message (`ItemWorkspace.showLatest`, through the banner's
-  `onLatestShown` hook). A re-read that fails leaves the form as it was. On a phone the read
-  sheet's scrim covers the host's banners, so the sheet draws the conflicts about its own
-  item in its footer, under the form's Save, and the host's stack leaves them out until
-  the sheet closes (`ItemWorkspace.drawsInSheet`). A conflict about another item stays in
-  the host's stack, since the banner's heading says "this item".
+  `onLatestShown` hook). A re-read that fails leaves the form as it was. *Re-apply* resends
+  the refused changes, and once they land a form open on the item drops the refused save's
+  message and keeps its typing, which holds what landed (`ItemWorkspace.reapplied`, through
+  `onReapplied`). Its `item` is the saved copy from the list, so its next Save is checked
+  against the version the retry made. A retry refused again leaves the message. On a phone
+  the read sheet's scrim covers the host's banners, so the sheet draws the conflicts about
+  its own item in its footer, under the form's Save, and the host's stack leaves them out
+  until the sheet closes (`ItemWorkspace.drawsInSheet`). A conflict about another item stays
+  in the host's stack, since the banner's heading says "this item".
 - **An item save carries only what the edit changed**, measured against the copy of the
   item the form was filled from. The form stays open across live events, so by the time
   Save is pressed the version it writes against can already carry another member's edit.

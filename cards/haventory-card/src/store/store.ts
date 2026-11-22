@@ -396,7 +396,8 @@ export class Store {
     return this.list.createItem(input);
   }
 
-  async updateItem(itemId: string, changes: ItemUpdate, expectedVersion?: number) {
+  /** True once the server's copy is in the list; a refusal is queued instead. */
+  async updateItem(itemId: string, changes: ItemUpdate, expectedVersion?: number): Promise<boolean> {
     return this.list.updateItem(itemId, changes, expectedVersion);
   }
 
