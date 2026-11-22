@@ -1,7 +1,6 @@
 import { t } from '../i18n';
 import { emitter } from '../events';
 import { LitElement, css, html, nothing } from 'lit';
-import type { PropertyValues } from 'lit';
 import { customElement, property } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { tokens, base } from '../ui/tokens';
@@ -11,7 +10,7 @@ import type { AreaRef, Item, StatusDefinition } from '../store/types';
 import type { MediaBindings } from '../ui/media';
 import './hv-list-row';
 
-/** Placeholder rows while the first page is in flight, enough to fill the default cap. */
+/** Placeholder rows while the first page is in flight: about as many as the default frame shows. */
 const SKELETON_ROWS = 5;
 
 /**
@@ -24,14 +23,21 @@ export class HVList extends LitElement {
     tokens,
     base,
     css`
+      /* As tall as the card's frame leaves it; what it holds scrolls inside. */
       :host {
-        display: block;
+        display: flex;
+        flex-direction: column;
         position: relative;
       }
+      /* The containing block for what is placed absolutely inside it, such as
+         the editor's hidden file inputs, which would otherwise hang below the
+         card's frame instead of scrolling with the form. */
       .scroller {
+        position: relative;
+        flex: 1 1 0;
+        min-height: 0;
         overflow-y: auto;
         overscroll-behavior: contain;
-        max-height: var(--hv-list-max-height, 420px);
       }
       /* A refetch keeps its rows; out of the flow, so the rows do not shift. */
       .refreshing {
@@ -71,12 +77,14 @@ export class HVList extends LitElement {
         color: var(--hv-text-secondary);
         border-top: 1px solid var(--hv-row-divider);
       }
-      /* The inline editor is taller than the compact cap, so the list grows, bounded. */
-      :host([editing]) .scroller {
-        max-height: var(--hv-list-editing-max-height, min(80dvh, 760px));
-      }
+      /* Centred in the room the frame leaves, and scrolled where that is less
+         than the offers need. */
       .empty {
+        flex: 1 1 0;
+        min-height: 0;
+        overflow-y: auto;
         display: grid;
+        align-content: safe center;
         justify-items: center;
         gap: 10px;
         padding: 32px 16px;
@@ -152,14 +160,6 @@ export class HVList extends LitElement {
   @property({ attribute: false }) pinnedItem: Item | null = null;
   /** Pin an empty editor at the top of the list ("Add item"). */
   @property({ type: Boolean }) addingNew = false;
-  /** Reflected so the stylesheet can give the open editor more room. */
-  @property({ type: Boolean, reflect: true }) editing = false;
-
-  protected override willUpdate(changed: PropertyValues) {
-    if (changed.has('editingItemId') || changed.has('addingNew') || changed.has('editorTemplate')) {
-      this.editing = Boolean(this.editorTemplate) && (this.addingNew || this.editingItemId !== null);
-    }
-  }
 
   private readonly _emit = emitter<'hv-list'>(this);
 

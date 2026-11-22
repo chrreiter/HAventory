@@ -1,6 +1,6 @@
-import './index';
+import { MASONRY_ROW_PX } from './index';
 import { loadRuntime } from './runtime-loader';
-import { makeItem, makeMockHass, mountComponent, settle, defined } from './test.utils';
+import { componentCss, makeItem, makeMockHass, mountComponent, settle, defined } from './test.utils';
 import { COLUMN_PREFS_STORAGE_KEY, DEFAULT_COLUMNS } from './store/columns';
 import type { HAventoryCard } from './index';
 
@@ -165,9 +165,51 @@ describe('haventory-card: the Lovelace element', () => {
     });
   });
 
-  it('reports a card size for the dashboard layout', async () => {
-    const { el } = await mountCard();
-    expect(el.getCardSize()).toBeGreaterThan(0);
+  // jsdom lays nothing out, so what holds the card to its frame is read off the
+  // stylesheets, from the host down to the list's scroller.
+  describe('its height on a dashboard', () => {
+    it('fills its sections cell once loaded, as the placeholder did', async () => {
+      const { el } = await mountCard({}, { items: [makeItem({ id: '1' })] });
+      await settle(el);
+      expect(el.hasAttribute('loading')).toBe(false);
+
+      const css = componentCss('haventory-card');
+      expect(css).toMatch(/:host \{ display: flex; flex-direction: column; height: 100%;/);
+      expect(css).toMatch(/\.placeholder, hv-card-shell \{ flex: 1 1 \d+px; min-height: 0; \}/);
+      // The placeholder's border is inside its frame; the shell's must be too.
+      expect(componentCss('hv-card-shell')).toMatch(
+        /:host \{ box-sizing: border-box; display: flex; flex-direction: column;/,
+      );
+    });
+
+    // The masonry view places cards by getCardSize before they draw, so the
+    // frame holds the card to it, an empty inventory and a full one alike.
+    it('is as tall in a masonry view as getCardSize says, about the default sections cell', async () => {
+      const { el } = await mountCard();
+      const promised = el.getCardSize() * MASONRY_ROW_PX;
+      expect(componentCss('haventory-card')).toContain(`hv-card-shell { flex: 1 1 ${promised}px;`);
+
+      // Home Assistant's sections rows are 56px, with an 8px gap between them.
+      const { rows } = el.getGridOptions();
+      expect(Math.abs(promised - (rows * (56 + 8) - 8))).toBeLessThan(MASONRY_ROW_PX);
+    });
+
+    // A height of the list's own would leave a gap in a taller cell and push
+    // the card past a shorter one.
+    it('gives the list what the rows above it leave, to scroll inside', () => {
+      expect(componentCss('hv-card-shell')).toMatch(/hv-list \{ flex: 1 1 0; min-height: 0; \}/);
+      const list = componentCss('hv-list');
+      expect(list).toMatch(/:host \{ display: flex; flex-direction: column;/);
+      expect(list).toMatch(/\.scroller \{ position: relative; flex: 1 1 0; min-height: 0; overflow-y: auto;/);
+      expect(list).toMatch(/\.empty \{ flex: 1 1 0; min-height: 0; overflow-y: auto;/);
+      expect(list).not.toMatch(/max-height/);
+    });
+
+    it('shares that room with an open filter panel, which takes no more than its own height', () => {
+      expect(componentCss('hv-card-shell')).toMatch(
+        /\.panel-holder \{ flex: 1 1 0; min-height: 0; max-height: max-content; overflow-y: auto;/,
+      );
+    });
   });
 
   // Home Assistant reads these off `customElements.get(type)` and never imports

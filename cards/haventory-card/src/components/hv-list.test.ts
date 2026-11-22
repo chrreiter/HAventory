@@ -39,31 +39,6 @@ describe('hv-list: paging', () => {
 });
 
 describe('hv-list: editing', () => {
-  // The row list is capped so the card stays compact, but the inline editor
-  // renders inside that same scroller. A ~720px form in a 420px window left
-  // Save, Cancel, Delete and the whole custom-fields group below the fold.
-  it('marks itself as editing while a row is expanded', async () => {
-    const el = await mount({ editorTemplate: () => 'editor', editingItemId: 'a' });
-    expect(el.hasAttribute('editing')).toBe(true);
-  });
-
-  it('marks itself as editing while adding a new item', async () => {
-    const el = await mount({ editorTemplate: () => 'editor', addingNew: true });
-    expect(el.hasAttribute('editing')).toBe(true);
-  });
-
-  it('is not editing when no editor is open', async () => {
-    const el = await mount();
-    expect(el.hasAttribute('editing')).toBe(false);
-  });
-
-  it('drops the editing flag again when the editor closes', async () => {
-    const el = await mount({ editorTemplate: () => 'editor', editingItemId: 'a' });
-    el.editingItemId = null;
-    await el.updateComplete;
-    expect(el.hasAttribute('editing')).toBe(false);
-  });
-
   // The template is a stable callback, so Lit re-runs it only when one of this
   // component's own properties changes. The token is how a host says its editor
   // needs redrawing for a reason nothing here binds.
@@ -82,11 +57,6 @@ describe('hv-list: editing', () => {
     await el.updateComplete;
     expect(runs).toBe(2);
     expect(el.shadowRoot?.querySelector('[data-testid="stub-editor"]')?.textContent).toBe('2');
-  });
-
-  it('does not treat the token as an editing signal', async () => {
-    const el = await mount({ editorEpoch: 7 });
-    expect(el.hasAttribute('editing')).toBe(false);
   });
 });
 

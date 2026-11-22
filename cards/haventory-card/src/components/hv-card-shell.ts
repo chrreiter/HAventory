@@ -64,13 +64,21 @@ export class HVCardShell extends LitElement {
     searchBox,
     sheetHead,
     css`
+      /* The card host sets this frame's height. The rows above the list and the
+         footer keep theirs, and the list takes the rest and scrolls inside it. */
       :host {
-        display: block;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
         background: var(--hv-surface);
         color: var(--hv-text);
         border: 1px solid var(--hv-divider);
         border-radius: var(--hv-radius-card);
         overflow: hidden;
+      }
+      hv-list {
+        flex: 1 1 0;
+        min-height: 0;
       }
       /* Inherited into every nested shadow tree, keyed off the card's measured width. */
       :host([mobile]) {
@@ -216,7 +224,15 @@ export class HVCardShell extends LitElement {
       .chips-row {
         padding: 0 16px 10px;
       }
+      /* The open panel and the list split the room the frame leaves, the panel
+         taking no more than its own height, and each scrolls inside its share,
+         so the rows it filters stay in view. */
       .panel-holder {
+        flex: 1 1 0;
+        min-height: 0;
+        max-height: max-content;
+        overflow-y: auto;
+        overscroll-behavior: contain;
         margin: 0 16px 12px;
       }
       .footer {
