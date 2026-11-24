@@ -208,8 +208,8 @@ in which a chunk names the entry.
 **Chunk names carry a content hash.** The entry is fetched fresh because of `?v=`, and it
 names its chunks by content, so a browser can never pair a new entry with an old chunk.
 
-**Upgrades.** HACS extracts a release over the install without deleting, so earlier chunks
-stay on disk. Setup runs `async_sweep_stale_chunks` (`stale_files.py`), which deletes every
+**Upgrades.** A HACS upgrade of an installed integration deletes the directory first, but a
+manual install copies a release over the old one, so earlier chunks can stay on disk. Setup runs `async_sweep_stale_chunks` (`stale_files.py`), which deletes every
 `*.js` in `www/chunks/` that the manifest does not name; with no readable manifest it
 deletes nothing. The build empties `chunks/` before it writes, and the release check
 verifies the zip's chunks against the manifest. `RETIRED_PATHS` lists no chunk, since a

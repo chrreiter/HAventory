@@ -112,9 +112,11 @@ carries its reason on the same line.
   are inlined in `ui/icons` for the same reason. `cards/haventory-card/src/ha-contract.ts`
   names everything the card *does* ask of Home Assistant, and its test enforces this rule.
 - **Deleting or renaming a file inside `custom_components/haventory/`?** Add its old path to
-  `RETIRED_PATHS` in `custom_components/haventory/stale_files.py` in the same PR. An upgrade
-  extracts the release asset over the install directory without clearing it, so the file
-  survives on every existing install until the setup-time sweep removes it.
+  `RETIRED_PATHS` in `custom_components/haventory/stale_files.py` in the same PR. A HACS
+  upgrade of an installed integration deletes the directory before it extracts the release,
+  but a manual install copies the release over the old files, and so does a HACS install over
+  a directory HACS did not track. There the file survives until the setup-time sweep removes
+  it.
 - **User-facing text is never a literal.** The card reads every string through `t()` /
   `tn()` from `cards/haventory-card/src/i18n/`, and the integration through `strings.json`
   plus `translations/<tag>.json`. See "Adding a language" below for the shape, and

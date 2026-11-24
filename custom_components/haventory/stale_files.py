@@ -1,8 +1,10 @@
 """Remove files an earlier release shipped that this one no longer does.
 
-HACS extracts a new release over ``<config>/custom_components/haventory/``
-without clearing it, so a module a release deletes stays importable, and a
-renamed bundle stays served, for the life of the install. The list is explicit,
+A HACS upgrade of an installed integration deletes
+``<config>/custom_components/haventory/`` before it extracts the release, but a
+manual install copies a release over the old files, and so does a HACS install
+over a directory HACS did not track. There a module a release deletes stays
+importable, and a renamed bundle stays served, for the life of the install. The list is explicit,
 never a glob: an operator's own files can sit in the same directory.
 
 The one exception is ``www/chunks/``, which holds nothing but the card build's
