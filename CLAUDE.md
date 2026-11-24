@@ -114,6 +114,12 @@ gate", audit level included; its backend tests run on the real Home Assistant at
 [`docs/developing.md`](docs/developing.md) carries the bootstrap, the test layout and its
 traps, the helper scripts and the live-update browser smoke.
 
+**Under WSL, check `command -v node npm` before the frontend gate.** WSL appends the Windows
+PATH, so a distro without its own Node resolves `npm` to `/mnt/c/Program Files/nodejs/`,
+and that is the native-Windows build `CONTRIBUTING.md` → "Development setup" warns writes a
+broken bundle. Install a Linux Node in the distro (a user-local one in `~/.local/bin` needs no
+sudo) rather than running the gate through the Windows one.
+
 ## Conventions
 
 - **Tests**: what to test and how much is [`CONTRIBUTING.md`](CONTRIBUTING.md) → "Tests
