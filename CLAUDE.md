@@ -77,7 +77,7 @@ Each module documents its own traps. This is the map to which file to open.
   the user presses **Fix**, which is why nothing in the package imports it.
 - `diagnostics.py`: the entry's downloadable dump. Aggregates only: no item or location
   bodies, and none of the household's own words.
-- `stale_files.py`: `RETIRED_PATHS`, swept on setup because a HACS upgrade never deletes.
+- `stale_files.py`: `RETIRED_PATHS`, swept on setup because a manual install copies over the old files without deleting any.
 - `logs.py`: `context_logger`, where every module's logger comes from.
 - `import_export.py` (**identity is the id, never the name**), `calendar.py` /
   `calendar_projection.py`, `config_flow.py`, `const.py`, `exceptions.py`, and `brand/`

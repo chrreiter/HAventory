@@ -9,7 +9,10 @@ quietly passes them is worth nothing.
 
 from __future__ import annotations
 
+import gzip
 import json
+import shutil
+import subprocess
 import sys
 import zipfile
 from pathlib import Path
@@ -27,7 +30,35 @@ CHUNK_MANIFEST = {
     "src/runtime.ts": {"file": "chunks/runtime-bbb.js", "isDynamicEntry": True},
 }
 
-GOOD_LAYOUT: dict[str, bytes] = {
+
+def node_brotli(data: bytes) -> bytes:
+    """Brotli-encode with ``node:zlib``, the library the card build uses."""
+    node = shutil.which("node")
+    assert node is not None, "the release check decodes .br copies with node"
+    return subprocess.run(  # noqa: S603 - fixed program, data only on stdin
+        [
+            node,
+            "-e",
+            "process.stdout.write(require('node:zlib').brotliCompressSync("
+            "require('node:fs').readFileSync(0)))",
+        ],
+        input=data,
+        capture_output=True,
+        check=True,
+    ).stdout
+
+
+def with_copies(members: dict[str, bytes]) -> dict[str, bytes]:
+    """``members`` plus the ``.br`` and ``.gz`` copy the build writes beside each ``.js``."""
+    copies: dict[str, bytes] = {}
+    for name, payload in members.items():
+        if name.startswith("www/") and name.endswith(".js"):
+            copies[f"{name}.br"] = node_brotli(payload)
+            copies[f"{name}.gz"] = gzip.compress(payload)
+    return {**members, **copies}
+
+
+BUILD: dict[str, bytes] = {
     "__init__.py": b"async def async_setup_entry(): ...\n",
     "manifest.json": b'{"domain": "haventory"}',
     "const.py": b'DOMAIN = "haventory"\n',
@@ -37,6 +68,7 @@ GOOD_LAYOUT: dict[str, bytes] = {
     "www/chunks/core-aaa.js": b"customElements.define('haventory-card', C);\n",
     "www/chunks/runtime-bbb.js": b"export const runtime = 1;\n",
 }
+GOOD_LAYOUT = with_copies(BUILD)
 
 
 def write_zip(path: Path, members: dict[str, bytes]) -> Path:
@@ -87,7 +119,7 @@ def test_a_card_build_that_never_ran_is_rejected(tmp_path: Path) -> None:
 
 def test_an_empty_bundle_is_rejected(tmp_path: Path) -> None:
     """A zero-byte bundle is present, served, and defines no custom element."""
-    members = {**GOOD_LAYOUT, "www/haventory-card.js": b""}
+    members = with_copies({**BUILD, "www/haventory-card.js": b""})
 
     problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
 
@@ -105,7 +137,7 @@ def test_a_zip_without_the_chunk_manifest_is_rejected(tmp_path: Path) -> None:
 
 def test_a_chunk_the_manifest_names_but_the_zip_lacks_is_rejected(tmp_path: Path) -> None:
     """A missing chunk installs cleanly and leaves the card blank."""
-    members = {k: v for k, v in GOOD_LAYOUT.items() if k != "www/chunks/runtime-bbb.js"}
+    members = {k: v for k, v in GOOD_LAYOUT.items() if not k.startswith("www/chunks/runtime-bbb")}
 
     problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
 
@@ -114,7 +146,7 @@ def test_a_chunk_the_manifest_names_but_the_zip_lacks_is_rejected(tmp_path: Path
 
 def test_a_chunk_the_manifest_does_not_name_is_rejected(tmp_path: Path) -> None:
     """A stale build's chunk that leaked into the asset ships to every install."""
-    members = {**GOOD_LAYOUT, "www/chunks/runtime-old.js": b"export const runtime = 0;\n"}
+    members = with_copies({**BUILD, "www/chunks/runtime-old.js": b"export const runtime = 0;\n"})
 
     problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
 
@@ -123,7 +155,7 @@ def test_a_chunk_the_manifest_does_not_name_is_rejected(tmp_path: Path) -> None:
 
 def test_an_empty_chunk_is_rejected(tmp_path: Path) -> None:
     """A zero-byte chunk is served fine and defines nothing."""
-    members = {**GOOD_LAYOUT, "www/chunks/runtime-bbb.js": b""}
+    members = with_copies({**BUILD, "www/chunks/runtime-bbb.js": b""})
 
     problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
 
@@ -132,10 +164,9 @@ def test_an_empty_chunk_is_rejected(tmp_path: Path) -> None:
 
 def test_a_chunk_that_imports_the_entry_is_rejected(tmp_path: Path) -> None:
     """The import carries no ``?v=``, so the entry loads twice and defines elements twice."""
-    members = {
-        **GOOD_LAYOUT,
-        "www/chunks/runtime-bbb.js": b"import './../haventory-card.js';\n",
-    }
+    members = with_copies(
+        {**BUILD, "www/chunks/runtime-bbb.js": b"import './../haventory-card.js';\n"}
+    )
 
     problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
 
@@ -147,12 +178,58 @@ def test_a_chunk_that_imports_the_entry_is_rejected(tmp_path: Path) -> None:
     [b"not json", b"[]", b'{"src/index.ts": "haventory-card.js"}', b'{"src/index.ts": {}}'],
 )
 def test_a_manifest_in_the_wrong_shape_is_rejected(tmp_path: Path, manifest: bytes) -> None:
-    """Unparseable or foreign JSON cannot vouch for the chunks beside it."""
+    """Unparsable or foreign JSON cannot vouch for the chunks beside it."""
     members = {**GOOD_LAYOUT, "www/chunks/manifest.json": manifest}
 
     problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
 
     assert problems == ["not a build manifest: www/chunks/manifest.json"]
+
+
+OLD_ENTRY = b"import './chunks/core-old.js';\n"
+
+
+@pytest.mark.parametrize(
+    ("change", "problem"),
+    [
+        pytest.param(
+            {"www/haventory-card.js.br": node_brotli(OLD_ENTRY)},
+            "compressed copy differs from its file: www/haventory-card.js.br",
+            id="stale_entry_br",
+        ),
+        pytest.param(
+            {"www/chunks/core-aaa.js.gz": gzip.compress(OLD_ENTRY)},
+            "compressed copy differs from its file: www/chunks/core-aaa.js.gz",
+            id="stale_chunk_gz",
+        ),
+        pytest.param(
+            {"www/haventory-card.js.br": b"not brotli"},
+            "compressed copy does not decompress: www/haventory-card.js.br",
+            id="undecodable",
+        ),
+        pytest.param(
+            {"www/chunks/runtime-old.js.br": node_brotli(b"export const runtime = 0;\n")},
+            "compressed copy without its file: www/chunks/runtime-old.js.br",
+            id="orphan",
+        ),
+        pytest.param(
+            {"www/chunks/runtime-bbb.js.gz": None},
+            "compressed copy is missing: www/chunks/runtime-bbb.js.gz",
+            id="missing",
+        ),
+    ],
+)
+def test_a_compressed_copy_that_is_not_its_file_is_rejected(
+    tmp_path: Path, change: dict[str, bytes | None], problem: str
+) -> None:
+    """Home Assistant serves the copy in place of the ``.js``, whatever bytes it holds."""
+    members = {
+        name: payload for name, payload in {**GOOD_LAYOUT, **change}.items() if payload is not None
+    }
+
+    problems = check(str(write_zip(tmp_path / "haventory.zip", members)))
+
+    assert [line.split(" (")[0] for line in problems] == [problem]
 
 
 @pytest.mark.parametrize(

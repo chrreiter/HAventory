@@ -1,5 +1,8 @@
-import { rmSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { promisify } from 'node:util';
+import { brotliCompress, constants as zlibConstants, gzip } from 'node:zlib';
 import { runnerImport } from 'vite';
 import type { Plugin } from 'vite';
 import { defineConfig } from 'vitest/config';
@@ -10,6 +13,8 @@ const ENTRY = resolve(import.meta.dirname, 'src/index.ts');
 // for an integration-category repo, and the integration serves it over its own
 // static path.
 const OUT_DIR = resolve(import.meta.dirname, '../../custom_components/haventory/www');
+/** The copies aiohttp's `FileResponse` looks for beside a requested file. */
+const COMPRESSED_COPY = /\.js\.(br|gz)$/;
 const I18N = resolve(import.meta.dirname, 'src/i18n/index.ts');
 /** The namespace `LoaderKey` in `src/i18n/loader-copy.ts` is drawn from. */
 const LOADER_PREFIX = 'hv.loader.';
@@ -25,6 +30,52 @@ function emptyChunksDir(): Plugin {
     apply: 'build',
     buildStart() {
       rmSync(resolve(OUT_DIR, 'chunks'), { recursive: true, force: true });
+    },
+  };
+}
+
+const brotli = promisify(brotliCompress);
+const gzipAsync = promisify(gzip);
+
+/**
+ * A `.br` and a `.gz` copy beside every emitted `.js`. Home Assistant compresses
+ * no static file itself; aiohttp sends the copy a request's `Accept-Encoding`
+ * allows and never checks that it still matches the `.js`. So the entry, whose
+ * name never changes, loses its old copies before the build starts (`chunks/` is
+ * emptied whole): a build that fails after writing the `.js` must not leave the
+ * last build's code being served in its place. The setup sweep in
+ * `stale_files.py` catches the same mismatch on an install.
+ */
+function compressedCopies(): Plugin {
+  return {
+    name: 'haventory-compressed-copies',
+    apply: 'build',
+    buildStart() {
+      if (!existsSync(OUT_DIR)) return;
+      for (const name of readdirSync(OUT_DIR)) {
+        if (COMPRESSED_COPY.test(name)) rmSync(resolve(OUT_DIR, name), { force: true });
+      }
+    },
+    async writeBundle(options, bundle) {
+      const dir = options.dir ?? OUT_DIR;
+      const scripts = Object.keys(bundle).filter((fileName) => fileName.endsWith('.js'));
+      await Promise.all(
+        scripts.map(async (fileName) => {
+          const path = resolve(dir, fileName);
+          const source = await readFile(path);
+          const [br, gz] = await Promise.all([
+            brotli(source, {
+              params: {
+                [zlibConstants.BROTLI_PARAM_QUALITY]: zlibConstants.BROTLI_MAX_QUALITY,
+                [zlibConstants.BROTLI_PARAM_MODE]: zlibConstants.BROTLI_MODE_TEXT,
+                [zlibConstants.BROTLI_PARAM_SIZE_HINT]: source.length,
+              },
+            }),
+            gzipAsync(source, { level: zlibConstants.Z_BEST_COMPRESSION }),
+          ]);
+          await Promise.all([writeFile(`${path}.br`, br), writeFile(`${path}.gz`, gz)]);
+        }),
+      );
     },
   };
 }
@@ -73,7 +124,7 @@ function isEager(id: string, getModuleInfo: ModuleInfoLookup, seen = new Set<str
 }
 
 export default defineConfig({
-  plugins: [emptyChunksDir(), loaderCopy()],
+  plugins: [emptyChunksDir(), compressedCopies(), loaderCopy()],
   test: {
     environment: 'jsdom',
     // Each file still gets its own context and its own custom-element registry,

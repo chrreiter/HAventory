@@ -8,8 +8,15 @@ card bundle silently never registers the card. The card's chunks are checked
 against the manifest the build wrote beside them: one missing leaves the card
 blank, one extra is a stale build that leaked into the asset, and one that
 imports the entry by name loads it a second time without its ``?v=`` and
-defines every element twice. The zip is only built on a tag, so this runs on
-the real asset before the release is published.
+defines every element twice. Every ``.js`` under ``www/`` needs a ``.br`` and a
+``.gz`` copy that decompress to it: Home Assistant serves those copies in its
+place, so a missing one costs the transfer size and a wrong one serves other
+code. A copy without its ``.js`` is a stale build's. The zip is only built on a
+tag, so this runs on the real asset before the release is published.
+
+The ``.br`` copies are decoded by Node's ``node:zlib``, the library the build
+wrote them with: Node is on every host that builds the asset, and no Python
+Brotli binding is.
 
 Run as ``check_release_zip.py <path-to-zip>``; exits non-zero listing the offending
 paths.
@@ -18,10 +25,13 @@ paths.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
+import shutil
+import subprocess
 import sys
 import zipfile
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 # Paths as they must appear once HACS has extracted the asset; a release missing
 # any of the three installs cleanly and does nothing.
@@ -37,8 +47,31 @@ NON_EMPTY_MEMBERS: tuple[str, ...] = ("www/haventory-card.js",)
 
 
 _ENTRY_FILE = "haventory-card.js"
+_WWW_DIR = "www/"
 _CHUNKS_DIR = "www/chunks/"
 _CHUNK_MANIFEST = f"{_CHUNKS_DIR}manifest.json"
+_COMPRESSED_SUFFIXES = (".br", ".gz")
+
+# Reads one Brotli stream on stdin and writes it decoded to stdout.
+_NODE_BROTLI_DECODE = (
+    "try { process.stdout.write(require('node:zlib').brotliDecompressSync("
+    "require('node:fs').readFileSync(0))) }"
+    " catch (err) { process.stderr.write(err.message); process.exit(1) }"
+)
+
+
+def node_brotli_decompress(data: bytes) -> bytes:
+    """Decode ``data`` with Node's Brotli; raises ``ValueError`` if it is not Brotli."""
+    node = shutil.which("node")
+    if node is None:
+        raise ValueError("node is not on PATH, so no .br copy can be checked")
+    result = subprocess.run(  # noqa: S603 - fixed program, data only on stdin
+        [node, "-e", _NODE_BROTLI_DECODE], input=data, capture_output=True, check=False
+    )
+    if result.returncode != 0:
+        lines = result.stderr.decode(errors="replace").strip().splitlines()
+        raise ValueError(lines[0] if lines else f"node exited {result.returncode}")
+    return result.stdout
 
 
 def extracted_path(name: str) -> str:
@@ -80,6 +113,32 @@ def chunk_problems(manifest: object, chunks: dict[str, bytes], extracted: set[st
     return problems
 
 
+def compressed_problems(
+    www_files: dict[str, bytes],
+    brotli_decompress: Callable[[bytes], bytes] = node_brotli_decompress,
+) -> list[str]:
+    """What is wrong with the ``.br`` / ``.gz`` copies, given every ``www/`` member's bytes."""
+    problems: list[str] = []
+    for path in sorted(www_files):
+        if path.endswith(_COMPRESSED_SUFFIXES) and path.rsplit(".", 1)[0] not in www_files:
+            problems.append(f"compressed copy without its file: {path}")
+    for path in sorted(p for p in www_files if p.endswith(".js")):
+        for suffix in _COMPRESSED_SUFFIXES:
+            copy = path + suffix
+            if copy not in www_files:
+                problems.append(f"compressed copy is missing: {copy}")
+                continue
+            decode = gzip.decompress if suffix == ".gz" else brotli_decompress
+            try:
+                decoded = decode(www_files[copy])
+            except (OSError, EOFError, ValueError) as err:
+                problems.append(f"compressed copy does not decompress: {copy} ({err})")
+                continue
+            if decoded != www_files[path]:
+                problems.append(f"compressed copy differs from its file: {copy}")
+    return problems
+
+
 def layout_problems(names: Iterable[str], sizes: dict[str, int]) -> list[str]:
     """Every reason the given zip member list would install wrong, in order."""
     extracted = {extracted_path(name) for name in names}
@@ -110,9 +169,12 @@ def check(zip_path: str) -> list[str]:
     with zipfile.ZipFile(zip_path) as archive:
         infos = archive.infolist()
         by_path = {extracted_path(info.filename): info for info in infos if not info.is_dir()}
+        www_files = {
+            path: archive.read(info) for path, info in by_path.items() if path.startswith(_WWW_DIR)
+        }
         chunks = {
-            path: archive.read(info)
-            for path, info in by_path.items()
+            path: body
+            for path, body in www_files.items()
             if path.startswith(_CHUNKS_DIR) and path.endswith(".js")
         }
         manifest_info = by_path.get(_CHUNK_MANIFEST)
@@ -125,6 +187,7 @@ def check(zip_path: str) -> list[str]:
         except ValueError:
             manifest = None
         problems += chunk_problems(manifest, chunks, set(by_path))
+    problems += compressed_problems(www_files)
     return problems
 
 

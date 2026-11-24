@@ -10,7 +10,9 @@ delete from.
 
 from __future__ import annotations
 
+import gzip
 import logging
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -132,7 +134,7 @@ async def test_a_swept_path_that_escapes_the_package_is_refused(
             ([name for name in ALL_CHUNKS if name != "manifest.json"], None),
             id="no_manifest",
         ),
-        pytest.param("{not json", (ALL_CHUNKS, "chunk manifest"), id="unparseable"),
+        pytest.param("{not json", (ALL_CHUNKS, "chunk manifest"), id="unparsable"),
         pytest.param("[]", (ALL_CHUNKS, "not in the expected shape"), id="not_a_mapping"),
         pytest.param(
             '{"src/index.ts": {}}',
@@ -170,6 +172,56 @@ async def test_setup_sweeps_the_chunks_the_manifest_does_not_name(
         assert messages == []
     else:
         assert any(warning in message for message in messages)
+
+
+@pytest.mark.parametrize("brotli_available", [True, False], ids=["brotli", "no_brotli"])
+async def test_setup_sweeps_compressed_copies_that_are_not_their_file(
+    install_dir: Path, monkeypatch, setup_entry, brotli_available: bool
+) -> None:
+    """aiohttp serves a copy in place of its `.js` unchecked; only a matching one stays.
+
+    The entry keeps its name across releases, so a copy-over install leaves the old
+    entry's copies beside the new entry. Without a Brotli decoder a `.br` cannot be
+    checked and goes; the `.gz` beside it is served instead.
+    """
+
+    # Stands in for Brotli: the sweep only needs a decoder that inverts the encoder.
+    monkeypatch.setattr(
+        stale_files, "_brotli_decompress", zlib.decompress if brotli_available else None
+    )
+    www = install_dir / "www"
+    chunks = www / "chunks"
+    chunks.mkdir(parents=True)
+    (chunks / "manifest.json").write_text(GOOD_MANIFEST, encoding="utf-8")
+    entry_js, old_entry = b"// entry v2\n", b"// entry v1\n"
+    files = {
+        "haventory-card.js": entry_js,
+        "haventory-card.js.gz": gzip.compress(old_entry),
+        "haventory-card.js.br": zlib.compress(entry_js),
+        "chunks/core-aaa.js": b"core\n",
+        "chunks/core-aaa.js.gz": gzip.compress(b"core\n"),
+        "chunks/core-aaa.js.br": b"not brotli",
+        "chunks/runtime-old.js": b"old\n",
+        "chunks/runtime-old.js.gz": gzip.compress(b"old\n"),
+        "chunks/gone.js.br": zlib.compress(b"gone\n"),
+    }
+    for name, payload in files.items():
+        (www / name).write_bytes(payload)
+
+    entry = await setup_entry()
+
+    assert entry.state is ConfigEntryState.LOADED
+    left = sorted(path.relative_to(www).as_posix() for path in www.rglob("*"))
+    assert left == sorted(
+        [
+            "chunks",
+            "chunks/core-aaa.js",
+            "chunks/core-aaa.js.gz",
+            "chunks/manifest.json",
+            "haventory-card.js",
+            *(["haventory-card.js.br"] if brotli_available else []),
+        ]
+    )
 
 
 def test_no_retired_path_names_a_file_this_release_ships() -> None:
