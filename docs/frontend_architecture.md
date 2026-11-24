@@ -135,8 +135,16 @@ The build writes four files into `custom_components/haventory/www/`:
 | `chunks/runtime-<hash>.js` | about 560 kB | `src/runtime.ts` and its graph: the store, both language catalogs, every `hv-*` element, the card editor and `HostSurfaces`. |
 | `chunks/manifest.json` | | The Vite manifest, which names the chunks of this build. |
 
-A page with no HAventory element loads the entry and the core, about 31 kB (about 12 kB
-gzipped). The runtime downloads when the first card, panel or editor connects: they share
+Beside each of the three `.js` files the build also writes a `.br` (Brotli, quality 11) and
+a `.gz` (gzip, level 9) copy, with a plugin in `vite.config.ts` and `node:zlib`. Home
+Assistant compresses no static file itself, so these copies are what keeps the transfer
+small: aiohttp's `FileResponse` sends the `.br`, else the `.gz`, to a browser whose
+`Accept-Encoding` allows it, with `Content-Encoding` and `Vary: Accept-Encoding` set and the
+JavaScript `Content-Type` of the original. The runtime goes out as about 108 kB instead of
+565 kB. Home Assistant's own frontend ships its files the same way.
+
+A page with no HAventory element loads the entry and the core, about 31 kB (about 11 kB
+over Brotli). The runtime downloads when the first card, panel or editor connects: they share
 one promise (`src/runtime-loader.ts`), and once it has settled `loadedRuntime()` returns the
 module synchronously.
 
@@ -206,6 +214,16 @@ stay on disk. Setup runs `async_sweep_stale_chunks` (`stale_files.py`), which de
 deletes nothing. The build empties `chunks/` before it writes, and the release check
 verifies the zip's chunks against the manifest. `RETIRED_PATHS` lists no chunk, since a
 chunk's name is not known before its build.
+
+aiohttp serves a compressed copy without checking it against its `.js`, and the entry's
+name never changes, so an entry copy left by an earlier build would keep serving the old
+entry to every browser. Setup therefore runs `async_sweep_compressed_copies` after the
+chunk sweep: in `www/` and `www/chunks/` it deletes every `.js.br` and `.js.gz` that does
+not decompress to the bytes of the `.js` beside it, including one whose `.js` is gone.
+Without a Brotli module (Home Assistant constrains Brotli but does not require it) a `.br`
+cannot be checked and is deleted, and the `.gz` is served instead. The build deletes the
+entry's copies before it starts, and the release check requires both copies of every `.js`
+and decodes each one.
 
 A tab that was open across an upgrade holds the old entry. If it never loaded the runtime,
 its import fails once the sweep has removed the old chunk: the loader logs to the console,

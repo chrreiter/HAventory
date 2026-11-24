@@ -207,6 +207,11 @@ names; `tests/test_frontend_registration.py` holds the two sides together.
   household's. The bundle is served with an `ETag` and no `Cache-Control` header, so a
   browser applies heuristic freshness and can keep the old entry through a normal reload.
   Hard-reload (Ctrl+Shift+R) or open a fresh browser context after deploying one.
+- Every `.js` in the bundle has a `.br` and a `.gz` copy beside it, and a browser gets the
+  copy, not the `.js`. Editing a deployed `.js` by hand therefore changes nothing a browser
+  sees until setup's sweep deletes the copies that no longer match. Rebuild and deploy, or
+  restart Home Assistant after the edit. `curl` without `--compressed` reads the `.js`
+  itself, so compare with `curl --compressed` to see what a browser gets.
 
 How the card is built (the component map, the store, the shared `ui/` layer, the Home
 Assistant contact surface, the phone breakpoints and the known gaps) is

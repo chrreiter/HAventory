@@ -103,7 +103,12 @@ has the new bytes:
 curl -sI "$HA_BASE_URL/haventory_static/haventory-card.js" | grep -iE '^(etag|cache-control)'   # an ETag line, no Cache-Control line
 sha256sum custom_components/haventory/www/haventory-card.js
 curl -s "$HA_BASE_URL/haventory_static/haventory-card.js" | sha256sum   # must match
+curl -s --compressed "$HA_BASE_URL/haventory_static/haventory-card.js" | sha256sum   # what a browser gets: the .br copy; must match too
 ```
+
+A browser is sent the `.br` beside each `.js`, not the `.js`, and nothing serving it checks
+that the two agree; setup's sweep deletes a copy that does not match. So a `.js` edited by
+hand in the container is invisible to a browser until HA restarts.
 
 ### Wipe HAventory from the dev HA (fresh-start testing)
 
