@@ -91,6 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: HAventoryConfigEntry) ->
     # First, so a retired bundle is gone before the card directory is served.
     await stale_files.async_sweep_retired_files(hass)
     await stale_files.async_sweep_stale_chunks(hass)
+    await stale_files.async_sweep_compressed_copies(hass)
 
     store = DomainStore(hass, key=STORAGE_KEY, version=CURRENT_SCHEMA_VERSION)
     repository = await _async_load_repository(hass, entry, store)

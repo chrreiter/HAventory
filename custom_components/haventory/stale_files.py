@@ -9,14 +9,23 @@ The one exception is ``www/chunks/``, which holds nothing but the card build's
 chunks. Their names change with their content, so no explicit list could name
 them; the build's own manifest names the current ones, and every other ``.js``
 file there is a chunk an earlier release shipped.
+
+Beside each ``.js`` in ``www/`` the build writes a ``.br`` and a ``.gz`` copy,
+and aiohttp serves whichever the browser accepts without checking that it still
+matches the ``.js``. A copy left from another build therefore serves that
+build's code, and the entry's name never changes, so a copy-over install keeps
+serving the old card. Each copy is kept only if it decompresses to the bytes of
+the ``.js`` beside it.
 """
 
 from __future__ import annotations
 
+import gzip
+import importlib
 import json
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from homeassistant.core import HomeAssistant
 
@@ -35,6 +44,27 @@ RETIRED_PATHS: tuple[str, ...] = ("areas.py", "health.py", "rate_limit.py")
 # `www/chunks/` inside the package.
 _CHUNK_MANIFEST = "manifest.json"
 _CHUNKS_PREFIX = "chunks/"
+
+# The suffixes aiohttp's `FileResponse` serves in place of the file they extend.
+_COMPRESSED_SUFFIXES = (".br", ".gz")
+
+
+def _find_brotli_decompress() -> Callable[[bytes], bytes] | None:
+    """The Brotli decoder aiohttp itself would use, or ``None`` without one.
+
+    Home Assistant constrains Brotli but does not require it, so a Core install
+    can lack both modules.
+    """
+    for name in ("brotlicffi", "brotli"):
+        try:
+            module = importlib.import_module(name)
+        except ImportError:
+            continue
+        return cast("Callable[[bytes], bytes]", module.decompress)
+    return None
+
+
+_brotli_decompress = _find_brotli_decompress()
 
 
 def _target_path(relative_path: str) -> Path | None:
@@ -165,5 +195,81 @@ async def async_sweep_stale_chunks(
         LOGGER.debug(
             "Removed card chunks left behind by an earlier HAventory version",
             extra={"op": "sweep_stale_chunks", "chunks": list(removed)},
+        )
+    return removed
+
+
+def _copy_matches(copy: Path, original: bytes) -> bool:
+    """Whether ``copy`` decompresses to ``original``. A copy it cannot read does not.
+
+    A ``.br`` without a Brotli decoder cannot be checked, so it counts as stale:
+    the ``.gz`` beside it is served instead.
+    """
+    try:
+        data = copy.read_bytes()
+        if copy.suffix == ".gz":
+            return gzip.decompress(data) == original
+        if _brotli_decompress is None:
+            return False
+        return _brotli_decompress(data) == original
+    # A corrupt copy raises whatever its decoder raises: `zlib.error`,
+    # `EOFError`, or the Brotli binding's own error type.
+    except Exception as err:
+        LOGGER.debug(
+            "Could not read a compressed copy of the card",
+            extra={"op": "sweep_compressed_copies", "path": str(copy), "error": repr(err)},
+        )
+        return False
+
+
+def _delete_stale_compressed_copies(www_dir: Path) -> list[str]:
+    """Delete each ``.js.br`` / ``.js.gz`` that is not its ``.js``. Blocks — run in the executor."""
+    removed: list[str] = []
+    for directory in (www_dir, www_dir / "chunks"):
+        copies = [
+            path
+            for suffix in _COMPRESSED_SUFFIXES
+            for path in sorted(directory.glob(f"*.js{suffix}"))
+        ]
+        originals: dict[Path, bytes | None] = {}
+        for copy in copies:
+            original_path = copy.with_suffix("")
+            if original_path not in originals:
+                # Gone, or not a file: either way nothing this copy may stand in for.
+                try:
+                    originals[original_path] = original_path.read_bytes()
+                except OSError:
+                    originals[original_path] = None
+            original = originals[original_path]
+            if original is not None and _copy_matches(copy, original):
+                continue
+            try:
+                copy.unlink()
+            except FileNotFoundError:
+                continue
+            except OSError:
+                LOGGER.warning(
+                    "Could not remove a compressed copy of the card that no longer matches it",
+                    extra={"op": "sweep_compressed_copies", "path": str(copy)},
+                    exc_info=True,
+                )
+                continue
+            removed.append(copy.relative_to(www_dir).as_posix())
+    return removed
+
+
+async def async_sweep_compressed_copies(
+    hass: HomeAssistant, www_dir: Path | None = None
+) -> tuple[str, ...]:
+    """Delete the compressed copies that would serve other bytes than their ``.js``.
+
+    Runs after the chunk sweep, so a chunk it deleted takes its copies with it.
+    """
+    target = _PACKAGE_DIR / "www" if www_dir is None else www_dir
+    removed = tuple(await hass.async_add_executor_job(_delete_stale_compressed_copies, target))
+    if removed:
+        LOGGER.debug(
+            "Removed compressed copies of the card that did not match it",
+            extra={"op": "sweep_compressed_copies", "paths": list(removed)},
         )
     return removed
