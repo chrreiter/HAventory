@@ -38,6 +38,39 @@ describe('hv-list: paging', () => {
   });
 });
 
+// Three rows can end flush with the card's frame, which reads as the whole
+// list. The fade is the only cue that more sit below.
+describe('hv-list: more below', () => {
+  function geometry(scroller: HTMLElement, top: number) {
+    Object.defineProperty(scroller, 'scrollTop', { value: top, configurable: true });
+    Object.defineProperty(scroller, 'clientHeight', { value: 200, configurable: true });
+    Object.defineProperty(scroller, 'scrollHeight', { value: 1000, configurable: true });
+    scroller.dispatchEvent(new Event('scroll'));
+  }
+
+  it('fades the end while rows sit below it, and not once scrolled to the bottom', async () => {
+    const el = await mount();
+    const scroller = el.shadowRoot?.querySelector('[data-testid="list-rows"]') as HTMLElement;
+
+    geometry(scroller, 0);
+    expect(scroller.classList.contains('more-below')).toBe(true);
+
+    geometry(scroller, 800);
+    expect(scroller.classList.contains('more-below')).toBe(false);
+  });
+
+  it('keeps the fade through a re-render', async () => {
+    const el = await mount();
+    const scroller = el.shadowRoot?.querySelector('[data-testid="list-rows"]') as HTMLElement;
+    geometry(scroller, 0);
+
+    el.items = [...el.items, makeItem({ id: 'c', name: 'C' })];
+    await el.updateComplete;
+
+    expect(scroller.classList.contains('more-below')).toBe(true);
+  });
+});
+
 describe('hv-list: editing', () => {
   // The template is a stable callback, so Lit re-runs it only when one of this
   // component's own properties changes. The token is how a host says its editor
