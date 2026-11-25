@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.7](https://github.com/chrreiter/HAventory/compare/v0.9.6...v0.9.7) (2026-11-25)
+
+
+### Bug Fixes
+
+* **card:** fade both list ends and cast an edge shadow while rows sit past them ([#905](https://github.com/chrreiter/HAventory/issues/905)) ([3734302](https://github.com/chrreiter/HAventory/commit/3734302fe603ad063804561e2a81c6a241c045a2))
+
 ## [0.9.6](https://github.com/chrreiter/HAventory/compare/v0.9.5...v0.9.6) (2026-11-25)
 
 
