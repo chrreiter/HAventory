@@ -53,10 +53,10 @@ describe('hv-list: more past an end', () => {
     const scroller = el.shadowRoot?.querySelector('[data-testid="list-rows"]') as HTMLElement;
 
     geometry(scroller, 0);
-    expect(scroller.classList.contains('more-below')).toBe(true);
+    expect(el.hasAttribute('more-below')).toBe(true);
 
     geometry(scroller, 800);
-    expect(scroller.classList.contains('more-below')).toBe(false);
+    expect(el.hasAttribute('more-below')).toBe(false);
   });
 
   it('fades the top once scrolled past the first row, and not at the top', async () => {
@@ -64,10 +64,10 @@ describe('hv-list: more past an end', () => {
     const scroller = el.shadowRoot?.querySelector('[data-testid="list-rows"]') as HTMLElement;
 
     geometry(scroller, 0);
-    expect(scroller.classList.contains('more-above')).toBe(false);
+    expect(el.hasAttribute('more-above')).toBe(false);
 
     geometry(scroller, 800);
-    expect(scroller.classList.contains('more-above')).toBe(true);
+    expect(el.hasAttribute('more-above')).toBe(true);
   });
 
   it('keeps the fade through a re-render', async () => {
@@ -78,7 +78,7 @@ describe('hv-list: more past an end', () => {
     el.items = [...el.items, makeItem({ id: 'c', name: 'C' })];
     await el.updateComplete;
 
-    expect(scroller.classList.contains('more-below')).toBe(true);
+    expect(el.hasAttribute('more-below')).toBe(true);
   });
 });
 

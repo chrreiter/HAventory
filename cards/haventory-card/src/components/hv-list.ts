@@ -39,29 +39,71 @@ export class HVList extends LitElement {
         overflow-y: auto;
         overscroll-behavior: contain;
       }
-      /* Rows that end flush with the frame read as the whole list, so each end
-         with rows past it fades out. The stops sit at 0 for an end with none. */
+      /* Rows that end flush with the frame read as the whole list, and a phone
+         draws no scroll bar until the first swipe. So each end with rows past
+         it fades its last row and casts a shadow from the frame's edge. The
+         state is on the host because the shadows sit outside the scroller,
+         where its mask cannot erase them. */
+      :host {
+        --hv-fade-size: 56px;
+        --hv-fade-edge: 0.1;
+        --hv-edge-shadow-size: 16px;
+        --hv-edge-shadow: light-dark(rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.7));
+      }
       .scroller {
         --hv-fade-top: 0px;
         --hv-fade-bottom: 0px;
+        --hv-fade-top-from: #000;
+        --hv-fade-bottom-to: #000;
       }
-      .scroller.more-above {
-        --hv-fade-top: 40px;
+      :host([more-above]) .scroller {
+        --hv-fade-top: var(--hv-fade-size);
+        --hv-fade-top-from: rgba(0, 0, 0, var(--hv-fade-edge));
       }
-      .scroller.more-below {
-        --hv-fade-bottom: 40px;
+      :host([more-below]) .scroller {
+        --hv-fade-bottom: var(--hv-fade-size);
+        --hv-fade-bottom-to: rgba(0, 0, 0, var(--hv-fade-edge));
       }
-      .scroller.more-above,
-      .scroller.more-below {
+      :host([more-above]) .scroller,
+      :host([more-below]) .scroller {
         --hv-fade: linear-gradient(
           to bottom,
-          transparent,
+          var(--hv-fade-top-from),
           #000 var(--hv-fade-top),
           #000 calc(100% - var(--hv-fade-bottom)),
-          transparent
+          var(--hv-fade-bottom-to)
         );
         -webkit-mask-image: var(--hv-fade);
         mask-image: var(--hv-fade);
+      }
+      :host::before,
+      :host::after {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: var(--hv-edge-shadow-size);
+        pointer-events: none;
+        opacity: 0;
+        z-index: 1;
+      }
+      :host::before {
+        top: 0;
+        background: linear-gradient(to bottom, var(--hv-edge-shadow), transparent);
+      }
+      :host::after {
+        bottom: 0;
+        background: linear-gradient(to top, var(--hv-edge-shadow), transparent);
+      }
+      :host([more-above])::before,
+      :host([more-below])::after {
+        opacity: 1;
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        :host::before,
+        :host::after {
+          transition: opacity 150ms ease-out;
+        }
       }
       /* A refetch keeps its rows; out of the flow, so the rows do not shift. */
       .refreshing {
@@ -199,17 +241,15 @@ export class HVList extends LitElement {
   };
 
   /**
-   * Set on the element rather than through a render, so a scroll does not
-   * re-render the rows. The class attribute is static, so a render leaves it.
-   * A pixel of slack, because a fractional scrollTop never quite reaches
-   * either end.
+   * Set on the host rather than through a render, so a scroll does not
+   * re-render the rows. A pixel of slack, because a fractional scrollTop never
+   * quite reaches either end. With no scroller (skeleton, empty state) neither
+   * end has rows past it.
    */
   private _measure() {
     const el = this.renderRoot.querySelector<HTMLElement>('.scroller[role="rowgroup"]');
-    if (!el) return;
-    const { scrollTop, clientHeight, scrollHeight } = el;
-    el.classList.toggle('more-above', scrollTop > 1);
-    el.classList.toggle('more-below', scrollTop + clientHeight < scrollHeight - 1);
+    this.toggleAttribute('more-above', el !== null && el.scrollTop > 1);
+    this.toggleAttribute('more-below', el !== null && el.scrollTop + el.clientHeight < el.scrollHeight - 1);
   }
 
   protected override updated() {
