@@ -152,6 +152,9 @@ export const HA_THEME_VARS = [
   // The card's and the panel's own body type.
   '--mdc-typography-body2-font-size',
   '--mdc-typography-body2-line-height',
+  // The bottom inset HA publishes on its root, which its Android app feeds from
+  // the navigation bar where the WebView's own env() reports nothing.
+  '--safe-area-inset-bottom',
 ] as const;
 
 /** The surface variables, most specific first: `--hv-surface` binds them and `ui/theme` reads them back. */

@@ -57,7 +57,7 @@ export const modalSheet = css`
     border-radius: var(--hv-radius-sheet) var(--hv-radius-sheet) 0 0;
     box-shadow: var(--hv-shadow-sheet);
     /* Clears the home indicator, with a thumb's air where there is none. */
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    padding-bottom: max(12px, var(--hv-safe-bottom));
     animation: hv-sheet-rise var(--hv-motion-sheet) var(--hv-ease-out);
   }
   :host([mobile]) .backdrop {

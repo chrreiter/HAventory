@@ -95,6 +95,8 @@ export class HVFullView extends LitElement {
         overflow-y: hidden;
         overscroll-behavior: contain;
         box-shadow: var(--hv-shadow-overlay);
+        padding-bottom: var(--hv-safe-bottom);
+        box-sizing: border-box;
       }
       /* Embedded, the host sizes this surface as a page rather than an overlay. */
       :host([embedded]) {
@@ -106,6 +108,8 @@ export class HVFullView extends LitElement {
         inset: auto;
         height: 100%;
         box-shadow: none;
+        /* The panel's page is laid out by HA, which keeps its own bottom clear. */
+        padding-bottom: 0;
       }
       .honesty {
         padding: 10px 20px;

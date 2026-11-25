@@ -109,6 +109,12 @@ export const tokens = css`
     --hv-radius-sheet: 20px;
     /* Roughly HA's own more-info dialog. */
     --hv-sheet-max-width: 640px;
+    /*
+     * What a surface on the viewport's bottom edge keeps clear: the home
+     * indicator or the navigation bar. HA's own variable first, because its
+     * Android app reports the bar through it while the WebView's env() says 0.
+     */
+    --hv-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 
     /* Elevation */
     --hv-shadow-menu: 0 8px 28px rgba(0, 0, 0, 0.22);
