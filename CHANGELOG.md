@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.9.6](https://github.com/chrreiter/HAventory/compare/v0.9.5...v0.9.6) (2026-11-25)
+
+
+### Bug Fixes
+
+* **card:** fade the list's end while more rows sit below ([#900](https://github.com/chrreiter/HAventory/issues/900)) ([#903](https://github.com/chrreiter/HAventory/issues/903)) ([617bf08](https://github.com/chrreiter/HAventory/commit/617bf082bc566d569798bbd1c9f7434ac80b3414))
+* **card:** keep phone sheet actions above the Android navigation bar ([#899](https://github.com/chrreiter/HAventory/issues/899)) ([#902](https://github.com/chrreiter/HAventory/issues/902)) ([a67577b](https://github.com/chrreiter/HAventory/commit/a67577be1b2787229c44d875c0f845c76591b7ec))
+* **card:** keep the phone keyboard lowercase in label fields ([#901](https://github.com/chrreiter/HAventory/issues/901)) ([#904](https://github.com/chrreiter/HAventory/issues/904)) ([2e4f25d](https://github.com/chrreiter/HAventory/commit/2e4f25d73d53c3f7102c3db374df9e4a74912c80))
+
+
+### Performance Improvements
+
+* serve the card bundle pre-compressed ([#898](https://github.com/chrreiter/HAventory/issues/898)) ([8b787d8](https://github.com/chrreiter/HAventory/commit/8b787d8fad7cd74a5cc1878e30a6d36646ba461b))
+
+
+### Documentation
+
+* **claude:** warn that WSL can resolve npm to the Windows Node ([#896](https://github.com/chrreiter/HAventory/issues/896)) ([0dbe0d9](https://github.com/chrreiter/HAventory/commit/0dbe0d9c74ebbf0d8228ab53e2b741127e8b6934))
+
 ## [0.9.5](https://github.com/chrreiter/HAventory/compare/v0.9.4...v0.9.5) (2026-11-22)
 
 
