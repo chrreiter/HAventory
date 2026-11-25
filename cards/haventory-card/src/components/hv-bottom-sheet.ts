@@ -38,6 +38,8 @@ export class HVBottomSheet extends LitElement {
         display: flex;
         flex-direction: column;
         box-sizing: border-box;
+        /* On the sheet, not the footer: a sheet without one ends in its body. */
+        padding-bottom: var(--hv-safe-bottom);
         background: var(--hv-surface);
         color: var(--hv-text);
         border-top: 1px solid var(--hv-divider);

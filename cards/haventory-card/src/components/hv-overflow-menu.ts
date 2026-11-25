@@ -169,7 +169,7 @@ export class HVOverflowMenu extends LitElement {
           max-width: none;
           border-radius: var(--hv-radius-sheet) var(--hv-radius-sheet) 0 0;
           box-shadow: var(--hv-shadow-sheet);
-          padding: 8px 0 max(8px, env(safe-area-inset-bottom));
+          padding: 8px 0 max(8px, var(--hv-safe-bottom));
           animation: rise var(--hv-motion-sheet) var(--hv-ease-out);
         }
         /* A sibling, not a ::before on the menu: the menu's z-index makes a

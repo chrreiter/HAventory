@@ -21,10 +21,10 @@ export const bannerStack = css`
     gap: 6px;
     padding: 0 16px 10px;
   }
-  /* In a phone sheet's footer, under the divider the sheet draws, and clear of
-     the home indicator. */
+  /* In a phone sheet's footer, under the divider the sheet draws. The sheet
+     itself keeps clear of the home indicator. */
   .banners.in-sheet {
-    padding: 10px 16px max(10px, env(safe-area-inset-bottom));
+    padding: 10px 16px;
   }
 `;
 
