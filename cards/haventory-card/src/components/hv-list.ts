@@ -39,6 +39,12 @@ export class HVList extends LitElement {
         overflow-y: auto;
         overscroll-behavior: contain;
       }
+      /* Rows that end flush with the frame read as the whole list, so while more
+         sit below, the last visible one fades out. */
+      .scroller.more-below {
+        -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+        mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+      }
       /* A refetch keeps its rows; out of the flow, so the rows do not shift. */
       .refreshing {
         position: absolute;
@@ -162,12 +168,52 @@ export class HVList extends LitElement {
   @property({ type: Boolean }) addingNew = false;
 
   private readonly _emit = emitter<'hv-list'>(this);
+  /** Re-measures when the frame resizes or an expanded editor grows. */
+  private readonly _resize =
+    typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => this._measure());
+  private _observed: Element | null = null;
 
   private _onScroll = (e: Event) => {
     const el = e.currentTarget as HTMLElement;
     const ratio = (el.scrollTop + el.clientHeight) / Math.max(1, el.scrollHeight);
     this._emit('near-end', { ratio });
+    this._measure();
   };
+
+  /**
+   * Set on the element rather than through a render, so a scroll does not
+   * re-render the rows. The class attribute is static, so a render leaves it.
+   * A pixel of slack, because a fractional scrollTop never quite reaches the end.
+   */
+  private _measure() {
+    const el = this.renderRoot.querySelector<HTMLElement>('.scroller[role="rowgroup"]');
+    el?.classList.toggle('more-below', el.scrollTop + el.clientHeight < el.scrollHeight - 1);
+  }
+
+  protected override updated() {
+    const el = this.renderRoot.querySelector('.scroller[role="rowgroup"]');
+    if (el !== this._observed) {
+      this._resize?.disconnect();
+      this._observed = el;
+      if (el) this._resize?.observe(el);
+    }
+    // The rows' total height moves without the scroller's box moving, as when
+    // an expanded editor grows. Observing an element twice is a no-op.
+    if (el) for (const child of el.children) this._resize?.observe(child);
+    this._measure();
+  }
+
+  override connectedCallback() {
+    super.connectedCallback();
+    // A re-attached list was disconnected from its observer; re-run updated().
+    if (this.hasUpdated) this.requestUpdate();
+  }
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    this._resize?.disconnect();
+    this._observed = null;
+  }
 
   /** The shared ui/empty-state, as the full view's table draws it. */
   private _renderEmpty() {
