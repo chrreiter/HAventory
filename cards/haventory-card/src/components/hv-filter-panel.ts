@@ -593,6 +593,7 @@ export class HVFilterPanel extends LitElement {
             <span class="hv-sr-only">${t('hv.filter.addTag')}</span>
             <input
               type="search"
+              autocapitalize="none"
               placeholder=${t('hv.filter.addTagPlaceholder')}
               .value=${this._tagDraft}
               size="10"

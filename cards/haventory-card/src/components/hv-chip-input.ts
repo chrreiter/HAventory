@@ -138,6 +138,7 @@ export class HVChipInput extends LitElement {
         <input
           type="text"
           data-testid="chip-input"
+          autocapitalize="none"
           placeholder=${this.placeholder}
           .value=${this._draft}
           @input=${(e: Event) => {

@@ -32,6 +32,13 @@ describe('hv-chip-input', () => {
     expect(all(el, '[data-testid="chip-remove"]')).toHaveLength(2);
   });
 
+  // Tags are stored lowercase, so a phone keyboard that opens on capitals
+  // types a letter the save throws away.
+  it('asks the keyboard not to capitalize', async () => {
+    const el = await mount({ values: [] });
+    expect(q(el, '[data-testid="chip-input"]')?.getAttribute('autocapitalize')).toBe('none');
+  });
+
   // The editor's tokens are tags, so they wear the tag chip — the same one the
   // table's Tags column and the detail sheet draw.
   it('draws a value as the card draws a tag anywhere else', async () => {
