@@ -39,8 +39,8 @@ describe('hv-list: paging', () => {
 });
 
 // Three rows can end flush with the card's frame, which reads as the whole
-// list. The fade is the only cue that more sit below.
-describe('hv-list: more below', () => {
+// list. The fades are the cue that more sit past an end.
+describe('hv-list: more past an end', () => {
   function geometry(scroller: HTMLElement, top: number) {
     Object.defineProperty(scroller, 'scrollTop', { value: top, configurable: true });
     Object.defineProperty(scroller, 'clientHeight', { value: 200, configurable: true });
@@ -53,10 +53,21 @@ describe('hv-list: more below', () => {
     const scroller = el.shadowRoot?.querySelector('[data-testid="list-rows"]') as HTMLElement;
 
     geometry(scroller, 0);
-    expect(scroller.classList.contains('more-below')).toBe(true);
+    expect(el.hasAttribute('more-below')).toBe(true);
 
     geometry(scroller, 800);
-    expect(scroller.classList.contains('more-below')).toBe(false);
+    expect(el.hasAttribute('more-below')).toBe(false);
+  });
+
+  it('fades the top once scrolled past the first row, and not at the top', async () => {
+    const el = await mount();
+    const scroller = el.shadowRoot?.querySelector('[data-testid="list-rows"]') as HTMLElement;
+
+    geometry(scroller, 0);
+    expect(el.hasAttribute('more-above')).toBe(false);
+
+    geometry(scroller, 800);
+    expect(el.hasAttribute('more-above')).toBe(true);
   });
 
   it('keeps the fade through a re-render', async () => {
@@ -67,7 +78,7 @@ describe('hv-list: more below', () => {
     el.items = [...el.items, makeItem({ id: 'c', name: 'C' })];
     await el.updateComplete;
 
-    expect(scroller.classList.contains('more-below')).toBe(true);
+    expect(el.hasAttribute('more-below')).toBe(true);
   });
 });
 
