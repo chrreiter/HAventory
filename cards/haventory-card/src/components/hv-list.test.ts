@@ -39,7 +39,7 @@ describe('hv-list: paging', () => {
 });
 
 // Three rows can end flush with the card's frame, which reads as the whole
-// list. The fades and the thumb are the cue that more sit past an end.
+// list. The fades are the cue that more sit past an end.
 describe('hv-list: more past an end', () => {
   function geometry(scroller: HTMLElement, top: number) {
     Object.defineProperty(scroller, 'scrollTop', { value: top, configurable: true });
@@ -68,27 +68,6 @@ describe('hv-list: more past an end', () => {
 
     geometry(scroller, 800);
     expect(scroller.classList.contains('more-above')).toBe(true);
-  });
-
-  // On a touch screen the native bar hides until a swipe, so the thumb is the
-  // standing cue. Its place has to follow the scroll or it says nothing.
-  it('moves the thumb with the scroll, and hides it when nothing overflows', async () => {
-    const el = await mount();
-    const scroller = el.shadowRoot?.querySelector('[data-testid="list-rows"]') as HTMLElement;
-    const thumb = el.shadowRoot?.querySelector('[data-testid="list-thumb"]') as HTMLElement;
-
-    geometry(scroller, 0);
-    expect(thumb.classList.contains('shown')).toBe(true);
-    expect(thumb.style.height).toBe('40px');
-    expect(thumb.style.transform).toBe('translateY(0px)');
-
-    geometry(scroller, 800);
-    expect(thumb.style.transform).toBe('translateY(160px)');
-
-    Object.defineProperty(scroller, 'scrollHeight', { value: 200, configurable: true });
-    Object.defineProperty(scroller, 'scrollTop', { value: 0, configurable: true });
-    scroller.dispatchEvent(new Event('scroll'));
-    expect(thumb.classList.contains('shown')).toBe(false);
   });
 
   it('keeps the fade through a re-render', async () => {

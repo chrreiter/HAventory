@@ -63,38 +63,6 @@ export class HVList extends LitElement {
         -webkit-mask-image: var(--hv-fade);
         mask-image: var(--hv-fade);
       }
-      /* A pointer that can drag gets the native bar, thinned. */
-      .scroller {
-        scrollbar-width: thin;
-        scrollbar-color: var(--hv-text-tertiary) transparent;
-      }
-      /* A touch screen's native bar shows only mid-scroll, so before the first
-         swipe nothing says the list moves. It is swapped for a thin thumb that
-         stays drawn, outside the scroller so the fade leaves it alone. */
-      .thumb {
-        display: none;
-      }
-      @media (hover: none), (pointer: coarse) {
-        .scroller {
-          scrollbar-width: none;
-        }
-        .scroller::-webkit-scrollbar {
-          display: none;
-        }
-        .thumb {
-          position: absolute;
-          top: 0;
-          right: 2px;
-          width: 3px;
-          border-radius: 2px;
-          background: var(--hv-text-tertiary);
-          opacity: 0.6;
-          pointer-events: none;
-        }
-        .thumb.shown {
-          display: block;
-        }
-      }
       /* A refetch keeps its rows; out of the flow, so the rows do not shift. */
       .refreshing {
         position: absolute;
@@ -231,9 +199,9 @@ export class HVList extends LitElement {
   };
 
   /**
-   * Set on the elements rather than through a render, so a scroll does not
-   * re-render the rows. Their class attributes are static, so a render leaves
-   * them. A pixel of slack, because a fractional scrollTop never quite reaches
+   * Set on the element rather than through a render, so a scroll does not
+   * re-render the rows. The class attribute is static, so a render leaves it.
+   * A pixel of slack, because a fractional scrollTop never quite reaches
    * either end.
    */
   private _measure() {
@@ -242,17 +210,6 @@ export class HVList extends LitElement {
     const { scrollTop, clientHeight, scrollHeight } = el;
     el.classList.toggle('more-above', scrollTop > 1);
     el.classList.toggle('more-below', scrollTop + clientHeight < scrollHeight - 1);
-    const thumb = this.renderRoot.querySelector<HTMLElement>('.thumb');
-    if (!thumb) return;
-    const overflows = scrollHeight > clientHeight + 1;
-    thumb.classList.toggle('shown', overflows);
-    if (!overflows) return;
-    // Long enough to find with a glance however many rows there are.
-    const length = Math.max(24, (clientHeight * clientHeight) / scrollHeight);
-    const travel = clientHeight - length;
-    const progress = Math.min(1, Math.max(0, scrollTop / (scrollHeight - clientHeight)));
-    thumb.style.height = `${length}px`;
-    thumb.style.transform = `translateY(${el.offsetTop + travel * progress}px)`;
   }
 
   protected override updated() {
@@ -353,7 +310,6 @@ export class HVList extends LitElement {
                 ></hv-list-row>`,
         )}
       </div>
-      <div class="thumb" data-testid="list-thumb" aria-hidden="true"></div>
     `;
   }
 }
