@@ -318,6 +318,18 @@ describe('table column widths', () => {
     expect(widthOf(PANEL_GRID_AT_1920, 'category')).toBeLessThan(widthOf(PANEL_GRID_AT_1920, 'location'));
   });
 
+  // Beside Qty and Status alone an `fr` name took every spare pixel: about 750px
+  // at 1100, with the two columns at the row's far end. Without a column that
+  // wraps it stops at a length; with one, it keeps the share tuned above.
+  it('caps the name only when neither Location nor Tags can use the surplus', () => {
+    const nameTrack = (columns: ColumnKey[]) =>
+      tableTemplateFor(columns, { selectable: false }).split(/\s+(?![^(]*\))/)[0];
+    expect(nameTrack(['quantity', 'status'])).toBe('minmax(250px, 360px)');
+    expect(nameTrack(['quantity', 'status', 'category'])).toBe('minmax(250px, 360px)');
+    expect(nameTrack(['quantity', 'location'])).toBe('minmax(250px, 2fr)');
+    expect(nameTrack(['tags'])).toBe('minmax(250px, 2fr)');
+  });
+
   // Between the two the name is still served before either of them grows: it
   // reaches its floor while they are still on theirs.
   it('serves the name to its floor before the surplus moves on', () => {

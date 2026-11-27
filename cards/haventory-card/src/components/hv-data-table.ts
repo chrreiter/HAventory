@@ -158,11 +158,12 @@ export class HVDataTable extends LitElement {
       .name-cell {
         gap: 8px;
       }
+      /* Wraps at the column's ceiling rather than eliding: a touch screen
+         cannot open the title. A single word longer than the column breaks too. */
       .name {
         font-weight: 500;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+        min-width: 0;
+        overflow-wrap: anywhere;
       }
       /*
        * The name column holds while the rest scrolls under it, at every width:

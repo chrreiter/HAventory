@@ -96,10 +96,23 @@ const COLUMN_TABLE_SIZE = Object.fromEntries(COLUMN_DEFS.map((c) => [c.key, c.ta
  * The name track. Its floor outranks every flexible column: with the full set
  * every flexible track sits on its floor, and 250px holds a ~35-character name
  * beside its inline chip (~31 when a thumbnail takes 42px of it; widening it for
- * that would push the panel's default set into a sideways scroll). Past the
- * floors, surplus goes to Location and Tags, whose cells wrap.
+ * that would push the panel's default set into a sideways scroll). A longer
+ * name wraps rather than elides. Past the floors, surplus goes to Location and
+ * Tags, whose cells wrap.
  */
 export const NAME_COLUMN_SIZE = 'minmax(250px, 2fr)';
+
+/**
+ * The name track when neither Location nor Tags is shown. With nothing beside it
+ * that wraps, an `fr` name took every spare pixel and pushed Qty and Status to
+ * the row's far end, so its ceiling is a length. It is not the track in every
+ * set because a bounded track grows to its ceiling before any `fr` track grows:
+ * beside Location and Tags it would take the first 110px they wrap with.
+ */
+export const NAME_COLUMN_SIZE_CAPPED = 'minmax(250px, 360px)';
+
+/** The columns that have a use for surplus width, which the name leaves to them. */
+const SURPLUS_COLUMNS: readonly ColumnKey[] = ['location', 'tags'];
 
 /** The selection track; the table pins the name cell right of it while scrolling. */
 export const SELECT_COLUMN_WIDTH = '40px';
@@ -111,10 +124,11 @@ export const SELECT_COLUMN_WIDTH = '40px';
 export const ACTIONS_COLUMN_WIDTH = '140px';
 
 export function tableTemplateFor(columns: ColumnKey[], opts: { selectable: boolean }): string {
+  const shown = normalizeColumns(columns);
   const cols = [
     ...(opts.selectable ? [SELECT_COLUMN_WIDTH] : []),
-    NAME_COLUMN_SIZE,
-    ...normalizeColumns(columns).map((k) => COLUMN_TABLE_SIZE[k]),
+    shown.some((k) => SURPLUS_COLUMNS.includes(k)) ? NAME_COLUMN_SIZE : NAME_COLUMN_SIZE_CAPPED,
+    ...shown.map((k) => COLUMN_TABLE_SIZE[k]),
     ACTIONS_COLUMN_WIDTH,
   ];
   return cols.join(' ');

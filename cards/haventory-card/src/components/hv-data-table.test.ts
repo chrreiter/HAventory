@@ -542,6 +542,16 @@ describe('hv-data-table: the name cell picks one chip', () => {
   });
 });
 
+// A name past the column's ceiling was elided, and the title holding the rest
+// cannot be opened on a touch screen.
+describe('hv-data-table: a long name', () => {
+  it('wraps inside its column rather than eliding', () => {
+    const name = /\.name \{([^}]*)\}/.exec(cssAtEveryWidth())?.[1] ?? '';
+    expect(name).toMatch(/overflow-wrap: anywhere/);
+    expect(name).not.toMatch(/nowrap|ellipsis/);
+  });
+});
+
 describe('hv-data-table: row thumbnail', () => {
   it('shows the first picture beside the name, at the card list row’s own box', async () => {
     const media = makeMediaBindings();
