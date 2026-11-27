@@ -159,11 +159,14 @@ export class HVDataTable extends LitElement {
         gap: 8px;
       }
       /* Wraps at the column's ceiling rather than eliding: a touch screen
-         cannot open the title. A single word longer than the column breaks too. */
+         cannot open the title. A compound longer than the column hyphenates
+         by the page's language, which Home Assistant sets; where the browser
+         has no dictionary for it, the word breaks where the line fills. */
       .name {
         font-weight: 500;
         min-width: 0;
         overflow-wrap: anywhere;
+        hyphens: auto;
       }
       /*
        * The name column holds while the rest scrolls under it, at every width:

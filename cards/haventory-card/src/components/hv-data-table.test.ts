@@ -548,6 +548,7 @@ describe('hv-data-table: a long name', () => {
   it('wraps inside its column rather than eliding', () => {
     const name = /\.name \{([^}]*)\}/.exec(cssAtEveryWidth())?.[1] ?? '';
     expect(name).toMatch(/overflow-wrap: anywhere/);
+    expect(name).toMatch(/hyphens: auto/);
     expect(name).not.toMatch(/nowrap|ellipsis/);
   });
 });
