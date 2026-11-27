@@ -296,6 +296,14 @@ describe('hv-data-table: the pinned name column', () => {
     );
   });
 
+  // A phone in landscape is past 700px wide and the table still overflows there.
+  it('shades its right edge at every width, short in light mode and full in dark', () => {
+    const host = /:host \{[^}]*background:([^}]*)\}/.exec(cssAtEveryWidth())?.[1] ?? '';
+    expect(host).toMatch(/var\(--hv-surface\)\) right \/ 28px 100% no-repeat local/);
+    expect(host).toMatch(/light-dark\(rgba\(0, 0, 0, 0\), rgba\(0, 0, 0, 0\.39\)\) 6px/);
+    expect(host).toMatch(/right \/ 28px 100% no-repeat scroll/);
+  });
+
   it('marks itself panned while scrolled sideways, which draws the edge', async () => {
     const el = await mount([{ id: '1' }]);
     const pan = (x: number) => {

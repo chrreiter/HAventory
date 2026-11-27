@@ -876,6 +876,9 @@ nearest scroll container, and a nested one that never moves sideways pins nothin
 last row goes, the table scrolls back to its left edge: the header alone still holds the full
 width, so the browser would keep the pan, leaving the pinned name over a clipped header cell
 and the empty state, only as wide as the box, out of view. With any row left the pan stays.
+While the table overflows, its right edge carries a shade at every width, which the
+content's end covers once there is nothing further right. In light mode it is as short as
+the pinned name's edge; in dark mode it runs 28px, since a short one barely shows there.
 
 Preferences persist in `localStorage` under `haventory:columns:v1` as `{ expanded: [...] }`.
 Any other key in that record is ignored, so an older or newer payload never breaks the load.

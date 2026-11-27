@@ -207,20 +207,22 @@ export class HVDataTable extends LitElement {
           1px 0 0 var(--hv-divider),
           4px 0 6px -3px light-dark(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.6));
       }
-      @media (max-width: 700px) {
-        /* A right-edge shade (scroll) that a cover at the content's end (local)
-           hides once there is nothing further right. */
-        :host {
-          background:
-            linear-gradient(var(--hv-surface), var(--hv-surface)) right / 28px 100% no-repeat
-              local,
-            linear-gradient(
-                to left,
-                light-dark(rgba(0, 0, 0, 0.16), rgba(0, 0, 0, 0.5)),
-                rgba(0, 0, 0, 0)
-              )
-              right / 28px 100% no-repeat scroll;
-        }
+      /* A right-edge shade (scroll) that a cover at the content's end (local)
+         hides once there is nothing further right, so it shows only while the
+         table overflows, at any width: a phone in landscape is past 700px and
+         still pans. Light mode matches the pinned name's short edge; on a dark
+         surface that would barely show, so there it runs the full 28px. A
+         length cannot follow the scheme, so the stop colours do. */
+      :host {
+        background:
+          linear-gradient(var(--hv-surface), var(--hv-surface)) right / 28px 100% no-repeat local,
+          linear-gradient(
+              to left,
+              light-dark(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.5)),
+              light-dark(rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.39)) 6px,
+              rgba(0, 0, 0, 0)
+            )
+            right / 28px 100% no-repeat scroll;
       }
       .cell {
         min-width: 0;
