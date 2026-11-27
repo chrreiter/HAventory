@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.8](https://github.com/chrreiter/HAventory/compare/v0.9.7...v0.9.8) (2026-11-27)
+
+
+### Bug Fixes
+
+* full view table edge shades and name column width ([#909](https://github.com/chrreiter/HAventory/issues/909)) ([27c77b9](https://github.com/chrreiter/HAventory/commit/27c77b98e0a1d1c9f15b15a1599df52a697ff4df))
+
 ## [0.9.7](https://github.com/chrreiter/HAventory/compare/v0.9.6...v0.9.7) (2026-11-25)
 
 

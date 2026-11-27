@@ -5,7 +5,7 @@ from homeassistant.const import Platform
 DOMAIN: str = "haventory"
 
 # release-please rewrites the literal on the annotation; it must match manifest.json.
-INTEGRATION_VERSION: str = "0.9.7"  # x-release-please-version
+INTEGRATION_VERSION: str = "0.9.8"  # x-release-please-version
 
 # -----------------------------
 # Config-entry options
